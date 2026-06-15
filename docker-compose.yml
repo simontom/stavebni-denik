@@ -1,0 +1,32 @@
+# Local development helper. Spins up a Postgres 16 container matching
+# the DATABASE_URL in `.env.example`. The app itself runs via `pnpm dev`
+# outside of Docker for fast reloads.
+#
+# Usage:
+#   docker compose up -d postgres
+#   pnpm prisma migrate dev
+#   pnpm dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: stavebni-denik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: stavebni_denik
+      TZ: Europe/Prague
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d stavebni_denik"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: stavebni-denik-postgres-data

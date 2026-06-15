@@ -1,0 +1,63 @@
+# Fly.io configuration for stavebni-denik.
+# Single-tenant deploy: one app, one machine, one volume.
+#
+# Setup steps (run once on a developer machine with `fly` CLI installed):
+#   fly apps create stavebni-denik
+#   fly volumes create stavebni_denik_data --size 10 --region fra
+#   fly postgres create --name stavebni-denik-db --region fra
+#   fly postgres attach stavebni-denik-db
+#   fly secrets set AUTH_SECRET="$(openssl rand -base64 32)" AUTH_URL="https://stavebni-denik.fly.dev"
+#   fly deploy
+
+app = "stavebni-denik"
+primary_region = "fra"           # Frankfurt — closest EU region to CZ users.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  DATA_DIR = "/data"
+  TZ = "Europe/Prague"
+  OPEN_METEO_BASE = "https://api.open-meteo.com/v1"
+  NEXT_PUBLIC_APP_NAME = "Stavební deník"
+
+# Persistent volume for photos, PDF exports and the audit-verify log.
+# `auto_extend_size_threshold` / `_increment_gb` keep us from filling up.
+[mounts]
+  source = "stavebni_denik_data"
+  destination = "/data"
+  initial_size = "10gb"
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = "5gb"
+  auto_extend_size_limit = "50gb"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # Single-tenant: at most one running machine.
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/healthz"
+
+# Minimum viable VM for a small construction firm; bump to shared-cpu-2x or
+# performance-1x once daily report volume + PDF exports stress it.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1

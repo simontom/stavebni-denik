@@ -1,0 +1,99 @@
+// Prisma schema for stavebni-denik.
+// Stage 1: minimal models (User, Session) needed for the deploy skeleton.
+// Additional models (Project, DailyReport, Photo, AuditLog, ...) are added
+// in later delivery stages per /Users/saymoon/.junie/plans/stavebni-denik-nextjs.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// `datasource.url` is configured in prisma.config.ts (Prisma 7+ style).
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  BOSS
+  WORKER
+  GUEST
+}
+
+model User {
+  id            String    @id @default(cuid())
+  nickname      String    @unique
+  displayName   String
+  passwordHash  String
+  role          Role      @default(WORKER)
+  // ČKAIT autorizační číslo stavbyvedoucího (povinné pro BOSS dle § 153 stavebního zákona).
+  ckaitNumber   String?
+  isActive      Boolean   @default(true)
+  // Po prvním přihlášení vygenerovaným heslem musí uživatel heslo změnit.
+  mustChangePwd Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  // Soft delete only — žádné tvrdé mazání uživatelů (audit-trail compliance).
+  deletedAt     DateTime?
+
+  sessions Session[]
+
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  // Volitelné info o klientovi pro audit/diagnostiku.
+  ip        String?
+  userAgent String?
+  // Označení revokované session (logout / admin force-out).
+  revokedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Sliding-window rate-limit storage (login throttle).
+/// Append-only-ish: pravidelný garbage-collect při insertu (24 h cutoff).
+model RateLimitAttempt {
+  id        BigInt   @id @default(autoincrement())
+  bucket    String
+  key       String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([bucket, key, createdAt])
+  @@map("rate_limit_attempts")
+}
+
+/// Append-only audit log with a SHA-256 hash chain.
+/// - Každá mutace v aplikaci prochází `withAudit()` (Prisma transakce).
+/// - `prevHash` = `rowHash` předchozího řádku (nebo 64× '0' pro genesis).
+/// - `rowHash`  = sha256(canonicalJSON(payload)).
+/// - Postgres role `app` má INSERT/SELECT, ale REVOKED UPDATE/DELETE
+///   (viz prisma/migrations/*_audit_log/migration.sql).
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  ts         DateTime @default(now())
+  actorId    String?  @map("actor_id")
+  action     String   // 'user.create', 'report.sign', ...
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  prevHash   String   @map("prev_hash")
+  rowHash    String   @unique @map("row_hash")
+
+  @@index([action, ts])
+  @@index([entityType, entityId])
+  @@index([actorId, ts])
+  @@map("audit_log")
+}

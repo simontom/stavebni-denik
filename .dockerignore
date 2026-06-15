@@ -1,0 +1,47 @@
+# Keep the build context lean. Anything not strictly needed for `next build`
+# / `prisma generate` should be excluded so we don't bust Docker cache
+# on unrelated changes.
+
+# Source control & editor metadata
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+
+# Local secrets — production env vars come from Fly/Railway.
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+.next
+out
+build
+dist
+coverage
+test-results
+playwright-report
+playwright/.cache
+
+# Generated Prisma client — regenerated inside the builder stage.
+src/generated/prisma
+
+# Local volume (photos, PDF exports, audit-verify log).
+.dev-data
+/data
+
+# Dependencies — re-installed by the deps stage.
+node_modules
+.pnpm-store
+
+# Logs & OS junk
+*.log
+.DS_Store
+
+# Top-level developer docs not needed at runtime.
+README.md
+AGENTS.md
+CLAUDE.md
+docs/

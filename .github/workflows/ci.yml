@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Newer pushes cancel older queued runs on the same ref.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint + typecheck + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Build-only — actual DB is not needed for `next build` since
+      # services hit the database only at request time.
+      DATABASE_URL: postgresql://app:test@localhost:5432/test?schema=public
+      AUTH_SECRET: ci-only-secret-not-used-for-anything-real
+      AUTH_URL: http://localhost:3000
+      DATA_DIR: /tmp/data
+      OPEN_METEO_BASE: https://api.open-meteo.com/v1
+      NEXT_PUBLIC_APP_NAME: Stavební deník
+      TZ: Europe/Prague
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Type check
+        run: pnpm exec tsc --noEmit
+
+      - name: Build
+        run: pnpm run build
