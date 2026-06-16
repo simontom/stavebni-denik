@@ -1,49 +1,33 @@
 import "server-only";
 
-import { createHash, timingSafeEqual } from "node:crypto";
-
 import { prisma } from "@/lib/db";
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
+import {
+  GENESIS_HASH,
+  computeRowHash,
+  type AuditAction,
+  type AuditPayload,
+  type VerifyResult,
+} from "@/server/audit-hash";
+import { verifyAuditChainWithClient } from "@/server/audit-verify";
 
-const GENESIS_HASH = "0".repeat(64);
+// Re-export the pure hashing/verification surface so existing imports
+// from `@/server/audit` keep working after the crypto core was extracted
+// into `audit-hash.ts` (dependency-free and unit-testable).
+export { canonicalJSON, sha256Hex } from "@/server/audit-hash";
+export type { AuditAction, VerifyResult } from "@/server/audit-hash";
 
 /**
- * Canonical JSON serializer for hash-chain payloads.
- *
- * Requirements:
- *  - Object keys are sorted alphabetically at every nesting level.
- *  - Arrays preserve their order (they are part of the payload).
- *  - `Date` values are converted to ISO-8601 strings.
- *  - `BigInt` values are converted to decimal strings.
- *  - `undefined` properties are dropped (same as JSON.stringify), so
- *    callers must not rely on their presence to alter the hash.
- *
- * Two equivalent payloads MUST produce byte-identical serializations.
+ * Normalise a nullable JSON value for Prisma. Prisma 7 distinguishes SQL
+ * NULL (`Prisma.JsonNull`) from a literal JSON value for nullable JSON
+ * columns, so we map null/undefined explicitly rather than passing `null`.
  */
-export function canonicalJSON(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
-}
-
-function canonicalize(value: unknown): unknown {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "bigint") return value.toString();
-  if (value instanceof Date) return value.toISOString();
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    const out: Record<string, unknown> = {};
-    for (const key of Object.keys(obj).sort()) {
-      const v = obj[key];
-      if (v === undefined) continue;
-      out[key] = canonicalize(v);
-    }
-    return out;
-  }
-  return value;
-}
-
-export function sha256Hex(input: string): string {
-  return createHash("sha256").update(input, "utf8").digest("hex");
+function toJsonInput(
+  value: unknown,
+): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  return value === null || value === undefined
+    ? Prisma.JsonNull
+    : (value as Prisma.InputJsonValue);
 }
 
 /**
@@ -54,49 +38,6 @@ export interface AuditContext {
   actor: { id: string } | null;
   ip: string | null;
   userAgent: string | null;
-}
-
-export type AuditAction =
-  | "user.create"
-  | "user.update"
-  | "user.deactivate"
-  | "user.activate"
-  | "user.password-change"
-  | "session.signin"
-  | "session.signout"
-  // Forward-looking actions used in Stages 4-6. Kept here so the
-  // string union stays exhaustive and easy to extend.
-  | "project.create"
-  | "project.update"
-  | "project.delete"
-  | "project.member.add"
-  | "project.member.remove"
-  | "report.create"
-  | "report.update"
-  | "report.sign"
-  | "report.addendum.create"
-  | "photo.upload"
-  | "photo.delete"
-  | "remark.create"
-  | "material.create"
-  | "material.resolve";
-
-/**
- * Stripped-down audit row used both for hashing and for surfacing in
- * the admin UI. Values are normalised through `canonicalJSON` before
- * being hashed.
- */
-interface AuditPayload {
-  action: AuditAction;
-  entityType: string;
-  entityId: string;
-  actorId: string | null;
-  before: unknown;
-  after: unknown;
-  ip: string | null;
-  userAgent: string | null;
-  prevHash: string;
-  ts: string; // ISO timestamp captured at hash time
 }
 
 interface WithAuditOptions<T> {
@@ -157,7 +98,7 @@ export async function withAudit<T>(
       prevHash,
       ts: new Date().toISOString(),
     };
-    const rowHash = sha256Hex(canonicalJSON(payload));
+    const rowHash = computeRowHash(payload);
 
     await tx.auditLog.create({
       data: {
@@ -165,8 +106,8 @@ export async function withAudit<T>(
         action: payload.action,
         entityType: payload.entityType,
         entityId: payload.entityId,
-        before: payload.before as Prisma.InputJsonValue | null,
-        after: payload.after as Prisma.InputJsonValue | null,
+        before: toJsonInput(payload.before),
+        after: toJsonInput(payload.after),
         ip: payload.ip,
         userAgent: payload.userAgent,
         prevHash,
@@ -211,7 +152,7 @@ export async function appendAudit<E>(
       prevHash,
       ts: new Date().toISOString(),
     };
-    const rowHash = sha256Hex(canonicalJSON(fullPayload));
+    const rowHash = computeRowHash(fullPayload);
 
     await tx.auditLog.create({
       data: {
@@ -219,8 +160,8 @@ export async function appendAudit<E>(
         action: fullPayload.action,
         entityType: fullPayload.entityType,
         entityId: fullPayload.entityId,
-        before: fullPayload.before as Prisma.InputJsonValue | null,
-        after: fullPayload.after as Prisma.InputJsonValue | null,
+        before: toJsonInput(fullPayload.before),
+        after: toJsonInput(fullPayload.after),
         ip: fullPayload.ip,
         userAgent: fullPayload.userAgent,
         prevHash,
@@ -234,113 +175,12 @@ export async function appendAudit<E>(
 // Verification
 // ---------------------------------------------------------------------------
 
-export interface VerifyResult {
-  ok: boolean;
-  totalRows: number;
-  /** Id of the first row that broke the chain (null when ok=true). */
-  brokenAtId: bigint | null;
-  reason: string | null;
-  checkedAt: string;
-}
-
 /**
- * Streams through `audit_log` in id order and recomputes the chain.
- * Cheap to run from a cron job; ~10 µs per row of pure crypto +
- * Postgres seq-scan on a clustered index.
+ * Walk the entire `audit_log` hash chain using the app's Prisma
+ * singleton. Thin wrapper around `verifyAuditChainWithClient` (which
+ * holds the shared, dependency-free verification logic). Cheap enough
+ * to run synchronously from the admin UI or a daily cron.
  */
-export async function verifyAuditChain(
-  batchSize = 500,
-): Promise<VerifyResult> {
-  let totalRows = 0;
-  let lastHash = GENESIS_HASH;
-  let cursor: bigint | null = null;
-
-  while (true) {
-    const rows: Array<{
-      id: bigint;
-      ts: Date;
-      actor_id: string | null;
-      action: string;
-      entity_type: string;
-      entity_id: string;
-      before: unknown;
-      after: unknown;
-      ip: string | null;
-      user_agent: string | null;
-      prev_hash: string;
-      row_hash: string;
-    }> = cursor === null
-      ? await prisma.$queryRaw`
-          SELECT id, ts, actor_id, action, entity_type, entity_id,
-                 before, after, ip, user_agent, prev_hash, row_hash
-          FROM audit_log ORDER BY id ASC LIMIT ${batchSize}
-        `
-      : await prisma.$queryRaw`
-          SELECT id, ts, actor_id, action, entity_type, entity_id,
-                 before, after, ip, user_agent, prev_hash, row_hash
-          FROM audit_log WHERE id > ${cursor}
-          ORDER BY id ASC LIMIT ${batchSize}
-        `;
-
-    if (rows.length === 0) break;
-
-    for (const r of rows) {
-      totalRows++;
-
-      if (!hashesEqual(r.prev_hash, lastHash)) {
-        return {
-          ok: false,
-          totalRows,
-          brokenAtId: r.id,
-          reason: `prev_hash mismatch on id=${r.id}: expected ${lastHash}, got ${r.prev_hash}`,
-          checkedAt: new Date().toISOString(),
-        };
-      }
-
-      const recomputed = sha256Hex(
-        canonicalJSON({
-          action: r.action,
-          entityType: r.entity_type,
-          entityId: r.entity_id,
-          actorId: r.actor_id,
-          before: r.before ?? null,
-          after: r.after ?? null,
-          ip: r.ip,
-          userAgent: r.user_agent,
-          prevHash: r.prev_hash,
-          ts: r.ts.toISOString(),
-        } satisfies AuditPayload),
-      );
-
-      if (!hashesEqual(recomputed, r.row_hash)) {
-        return {
-          ok: false,
-          totalRows,
-          brokenAtId: r.id,
-          reason: `row_hash mismatch on id=${r.id}: expected ${recomputed}, stored ${r.row_hash}`,
-          checkedAt: new Date().toISOString(),
-        };
-      }
-
-      lastHash = r.row_hash;
-      cursor = r.id;
-    }
-  }
-
-  return {
-    ok: true,
-    totalRows,
-    brokenAtId: null,
-    reason: null,
-    checkedAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Constant-time string comparison so timing leaks from the verification
- * cron never reveal partial hash collisions to anyone watching latency.
- */
-function hashesEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(Buffer.from(a, "hex"), Buffer.from(b, "hex"));
+export async function verifyAuditChain(batchSize = 500): Promise<VerifyResult> {
+  return verifyAuditChainWithClient(prisma, batchSize);
 }

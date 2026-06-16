@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useState } from "react";
 import { Check, Copy, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -42,12 +42,6 @@ export function CreateUserDialog() {
   >(createUserAction, undefined);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
-  // When the dialog re-opens, reset our local UI state. The action state
-  // is preserved between submits to surface validation errors.
-  useEffect(() => {
-    if (open) setPasswordCopied(false);
-  }, [open]);
-
   const created = state?.status === "ok" ? state.result : null;
   const fieldErrors =
     state?.status === "field-error" ? state.fieldErrors : undefined;
@@ -71,6 +65,9 @@ export function CreateUserDialog() {
       );
       if (!confirmed) return;
     }
+    // Reset transient UI state whenever the dialog opens. The action
+    // state is preserved between submits to surface validation errors.
+    if (next) setPasswordCopied(false);
     setOpen(next);
   }
 

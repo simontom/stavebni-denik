@@ -38,6 +38,21 @@ export function formatDateTime(date: Date | string): string {
 }
 
 /**
+ * "2026-05-30" — value for a native `<input type="date">`. Uses the
+ * en-CA locale (which renders ISO-ordered Y-M-D) in Prague time so the
+ * pre-filled edit form matches what the user entered.
+ */
+export function formatDateInput(date: Date | string): string {
+  const d = typeof date === "string" ? new Date(date) : date;
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: PRAGUE_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/**
  * Returns the start-of-day (00:00 in Prague time) for the given date,
  * expressed as a UTC `Date`. Used as the canonical key for daily reports
  * — every report belongs to exactly one Prague-calendar day.

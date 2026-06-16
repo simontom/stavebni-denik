@@ -1,0 +1,83 @@
+name: Audit verify
+
+# Daily tamper-evidence check of the audit_log hash chain.
+#
+# Walks the whole chain via `scripts/verify-audit.ts`. The script exits:
+#   0 — chain intact, 1 — chain broken, 2 — unexpected error.
+# A non-zero exit fails this job (so GitHub notifies the maintainers) and,
+# when SMTP_* / ALERT_EMAIL secrets are configured, the script also e-mails
+# the BOSS directly. Can be triggered manually via "Run workflow".
+#
+# Required repository secret:
+#   AUDIT_DATABASE_URL  — connection string to the production database
+#                         (a read-only role is sufficient).
+# Optional secrets for the e-mail alert (otherwise the alert is skipped):
+#   SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM,
+#   ALERT_EMAIL
+
+on:
+  schedule:
+    # Every day at 04:00 UTC.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-verify-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify audit-log hash chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.AUDIT_DATABASE_URL }}
+      NEXT_PUBLIC_APP_NAME: Stavební deník
+      TZ: Europe/Prague
+      NEXT_TELEMETRY_DISABLED: "1"
+      # E-mail alert configuration (read by scripts/verify-audit.ts via the
+      # SMTP helper). Missing values simply disable the e-mail.
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      SMTP_FROM: ${{ secrets.SMTP_FROM }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Guard — require AUDIT_DATABASE_URL
+        run: |
+          if [ -z "${DATABASE_URL}" ]; then
+            echo "::error::AUDIT_DATABASE_URL secret is not configured; cannot verify the audit log."
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Verify audit-log hash chain
+        # Call tsx directly (the `verify:audit` package script reads a local
+        # .env which does not exist in CI — here the env comes from secrets).
+        run: pnpm exec tsx scripts/verify-audit.ts

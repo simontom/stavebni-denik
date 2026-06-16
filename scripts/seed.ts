@@ -16,7 +16,7 @@ import { createHash } from "node:crypto";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { PrismaClient } from "../src/generated/prisma/client";
+import { Prisma, PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/crypto";
 import { generatePassword } from "../src/lib/password-gen";
 
@@ -121,8 +121,8 @@ async function main() {
         action: payload.action,
         entityType: payload.entityType,
         entityId: payload.entityId,
-        before: null,
-        after: payload.after as never,
+        before: Prisma.JsonNull,
+        after: payload.after as Prisma.InputJsonValue,
         ip: null,
         userAgent: "seed",
         prevHash,

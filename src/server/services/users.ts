@@ -8,7 +8,7 @@ import {
   generatePassword,
   validatePasswordPolicy,
 } from "@/lib/password-gen";
-import type { Role } from "@/generated/prisma/client";
+import type { Role, User } from "@/generated/prisma/client";
 
 import type { AuditContext } from "@/server/audit";
 import { withAudit } from "@/server/audit";
@@ -221,7 +221,7 @@ export async function changePassword(
   }
 
   const newHash = await hashPassword(newPassword);
-  await withAudit(
+  await withAudit<User>(
     {
       ctx,
       action: "user.password-change",

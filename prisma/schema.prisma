@@ -36,17 +36,21 @@ model User {
   // Soft delete only — žádné tvrdé mazání uživatelů (audit-trail compliance).
   deletedAt     DateTime?
 
-  sessions Session[]
+  sessions           Session[]
+  // Zakázky, kde je tento uživatel stavbyvedoucím.
+  projectsManaged    Project[]       @relation("ProjectSiteManager")
+  // Členství uživatele v zakázkách (přístupový scope WORKER/GUEST).
+  projectMemberships ProjectMember[]
 
   @@index([deletedAt])
   @@map("users")
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   expiresAt DateTime
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   // Volitelné info o klientovi pro audit/diagnostiku.
   ip        String?
   userAgent String?
@@ -58,6 +62,61 @@ model Session {
   @@index([userId])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+/// Zakázka (stavba) — identifikační údaje dle § 157 stavebního zákona
+/// a přílohy č. 16 vyhlášky č. 499/2006 Sb. Vyplňují se jednou při založení.
+/// Soft delete only přes `deletedAt` (= archiv, viditelný pro BOSS).
+model Project {
+  id            String    @id @default(cuid())
+  // Identifikační údaje stavby (povinné).
+  name          String
+  address       String
+  cadastralArea String
+  parcelNumbers String
+  // Volitelné / doplňující údaje.
+  permitNumber  String?
+  builder       String
+  contractor    String
+  // Stavbyvedoucí (musí být uživatel role BOSS s autorizací ČKAIT).
+  siteManagerId String
+  tdsName       String?
+  bozpName      String?
+  designerName  String?
+  // GPS stavby pro snapshot počasí (Open-Meteo) v dalším kroku.
+  gpsLat        Float?
+  gpsLon        Float?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdById   String?
+  // Soft delete only — archivace zakázky bez ztráty deníku.
+  deletedAt     DateTime?
+
+  siteManager User            @relation("ProjectSiteManager", fields: [siteManagerId], references: [id])
+  members     ProjectMember[]
+
+  @@index([deletedAt])
+  @@index([siteManagerId])
+  @@map("projects")
+}
+
+/// Přiřazení uživatele k zakázce — určuje přístupový scope pro WORKER/GUEST.
+/// `role` je role uživatele *v rámci* dané zakázky (může se lišit od globální).
+model ProjectMember {
+  projectId String
+  userId    String
+  role      Role
+  addedAt   DateTime @default(now())
+  addedById String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_members")
 }
 
 /// Sliding-window rate-limit storage (login throttle).
@@ -82,7 +141,7 @@ model AuditLog {
   id         BigInt   @id @default(autoincrement())
   ts         DateTime @default(now())
   actorId    String?  @map("actor_id")
-  action     String   // 'user.create', 'report.sign', ...
+  action     String // 'user.create', 'report.sign', ...
   entityType String   @map("entity_type")
   entityId   String   @map("entity_id")
   before     Json?
