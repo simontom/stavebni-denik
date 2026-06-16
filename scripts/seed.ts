@@ -90,6 +90,11 @@ async function main() {
     `;
     const prevHash = tail[0]?.row_hash ?? GENESIS_HASH;
 
+    // The hashed `ts` MUST be the value we persist (see `withAudit`):
+    // the verifier recomputes the hash from the stored `ts`, so relying
+    // on the column's `DEFAULT CURRENT_TIMESTAMP` would break the chain
+    // at the genesis row.
+    const ts = new Date();
     const payload = {
       action: "user.create",
       entityType: "user",
@@ -111,12 +116,13 @@ async function main() {
       ip: null,
       userAgent: "seed",
       prevHash,
-      ts: new Date().toISOString(),
+      ts: ts.toISOString(),
     };
     const rowHash = sha256Hex(JSON.stringify(canonicalize(payload)));
 
     await tx.auditLog.create({
       data: {
+        ts,
         actorId: null,
         action: payload.action,
         entityType: payload.entityType,

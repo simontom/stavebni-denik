@@ -86,6 +86,12 @@ export async function withAudit<T>(
       ? options.projectAfter(result)
       : result;
 
+    // Hash the SAME timestamp we persist. `ts` is part of the hashed
+    // payload, so the value written to the `ts` column must be byte-for-byte
+    // the one fed into the hash — otherwise the verifier (which recomputes
+    // from the stored `ts`) would never match. We therefore generate it here
+    // instead of relying on the column's `DEFAULT CURRENT_TIMESTAMP`.
+    const ts = new Date();
     const payload: AuditPayload = {
       action: options.action,
       entityType: options.entityType,
@@ -96,12 +102,13 @@ export async function withAudit<T>(
       ip: options.ctx.ip,
       userAgent: options.ctx.userAgent,
       prevHash,
-      ts: new Date().toISOString(),
+      ts: ts.toISOString(),
     };
     const rowHash = computeRowHash(payload);
 
     await tx.auditLog.create({
       data: {
+        ts,
         actorId: payload.actorId,
         action: payload.action,
         entityType: payload.entityType,
@@ -140,6 +147,8 @@ export async function appendAudit<E>(
     `;
     const prevHash = tail[0]?.row_hash ?? GENESIS_HASH;
 
+    // See `withAudit`: the persisted `ts` must equal the hashed `ts`.
+    const ts = new Date();
     const fullPayload: AuditPayload = {
       action: payload.action,
       entityType: payload.entityType,
@@ -150,12 +159,13 @@ export async function appendAudit<E>(
       ip: ctx.ip,
       userAgent: ctx.userAgent,
       prevHash,
-      ts: new Date().toISOString(),
+      ts: ts.toISOString(),
     };
     const rowHash = computeRowHash(fullPayload);
 
     await tx.auditLog.create({
       data: {
+        ts,
         actorId: fullPayload.actorId,
         action: fullPayload.action,
         entityType: fullPayload.entityType,
