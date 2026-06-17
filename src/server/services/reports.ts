@@ -70,6 +70,11 @@ export type ManualWeatherInput = z.infer<typeof manualWeatherSchema>;
 
 const remarkSchema = z.object({
   text: z.string().trim().min(1, "Napište text připomínky.").max(LONG_TEXT_MAX),
+  isOfficial: z.boolean().optional(),
+});
+
+const addendumSchema = z.object({
+  text: z.string().trim().min(1, "Napište text dodatku.").max(LONG_TEXT_MAX),
 });
 
 const materialSchema = z.object({
@@ -142,6 +147,20 @@ export class ReportLockedError extends Error {
   code = "ReportLocked" as const;
   constructor() {
     super("Záznam je po podpisu uzamčen; změny lze provést jen dodatkem.");
+  }
+}
+
+export class ReportAlreadySignedError extends Error {
+  code = "ReportAlreadySigned" as const;
+  constructor() {
+    super("Záznam je už podepsaný.");
+  }
+}
+
+export class ReportNotLockedError extends Error {
+  code = "ReportNotLocked" as const;
+  constructor() {
+    super("Dodatek lze přidat pouze k podepsanému (uzamčenému) záznamu.");
   }
 }
 
@@ -428,15 +447,24 @@ export async function setManualWeather(opts: {
  * coordinator / designer) is allowed to perform on a project they belong
  * to. Allowed even on locked reports — official site visits happen after
  * a day is signed.
+ *
+ * When `isOfficial` is set, the remark is persisted with the flag and
+ * counts as a signed TDS / BOZP / projektant record. We restrict the
+ * official flag to GUEST and BOSS to keep WORKERs from accidentally
+ * passing themselves off as the dozor.
  */
 export async function addRemark(opts: {
   reportId: string;
   text: string;
+  isOfficial?: boolean;
   ctx: AuditContext;
   user: SessionUser;
 }): Promise<void> {
   const { reportId, ctx, user } = opts;
-  const { text } = remarkSchema.parse({ text: opts.text });
+  const { text, isOfficial } = remarkSchema.parse({
+    text: opts.text,
+    isOfficial: opts.isOfficial,
+  });
 
   const report = await prisma.dailyReport.findFirst({
     where: { id: reportId, deletedAt: null },
@@ -446,6 +474,12 @@ export async function addRemark(opts: {
 
   const { isMember } = await loadProjectScope(report.projectId, user);
   assertCan(user, "remark.create", { projectMember: isMember });
+
+  // Only GUEST/BOSS can post an "official" record — the legal weight
+  // of an official remark belongs to the dozor (TDS/BOZP/projektant),
+  // not to the worker filling in the diary.
+  const isOfficialResolved =
+    isOfficial === true && (user.role === "GUEST" || user.role === "BOSS");
 
   await withAudit(
     {
@@ -459,11 +493,17 @@ export async function addRemark(opts: {
         reportId,
         authorId: user.id,
         text,
+        isOfficial: isOfficialResolved,
       }),
     },
     (tx) =>
       tx.remark.create({
-        data: { reportId, authorId: user.id, text },
+        data: {
+          reportId,
+          authorId: user.id,
+          text,
+          isOfficial: isOfficialResolved,
+        },
       }),
   );
 }
@@ -555,6 +595,107 @@ export async function setMaterialResolved(opts: {
   );
 }
 
+/**
+ * Sign + lock a daily report. BOSS only.
+ *
+ * Records the signature timestamp + signer id and locks the report
+ * (`lockedAt = now`). Once locked, the only allowed mutations are
+ * `addRemark` (TDS site visits) and `addAddendum` (errata) — both go
+ * through `withAudit` and are visible in the audit log.
+ *
+ * Idempotent on already-signed reports: throws `ReportAlreadySignedError`
+ * so the UI can show "already signed" without a confusing re-sign
+ * attempt that would otherwise change `signedAt`.
+ */
+export async function signReport(opts: {
+  reportId: string;
+  ctx: AuditContext;
+  user: SessionUser;
+}): Promise<DailyReport> {
+  const { reportId, ctx, user } = opts;
+
+  const before = await prisma.dailyReport.findFirst({
+    where: { id: reportId, deletedAt: null },
+  });
+  if (!before) throw new ReportNotFoundError();
+
+  const { isMember } = await loadProjectScope(before.projectId, user);
+  assertCan(user, "report.sign", { projectMember: isMember });
+
+  if (before.signedAt || before.lockedAt) {
+    throw new ReportAlreadySignedError();
+  }
+
+  const now = new Date();
+  return withAudit<DailyReport>(
+    {
+      ctx,
+      action: "report.sign",
+      entityType: "report",
+      resolveEntityId: (r) => r.id,
+      before: reportForAudit(before),
+      projectAfter: reportForAudit,
+    },
+    (tx) =>
+      tx.dailyReport.update({
+        where: { id: reportId },
+        data: {
+          signedAt: now,
+          signedById: user.id,
+          lockedAt: now,
+        },
+      }),
+  );
+}
+
+/**
+ * Append an addendum (errata) to a SIGNED report. Pre-lock corrections
+ * should use `updateReport` instead — addenda are how we extend evidence
+ * of a day whose original content is now legally frozen.
+ *
+ * Project membership is required (no GUEST addenda; GUESTs stick with
+ * official remarks for site-visit records).
+ */
+export async function addAddendum(opts: {
+  reportId: string;
+  text: string;
+  ctx: AuditContext;
+  user: SessionUser;
+}): Promise<void> {
+  const { reportId, ctx, user } = opts;
+  const { text } = addendumSchema.parse({ text: opts.text });
+
+  const report = await prisma.dailyReport.findFirst({
+    where: { id: reportId, deletedAt: null },
+    select: { id: true, projectId: true, lockedAt: true },
+  });
+  if (!report) throw new ReportNotFoundError();
+  if (!report.lockedAt) throw new ReportNotLockedError();
+
+  const { isMember } = await loadProjectScope(report.projectId, user);
+  assertCan(user, "report.addendum.create", { projectMember: isMember });
+
+  await withAudit(
+    {
+      ctx,
+      action: "report.addendum.create",
+      entityType: "addendum",
+      resolveEntityId: (r: { id: string }) => r.id,
+      before: null,
+      projectAfter: (r: { id: string }) => ({
+        id: r.id,
+        reportId,
+        authorId: user.id,
+        text,
+      }),
+    },
+    (tx) =>
+      tx.addendum.create({
+        data: { reportId, authorId: user.id, text },
+      }),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Queries (scope-aware)
 // ---------------------------------------------------------------------------
@@ -627,21 +768,33 @@ export interface MaterialView {
   resolvedAt: Date | null;
 }
 
+export interface AddendumView {
+  id: string;
+  text: string;
+  authorName: string;
+  createdAt: Date;
+}
+
 export interface ReportDetail {
   report: DailyReport;
   projectId: string;
   projectName: string;
   authorName: string;
+  signedByName: string | null;
   weather: WeatherSnapshot;
   workers: WorkerLine[];
   remarks: RemarkView[];
   materials: MaterialView[];
+  addenda: AddendumView[];
   isMember: boolean;
   locked: boolean;
   canEdit: boolean;
   canAddRemark: boolean;
+  canMarkRemarkOfficial: boolean;
   canAddMaterial: boolean;
   canResolveMaterial: boolean;
+  canSign: boolean;
+  canAddAddendum: boolean;
 }
 
 /**
@@ -668,6 +821,7 @@ export async function getReportForUser(opts: {
     include: {
       project: { select: { name: true } },
       author: { select: { displayName: true } },
+      signedBy: { select: { displayName: true } },
       remarks: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -677,11 +831,23 @@ export async function getReportForUser(opts: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
       },
+      addenda: {
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { displayName: true } } },
+      },
     },
   });
   if (!report) return null;
 
-  const { project, author, remarks, materialNeeds, ...rest } = report;
+  const {
+    project,
+    author,
+    signedBy,
+    remarks,
+    materialNeeds,
+    addenda,
+    ...rest
+  } = report;
   const locked = report.lockedAt !== null;
   const resource = {
     projectMember: isMember,
@@ -694,6 +860,7 @@ export async function getReportForUser(opts: {
     projectId,
     projectName: project.name,
     authorName: author.displayName,
+    signedByName: signedBy?.displayName ?? null,
     weather: parseWeather(report.weather),
     workers: parseWorkers(report.workersByTrade),
     remarks: remarks.map((rm) => ({
@@ -710,12 +877,24 @@ export async function getReportForUser(opts: {
       resolved: m.resolved,
       resolvedAt: m.resolvedAt,
     })),
+    addenda: addenda.map((a) => ({
+      id: a.id,
+      text: a.text,
+      authorName: a.author.displayName,
+      createdAt: a.createdAt,
+    })),
     isMember,
     locked,
     canEdit: can(user, "report.update", resource),
     canAddRemark: can(user, "remark.create", resource),
+    canMarkRemarkOfficial:
+      can(user, "remark.create", resource) &&
+      (user.role === "BOSS" || user.role === "GUEST"),
     canAddMaterial: can(user, "material.create", resource),
     canResolveMaterial: can(user, "material.resolve", resource),
+    canSign: !locked && can(user, "report.sign", resource),
+    canAddAddendum:
+      locked && can(user, "report.addendum.create", resource),
   };
 }
 

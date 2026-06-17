@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, CloudSun, ImageIcon, Lock, Pencil } from "lucide-react";
+import { ChevronLeft, CloudSun, FilePlus2, ImageIcon, Lock, Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,12 @@ import { requireUser } from "@/server/rbac";
 import { canCreateReport, getReportForUser } from "@/server/services/reports";
 import { listPhotosForReport } from "@/server/services/photos";
 
+import { AddendumForm } from "../AddendumForm";
 import { DeletePhotoButton } from "../DeletePhotoButton";
 import { PhotoUploader } from "../PhotoUploader";
 import { ReportForm } from "../ReportForm";
 import { EMPTY_REPORT_VALUES } from "../report-form-types";
+import { SignReportButton } from "../SignReportButton";
 import { createReportAction } from "../actions";
 import { ManualWeatherForm, MaterialsPanel, RemarkForm } from "../ReportPanels";
 
@@ -91,7 +93,8 @@ export default async function ReportPage({ params }: PageProps) {
     );
   }
 
-  const { report, weather, workers, remarks, materials, locked } = detail;
+  const { report, weather, workers, remarks, materials, addenda, locked } =
+    detail;
   const photos = await listPhotosForReport({ reportId: report.id, user });
   const canUploadPhotos =
     (user.role === "BOSS" || user.role === "WORKER") &&
@@ -115,17 +118,34 @@ export default async function ReportPage({ params }: PageProps) {
           </div>
           <p className="text-sm text-muted-foreground">
             {detail.projectName} · zapsal {detail.authorName}
+            {locked && detail.signedByName && report.signedAt && (
+              <>
+                {" · podepsal "}
+                {detail.signedByName}
+                {" "}
+                ({formatDateTime(report.signedAt)})
+              </>
+            )}
           </p>
         </div>
-        {detail.canEdit && (
-          <Button
-            variant="outline"
-            size="sm"
-            render={<Link href={`/projects/${id}/reports/${dateStr}/edit`} />}
-          >
-            <Pencil className="size-4" aria-hidden /> Upravit
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {detail.canEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/projects/${id}/reports/${dateStr}/edit`} />}
+            >
+              <Pencil className="size-4" aria-hidden /> Upravit
+            </Button>
+          )}
+          {detail.canSign && (
+            <SignReportButton
+              reportId={report.id}
+              projectId={id}
+              date={dateStr}
+            />
+          )}
+        </div>
       </div>
 
       <Card>
@@ -240,7 +260,12 @@ export default async function ReportPage({ params }: PageProps) {
             </ul>
           )}
           {detail.canAddRemark && (
-            <RemarkForm reportId={report.id} projectId={id} date={dateStr} />
+            <RemarkForm
+              reportId={report.id}
+              projectId={id}
+              date={dateStr}
+              showOfficialOption={detail.canMarkRemarkOfficial}
+            />
           )}
         </CardContent>
       </Card>
@@ -322,6 +347,45 @@ export default async function ReportPage({ params }: PageProps) {
           {canUploadPhotos && <PhotoUploader reportId={report.id} />}
         </CardContent>
       </Card>
+
+      {(addenda.length > 0 || detail.canAddAddendum) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FilePlus2 className="size-4" aria-hidden /> Dodatky ({addenda.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {addenda.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Záznam je podepsaný a uzamčený. Případné opravy přidejte jako
+                dodatek — původní obsah dne se tím nepřepíše.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {addenda.map((a) => (
+                  <li key={a.id} className="grid gap-0.5 border-b pb-3 last:border-b-0">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="font-medium">{a.authorName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDateTime(a.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{a.text}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {detail.canAddAddendum && (
+              <AddendumForm
+                reportId={report.id}
+                projectId={id}
+                date={dateStr}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

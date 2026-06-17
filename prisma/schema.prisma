@@ -43,6 +43,7 @@ model User {
   projectMemberships ProjectMember[]
   // Denní záznamy, fotky, připomínky a dodatky, které uživatel vytvořil.
   reportsAuthored    DailyReport[]   @relation("ReportAuthor")
+  reportsSigned      DailyReport[]   @relation("ReportSigner")
   remarksAuthored    Remark[]        @relation("RemarkAuthor")
   addendaAuthored    Addendum[]      @relation("AddendumAuthor")
   photosUploaded     Photo[]         @relation("PhotoUploader")
@@ -161,6 +162,7 @@ model DailyReport {
 
   project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   author        User           @relation("ReportAuthor", fields: [authorId], references: [id])
+  signedBy      User?          @relation("ReportSigner", fields: [signedById], references: [id])
   photos        Photo[]
   remarks       Remark[]
   materialNeeds MaterialNeed[]

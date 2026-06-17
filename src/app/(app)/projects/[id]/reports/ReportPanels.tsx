@@ -33,8 +33,13 @@ function HiddenRefs({ reportId, projectId, date }: ReportRef) {
   );
 }
 
+interface RemarkFormProps extends ReportRef {
+  /** True when the current user role may sign an "official" record. */
+  showOfficialOption: boolean;
+}
+
 /** Add-a-remark form (members incl. GUEST/TDS). */
-export function RemarkForm(props: ReportRef) {
+export function RemarkForm({ showOfficialOption, ...refs }: RemarkFormProps) {
   const ref = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
 
@@ -47,7 +52,7 @@ export function RemarkForm(props: ReportRef) {
 
   return (
     <form ref={ref} action={handle} className="grid gap-2">
-      <HiddenRefs {...props} />
+      <HiddenRefs {...refs} />
       <Label htmlFor="remark-text" className="sr-only">
         Připomínka
       </Label>
@@ -58,7 +63,20 @@ export function RemarkForm(props: ReportRef) {
         required
         placeholder="Napište připomínku k tomuto dni…"
       />
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-3">
+        {showOfficialOption ? (
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              name="isOfficial"
+              value="true"
+              className="size-4 cursor-pointer rounded border-input"
+            />
+            Označit jako oficiální záznam (TDS / BOZP / projektant)
+          </label>
+        ) : (
+          <span />
+        )}
         <Button type="submit" size="sm" disabled={pending}>
           {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
           Přidat připomínku

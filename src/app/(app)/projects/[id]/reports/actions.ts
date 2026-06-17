@@ -10,6 +10,7 @@ import { requireUser } from "@/server/rbac";
 import {
   ReportExistsError,
   ReportLockedError,
+  addAddendum,
   addMaterialNeed,
   addRemark,
   createReport,
@@ -17,6 +18,7 @@ import {
   normalizeReportForm,
   setMaterialResolved,
   setManualWeather,
+  signReport,
   updateReport,
 } from "@/server/services/reports";
 import { softDeletePhoto } from "@/server/services/photos";
@@ -104,11 +106,12 @@ export async function addRemarkAction(data: FormData): Promise<void> {
   const text = String(data.get("text") ?? "");
   const projectId = String(data.get("projectId") ?? "");
   const dateStr = String(data.get("date") ?? "");
+  const isOfficial = String(data.get("isOfficial") ?? "") === "true";
   if (!reportId || text.trim().length === 0) return;
 
   try {
     const ctx = await getAuditContext();
-    await addRemark({ reportId, text, ctx, user });
+    await addRemark({ reportId, text, isOfficial, ctx, user });
   } catch {
     return;
   }
@@ -200,6 +203,41 @@ export async function deletePhotoAction(data: FormData): Promise<void> {
   try {
     const ctx = await getAuditContext();
     await softDeletePhoto({ photoId, ctx, user });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Sign + lock a daily report (BOSS only). Idempotent at the service level. */
+export async function signReportAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!reportId) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await signReport({ reportId, ctx, user });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Append an addendum to a signed report (BOSS / WORKER members). */
+export async function addAddendumAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const text = String(data.get("text") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!reportId || text.trim().length === 0) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await addAddendum({ reportId, text, ctx, user });
   } catch {
     return;
   }

@@ -351,15 +351,25 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
       where: { projectId, date: day },
     });
 
-    // Simulate the sign step from Stage 6 (no service yet).
-    await db.dailyReport.update({
-      where: { id: before.id },
-      data: {
-        signedAt: new Date(),
-        signedById: bossUser.id,
-        lockedAt: new Date(),
-      },
+    // WORKER cannot sign — only BOSS.
+    await expect(
+      svc.signReport({ reportId: before.id, ctx, user: workerMember }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+
+    // BOSS signs through the real service path (sets signedAt/lockedAt).
+    const signed = await svc.signReport({
+      reportId: before.id,
+      ctx,
+      user: bossUser,
     });
+    expect(signed.signedAt).toBeInstanceOf(Date);
+    expect(signed.lockedAt).toBeInstanceOf(Date);
+    expect(signed.signedById).toBe(bossUser.id);
+
+    // Re-signing the same report is refused.
+    await expect(
+      svc.signReport({ reportId: before.id, ctx, user: bossUser }),
+    ).rejects.toBeInstanceOf(svc.ReportAlreadySignedError);
 
     await expect(
       svc.updateReport({
@@ -401,5 +411,93 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
 
     // Whole hash chain (all the above mutations) stays valid.
     expect((await verifyAuditChainWithClient(db)).ok).toBe(true);
+  });
+
+  it("addAddendum requires lock; GUEST cannot; member can post-sign", async () => {
+    // Use a fresh day so the locked state in this test is unambiguous.
+    const day = pragueDayStart("2026-06-19");
+    const report = await svc.createReport({
+      projectId,
+      date: day,
+      input: {
+        workersByTrade: [],
+        workDescription: "Den pro test dodatku.",
+        materialsIn: null,
+        machinery: null,
+        testsAndChecks: null,
+        safetyNotes: null,
+        defects: null,
+        otherNotes: null,
+      },
+      ctx,
+      user: bossUser,
+    });
+
+    // Before sign: addendum refused with ReportNotLockedError.
+    await expect(
+      svc.addAddendum({
+        reportId: report.id,
+        text: "Předčasný dodatek",
+        ctx,
+        user: bossUser,
+      }),
+    ).rejects.toBeInstanceOf(svc.ReportNotLockedError);
+
+    // Sign the day so the addendum path opens up.
+    await svc.signReport({ reportId: report.id, ctx, user: bossUser });
+
+    // GUEST is NOT allowed to add an addendum (they stick with remarks).
+    await expect(
+      svc.addAddendum({
+        reportId: report.id,
+        text: "Guest dodatek",
+        ctx,
+        user: guestMember,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+
+    // WORKER member can.
+    await svc.addAddendum({
+      reportId: report.id,
+      text: "Doplňuji: ve 14:00 byla dodávka mírně opožděná.",
+      ctx,
+      user: workerMember,
+    });
+    const addenda = await db.addendum.findMany({
+      where: { reportId: report.id },
+    });
+    expect(addenda).toHaveLength(1);
+    expect(addenda[0]?.authorId).toBe(workerMember.id);
+
+    expect((await verifyAuditChainWithClient(db)).ok).toBe(true);
+  });
+
+  it("isOfficial flag on remark sticks for GUEST but is ignored for WORKER", async () => {
+    const day = pragueDayStart("2026-06-15");
+    const report = await db.dailyReport.findFirstOrThrow({
+      where: { projectId, date: day },
+    });
+
+    await svc.addRemark({
+      reportId: report.id,
+      text: "Oficiální zápis z prohlídky TDS.",
+      isOfficial: true,
+      ctx,
+      user: guestMember,
+    });
+    await svc.addRemark({
+      reportId: report.id,
+      text: "Pokus workera označit jako oficiální.",
+      isOfficial: true,
+      ctx,
+      user: workerMember,
+    });
+
+    const officials = await db.remark.findMany({
+      where: { reportId: report.id, isOfficial: true },
+    });
+    const officialAuthors = officials.map((r) => r.authorId);
+    expect(officialAuthors).toContain(guestMember.id);
+    expect(officialAuthors).not.toContain(workerMember.id);
   });
 });

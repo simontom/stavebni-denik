@@ -23,7 +23,7 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | 3 | RBAC a tamper-evident audit log (hash chain) | ✅ Hotovo |
 | 4 | Zakázky a identifikační údaje stavby | ✅ Hotovo |
 | 5 | Denní záznamy, fotky, počasí, checklist materiálu | ✅ Hotovo |
-| 6 | Podpisy, lock, PDF export a produkční hardening | ⬜ Čeká |
+| 6 | Podpisy, lock, PDF export a produkční hardening | 🚧 Probíhá (podpis/lock ✅, PDF/backup/monitoring ⬜) |
 
 ### Krok 3 — co je hotovo
 
@@ -104,6 +104,10 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
   pipeline: rotate → resize 1920 px main + 400 px thumb → JPEG, EXIF stripped)
   + `src/server/photo-storage.ts` (DATA_DIR layout `photos/{projectId}/{reportId}/{uuid}.jpg`,
   path-traversal guard, rollback při selhání transakce).
+- EXIF metadata: `src/server/exif.ts` (`parseExifSafely` přes `exifr`),
+  `Photo.capturedAt` a `Photo.gps` se plní z originálních bajtů PŘED stripem.
+  Selhání parseru se mlčky převádí na nully — screenshoty bez EXIFu se
+  pohodlně nahrají.
 - API: `POST /api/photos/upload` (multipart, per-soubor chyby, scope), `GET
   /api/photos/[id]?variant=thumb` (auth-gated stream přes `Readable.toWeb`).
 - UI: `ReportForm`, `ReportPanels` (Remark / Material / ManualWeather),
@@ -111,28 +115,21 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
   `DeletePhotoButton` (BOSS, server action), `NewReportDayPicker` na
   detailu zakázky; stránky `projects/[id]/reports/[date]` (view + create) a
   `[date]/edit` (BOSS / autor). Tab „Záznamy“ v detailu zakázky s
-  chronologickým výpisem.
+  chronologickým výpisem, galerie ukazuje `capturedAt` v tooltipu.
 - RBAC matrix rozšířen o `report.*`, `remark.create`, `material.*`,
   `photo.upload`, `photo.delete`. Lock check (`reportLocked`) ve všech
   mutacích kromě `remark.create` (oficiální TDS návštěvy po podpisu).
 - Testy:
-  - Unit: `weather.test.ts` (12) — parsing, summary, fallback, fetch
-    s mockovaným `globalThis.fetch`; `images.test.ts` (6) — resize,
-    error mapping; `photo-storage.test.ts` (5) — FS layout + traversal
-    guard.
-  - Integration: `test/integration/reports.int.test.ts` (Testcontainers
-    Postgres, vyžaduje Docker) — scope, duplicate (projectId, date),
-    GUEST jen `remark.create`, lock blokuje update/material ale ne
-    remark, audit chain zůstává validní.
+  - Unit: `weather.test.ts` (12), `images.test.ts` (6),
+    `photo-storage.test.ts` (5), `exif.test.ts` (6) — celkem **71/71**.
+  - Integration: `reports.int.test.ts` (6 — scope, lock, audit chain) +
+    `photos.int.test.ts` (8 — kompletní HTTP cesta `POST
+    /api/photos/upload` s mock auth, real sharp + FS + DB; EXIF kolony
+    z bajtu skutečně dosednou). Celkem **20/20**.
 
 ### Krok 5 — co zbývá
 
-- **EXIF metadata**: `Photo.capturedAt` a `Photo.gps` zůstávají `null`
-  — implementace vyžaduje samostatnou knihovnu (např. `exifr`) a je
-  odložená na pozdější iteraci. Sloupce v DB i UI jsou připravené.
-- **Photo upload integration test**: pokrytí `/api/photos/upload` jako
-  HTTP volání (sharp + FS + DB najednou) je smysluplné dodat v rámci
-  Kroku 6, kde už bude e2e PDF flow.
+- Nic — krok je dokončen.
 
 ## Mapa implementace (klíčové soubory)
 
