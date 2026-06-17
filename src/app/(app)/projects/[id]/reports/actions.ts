@@ -1,0 +1,189 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+
+import { pragueDayStart } from "@/lib/dates";
+import { getAuditContext } from "@/server/audit-context";
+import { ForbiddenError } from "@/server/permissions";
+import { requireUser } from "@/server/rbac";
+import {
+  ReportExistsError,
+  ReportLockedError,
+  addMaterialNeed,
+  addRemark,
+  createReport,
+  reportFormSchema,
+  normalizeReportForm,
+  setMaterialResolved,
+  setManualWeather,
+  updateReport,
+} from "@/server/services/reports";
+
+import type { ReportFormState } from "./report-form-types";
+
+/** Map a failed zod parse into field-level error messages. */
+function toFieldErrors(
+  issues: { path: PropertyKey[]; message: string }[],
+): ReportFormState {
+  const fieldErrors: Record<string, string> = {};
+  for (const issue of issues) {
+    const field = issue.path[0];
+    const key = typeof field === "string" ? field : "workersByTrade";
+    if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+  }
+  return { status: "field-error", fieldErrors };
+}
+
+/**
+ * Create a daily report for `(projectId, date)`. The project id and the
+ * day are bound on the server so the client form can neither carry nor
+ * tamper with the target.
+ */
+export async function createReportAction(
+  projectId: string,
+  dateStr: string,
+  _prev: ReportFormState | undefined,
+  data: FormData,
+): Promise<ReportFormState> {
+  const user = await requireUser();
+
+  const parsed = reportFormSchema.safeParse(normalizeReportForm(data));
+  if (!parsed.success) return toFieldErrors(parsed.error.issues);
+
+  try {
+    const ctx = await getAuditContext();
+    await createReport({
+      projectId,
+      date: pragueDayStart(dateStr),
+      input: parsed.data,
+      ctx,
+      user,
+    });
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { status: "forbidden" };
+    if (err instanceof ReportExistsError) return { status: "exists" };
+    return { status: "error", message: "Uložení záznamu se nezdařilo." };
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Edit an existing (unlocked) daily report. */
+export async function updateReportAction(
+  reportId: string,
+  projectId: string,
+  dateStr: string,
+  _prev: ReportFormState | undefined,
+  data: FormData,
+): Promise<ReportFormState> {
+  const user = await requireUser();
+
+  const parsed = reportFormSchema.safeParse(normalizeReportForm(data));
+  if (!parsed.success) return toFieldErrors(parsed.error.issues);
+
+  try {
+    const ctx = await getAuditContext();
+    await updateReport({ reportId, input: parsed.data, ctx, user });
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { status: "forbidden" };
+    if (err instanceof ReportLockedError) return { status: "locked" };
+    return { status: "error", message: "Uložení změn se nezdařilo." };
+  }
+
+  revalidatePath(`/projects/${projectId}`);
+  redirect(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Append a remark (allowed for GUEST/TDS members). */
+export async function addRemarkAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const text = String(data.get("text") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!reportId || text.trim().length === 0) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await addRemark({ reportId, text, ctx, user });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Add a "material needed" checklist item. */
+export async function addMaterialAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const text = String(data.get("text") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  const neededByRaw = String(data.get("neededBy") ?? "").trim();
+  const neededBy = neededByRaw.length > 0 ? new Date(`${neededByRaw}T00:00:00`) : null;
+  if (!reportId || text.trim().length === 0) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await addMaterialNeed({ reportId, text, neededBy, ctx, user });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Toggle the resolved state of a material checklist item. */
+export async function toggleMaterialAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const materialId = String(data.get("materialId") ?? "");
+  const resolved = String(data.get("resolved") ?? "") === "true";
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!materialId) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await setMaterialResolved({ materialId, resolved, ctx, user });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Fill in the weather by hand when the automatic fetch failed. */
+export async function setManualWeatherAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!reportId) return;
+
+  const num = (key: string): number | null => {
+    const v = String(data.get(key) ?? "").trim();
+    if (v.length === 0) return null;
+    const n = Number(v.replace(",", "."));
+    return Number.isNaN(n) ? null : n;
+  };
+  const summaryRaw = String(data.get("summary") ?? "").trim();
+
+  try {
+    const ctx = await getAuditContext();
+    await setManualWeather({
+      reportId,
+      input: {
+        tempMinC: num("tempMinC"),
+        tempMaxC: num("tempMaxC"),
+        precipitationMm: num("precipitationMm"),
+        windMaxKmh: num("windMaxKmh"),
+        summary: summaryRaw.length > 0 ? summaryRaw : null,
+      },
+      ctx,
+      user,
+    });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}

@@ -41,6 +41,11 @@ model User {
   projectsManaged    Project[]       @relation("ProjectSiteManager")
   // Členství uživatele v zakázkách (přístupový scope WORKER/GUEST).
   projectMemberships ProjectMember[]
+  // Denní záznamy, fotky, připomínky a dodatky, které uživatel vytvořil.
+  reportsAuthored    DailyReport[]   @relation("ReportAuthor")
+  remarksAuthored    Remark[]        @relation("RemarkAuthor")
+  addendaAuthored    Addendum[]      @relation("AddendumAuthor")
+  photosUploaded     Photo[]         @relation("PhotoUploader")
 
   @@index([deletedAt])
   @@map("users")
@@ -96,6 +101,7 @@ model Project {
 
   siteManager User            @relation("ProjectSiteManager", fields: [siteManagerId], references: [id])
   members     ProjectMember[]
+  reports     DailyReport[]
 
   @@index([deletedAt])
   @@index([siteManagerId])
@@ -117,6 +123,138 @@ model ProjectMember {
   @@id([projectId, userId])
   @@index([userId])
   @@map("project_members")
+}
+
+/// Denní záznam stavebního deníku (hlášení / „kontrolní den") dle § 157
+/// stavebního zákona a přílohy č. 16 vyhlášky č. 499/2006 Sb.
+/// Právně je vázán na jeden kalendářní den zakázky — odtud unique
+/// `(projectId, date)`. Po podpisu se obsah uzamkne (`lockedAt`); další
+/// změny jdou jen přes `Addendum` (errata). Soft delete přes `deletedAt`.
+model DailyReport {
+  id              String    @id @default(cuid())
+  projectId       String
+  // Den záznamu — půlnoc v Europe/Prague uložená jako UTC (viz lib/dates).
+  date            DateTime
+  authorId        String
+  // Počet pracovníků po profesích: [{ "trade": "zedník", "count": 3 }, ...].
+  workersByTrade  Json
+  workDescription String
+  // Volitelné textové položky deníku.
+  materialsIn     String?
+  machinery       String?
+  testsAndChecks  String?
+  safetyNotes     String?
+  defects         String?
+  otherNotes      String?
+  // Snapshot počasí z Open-Meteo (nebo fallback `{ error, fetchedAt }`).
+  // Nikdy se nepřepisuje — je součástí důkazního obsahu dne.
+  weather         Json
+  // Podpis a zámek (workflow v Kroku 6); sloupce zavedeny zde, aby se
+  // pozdější krok obešel bez další migrace.
+  signedAt        DateTime?
+  signedById      String?
+  lockedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdById     String?
+  deletedAt       DateTime?
+
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author        User           @relation("ReportAuthor", fields: [authorId], references: [id])
+  photos        Photo[]
+  remarks       Remark[]
+  materialNeeds MaterialNeed[]
+  addenda       Addendum[]
+
+  @@unique([projectId, date])
+  @@index([deletedAt])
+  @@index([authorId])
+  @@map("daily_reports")
+}
+
+/// Fotka k dennímu záznamu. Originál se nedrží — uloží se zmenšená
+/// verze (max 1920 px, JPEG q=82) a náhled (400 px) na `/data` volume,
+/// metadata zde. Soubory servíruje jen auth-gated route.
+model Photo {
+  id           String    @id @default(cuid())
+  reportId     String
+  // Cesty relativní k DATA_DIR (např. "photos/{projectId}/{reportId}/{uuid}.jpg").
+  pathOriginal String
+  pathThumb    String
+  width        Int
+  height       Int
+  bytes        Int
+  // Z EXIF zachováno jen DateTimeOriginal a GPS (zbytek se strippuje).
+  capturedAt   DateTime?
+  gps          Json?
+  uploadedById String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  report   DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  uploader User        @relation("PhotoUploader", fields: [uploadedById], references: [id])
+
+  @@index([reportId])
+  @@index([deletedAt])
+  @@map("photos")
+}
+
+/// Připomínka TDS / koordinátora BOZP / projektanta ke dni. Píší ji
+/// i GUEST/DOZOR uživatelé (jediná mutace, kterou role GUEST smí).
+model Remark {
+  id         String    @id @default(cuid())
+  reportId   String
+  authorId   String
+  text       String
+  // Oficiální (podepsaná) připomínka TDS při návštěvě — workflow v Kroku 6.
+  isOfficial Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  author User        @relation("RemarkAuthor", fields: [authorId], references: [id])
+
+  @@index([reportId])
+  @@index([deletedAt])
+  @@map("remarks")
+}
+
+/// Položka checklistu „materiál na další dny". Stav `resolved` označuje
+/// vyřízenou položku (např. materiál dorazil).
+model MaterialNeed {
+  id           String    @id @default(cuid())
+  reportId     String
+  text         String
+  neededBy     DateTime?
+  resolved     Boolean   @default(false)
+  resolvedAt   DateTime?
+  resolvedById String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdById  String?
+  deletedAt    DateTime?
+
+  report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([deletedAt])
+  @@map("material_needs")
+}
+
+/// Dodatek (errata) k podepsanému dennímu záznamu. Obsah dne se po
+/// podpisu nemění; oprava se připojí jako dodatek a je rovněž auditována.
+model Addendum {
+  id        String   @id @default(cuid())
+  reportId  String
+  authorId  String
+  text      String
+  createdAt DateTime @default(now())
+
+  report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  author User        @relation("AddendumAuthor", fields: [authorId], references: [id])
+
+  @@index([reportId])
+  @@map("addenda")
 }
 
 /// Sliding-window rate-limit storage (login throttle).
