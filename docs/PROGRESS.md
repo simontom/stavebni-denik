@@ -131,6 +131,44 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 
 - Nic — krok je dokončen.
 
+### Krok 6 — co je hotovo
+
+- Datová vrstva: migrace `20260617121140_add_report_signer_relation`
+  (FK `daily_reports.signedById → users.id`, ON DELETE SET NULL) +
+  Prisma relace `signedBy` v obou modelech.
+- Service `signReport` v `src/server/services/reports.ts` — BOSS-only,
+  setuje `signedAt`/`signedById`/`lockedAt` v jedné transakci s
+  `withAudit('report.sign')`, idempotentní (re-sign hodí
+  `ReportAlreadySignedError`).
+- Service `addAddendum` — vyžaduje uzamčený záznam (`ReportNotLockedError`
+  jinak), audit jako `report.addendum.create`, povolen pro BOSS/WORKER
+  členy (GUEST má dál jen `remark.create`).
+- Service `addRemark` rozšířen o `isOfficial?: boolean`; flag projde jen
+  pro role `GUEST` (TDS/BOZP/projektant) a `BOSS`, jinak je tiše ignorován.
+- UI: `SignReportButton` (BOSS, confirm dialog), `AddendumForm`
+  (textarea + submit), oddíl „Dodatky“ na detailu dne. `RemarkForm`
+  ukazuje checkbox „Označit jako oficiální“ pouze pokud uživatel může.
+  V hlavičce dne se po podpisu zobrazuje kdo a kdy podepsal.
+- `getReportForUser` doplňuje `signedByName`, `addenda`, `canSign`,
+  `canAddAddendum`, `canMarkRemarkOfficial`.
+- Testy:
+  - Unit: 71/71 (žádná nová unit pro Krok 6 — service je primárně
+    integration-tested s reálnou DB).
+  - Integration: `reports.int.test.ts` rozšířen na 8 testů (přibyly
+    sign workflow a addendum/official-remark cesty). Celkem **22/22**.
+
+### Krok 6 — co zbývá
+
+- **PDF export** — Playwright + headless Chromium, route
+  `/print/project/[id]?from=&to=`, `src/server/pdf.ts`, patička s
+  `rowHash` poslední auditované řádky, tlačítko „Stáhnout PDF“ na
+  detailu zakázky.
+- **Backup job** — nightly `pg_dump | gzip | restic` na B2/R2 +
+  `/data/photos`, runbook v `README.md`.
+- **Monitoring** — Sentry, alerty na CPU/RAM/disk u Fly/Railway.
+- **Smoke E2E v CI** — login → projekt → report → fotka → podpis → PDF
+  proti dočasné staging instanci.
+
 ## Mapa implementace (klíčové soubory)
 
 | Oblast | Soubory |
@@ -173,8 +211,9 @@ pnpm dev               # http://localhost:3000  (health: /healthz)
 pnpm verify:audit      # ověření hash chainu audit logu
 ```
 
-**Krok 1–5 jsou hotové.** Pokračuje se **Krokem 6** (podpisy, lock, PDF
-export, produkční hardening). Aktuální zadání kroku je v
+**Krok 1–5 jsou hotové, Krok 6 probíhá** (podpis + lock + addenda
+hotové; PDF, backup a monitoring čekají). Aktuální zadání je v
 [`docs/plan.md`](./plan.md).
 
-Testy: `pnpm test` (unit) a `pnpm test:integration` (vyžaduje běžící Docker).
+Testy: `pnpm test` (unit, 71/71) a `pnpm test:integration` (vyžaduje
+běžící Docker, 22/22).

@@ -1,0 +1,82 @@
+import { auth } from "@/server/auth";
+import { buildFooterTemplate, renderPdf } from "@/server/pdf";
+import { env } from "@/lib/env";
+import { getLatestAuditHash } from "@/server/audit";
+import { formatDateInput } from "@/lib/dates";
+import type { SessionUser } from "@/server/permissions";
+import { getProjectForUser } from "@/server/services/projects";
+
+/**
+ * `GET /api/projects/[id]/pdf?from=&to=`
+ *
+ * Spawns headless Chromium against `/print/project/[id]` with the
+ * caller's cookies forwarded, renders an A4 PDF and streams it back.
+ * The per-page footer carries the truncated `rowHash` of the latest
+ * audit log entry at export time, anchoring the document to the
+ * tamper-evident chain.
+ *
+ * Authorisation mirrors the print page: any project member can export
+ * (BOSS sees every project unconditionally). Out-of-scope callers get
+ * 404 to avoid existence leaks.
+ */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+// PDF generation can take several seconds for big projects with many
+// photos — give it room.
+export const maxDuration = 120;
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+interface RouteContext {
+  params: Promise<{ id: string }>;
+}
+
+export async function GET(request: Request, context: RouteContext) {
+  const session = await auth();
+  const user = session?.user as SessionUser | undefined;
+  if (!user) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const { id } = await context.params;
+  const project = await getProjectForUser(id, user);
+  if (!project) {
+    return new Response("Not found", { status: 404 });
+  }
+
+  const reqUrl = new URL(request.url);
+  const from = reqUrl.searchParams.get("from") ?? "";
+  const to = reqUrl.searchParams.get("to") ?? "";
+  const printUrl = new URL(`/print/project/${id}`, env.authUrl);
+  if (DATE_RE.test(from)) printUrl.searchParams.set("from", from);
+  if (DATE_RE.test(to)) printUrl.searchParams.set("to", to);
+
+  const latestHash = await getLatestAuditHash();
+  const footerHtml = buildFooterTemplate(latestHash.slice(0, 16));
+
+  let pdf: Buffer;
+  try {
+    pdf = await renderPdf({
+      url: printUrl.toString(),
+      cookieHeader: request.headers.get("cookie"),
+      footerHtml,
+    });
+  } catch (err) {
+    console.error("PDF render failed", err);
+    return new Response("PDF generation failed", { status: 500 });
+  }
+
+  const safeName = project.project.name.replace(/[^\p{L}\p{N}_-]+/gu, "_");
+  const today = formatDateInput(new Date());
+  const filename = `stavebni-denik-${safeName}-${today}.pdf`;
+
+  return new Response(new Uint8Array(pdf), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Length": String(pdf.length),
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Cache-Control": "private, no-store",
+    },
+  });
+}

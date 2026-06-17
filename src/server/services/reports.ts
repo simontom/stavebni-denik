@@ -910,3 +910,135 @@ export async function canCreateReport(
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Bulk export (PDF print page)
+// ---------------------------------------------------------------------------
+
+export interface ProjectExportPhoto {
+  id: string;
+  capturedAt: Date | null;
+}
+
+export interface ProjectExportDay {
+  id: string;
+  date: Date;
+  authorName: string;
+  signedByName: string | null;
+  signedAt: Date | null;
+  lockedAt: Date | null;
+  weather: WeatherSnapshot;
+  workers: WorkerLine[];
+  workDescription: string;
+  materialsIn: string | null;
+  machinery: string | null;
+  testsAndChecks: string | null;
+  safetyNotes: string | null;
+  defects: string | null;
+  otherNotes: string | null;
+  remarks: RemarkView[];
+  materials: MaterialView[];
+  addenda: AddendumView[];
+  photos: ProjectExportPhoto[];
+}
+
+/**
+ * One-shot data loader for the print page. Returns every report in
+ * the optional `[from, to]` Prague-day window (both inclusive, both
+ * optional), ordered oldest → newest so the PDF reads chronologically.
+ * Project access is checked once via `loadProjectScope`; the caller
+ * gets `null` for out-of-scope users (so the print route can 404
+ * without leaking existence).
+ */
+export async function getProjectExportForUser(opts: {
+  projectId: string;
+  from: Date | null;
+  to: Date | null;
+  user: SessionUser;
+}): Promise<{ days: ProjectExportDay[] } | null> {
+  const { projectId, from, to, user } = opts;
+  try {
+    await loadProjectScope(projectId, user);
+  } catch {
+    return null;
+  }
+
+  const dateFilter: { gte?: Date; lte?: Date } = {};
+  if (from) dateFilter.gte = from;
+  if (to) dateFilter.lte = to;
+
+  const rows = await prisma.dailyReport.findMany({
+    where: {
+      projectId,
+      deletedAt: null,
+      ...(from || to ? { date: dateFilter } : {}),
+    },
+    orderBy: { date: "asc" },
+    include: {
+      author: { select: { displayName: true } },
+      signedBy: { select: { displayName: true } },
+      remarks: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { displayName: true } } },
+      },
+      materialNeeds: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "asc" },
+      },
+      addenda: {
+        orderBy: { createdAt: "asc" },
+        include: { author: { select: { displayName: true } } },
+      },
+      photos: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, capturedAt: true },
+      },
+    },
+  });
+
+  return {
+    days: rows.map((r) => ({
+      id: r.id,
+      date: r.date,
+      authorName: r.author.displayName,
+      signedByName: r.signedBy?.displayName ?? null,
+      signedAt: r.signedAt,
+      lockedAt: r.lockedAt,
+      weather: parseWeather(r.weather),
+      workers: parseWorkers(r.workersByTrade),
+      workDescription: r.workDescription,
+      materialsIn: r.materialsIn,
+      machinery: r.machinery,
+      testsAndChecks: r.testsAndChecks,
+      safetyNotes: r.safetyNotes,
+      defects: r.defects,
+      otherNotes: r.otherNotes,
+      remarks: r.remarks.map((rm) => ({
+        id: rm.id,
+        text: rm.text,
+        authorName: rm.author.displayName,
+        isOfficial: rm.isOfficial,
+        createdAt: rm.createdAt,
+      })),
+      materials: r.materialNeeds.map((m) => ({
+        id: m.id,
+        text: m.text,
+        neededBy: m.neededBy,
+        resolved: m.resolved,
+        resolvedAt: m.resolvedAt,
+      })),
+      addenda: r.addenda.map((a) => ({
+        id: a.id,
+        text: a.text,
+        authorName: a.author.displayName,
+        createdAt: a.createdAt,
+      })),
+      photos: r.photos.map((p) => ({
+        id: p.id,
+        capturedAt: p.capturedAt,
+      })),
+    })),
+  };
+}

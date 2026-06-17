@@ -103,6 +103,13 @@ jobs:
       - name: Generate Prisma client
         run: pnpm exec prisma generate
 
+      - name: Install Playwright chromium (PDF export)
+        # Chromium binary is needed by `pdf.int.test.ts`; the npm
+        # `playwright` package does NOT bundle it by default. `--with-deps`
+        # also adds the Linux system libs needed to run headless on the
+        # ubuntu runner (libnss3, libdrm, etc.).
+        run: pnpm exec playwright install --with-deps chromium
+
       - name: Integration tests
         # Spins up a real Postgres via Docker (preinstalled on the runner)
         # and exercises the append-only triggers + hash-chain verifier.

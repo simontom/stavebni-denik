@@ -28,6 +28,7 @@ import {
 
 import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
+import { PdfExportForm } from "./PdfExportForm";
 import { ProjectStatusButton } from "./ProjectStatusButton";
 
 type ProjectTab = "details" | "reports" | "members";
@@ -224,6 +225,15 @@ export default async function ProjectDetailPage({
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Export deníku do PDF</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PdfExportForm projectId={id} />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

@@ -194,3 +194,17 @@ export async function appendAudit<E>(
 export async function verifyAuditChain(batchSize = 500): Promise<VerifyResult> {
   return verifyAuditChainWithClient(prisma, batchSize);
 }
+
+/**
+ * Return the `rowHash` of the most recent audit-log row, or the
+ * GENESIS hash if the log is still empty. The PDF export embeds this
+ * hash in its per-page footer so the document is anchored back to a
+ * specific position of the tamper-evident chain.
+ */
+export async function getLatestAuditHash(): Promise<string> {
+  const tail = await prisma.auditLog.findFirst({
+    orderBy: { id: "desc" },
+    select: { rowHash: true },
+  });
+  return tail?.rowHash ?? GENESIS_HASH;
+}
