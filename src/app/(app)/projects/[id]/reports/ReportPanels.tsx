@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useTransition } from "react";
-import { Check, Loader2, Plus, RotateCcw } from "lucide-react";
+import { useRef, useState, useTransition } from "react";
+import { Check, CheckCheck, Loader2, Plus, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/dates";
 import {
   addMaterialAction,
   addRemarkAction,
+  bulkResolveMaterialsAction,
   setManualWeatherAction,
   toggleMaterialAction,
 } from "./actions";
@@ -99,7 +100,7 @@ interface MaterialsPanelProps extends ReportRef {
   canResolve: boolean;
 }
 
-/** Material checklist: list with resolve toggle + add form. */
+/** Material checklist: list with resolve toggle + bulk resolve + add form. */
 export function MaterialsPanel({
   items,
   canAdd,
@@ -108,6 +109,7 @@ export function MaterialsPanel({
 }: MaterialsPanelProps) {
   const ref = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   function handleAdd(fd: FormData) {
     startTransition(async () => {
@@ -127,6 +129,40 @@ export function MaterialsPanel({
     });
   }
 
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllUnresolved() {
+    setSelected(new Set(items.filter((m) => !m.resolved).map((m) => m.id)));
+  }
+
+  function clearSelection() {
+    setSelected(new Set());
+  }
+
+  function bulkResolve() {
+    if (selected.size === 0) return;
+    const fd = new FormData();
+    fd.append("projectId", refs.projectId);
+    fd.append("date", refs.date);
+    for (const id of selected) fd.append("materialId", id);
+    startTransition(async () => {
+      await bulkResolveMaterialsAction(fd);
+      clearSelection();
+    });
+  }
+
+  const unresolvedCount = items.filter((m) => !m.resolved).length;
+  const allUnresolvedSelected =
+    unresolvedCount > 0 &&
+    items.filter((m) => !m.resolved).every((m) => selected.has(m.id));
+
   return (
     <div className="flex flex-col gap-3">
       {items.length === 0 ? (
@@ -135,49 +171,103 @@ export function MaterialsPanel({
         </p>
       ) : (
         <ul className="flex flex-col divide-y">
-          {items.map((m) => (
-            <li
-              key={m.id}
-              className="flex items-center justify-between gap-3 py-2"
-            >
-              <div className="flex flex-col">
-                <span
-                  className={
-                    m.resolved
-                      ? "text-sm text-muted-foreground line-through"
-                      : "text-sm"
-                  }
-                >
-                  {m.text}
-                </span>
-                {m.neededBy && (
-                  <span className="text-xs text-muted-foreground">
-                    Potřeba do: {formatDate(m.neededBy)}
-                  </span>
+          {items.map((m) => {
+            const checked = selected.has(m.id);
+            const isSelectable = canResolve && !m.resolved;
+            return (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 py-2"
+              >
+                {isSelectable ? (
+                  <input
+                    type="checkbox"
+                    aria-label={`Vybrat ${m.text}`}
+                    checked={checked}
+                    onChange={() => toggleSelected(m.id)}
+                    disabled={pending}
+                    className="size-4 cursor-pointer rounded border-input"
+                  />
+                ) : (
+                  <span className="size-4" aria-hidden />
                 )}
-              </div>
-              {canResolve && (
-                <Button
-                  type="button"
-                  variant={m.resolved ? "ghost" : "outline"}
-                  size="sm"
-                  disabled={pending}
-                  onClick={() => toggle(m.id, !m.resolved)}
-                >
-                  {m.resolved ? (
-                    <>
-                      <RotateCcw className="size-4" aria-hidden /> Obnovit
-                    </>
-                  ) : (
-                    <>
-                      <Check className="size-4" aria-hidden /> Vyřízeno
-                    </>
+                <div className="flex flex-1 flex-col">
+                  <span
+                    className={
+                      m.resolved
+                        ? "text-sm text-muted-foreground line-through"
+                        : "text-sm"
+                    }
+                  >
+                    {m.text}
+                  </span>
+                  {m.neededBy && (
+                    <span className="text-xs text-muted-foreground">
+                      Potřeba do: {formatDate(m.neededBy)}
+                    </span>
                   )}
-                </Button>
-              )}
-            </li>
-          ))}
+                </div>
+                {canResolve && (
+                  <Button
+                    type="button"
+                    variant={m.resolved ? "ghost" : "outline"}
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => toggle(m.id, !m.resolved)}
+                  >
+                    {m.resolved ? (
+                      <>
+                        <RotateCcw className="size-4" aria-hidden /> Obnovit
+                      </>
+                    ) : (
+                      <>
+                        <Check className="size-4" aria-hidden /> Vyřízeno
+                      </>
+                    )}
+                  </Button>
+                )}
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {canResolve && unresolvedCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 p-2 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={
+                allUnresolvedSelected ? clearSelection : selectAllUnresolved
+              }
+              disabled={pending}
+            >
+              {allUnresolvedSelected
+                ? "Zrušit výběr"
+                : `Vybrat všechny (${unresolvedCount})`}
+            </Button>
+            <span className="text-muted-foreground">
+              {selected.size > 0
+                ? `${selected.size} vybráno`
+                : "Vyberte položky pro hromadné vyřízení."}
+            </span>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={bulkResolve}
+            disabled={pending || selected.size === 0}
+          >
+            {pending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <CheckCheck className="size-4" aria-hidden />
+            )}
+            Vyřídit vybrané
+          </Button>
+        </div>
       )}
 
       {canAdd && (

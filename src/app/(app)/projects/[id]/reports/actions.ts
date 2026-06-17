@@ -156,6 +156,42 @@ export async function toggleMaterialAction(data: FormData): Promise<void> {
   revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
 }
 
+/**
+ * Bulk-resolve a set of material checklist items. Each id is funnelled
+ * through the audited `setMaterialResolved` so the audit log keeps
+ * one row per item — the same as if the user clicked through them
+ * individually. Errors on individual ids are swallowed so a single
+ * stale id does not undo the whole batch.
+ */
+export async function bulkResolveMaterialsAction(
+  data: FormData,
+): Promise<void> {
+  const user = await requireUser();
+  const ids = data
+    .getAll("materialId")
+    .map((v) => String(v))
+    .filter((s) => s.length > 0);
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (ids.length === 0) return;
+
+  const ctx = await getAuditContext();
+  for (const materialId of ids) {
+    try {
+      await setMaterialResolved({
+        materialId,
+        resolved: true,
+        ctx,
+        user,
+      });
+    } catch {
+      // Swallow per-item errors (already-resolved, missing id) so a
+      // single bad apple doesn't drop the rest of the batch.
+    }
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
 /** Fill in the weather by hand when the automatic fetch failed. */
 export async function setManualWeatherAction(data: FormData): Promise<void> {
   const user = await requireUser();
