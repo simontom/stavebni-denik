@@ -151,23 +151,35 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
   V hlavičce dne se po podpisu zobrazuje kdo a kdy podepsal.
 - `getReportForUser` doplňuje `signedByName`, `addenda`, `canSign`,
   `canAddAddendum`, `canMarkRemarkOfficial`.
+- **PDF export**: `src/server/pdf.ts` (Playwright + headless Chromium),
+  print route `/print/project/[id]?from=&to=`, API
+  `GET /api/projects/[id]/pdf?from=&to=`, tlačítko „Stáhnout PDF“
+  + „Náhled k tisku“ na tabu Záznamy. Patička každé strany obsahuje
+  zkrácený hash poslední audit-log řádky (`getLatestAuditHash`).
+- **Backup**: `scripts/backup.sh` (pg_dump + gzip + restic backup
+  /data/photos), Dockerfile přidává `postgresql-client` + `restic` +
+  Chromium binary download do `/opt/playwright`. README dostalo nový
+  oddíl „Backup & restore“ s runbookem.
+- **Monitoring**: `instrumentation.ts` v rootu repa volá
+  `Sentry.init()` z `@sentry/nextjs` (gated `SENTRY_DSN`), `onRequestError`
+  zachycuje chyby route handlerů / server actions. `sendDefaultPii: false`
+  → žádná hesla / fotky v Sentry. README sekce „Monitoring (Sentry)“.
 - Testy:
-  - Unit: 71/71 (žádná nová unit pro Krok 6 — service je primárně
+  - Unit: 71/71 (žádné nové unit pro Krok 6 — service primárně
     integration-tested s reálnou DB).
-  - Integration: `reports.int.test.ts` rozšířen na 8 testů (přibyly
-    sign workflow a addendum/official-remark cesty). Celkem **22/22**.
+  - Integration: `reports.int.test.ts` (8 — sign workflow + addendum +
+    official remark), `pdf.int.test.ts` (2 — Playwright smoke, renderPdf
+    skutečně vrátí PDF). Celkem **24/24**.
+- CI: integration job nově instaluje Chromium přes
+  `pnpm exec playwright install --with-deps chromium`.
 
 ### Krok 6 — co zbývá
 
-- **PDF export** — Playwright + headless Chromium, route
-  `/print/project/[id]?from=&to=`, `src/server/pdf.ts`, patička s
-  `rowHash` poslední auditované řádky, tlačítko „Stáhnout PDF“ na
-  detailu zakázky.
-- **Backup job** — nightly `pg_dump | gzip | restic` na B2/R2 +
-  `/data/photos`, runbook v `README.md`.
-- **Monitoring** — Sentry, alerty na CPU/RAM/disk u Fly/Railway.
 - **Smoke E2E v CI** — login → projekt → report → fotka → podpis → PDF
-  proti dočasné staging instanci.
+  proti dočasné staging instanci. Vyžaduje setup `@playwright/test`,
+  staging deploy v GitHub Actions (Fly preview app nebo podobné).
+- Orchestrátorové alerty (Fly/Railway CPU/RAM/disk) — konfigurace na
+  straně provideru, ne v repu.
 
 ## Mapa implementace (klíčové soubory)
 

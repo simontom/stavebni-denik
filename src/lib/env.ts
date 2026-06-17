@@ -57,4 +57,8 @@ export const env = {
   get timezone() {
     return optional("TZ", "Europe/Prague");
   },
+  /** Optional — when set, server-side errors are reported to Sentry. */
+  get sentryDsn() {
+    return optional("SENTRY_DSN", "");
+  },
 };

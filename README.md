@@ -145,6 +145,30 @@ pnpm verify:audit
 Pokud `verify:audit` nahlásí porušení, je obnovený stav nedůvěryhodný
 — vyber starší snapshot a opakuj.
 
+## Monitoring (Sentry)
+
+Server + edge errors jsou hlášené do [Sentry](https://sentry.io/) pokud
+je `SENTRY_DSN` v env. Když je prázdné (lokální vývoj, CI), SDK je
+úplně neaktivní — žádný síťový provoz, žádná režie.
+
+```bash
+fly secrets set \
+  SENTRY_DSN="https://...@o0.ingest.sentry.io/0" \
+  SENTRY_ENVIRONMENT="production" \
+  SENTRY_TRACES_SAMPLE_RATE="0.1"
+```
+
+`instrumentation.ts` v rootu repa registruje `Sentry.init()` při startu
+workeru a `onRequestError` zachycuje chyby z route handlerů / server
+actions / RSC.
+
+PII (cesty, request body) se **nenahrávají** (`sendDefaultPii: false`)
+— hesla z `/login` ani fotky z `/api/photos/upload` se v Sentry
+neobjeví.
+
+Healthcheck `/healthz` (DB + volume probe) běží průběžně z orchestrátoru
+a doporučené alerty na Fly/Railway pokrývají CPU/RAM/disk.
+
 ## Project layout
 
 ```
