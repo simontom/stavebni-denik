@@ -711,23 +711,56 @@ export interface ReportListItem {
   photoCount: number;
 }
 
+export type ReportStatusFilter = "all" | "signed" | "unsigned";
+
+export interface ReportListFilters {
+  /**
+   * Free-text query — matched (case-insensitive) against the day's
+   * `workDescription`, the author's display name and a date string in
+   * the YYYY-MM-DD form so users can paste a date and find that day.
+   */
+  q?: string;
+  /** Sign / lock state. "all" disables the filter. */
+  status?: ReportStatusFilter;
+}
+
 /**
- * List a project's daily reports (newest first), scope-enforced. Returns
- * an empty array shape only after access is confirmed; access failures
- * throw `ProjectNotAccessibleError`.
+ * List a project's daily reports (newest first), scope-enforced.
+ * Optional `filters` apply both a free-text search and a sign-state
+ * filter. Returns an empty array shape only after access is confirmed;
+ * access failures throw `ProjectNotAccessibleError`.
+ *
+ * The SQL query only filters on the sign-state because it's selective
+ * and indexable; the free-text needle matches in JS over the resulting
+ * rows. A daily-report list is bounded by the project's lifetime
+ * (a year of construction is ~250 working days), so an in-memory
+ * post-filter beats stitching together free-text predicates over
+ * mixed text and JSONB columns.
  */
 export async function listReportsForProject(
   projectId: string,
   user: SessionUser,
+  filters: ReportListFilters = {},
 ): Promise<ReportListItem[]> {
   await loadProjectScope(projectId, user);
 
+  const q = filters.q?.trim() ?? "";
+  const status = filters.status ?? "all";
+
+  const where: Prisma.DailyReportWhereInput = {
+    projectId,
+    deletedAt: null,
+  };
+  if (status === "signed") where.signedAt = { not: null };
+  if (status === "unsigned") where.signedAt = null;
+
   const rows = await prisma.dailyReport.findMany({
-    where: { projectId, deletedAt: null },
+    where,
     orderBy: { date: "desc" },
     select: {
       id: true,
       date: true,
+      workDescription: true,
       workersByTrade: true,
       weather: true,
       signedAt: true,
@@ -736,20 +769,54 @@ export async function listReportsForProject(
     },
   });
 
-  return rows.map((r) => {
-    const workers = parseWorkers(r.workersByTrade);
-    const weather = parseWeather(r.weather);
-    return {
-      id: r.id,
-      date: r.date,
-      authorName: r.author.displayName,
-      workersTotal: workers.reduce((sum, w) => sum + w.count, 0),
-      weatherSummary: weather.summary ?? "",
-      signed: r.signedAt !== null,
-      remarkCount: r._count.remarks,
-      photoCount: r._count.photos,
-    };
-  });
+  const mapped: (ReportListItem & { workDescription: string })[] = rows.map(
+    (r) => {
+      const workers = parseWorkers(r.workersByTrade);
+      const weather = parseWeather(r.weather);
+      return {
+        id: r.id,
+        date: r.date,
+        authorName: r.author.displayName,
+        workersTotal: workers.reduce((sum, w) => sum + w.count, 0),
+        weatherSummary: weather.summary ?? "",
+        signed: r.signedAt !== null,
+        remarkCount: r._count.remarks,
+        photoCount: r._count.photos,
+        workDescription: r.workDescription,
+      };
+    },
+  );
+
+  const filtered =
+    q.length > 0 ? mapped.filter((r) => matchesQuery(r, q)) : mapped;
+
+  // Strip the helper field before returning so the public shape stays
+  // ReportListItem.
+  return filtered.map((r) => ({
+    id: r.id,
+    date: r.date,
+    authorName: r.authorName,
+    workersTotal: r.workersTotal,
+    weatherSummary: r.weatherSummary,
+    signed: r.signed,
+    remarkCount: r.remarkCount,
+    photoCount: r.photoCount,
+  }));
+}
+
+/** Does `r` match the free-text needle (case-insensitive)? */
+function matchesQuery(
+  r: ReportListItem & { workDescription: string },
+  q: string,
+): boolean {
+  const needle = q.toLowerCase();
+  const dateStr = r.date.toISOString().slice(0, 10); // YYYY-MM-DD
+  return (
+    dateStr.includes(needle) ||
+    r.authorName.toLowerCase().includes(needle) ||
+    r.weatherSummary.toLowerCase().includes(needle) ||
+    r.workDescription.toLowerCase().includes(needle)
+  );
 }
 
 export interface RemarkView {

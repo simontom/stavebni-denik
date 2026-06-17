@@ -30,6 +30,7 @@ import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
 import { ProjectStatusButton } from "./ProjectStatusButton";
+import { ReportsFilterBar } from "./ReportsFilterBar";
 
 type ProjectTab = "details" | "reports" | "members";
 
@@ -37,6 +38,22 @@ function resolveTab(value: string | string[] | undefined): ProjectTab {
   if (value === "reports") return "reports";
   if (value === "members") return "members";
   return "details";
+}
+
+type ReportStatusFilter = "all" | "signed" | "unsigned";
+
+function resolveStatus(
+  value: string | string[] | undefined,
+): ReportStatusFilter {
+  if (value === "signed") return "signed";
+  if (value === "unsigned") return "unsigned";
+  return "all";
+}
+
+function readQuery(value: string | string[] | undefined): string {
+  if (typeof value !== "string") return "";
+  // Cap free-text length to keep the URL sane.
+  return value.slice(0, 200).trim();
 }
 
 export const dynamic = "force-dynamic";
@@ -85,7 +102,19 @@ export default async function ProjectDetailPage({
   const archived = project.deletedAt !== null;
 
   const addableUsers = canManage && !archived ? await listAddableUsers(id) : [];
-  const reports = tab === "reports" ? await listReportsForProject(id, user) : [];
+  const reportsQuery = readQuery(sp.q);
+  const reportsStatus = resolveStatus(sp.status);
+  const filteredReports =
+    tab === "reports"
+      ? await listReportsForProject(id, user, {
+          q: reportsQuery,
+          status: reportsStatus,
+        })
+      : [];
+  const totalReports =
+    tab === "reports" && (reportsQuery.length > 0 || reportsStatus !== "all")
+      ? (await listReportsForProject(id, user)).length
+      : filteredReports.length;
   const canCreate =
     tab === "reports" && !archived ? await canCreateReport(id, user) : false;
   const todayDateStr = formatDateInput(new Date());
@@ -238,17 +267,27 @@ export default async function ProjectDetailPage({
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                Denní záznamy ({reports.length})
+                Denní záznamy ({filteredReports.length})
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              {reports.length === 0 ? (
+            <CardContent className="flex flex-col gap-4">
+              <ReportsFilterBar
+                projectId={id}
+                query={reportsQuery}
+                status={reportsStatus}
+                totalCount={totalReports}
+                filteredCount={filteredReports.length}
+              />
+
+              {filteredReports.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  Zatím žádný denní záznam.
+                  {totalReports === 0
+                    ? "Zatím žádný denní záznam."
+                    : "Žádný záznam neodpovídá filtru."}
                 </p>
               ) : (
                 <ul className="flex flex-col divide-y">
-                  {reports.map((r) => {
+                  {filteredReports.map((r) => {
                     const dateStr = formatDateInput(r.date);
                     return (
                       <li key={r.id} className="py-3">
