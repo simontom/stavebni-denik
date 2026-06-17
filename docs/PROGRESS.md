@@ -23,7 +23,7 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | 3 | RBAC a tamper-evident audit log (hash chain) | ✅ Hotovo |
 | 4 | Zakázky a identifikační údaje stavby | ✅ Hotovo |
 | 5 | Denní záznamy, fotky, počasí, checklist materiálu | ✅ Hotovo |
-| 6 | Podpisy, lock, PDF export a produkční hardening | 🚧 Probíhá (podpis/lock ✅, PDF/backup/monitoring ⬜) |
+| 6 | Podpisy, lock, PDF export a produkční hardening | 🚧 Probíhá (sign/lock + PDF + backup + Sentry ✅, smoke E2E ⬜) |
 
 ### Krok 3 — co je hotovo
 
