@@ -16,6 +16,7 @@ import {
   ImageTooLargeError,
   processImage,
 } from "@/server/images";
+import { parseExifSafely } from "@/server/exif";
 import {
   deletePhotoVariants,
   resolvePhotoAbsolutePath,
@@ -117,6 +118,8 @@ function photoForAudit(p: Photo) {
     width: p.width,
     height: p.height,
     bytes: p.bytes,
+    capturedAt: p.capturedAt ? p.capturedAt.toISOString() : null,
+    gps: p.gps,
     uploadedById: p.uploadedById,
     deletedAt: p.deletedAt ? p.deletedAt.toISOString() : null,
   };
@@ -161,6 +164,11 @@ export async function uploadPhoto(opts: {
   });
 
   const processed = await processImage(buffer);
+  // Extract EXIF capturedAt + GPS from the ORIGINAL bytes — `processed.main`
+  // already had EXIF stripped by `processImage`. This step is best-effort
+  // (returns nulls on any failure) so screenshots and other EXIF-less
+  // photos still upload cleanly.
+  const exif = await parseExifSafely(buffer);
   const stored = await writePhotoVariants({
     projectId: reportCtx.projectId,
     reportId: reportCtx.reportId,
@@ -188,6 +196,8 @@ export async function uploadPhoto(opts: {
             height: processed.height,
             bytes: stored.bytes,
             uploadedById: user.id,
+            capturedAt: exif.capturedAt,
+            gps: exif.gps ?? undefined,
           },
         }),
     );
@@ -280,6 +290,8 @@ export interface PhotoListItem {
   height: number;
   bytes: number;
   createdAt: Date;
+  capturedAt: Date | null;
+  gps: { lat: number; lon: number } | null;
   uploadedByName: string;
 }
 
@@ -307,8 +319,20 @@ export async function listPhotosForReport(opts: {
     height: r.height,
     bytes: r.bytes,
     createdAt: r.createdAt,
+    capturedAt: r.capturedAt,
+    gps: coerceGpsJson(r.gps),
     uploadedByName: r.uploader.displayName,
   }));
+}
+
+/** Narrow the persisted JSON gps shape back into our typed pair. */
+function coerceGpsJson(value: unknown): { lat: number; lon: number } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const rec = value as Record<string, unknown>;
+  if (typeof rec.lat === "number" && typeof rec.lon === "number") {
+    return { lat: rec.lat, lon: rec.lon };
+  }
+  return null;
 }
 
 export type PhotoVariant = "main" | "thumb";

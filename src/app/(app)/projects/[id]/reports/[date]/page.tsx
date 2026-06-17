@@ -277,37 +277,46 @@ export default async function ReportPage({ params }: PageProps) {
             <p className="text-sm text-muted-foreground">Žádné fotografie.</p>
           ) : (
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-              {photos.map((p, i) => (
-                <li
-                  key={p.id}
-                  className="group relative aspect-square overflow-hidden rounded-md border"
-                >
-                  <a
-                    href={`/api/photos/${p.id}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block h-full w-full"
+              {photos.map((p, i) => {
+                const captionParts: string[] = [`Fotka ${i + 1}`];
+                if (p.capturedAt) {
+                  captionParts.push(`pořízeno ${formatDateTime(p.capturedAt)}`);
+                }
+                captionParts.push(`nahrál ${p.uploadedByName}`);
+                const caption = captionParts.join(" · ");
+                return (
+                  <li
+                    key={p.id}
+                    className="group relative aspect-square overflow-hidden rounded-md border"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/photos/${p.id}?variant=thumb`}
-                      alt={`Fotografie ${i + 1} z ${formatDate(report.date)}`}
-                      loading="lazy"
-                      className="h-full w-full object-cover transition group-hover:scale-105"
-                    />
-                  </a>
-                  {canDeletePhotos && (
-                    <div className="absolute top-1 right-1 opacity-0 transition group-hover:opacity-100">
-                      <DeletePhotoButton
-                        photoId={p.id}
-                        projectId={id}
-                        date={dateStr}
-                        caption={`#${i + 1}`}
+                    <a
+                      href={`/api/photos/${p.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block h-full w-full"
+                      title={caption}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/photos/${p.id}?variant=thumb`}
+                        alt={caption}
+                        loading="lazy"
+                        className="h-full w-full object-cover transition group-hover:scale-105"
                       />
-                    </div>
-                  )}
-                </li>
-              ))}
+                    </a>
+                    {canDeletePhotos && (
+                      <div className="absolute top-1 right-1 opacity-0 transition group-hover:opacity-100">
+                        <DeletePhotoButton
+                          photoId={p.id}
+                          projectId={id}
+                          date={dateStr}
+                          caption={`#${i + 1}`}
+                        />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
           {canUploadPhotos && <PhotoUploader reportId={report.id} />}
