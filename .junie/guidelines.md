@@ -7,7 +7,7 @@ then read the linked docs before changing code.
 
 Electronic **construction diary** (Czech "stavební deník") compliant with
 § 157 of the Building Act (Act 283/2021 Sb.) and Annex 16 of Decree 499/2006 Sb.
-Single-tenant, deployed to Fly.io / Railway, photos on a local `/data` volume,
+Single-tenant, deployed to Fly.io, photos on a local `/data` volume,
 tamper-evident audit log via a SHA-256 hash chain.
 
 ## Source of truth (read in this order)

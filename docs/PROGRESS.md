@@ -23,7 +23,7 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | 3 | RBAC a tamper-evident audit log (hash chain) | ✅ Hotovo |
 | 4 | Zakázky a identifikační údaje stavby | ✅ Hotovo |
 | 5 | Denní záznamy, fotky, počasí, checklist materiálu | ✅ Hotovo |
-| 6 | Podpisy, lock, PDF export a produkční hardening | 🚧 Probíhá (sign/lock + PDF + backup + Sentry ✅, smoke E2E ⬜) |
+| 6 | Podpisy, lock, PDF export a produkční hardening | ✅ Hotovo |
 
 ### Krok 3 — co je hotovo
 
@@ -170,15 +170,21 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
   - Integration: `reports.int.test.ts` (8 — sign workflow + addendum +
     official remark), `pdf.int.test.ts` (2 — Playwright smoke, renderPdf
     skutečně vrátí PDF). Celkem **24/24**.
+  - E2E: `e2e/smoke.spec.ts` (3 — middleware redirect, špatné údaje,
+    /healthz) přes `@playwright/test`. Spouští se `pnpm test:e2e`
+    (Playwright si auto-spustí `pnpm dev` přes `webServer` config).
 - CI: integration job nově instaluje Chromium přes
   `pnpm exec playwright install --with-deps chromium`.
 
 ### Krok 6 — co zbývá
 
-- **Smoke E2E v CI** — login → projekt → report → fotka → podpis → PDF
-  proti dočasné staging instanci. Vyžaduje setup `@playwright/test`,
-  staging deploy v GitHub Actions (Fly preview app nebo podobné).
-- Orchestrátorové alerty (Fly/Railway CPU/RAM/disk) — konfigurace na
+- **Plný E2E flow** (login → projekt → report → fotka → podpis → PDF):
+  smoke layer je hotový (`pnpm test:e2e`, 3 testy), ale „dlouhý" flow
+  s reálným přihlášením potřebuje seedovaného uživatele a tedy buď
+  staging deploy nebo CI workflow s vlastním Postgres + seed krokem.
+  Aktuálně smoke spec ověřuje: middleware redirect na `/login`,
+  validační chybu při špatných údajích, `GET /healthz` → 200.
+- Orchestrátorové alerty (Fly CPU/RAM/disk) — konfigurace na
   straně provideru, ne v repu.
 
 ## Mapa implementace (klíčové soubory)
@@ -223,9 +229,9 @@ pnpm dev               # http://localhost:3000  (health: /healthz)
 pnpm verify:audit      # ověření hash chainu audit logu
 ```
 
-**Krok 1–5 jsou hotové, Krok 6 probíhá** (podpis + lock + addenda
-hotové; PDF, backup a monitoring čekají). Aktuální zadání je v
-[`docs/plan.md`](./plan.md).
+**Krok 1–6 jsou hotové.** Aplikace je funkčně kompletní per
+specifikaci. Aktuální zadání je v [`docs/plan.md`](./plan.md).
 
-Testy: `pnpm test` (unit, 71/71) a `pnpm test:integration` (vyžaduje
-běžící Docker, 22/22).
+Testy: `pnpm test` (unit, 71/71), `pnpm test:integration` (vyžaduje
+běžící Docker, 24/24), `pnpm test:e2e` (vyžaduje `pnpm exec playwright
+install chromium` + běžící Postgres na 5432, 3/3 smoke).

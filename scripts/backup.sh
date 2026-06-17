@@ -14,7 +14,7 @@
 #
 # Uses restic for deduplicated, encrypted snapshots. Restic env vars
 # (RESTIC_REPOSITORY, RESTIC_PASSWORD plus B2_* / AWS_* credentials for
-# the chosen backend) come from the Fly secrets / Railway env. See
+# the chosen backend) come from the Fly secrets store. See
 # README "Backup & restore" for the runbook.
 #
 # Exit code is non-zero on ANY failure so the orchestrator can alert.

@@ -10,7 +10,7 @@
 ### Overview & Goals
 Jednoduchá webová aplikace pro vedení **stavebního deníku** dle § 157 stavebního zákona (zákon č. 283/2021 Sb.) a přílohy č. 16 vyhlášky č. 499/2006 Sb. v platném znění. Cíl: nahradit papírový deník elektronickou verzí, která splní zákonné náležitosti, je použitelná z mobilního prohlížeče na stavbě a zabezpečí prokazatelnou neporušitelnost záznamů.
 
-Aplikace běží jako **single-tenant** instance jedné firmy na Fly.io nebo Railway, fotografie se ukládají na perzistentní volume vedle aplikace, audit log používá hash chain pro tamper-evidence.
+Aplikace běží jako **single-tenant** instance jedné firmy na Fly.io, fotografie se ukládají na perzistentní volume vedle aplikace, audit log používá hash chain pro tamper-evidence.
 
 ### Scope
 
@@ -97,7 +97,7 @@ Projekt začíná na zelené louce. Repo `nessenceai/mn4-hlaseni` není dostupn�
 - **Auth**: vlastní implementace s `Auth.js v5` (next-auth) Credentials providerem, `argon2id` hashování přes balíček `@node-rs/argon2`, sessions v Postgres tabulce, HTTP-only secure cookies. Žádní externí provideři.
 - **RBAC**: tabulka `role` + enum-like seed (`BOSS`, `WORKER`, `GUEST`), permissions kontrolovány v service layeru (`assertCan(user, 'report.sign', report)`), middleware na route úrovni je jen druhá obrana.
 - **Audit log s hash chain**: každá mutace prochází `withAudit(...)` wrapperem v service layeru. Tabulka `audit_log` je append-only — Postgres role aplikace má `INSERT, SELECT` práva, ale `REVOKE UPDATE, DELETE`. Každý řádek nese `prev_hash` (= hash předchozího řádku) a `row_hash` (= sha256 ze serializovaného obsahu + `prev_hash`). Cron job (denně) ověří celou řetěz a zaloguje výsledek.
-- **Storage fotek**: lokální Fly/Railway volume v `/data/photos/{projectId}/{reportId}/{uuid}.{jpg|webp}`, metadata v Postgres tabulce `photo`. Soubory čte jen aplikace, ven se servírují přes auth-gated route.
+- **Storage fotek**: lokální Fly volume v `/data/photos/{projectId}/{reportId}/{uuid}.{jpg|webp}`, metadata v Postgres tabulce `photo`. Soubory čte jen aplikace, ven se servírují přes auth-gated route.
 - **Image processing**: `sharp` — resize na 1920 px delší stranu (JPEG q=82) + 400 px thumbnail; EXIF se strippuje kromě `DateTimeOriginal` a `GPSLatitude/Longitude` (uložené do `photo.captured_at`, `photo.gps`).
 - **Weather snapshot**: Open-Meteo (free, bez API klíče). Když se vytvoří `daily_report`, server zavolá Open-Meteo s GPS stavby a uloží snapshot (teplota min/max, popis, vítr, srážky) do JSONB sloupce. Nikdy se nepřepisuje.
 - **PDF export**: Playwright v headless režimu renderuje `/print/project/{id}?from=...&to=...`, výstup je PDF s diakritikou + hash chain footerem každé stránky.
@@ -110,7 +110,7 @@ graph TD
   subgraph Client
     B[Browser - mobile/desktop]
   end
-  subgraph FlyApp[Fly.io / Railway container]
+  subgraph FlyApp[Fly.io container]
     NX[Next.js 15 App Router]
     AUTH[Auth.js Credentials]
     SVC[Service layer + withAudit]
@@ -353,7 +353,7 @@ repo-root/
 │  ├─ verify-audit.ts        // cron entry-point
 │  └─ seed.ts
 ├─ Dockerfile
-├─ fly.toml / railway.json
+├─ fly.toml
 ├─ .env.example
 └─ README.md
 ```
@@ -398,11 +398,11 @@ Každá stage v Delivery Plan obsahuje vlastní testy. Důraz je na **audit log 
 # Delivery Steps
 
 ### ✓ Step 1: Bootstrap, infra a deploy-skeleton
-Zelená louka Next.js projektu v `/Users/saymoon/Work-GIT/slack/stavebni-denik`, který se po dokončení této fáze nasadí na Fly.io/Railway s prázdnou databází a perzistentním volume a vrací `200 OK` na `/healthz`.
+Zelená louka Next.js projektu v `/Users/saymoon/Work-GIT/slack/stavebni-denik`, který se po dokončení této fáze nasadí na Fly.io s prázdnou databází a perzistentním volume a vrací `200 OK` na `/healthz`.
 
 - Vytvořit adresář `/Users/saymoon/Work-GIT/slack/stavebni-denik`, inicializovat git repozitář (`git init`, `main` branch) a v něm inicializovat **Next.js 15** (App Router, TypeScript, ESLint, Prettier) s **Tailwind 4** a **shadcn/ui** baseline.
 - Nastavit **Prisma 5** s Postgres datasource, prvotní `schema.prisma` (jen `User` a `Session`) a `prisma migrate`.
-- `Dockerfile` (multi-stage, Node 22, Playwright deps) + `fly.toml` (nebo `railway.json`) s volumem mountovaným na `/data`.
+- `Dockerfile` (multi-stage, Node 22, Playwright deps) + `fly.toml` s volumem mountovaným na `/data`.
 - `.env.example` (DATABASE_URL, AUTH_SECRET, OPEN_METEO_BASE, DATA_DIR).
 - Healthcheck endpoint `/healthz` (DB ping + volume write probe).
 - Layout `app/layout.tsx` s českou lokalizací, Europe/Prague timezone, globálním Toaster.
@@ -463,6 +463,6 @@ BOSS podepíše denní záznam a tím ho uzamkne; produkční instance je nasaze
 - Playwright PDF: route `/print/project/[id]?from=&to=`, `src/server/pdf.ts` spouští Chromium headless v containeru, výstup obsahuje hlavičku stavby, denní záznamy, fotky (thumb), počasí, podpisy a v patičce každého listu `audit row hash` posledního zahrnutého řádku.
 - Tlačítko „Stáhnout PDF za období“ na `/projects/[id]`.
 - Backup job (nightly): `pg_dump | gzip | restic` na Backblaze B2 nebo R2 (přes env credentials), spolu s `/data/photos`. Restore runbook v `README.md`.
-- Monitoring: Sentry (errors), `/healthz` probe, Fly/Railway alerty na CPU/RAM/disk.
+- Monitoring: Sentry (errors), `/healthz` probe, Fly alerty na CPU/RAM/disk.
 - Smoke E2E v CI proti dočasné staging instanci: login → vytvoř projekt → vytvoř report → upload fotky → podepiš → stáhni PDF.
 - README s deploy guide, seed scriptem (1× BOSS účet), návodem k obnově.

@@ -10,7 +10,7 @@
 .idea
 *.swp
 
-# Local secrets — production env vars come from Fly/Railway.
+# Local secrets — production env vars come from Fly secrets.
 .env
 .env.*
 !.env.example

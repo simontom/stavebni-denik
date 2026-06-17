@@ -107,7 +107,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modul
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated/prisma ./src/generated/prisma
 
 # Backup script needs to live in the runner image so a Fly machine
-# schedule / Railway cron can invoke `/app/scripts/backup.sh` directly.
+# schedule can invoke `/app/scripts/backup.sh` directly.
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/backup.sh ./scripts/backup.sh
 RUN chmod +x /app/scripts/backup.sh
 

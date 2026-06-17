@@ -16,11 +16,11 @@ instance = jedna firma.
 | Auth             | Auth.js v5 Credentials + argon2id (Stage 2)                    |
 | RBAC             | Service-layer `assertCan(...)` (Stage 3)                       |
 | Audit log        | Append-only `audit_log` s hash chain (Stage 3)                 |
-| Storage fotek    | Lokální Fly/Railway volume `/data`, sharp resize (Stage 5)     |
+| Storage fotek    | Lokální Fly volume `/data`, sharp resize (Stage 5)             |
 | Počasí           | Open-Meteo (zdarma, bez API klíče) (Stage 5)                   |
 | PDF              | Playwright headless Chromium (Stage 6)                         |
 | UI               | Tailwind 4 + shadcn/ui (Radix) + sonner                        |
-| Hosting          | Fly.io / Railway, Frankfurt region                             |
+| Hosting          | Fly.io, Frankfurt region                                       |
 
 ## Local development
 
@@ -167,7 +167,7 @@ PII (cesty, request body) se **nenahrávají** (`sendDefaultPii: false`)
 neobjeví.
 
 Healthcheck `/healthz` (DB + volume probe) běží průběžně z orchestrátoru
-a doporučené alerty na Fly/Railway pokrývají CPU/RAM/disk.
+a doporučené alerty na Fly pokrývají CPU/RAM/disk.
 
 ## Project layout
 
@@ -207,5 +207,6 @@ Detailní plán v [`docs/plan.md`](docs/plan.md), živý stav v
 - **Stage 3 — RBAC a tamper-evident audit log** — ✅ hotovo.
 - **Stage 4 — Zakázky a identifikační údaje stavby** — ✅ hotovo.
 - **Stage 5 — Denní záznamy, fotky, počasí, materiál** — ✅ hotovo.
-- **Stage 6 — Podpisy, lock, PDF export a produkční hardening** — 🚧
-  podpisy + PDF + backup hotové; Sentry monitoring a smoke E2E čekají.
+- **Stage 6 — Podpisy, lock, PDF export a produkční hardening** — ✅
+  hotovo (sign + PDF + backup + Sentry + smoke e2e foundation;
+  rozšířený login-to-PDF E2E čeká na staging deploy).

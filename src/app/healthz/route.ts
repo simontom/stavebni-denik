@@ -51,7 +51,7 @@ async function probeVolume(): Promise<ProbeResult> {
 }
 
 /**
- * Health-check endpoint consumed by Fly.io / Railway probes.
+ * Health-check endpoint consumed by Fly.io probes.
  *
  * Returns 200 only when both Postgres and the persistent volume are
  * reachable. Anything else returns 503 — orchestrator will restart /
