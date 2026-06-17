@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ChevronLeft, CloudSun, Lock, Pencil } from "lucide-react";
+import { ChevronLeft, CloudSun, ImageIcon, Lock, Pencil } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, formatDateTime, pragueDayStart } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import { canCreateReport, getReportForUser } from "@/server/services/reports";
+import { listPhotosForReport } from "@/server/services/photos";
 
+import { DeletePhotoButton } from "../DeletePhotoButton";
+import { PhotoUploader } from "../PhotoUploader";
 import { ReportForm } from "../ReportForm";
 import { EMPTY_REPORT_VALUES } from "../report-form-types";
 import { createReportAction } from "../actions";
@@ -89,6 +92,12 @@ export default async function ReportPage({ params }: PageProps) {
   }
 
   const { report, weather, workers, remarks, materials, locked } = detail;
+  const photos = await listPhotosForReport({ reportId: report.id, user });
+  const canUploadPhotos =
+    (user.role === "BOSS" || user.role === "WORKER") &&
+    detail.isMember &&
+    !locked;
+  const canDeletePhotos = user.role === "BOSS" && detail.isMember && !locked;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -254,6 +263,54 @@ export default async function ReportPage({ params }: PageProps) {
               resolved: m.resolved,
             }))}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ImageIcon className="size-4" aria-hidden /> Fotografie ({photos.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {photos.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Žádné fotografie.</p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {photos.map((p, i) => (
+                <li
+                  key={p.id}
+                  className="group relative aspect-square overflow-hidden rounded-md border"
+                >
+                  <a
+                    href={`/api/photos/${p.id}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block h-full w-full"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/photos/${p.id}?variant=thumb`}
+                      alt={`Fotografie ${i + 1} z ${formatDate(report.date)}`}
+                      loading="lazy"
+                      className="h-full w-full object-cover transition group-hover:scale-105"
+                    />
+                  </a>
+                  {canDeletePhotos && (
+                    <div className="absolute top-1 right-1 opacity-0 transition group-hover:opacity-100">
+                      <DeletePhotoButton
+                        photoId={p.id}
+                        projectId={id}
+                        date={dateStr}
+                        caption={`#${i + 1}`}
+                      />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {canUploadPhotos && <PhotoUploader reportId={report.id} />}
         </CardContent>
       </Card>
     </div>

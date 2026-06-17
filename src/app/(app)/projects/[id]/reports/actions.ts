@@ -19,6 +19,7 @@ import {
   setManualWeather,
   updateReport,
 } from "@/server/services/reports";
+import { softDeletePhoto } from "@/server/services/photos";
 
 import type { ReportFormState } from "./report-form-types";
 
@@ -182,6 +183,23 @@ export async function setManualWeatherAction(data: FormData): Promise<void> {
       ctx,
       user,
     });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+/** Soft-delete a photo (BOSS-only on unlocked reports). */
+export async function deletePhotoAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const photoId = String(data.get("photoId") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!photoId) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await softDeletePhoto({ photoId, ctx, user });
   } catch {
     return;
   }

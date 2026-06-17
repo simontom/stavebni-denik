@@ -5,7 +5,7 @@
 > v [`docs/plan.md`](./plan.md) (verzovaná kopie pracovního plánu Junie z
 > `~/.junie/plans/stavebni-denik-nextjs.md`).
 
-**Poslední aktualizace:** 2026-06-16
+**Poslední aktualizace:** 2026-06-17
 **Repozitář:** `/Users/saymoon/Work-GIT/slack/stavebni-denik` (větev `main`)
 
 ## Tech stack (zkráceně)
@@ -22,7 +22,7 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | 2 | Autentizace a správa uživatelů s generovaným heslem | ✅ Hotovo |
 | 3 | RBAC a tamper-evident audit log (hash chain) | ✅ Hotovo |
 | 4 | Zakázky a identifikační údaje stavby | ✅ Hotovo |
-| 5 | Denní záznamy, fotky, počasí, checklist materiálu | ⬜ Čeká |
+| 5 | Denní záznamy, fotky, počasí, checklist materiálu | ✅ Hotovo |
 | 6 | Podpisy, lock, PDF export a produkční hardening | ⬜ Čeká |
 
 ### Krok 3 — co je hotovo
@@ -87,6 +87,53 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 - Nic — krok je dokončen. Denní záznamy (vazba `report → project`) a snímek
   počasí z uložených GPS souřadnic přijdou v Kroku 5.
 
+### Krok 5 — co je hotovo
+
+- Datová vrstva: modely `DailyReport`, `Photo`, `Remark`, `MaterialNeed`,
+  `Addendum` v `prisma/schema.prisma` (unique `(projectId, date)`, soft delete,
+  signature/lock sloupce už zavedené pro Krok 6) + migrace
+  `prisma/migrations/20260616154300_daily_reports`.
+- Snapshot počasí: `src/server/weather.ts` — Open-Meteo daily klient s 5 s
+  timeoutem, čistá `parseOpenMeteoDaily` a `unavailableWeather` fallback;
+  zachycený snapshot se po vytvoření už nepřepisuje (důkazní obsah dne).
+- Service `src/server/services/reports.ts` — `createReport`, `updateReport`,
+  `setManualWeather`, `addRemark`, `addMaterialNeed`, `setMaterialResolved`,
+  `listReportsForProject`, `getReportForUser`, `canCreateReport`. Všechny
+  mutace přes `withAudit` a scope přes `canAccessProject`.
+- Service `src/server/services/photos.ts` + `src/server/images.ts` (sharp
+  pipeline: rotate → resize 1920 px main + 400 px thumb → JPEG, EXIF stripped)
+  + `src/server/photo-storage.ts` (DATA_DIR layout `photos/{projectId}/{reportId}/{uuid}.jpg`,
+  path-traversal guard, rollback při selhání transakce).
+- API: `POST /api/photos/upload` (multipart, per-soubor chyby, scope), `GET
+  /api/photos/[id]?variant=thumb` (auth-gated stream přes `Readable.toWeb`).
+- UI: `ReportForm`, `ReportPanels` (Remark / Material / ManualWeather),
+  `PhotoUploader` (multi-file fetch + `router.refresh()`),
+  `DeletePhotoButton` (BOSS, server action), `NewReportDayPicker` na
+  detailu zakázky; stránky `projects/[id]/reports/[date]` (view + create) a
+  `[date]/edit` (BOSS / autor). Tab „Záznamy“ v detailu zakázky s
+  chronologickým výpisem.
+- RBAC matrix rozšířen o `report.*`, `remark.create`, `material.*`,
+  `photo.upload`, `photo.delete`. Lock check (`reportLocked`) ve všech
+  mutacích kromě `remark.create` (oficiální TDS návštěvy po podpisu).
+- Testy:
+  - Unit: `weather.test.ts` (12) — parsing, summary, fallback, fetch
+    s mockovaným `globalThis.fetch`; `images.test.ts` (6) — resize,
+    error mapping; `photo-storage.test.ts` (5) — FS layout + traversal
+    guard.
+  - Integration: `test/integration/reports.int.test.ts` (Testcontainers
+    Postgres, vyžaduje Docker) — scope, duplicate (projectId, date),
+    GUEST jen `remark.create`, lock blokuje update/material ale ne
+    remark, audit chain zůstává validní.
+
+### Krok 5 — co zbývá
+
+- **EXIF metadata**: `Photo.capturedAt` a `Photo.gps` zůstávají `null`
+  — implementace vyžaduje samostatnou knihovnu (např. `exifr`) a je
+  odložená na pozdější iteraci. Sloupce v DB i UI jsou připravené.
+- **Photo upload integration test**: pokrytí `/api/photos/upload` jako
+  HTTP volání (sharp + FS + DB najednou) je smysluplné dodat v rámci
+  Kroku 6, kde už bude e2e PDF flow.
+
 ## Mapa implementace (klíčové soubory)
 
 | Oblast | Soubory |
@@ -99,6 +146,8 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | Testy | `vitest.config.ts`, `vitest.integration.config.ts`, `test/unit/*`, `test/integration/*`, `test/stubs/*`, co-located `src/**/*.test.ts` |
 | Správa uživatelů | `src/server/services/users.ts`, `src/app/(app)/admin/users/*` |
 | Zakázky | `src/server/services/projects.ts`, `src/app/(app)/projects/*`, `prisma/migrations/20260616141700_projects` |
+| Denní záznamy | `src/server/services/reports.ts`, `src/server/weather.ts`, `src/app/(app)/projects/[id]/reports/*`, `prisma/migrations/20260616154300_daily_reports` |
+| Fotografie | `src/server/services/photos.ts`, `src/server/images.ts`, `src/server/photo-storage.ts`, `src/app/api/photos/upload/route.ts`, `src/app/api/photos/[id]/route.ts`, `src/app/(app)/projects/[id]/reports/{PhotoUploader,DeletePhotoButton}.tsx` |
 | UI baseline | `src/app/layout.tsx`, `src/app/globals.css`, `src/components/ui/*`, `src/components/app-header.tsx` |
 | Health / lib | `src/app/healthz/route.ts`, `src/lib/{db,env,dates,utils}.ts` |
 
@@ -127,8 +176,8 @@ pnpm dev               # http://localhost:3000  (health: /healthz)
 pnpm verify:audit      # ověření hash chainu audit logu
 ```
 
-**Kroky 1–4 jsou hotové.** Pokračuje se **Krokem 5** (denní záznamy, fotky,
-počasí, checklist materiálu). Aktuální zadání kroku je v
+**Krok 1–5 jsou hotové.** Pokračuje se **Krokem 6** (podpisy, lock, PDF
+export, produkční hardening). Aktuální zadání kroku je v
 [`docs/plan.md`](./plan.md).
 
 Testy: `pnpm test` (unit) a `pnpm test:integration` (vyžaduje běžící Docker).
