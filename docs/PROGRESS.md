@@ -193,7 +193,7 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 | ------ | ------- |
 | Infra / config | `Dockerfile`, `fly.toml`, `docker-compose.yml`, `next.config.ts`, `prisma.config.ts`, `.env.example`, `.github/workflows/ci.yml` |
 | DB schema + migrace | `prisma/schema.prisma`, `prisma/migrations/*` |
-| Auth | `src/server/auth.ts`, `src/server/auth.config.ts`, `src/middleware.ts`, `src/app/(auth)/login/*`, `src/app/(auth)/first-password-change/*`, `src/app/api/auth/[...nextauth]/route.ts` |
+| Auth | `src/server/auth.ts`, `src/server/auth.config.ts`, `src/proxy.ts`, `src/app/(auth)/login/*`, `src/app/(auth)/first-password-change/*`, `src/app/api/auth/[...nextauth]/route.ts` |
 | Bezpečnost | `src/server/rate-limit.ts`, `src/lib/crypto.ts`, `src/lib/password-gen.ts` |
 | RBAC + audit | `src/server/rbac.ts`, `src/server/permissions.ts`, `src/server/audit.ts`, `src/server/audit-context.ts`, `src/server/audit-hash.ts`, `src/server/audit-verify.ts`, `src/server/audit-alert.ts`, `src/server/mailer.ts`, `src/server/services/audit.ts`, `scripts/verify-audit.ts`, `scripts/sql/bootstrap-app-role.sql`, `.github/workflows/audit-verify.yml` |
 | Testy | `vitest.config.ts`, `vitest.integration.config.ts`, `test/unit/*`, `test/integration/*`, `test/stubs/*`, co-located `src/**/*.test.ts` |

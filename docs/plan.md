@@ -415,7 +415,7 @@ BOSS se umí přihlásit, vytvoří přes UI WORKERa/GUESTa, dostane vygenerovan
 - HTTP-only secure cookie, CSRF token, security headers (CSP, HSTS, X-Frame-Options).
 - Rate limit na `/api/auth/...` přes `iron-session`-style sliding window v Postgresu.
 - `lib/password-gen.ts` — 12+ znaků, mix tříd; `mustChangePwd=true` po vytvoření.
-- Stránky `/login`, `/first-password-change`, redirect middleware.
+- Stránky `/login`, `/first-password-change`, redirect přes proxy (`src/proxy.ts`).
 - Stránky `/admin/users` (BOSS-only): list, modal „Nový uživatel“ (nickname, displayName, role, ČKAIT u BOSS), po vytvoření zobrazí heslo + tlačítko „Zkopírovat“, deaktivace přes `isActive`.
 - Soft delete only, žádné tvrdé mazání uživatelů.
 - Unit testy pro `password-gen` a `argon2` wrapper, integration test pro flow `create → first login → change password`.

@@ -1,7 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 
 /**
- * Edge-safe slice of the Auth.js config — usable from `middleware.ts`,
+ * Edge-safe slice of the Auth.js config — usable from `proxy.ts`,
  * which runs in the Edge runtime and therefore cannot import Node-only
  * modules like `@node-rs/argon2`. The full config (with Credentials
  * provider) lives in `./auth.ts` and extends this base.

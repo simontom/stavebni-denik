@@ -3,9 +3,10 @@ import NextAuth from "next-auth";
 import { authConfig } from "@/server/auth.config";
 
 /**
- * Edge middleware — runs on every request, gates access to protected
- * routes via the `authorized` callback in `auth.config.ts`. Pure JWT
- * verification, no Node-only imports.
+ * Edge proxy (Next.js 16+; renamed from "middleware" in v16) — runs on
+ * every request, gates access to protected routes via the `authorized`
+ * callback in `auth.config.ts`. Pure JWT verification, no Node-only
+ * imports.
  */
 const { auth } = NextAuth(authConfig);
 
