@@ -81,6 +81,70 @@ fly deploy
 Migrace běží automaticky při startu kontejneru
 (`prisma migrate deploy && node server.js` v `Dockerfile`).
 
+## Backup & restore
+
+Nightly snapshot Postgres dumpu + `/data/photos` přes
+[restic](https://restic.net/) do Backblaze B2 / Cloudflare R2 / S3.
+Skript je v `scripts/backup.sh` a v produkčním image je zkopírovaný
+do `/app/scripts/backup.sh`.
+
+### Konfigurace (Fly secrets)
+
+```bash
+fly secrets set \
+  RESTIC_REPOSITORY="b2:stavebni-denik-backup:/restic" \
+  RESTIC_PASSWORD="$(openssl rand -base64 32)" \
+  B2_ACCOUNT_ID="<keyID>" \
+  B2_ACCOUNT_KEY="<applicationKey>"
+```
+
+(Pro S3/R2 použij `s3:https://endpoint/bucket` a `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`.) `RESTIC_PASSWORD` si **schovej** — bez něj
+zálohy nedešifruješ.
+
+### Spuštění zálohy
+
+```bash
+# Ručně z běžící Fly machine (jednorázový dry-run):
+fly ssh console -C "/app/scripts/backup.sh"
+
+# Nebo přes naplánovanou Fly machine (nightly v 02:00 UTC):
+fly machine run . --schedule daily --command "/app/scripts/backup.sh"
+```
+
+První běh inicializuje restic repo a uloží `RESTIC_PASSWORD` lokálně
+zakešovaný; pak už jen přidává deduplikované snapshoty.
+
+### Retention
+
+`scripts/backup.sh` po každém běhu spustí `restic forget --prune` s:
+
+- 7 denních snapshotů
+- 4 týdenní
+- 12 měsíčních
+
+### Restore (runbook)
+
+```bash
+# 1. Vyber snapshot, ze kterého chceš obnovit:
+restic snapshots --tag stavebni-denik-nightly
+
+# 2. Obnov dump + fotky do /restore:
+restic restore <snapshot-id> --target /restore
+
+# 3. Restartuj DB v čisté podobě a načti dump:
+gunzip -c /restore/tmp/<...>/db.sql.gz | psql "$DATABASE_URL"
+
+# 4. Vrať fotky na perzistentní volume:
+rsync -a /restore/data/photos/ /data/photos/
+
+# 5. Ověř integritu audit chainu po restoru:
+pnpm verify:audit
+```
+
+Pokud `verify:audit` nahlásí porušení, je obnovený stav nedůvěryhodný
+— vyber starší snapshot a opakuj.
+
 ## Project layout
 
 ```
@@ -116,5 +180,8 @@ Detailní plán v [`docs/plan.md`](docs/plan.md), živý stav v
 
 - **Stage 1 — Bootstrap, infra a deploy-skeleton** — ✅ hotovo.
 - **Stage 2 — Autentizace a správa uživatelů** — ✅ hotovo.
-- **Stage 3 — RBAC a tamper-evident audit log** — 🚧 rozpracováno.
-- Stage 4–6 — čeká (zakázky → denní záznamy → podpisy/PDF/hardening).
+- **Stage 3 — RBAC a tamper-evident audit log** — ✅ hotovo.
+- **Stage 4 — Zakázky a identifikační údaje stavby** — ✅ hotovo.
+- **Stage 5 — Denní záznamy, fotky, počasí, materiál** — ✅ hotovo.
+- **Stage 6 — Podpisy, lock, PDF export a produkční hardening** — 🚧
+  podpisy + PDF + backup hotové; Sentry monitoring a smoke E2E čekají.

@@ -51,6 +51,8 @@ WORKDIR /app
 #   * Chromium (Playwright, used for PDF export in Stage 6)
 #   * sharp (libvips comes bundled with the npm prebuilt binary)
 #   * Postgres TLS via `pg`
+#   * `scripts/backup.sh` (postgresql-client for pg_dump, restic for
+#     deduplicated encrypted snapshots to B2/R2/S3)
 # `tini` makes PID 1 forward signals correctly to the Node server.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
@@ -74,7 +76,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libcairo2 \
       libasound2 \
       libatspi2.0-0 \
+      postgresql-client \
+      restic \
     && rm -rf /var/lib/apt/lists/*
+
+# Download the Chromium browser binary into a system-wide path so the
+# non-root `nextjs` user can find it via PLAYWRIGHT_BROWSERS_PATH. The
+# version MUST match the `playwright` npm version pinned in package.json,
+# otherwise Playwright's launcher will refuse to start.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+RUN mkdir -p $PLAYWRIGHT_BROWSERS_PATH \
+ && npx -y playwright@1.61.0 install chromium \
+ && chmod -R a+rX $PLAYWRIGHT_BROWSERS_PATH
 
 # Run as non-root.
 RUN groupadd --system --gid 1001 nodejs \
@@ -92,6 +105,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=nextjs:nodejs /app/src/generated/prisma ./src/generated/prisma
+
+# Backup script needs to live in the runner image so a Fly machine
+# schedule / Railway cron can invoke `/app/scripts/backup.sh` directly.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/backup.sh ./scripts/backup.sh
+RUN chmod +x /app/scripts/backup.sh
 
 # Volume mount target — photos, PDF exports, audit-verify log.
 RUN mkdir -p /data && chown -R nextjs:nodejs /data
