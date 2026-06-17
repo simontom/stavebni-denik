@@ -8,7 +8,8 @@ name: Audit verify
 # when SMTP_* / ALERT_EMAIL secrets are configured, the script also e-mails
 # the BOSS directly. Can be triggered manually via "Run workflow".
 #
-# Required repository secret:
+# Required repository secret (when missing, the workflow is silently
+# skipped — see the job-level `if:` guard below):
 #   AUDIT_DATABASE_URL  — connection string to the production database
 #                         (a read-only role is sufficient).
 # Optional secrets for the e-mail alert (otherwise the alert is skipped):
@@ -33,6 +34,11 @@ jobs:
     name: Verify audit-log hash chain
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Skip cleanly (yellow "Skipped" instead of red "Failed") when the
+    # secret is missing — typical for a fresh repo without a deployed
+    # production database. Configure AUDIT_DATABASE_URL in repo
+    # Settings → Secrets → Actions to enable nightly verification.
+    if: ${{ secrets.AUDIT_DATABASE_URL != '' }}
     env:
       DATABASE_URL: ${{ secrets.AUDIT_DATABASE_URL }}
       NEXT_PUBLIC_APP_NAME: Stavební deník
@@ -51,13 +57,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Guard — require AUDIT_DATABASE_URL
-        run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "::error::AUDIT_DATABASE_URL secret is not configured; cannot verify the audit log."
-            exit 1
-          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
