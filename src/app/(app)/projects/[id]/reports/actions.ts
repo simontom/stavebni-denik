@@ -8,14 +8,19 @@ import { getAuditContext } from "@/server/audit-context";
 import { ForbiddenError } from "@/server/permissions";
 import { requireUser } from "@/server/rbac";
 import {
+  InvalidRolloverTargetError,
+  MaterialAlreadyResolvedError,
+  MaterialNotFoundError,
   ReportExistsError,
   ReportLockedError,
+  TargetReportMissingError,
   addAddendum,
   addMaterialNeed,
   addRemark,
   createReport,
   reportFormSchema,
   normalizeReportForm,
+  rolloverMaterial,
   setMaterialResolved,
   setManualWeather,
   signReport,
@@ -190,6 +195,66 @@ export async function bulkResolveMaterialsAction(
     }
   }
   revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}
+
+export type RolloverState =
+  | { status: "idle" }
+  | { status: "ok" }
+  | { status: "error"; message: string };
+
+/**
+ * Roll a single open material need to a later day. Reads `materialId`
+ * + `targetDate` (YYYY-MM-DD) + `projectId` + `date` from the form.
+ * Returns a discriminated state so the calling component can surface
+ * the precise reason (locked target, invalid date, already resolved)
+ * rather than silently no-op'ing like the other panel actions.
+ */
+export async function rolloverMaterialAction(
+  _prev: RolloverState | undefined,
+  data: FormData,
+): Promise<RolloverState> {
+  const user = await requireUser();
+  const materialId = String(data.get("materialId") ?? "");
+  const targetDateStr = String(data.get("targetDate") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+
+  if (!materialId || !/^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
+    return { status: "error", message: "Vyberte cílový den." };
+  }
+
+  try {
+    const ctx = await getAuditContext();
+    await rolloverMaterial({
+      materialId,
+      targetDate: pragueDayStart(targetDateStr),
+      ctx,
+      user,
+    });
+  } catch (err) {
+    if (err instanceof ForbiddenError) {
+      return { status: "error", message: "Nemáte oprávnění přesunout položku." };
+    }
+    if (err instanceof MaterialNotFoundError) {
+      return { status: "error", message: err.message };
+    }
+    if (err instanceof MaterialAlreadyResolvedError) {
+      return { status: "error", message: err.message };
+    }
+    if (err instanceof InvalidRolloverTargetError) {
+      return { status: "error", message: err.message };
+    }
+    if (err instanceof TargetReportMissingError) {
+      return { status: "error", message: err.message };
+    }
+    if (err instanceof ReportLockedError) {
+      return { status: "error", message: err.message };
+    }
+    return { status: "error", message: "Přesunutí se nezdařilo." };
+  }
+
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+  return { status: "ok" };
 }
 
 /** Fill in the weather by hand when the automatic fetch failed. */

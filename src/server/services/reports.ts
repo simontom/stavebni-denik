@@ -164,6 +164,34 @@ export class ReportNotLockedError extends Error {
   }
 }
 
+export class MaterialNotFoundError extends Error {
+  code = "MaterialNotFound" as const;
+  constructor() {
+    super("Materiálový požadavek nebyl nalezen.");
+  }
+}
+
+export class MaterialAlreadyResolvedError extends Error {
+  code = "MaterialAlreadyResolved" as const;
+  constructor() {
+    super("Materiálový požadavek je už vyřízený.");
+  }
+}
+
+export class TargetReportMissingError extends Error {
+  code = "TargetReportMissing" as const;
+  constructor() {
+    super("Cílový den nemá denní záznam — vytvořte ho nejdřív.");
+  }
+}
+
+export class InvalidRolloverTargetError extends Error {
+  code = "InvalidRolloverTarget" as const;
+  constructor() {
+    super("Cílový den musí být pozdější než aktuální záznam.");
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -596,6 +624,126 @@ export async function setMaterialResolved(opts: {
 }
 
 /**
+ * Roll an unresolved material need forward to a later day.
+ *
+ * Atomically (one withAudit transaction, one `material.rollover` audit
+ * row) does two things:
+ *   1. Marks the source item resolved (so the original day's checklist
+ *      shows it as "vyřízeno přesunutím" — the audit log carries the
+ *      target id for full traceability),
+ *   2. Creates an identical `MaterialNeed` on the target day's report,
+ *      bumping `neededBy` to `max(originalNeededBy, targetDate)` so
+ *      the deadline isn't in the past on the new day.
+ *
+ * The target day must already have a (non-locked) report — we don't
+ * auto-create one because `workDescription` is required and the user
+ * would otherwise see an empty draft they didn't expect.
+ *
+ * Permissions: BOSS or WORKER member of the project (mirrors
+ * material.create + material.resolve). Throws on:
+ *  * source missing / soft-deleted → MaterialNotFoundError,
+ *  * source already resolved      → MaterialAlreadyResolvedError,
+ *  * target date ≤ source date    → InvalidRolloverTargetError,
+ *  * target report missing        → TargetReportMissingError,
+ *  * target report locked         → ReportLockedError.
+ */
+export async function rolloverMaterial(opts: {
+  materialId: string;
+  /** Prague midnight of the target day. */
+  targetDate: Date;
+  ctx: AuditContext;
+  user: SessionUser;
+}): Promise<{ newMaterialId: string; targetReportId: string }> {
+  const { materialId, targetDate, ctx, user } = opts;
+
+  const source = await prisma.materialNeed.findFirst({
+    where: { id: materialId, deletedAt: null },
+    include: {
+      report: { select: { id: true, projectId: true, date: true, lockedAt: true } },
+    },
+  });
+  if (!source) throw new MaterialNotFoundError();
+  if (source.resolved) throw new MaterialAlreadyResolvedError();
+  if (source.report.lockedAt) throw new ReportLockedError();
+  if (targetDate.getTime() <= source.report.date.getTime()) {
+    throw new InvalidRolloverTargetError();
+  }
+
+  const target = await prisma.dailyReport.findFirst({
+    where: {
+      projectId: source.report.projectId,
+      date: targetDate,
+      deletedAt: null,
+    },
+    select: { id: true, lockedAt: true },
+  });
+  if (!target) throw new TargetReportMissingError();
+  if (target.lockedAt) throw new ReportLockedError();
+
+  const { isMember } = await loadProjectScope(source.report.projectId, user);
+  // Rollover requires the union of resolve (on source) + create (on target).
+  assertCan(user, "material.create", {
+    projectMember: isMember,
+    reportLocked: false,
+  });
+  assertCan(user, "material.resolve", { projectMember: isMember });
+
+  // Bump deadline to the target day so the new row's neededBy isn't
+  // immediately in the past.
+  const newNeededBy =
+    source.neededBy && source.neededBy.getTime() > targetDate.getTime()
+      ? source.neededBy
+      : targetDate;
+
+  const now = new Date();
+  const sourceText = source.text;
+  const sourceId = source.id;
+
+  return withAudit<{ newMaterialId: string; targetReportId: string }>(
+    {
+      ctx,
+      action: "material.rollover",
+      entityType: "material_need",
+      resolveEntityId: (r) => r.newMaterialId,
+      before: {
+        id: sourceId,
+        reportId: source.report.id,
+        text: sourceText,
+        neededBy: source.neededBy ? source.neededBy.toISOString() : null,
+      },
+      projectAfter: (r) => ({
+        sourceId,
+        sourceReportId: source.report.id,
+        newId: r.newMaterialId,
+        targetReportId: r.targetReportId,
+        text: sourceText,
+        neededBy: newNeededBy.toISOString(),
+      }),
+    },
+    async (tx) => {
+      await tx.materialNeed.update({
+        where: { id: sourceId },
+        data: {
+          resolved: true,
+          resolvedAt: now,
+          resolvedById: user.id,
+        },
+      });
+      const created = await tx.materialNeed.create({
+        data: {
+          reportId: target.id,
+          text: sourceText,
+          neededBy: newNeededBy,
+          createdById: user.id,
+        },
+        select: { id: true },
+      });
+      return { newMaterialId: created.id, targetReportId: target.id };
+    },
+  );
+}
+
+/**
  * Sign + lock a daily report. BOSS only.
  *
  * Records the signature timestamp + signer id and locks the report
@@ -842,6 +990,11 @@ export interface AddendumView {
   createdAt: Date;
 }
 
+export interface RolloverTarget {
+  reportId: string;
+  date: Date;
+}
+
 export interface ReportDetail {
   report: DailyReport;
   projectId: string;
@@ -853,6 +1006,8 @@ export interface ReportDetail {
   remarks: RemarkView[];
   materials: MaterialView[];
   addenda: AddendumView[];
+  /** Later (non-locked) days the user can roll material needs into. */
+  rolloverTargets: RolloverTarget[];
   isMember: boolean;
   locked: boolean;
   canEdit: boolean;
@@ -860,6 +1015,7 @@ export interface ReportDetail {
   canMarkRemarkOfficial: boolean;
   canAddMaterial: boolean;
   canResolveMaterial: boolean;
+  canRolloverMaterial: boolean;
   canSign: boolean;
   canAddAddendum: boolean;
 }
@@ -906,6 +1062,22 @@ export async function getReportForUser(opts: {
   });
   if (!report) return null;
 
+  // Later non-locked days in the same project that can receive a
+  // rollover. We pull up to 30 candidates ordered by date asc so the
+  // UI can show the earliest first; that's almost always what the
+  // user wants when they say "přesunout na další den".
+  const rolloverCandidates = await prisma.dailyReport.findMany({
+    where: {
+      projectId,
+      deletedAt: null,
+      date: { gt: report.date },
+      lockedAt: null,
+    },
+    orderBy: { date: "asc" },
+    take: 30,
+    select: { id: true, date: true },
+  });
+
   const {
     project,
     author,
@@ -921,6 +1093,10 @@ export async function getReportForUser(opts: {
     reportLocked: locked,
     authorId: report.authorId,
   };
+  const canRolloverMaterial =
+    !locked &&
+    can(user, "material.resolve", resource) &&
+    can(user, "material.create", resource);
 
   return {
     report: rest as DailyReport,
@@ -950,6 +1126,10 @@ export async function getReportForUser(opts: {
       authorName: a.author.displayName,
       createdAt: a.createdAt,
     })),
+    rolloverTargets: rolloverCandidates.map((c) => ({
+      reportId: c.id,
+      date: c.date,
+    })),
     isMember,
     locked,
     canEdit: can(user, "report.update", resource),
@@ -959,6 +1139,7 @@ export async function getReportForUser(opts: {
       (user.role === "BOSS" || user.role === "GUEST"),
     canAddMaterial: can(user, "material.create", resource),
     canResolveMaterial: can(user, "material.resolve", resource),
+    canRolloverMaterial,
     canSign: !locked && can(user, "report.sign", resource),
     canAddAddendum:
       locked && can(user, "report.addendum.create", resource),

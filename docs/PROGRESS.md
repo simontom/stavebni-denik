@@ -257,9 +257,11 @@ Co dál po Kroku 6, mimo původní MVP scope:
   pozadím podle stavu, dnes ringem (commit `b6db23e`).
 
 ### Domain polish
-- [ ] Materiál „přesunout do dalšího dne" — když položka přechází na
-  další den, ať dostane nový datum místo `resolved=false` na starém
-  záznamu (lepší historie).
+- [x] **Materiál „přesunout do dalšího dne"** — server `rolloverMaterial`
+  atomicky v jedné `withAudit` transakci vyřídí zdroj a vytvoří kopii
+  na cílovém dni; nová audit akce `material.rollover`. UI v
+  `MaterialsPanel`: tlačítko „Přesunout" + select pozdějších
+  nezamčených dnů (commit pending).
 
 ### Maintenance
 - [x] **Větší major bumps**: typescript 5 → 6, @types/node 20 → 25,

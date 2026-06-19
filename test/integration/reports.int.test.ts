@@ -500,4 +500,108 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
     expect(officialAuthors).toContain(guestMember.id);
     expect(officialAuthors).not.toContain(workerMember.id);
   });
+
+  it("rolloverMaterial resolves source + creates copy on target day; audit OK", async () => {
+    // Source day on 06-16 (created earlier in this suite, line 254).
+    const sourceDay = pragueDayStart("2026-06-16");
+    const sourceReport = await db.dailyReport.findFirstOrThrow({
+      where: { projectId, date: sourceDay },
+    });
+
+    // Target day on 06-20 — create a fresh report so we can attach the
+    // rolled-over item there.
+    const targetDay = pragueDayStart("2026-06-20");
+    const targetReport = await svc.createReport({
+      projectId,
+      date: targetDay,
+      input: {
+        workersByTrade: [],
+        workDescription: "Den pro test rolloveru — cíl.",
+        materialsIn: null,
+        machinery: null,
+        testsAndChecks: null,
+        safetyNotes: null,
+        defects: null,
+        otherNotes: null,
+      },
+      ctx,
+      user: bossUser,
+    });
+
+    // Seed a material need on the source day with an earlier deadline
+    // so we can assert it gets bumped to the target date.
+    await svc.addMaterialNeed({
+      reportId: sourceReport.id,
+      text: "Beton C20/25 — 3 m³",
+      neededBy: sourceDay,
+      ctx,
+      user: workerMember,
+    });
+    const source = await db.materialNeed.findFirstOrThrow({
+      where: { reportId: sourceReport.id, text: "Beton C20/25 — 3 m³" },
+    });
+
+    // Earlier dates are refused.
+    await expect(
+      svc.rolloverMaterial({
+        materialId: source.id,
+        targetDate: pragueDayStart("2026-06-15"),
+        ctx,
+        user: bossUser,
+      }),
+    ).rejects.toBeInstanceOf(svc.InvalidRolloverTargetError);
+
+    // A day with no report is refused — pick a Sunday with no report.
+    await expect(
+      svc.rolloverMaterial({
+        materialId: source.id,
+        targetDate: pragueDayStart("2026-06-21"),
+        ctx,
+        user: bossUser,
+      }),
+    ).rejects.toBeInstanceOf(svc.TargetReportMissingError);
+
+    // Happy path: roll forward to the target day.
+    const result = await svc.rolloverMaterial({
+      materialId: source.id,
+      targetDate: targetDay,
+      ctx,
+      user: workerMember,
+    });
+    expect(result.targetReportId).toBe(targetReport.id);
+
+    // Source is now resolved, attributed to the actor.
+    const sourceAfter = await db.materialNeed.findUniqueOrThrow({
+      where: { id: source.id },
+    });
+    expect(sourceAfter.resolved).toBe(true);
+    expect(sourceAfter.resolvedAt).toBeInstanceOf(Date);
+    expect(sourceAfter.resolvedById).toBe(workerMember.id);
+
+    // Target carries the new copy with deadline bumped to target date.
+    const created = await db.materialNeed.findUniqueOrThrow({
+      where: { id: result.newMaterialId },
+    });
+    expect(created.reportId).toBe(targetReport.id);
+    expect(created.text).toBe("Beton C20/25 — 3 m³");
+    expect(created.resolved).toBe(false);
+    expect(created.neededBy?.getTime()).toBe(targetDay.getTime());
+
+    // Re-rolling the now-resolved source is refused.
+    await expect(
+      svc.rolloverMaterial({
+        materialId: source.id,
+        targetDate: targetDay,
+        ctx,
+        user: bossUser,
+      }),
+    ).rejects.toBeInstanceOf(svc.MaterialAlreadyResolvedError);
+
+    // Audit log records the rollover as one event referencing both ids.
+    const rolloverAudit = await db.auditLog.findFirst({
+      where: { action: "material.rollover", entityId: result.newMaterialId },
+    });
+    expect(rolloverAudit).not.toBeNull();
+    expect((await verifyAuditChainWithClient(db)).ok).toBe(true);
+  });
 });

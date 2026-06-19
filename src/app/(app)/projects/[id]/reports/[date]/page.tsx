@@ -6,7 +6,7 @@ import { ChevronLeft, CloudSun, FilePlus2, ImageIcon, Lock, Pencil } from "lucid
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatDate, formatDateTime, pragueDayStart } from "@/lib/dates";
+import { formatDate, formatDateInput, formatDateTime, pragueDayStart } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import { canCreateReport, getReportForUser } from "@/server/services/reports";
 import { listPhotosForReport } from "@/server/services/photos";
@@ -281,6 +281,11 @@ export default async function ReportPage({ params }: PageProps) {
             date={dateStr}
             canAdd={detail.canAddMaterial}
             canResolve={detail.canResolveMaterial}
+            canRollover={detail.canRolloverMaterial}
+            rolloverTargets={detail.rolloverTargets.map((t) => ({
+              date: formatDateInput(t.date),
+              label: formatDate(t.date),
+            }))}
             items={materials.map((m) => ({
               id: m.id,
               text: m.text,

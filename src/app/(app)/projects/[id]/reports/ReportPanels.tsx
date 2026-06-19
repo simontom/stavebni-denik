@@ -1,7 +1,14 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import { Check, CheckCheck, Loader2, Plus, RotateCcw } from "lucide-react";
+import {
+  ArrowRightCircle,
+  Check,
+  CheckCheck,
+  Loader2,
+  Plus,
+  RotateCcw,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +20,7 @@ import {
   addMaterialAction,
   addRemarkAction,
   bulkResolveMaterialsAction,
+  rolloverMaterialAction,
   setManualWeatherAction,
   toggleMaterialAction,
 } from "./actions";
@@ -94,10 +102,18 @@ export interface MaterialItem {
   resolved: boolean;
 }
 
+export interface RolloverTargetView {
+  date: string; // YYYY-MM-DD
+  label: string;
+}
+
 interface MaterialsPanelProps extends ReportRef {
   items: MaterialItem[];
   canAdd: boolean;
   canResolve: boolean;
+  canRollover: boolean;
+  /** Later non-locked days (formatted for the select dropdown). */
+  rolloverTargets: RolloverTargetView[];
 }
 
 /** Material checklist: list with resolve toggle + bulk resolve + add form. */
@@ -105,11 +121,18 @@ export function MaterialsPanel({
   items,
   canAdd,
   canResolve,
+  canRollover,
+  rolloverTargets,
   ...refs
 }: MaterialsPanelProps) {
   const ref = useRef<HTMLFormElement>(null);
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [rolloverOpenFor, setRolloverOpenFor] = useState<string | null>(null);
+  const [rolloverDate, setRolloverDate] = useState<string>(
+    rolloverTargets[0]?.date ?? "",
+  );
+  const [rolloverError, setRolloverError] = useState<string | null>(null);
 
   function handleAdd(fd: FormData) {
     startTransition(async () => {
@@ -158,10 +181,45 @@ export function MaterialsPanel({
     });
   }
 
+  function openRollover(id: string) {
+    setRolloverError(null);
+    setRolloverOpenFor(id);
+    if (!rolloverDate && rolloverTargets[0]) {
+      setRolloverDate(rolloverTargets[0].date);
+    }
+  }
+
+  function cancelRollover() {
+    setRolloverOpenFor(null);
+    setRolloverError(null);
+  }
+
+  function confirmRollover(id: string) {
+    if (!rolloverDate) {
+      setRolloverError("Vyberte cílový den.");
+      return;
+    }
+    const fd = new FormData();
+    fd.append("materialId", id);
+    fd.append("targetDate", rolloverDate);
+    fd.append("projectId", refs.projectId);
+    fd.append("date", refs.date);
+    startTransition(async () => {
+      const result = await rolloverMaterialAction(undefined, fd);
+      if (result.status === "ok") {
+        setRolloverOpenFor(null);
+        setRolloverError(null);
+      } else if (result.status === "error") {
+        setRolloverError(result.message);
+      }
+    });
+  }
+
   const unresolvedCount = items.filter((m) => !m.resolved).length;
   const allUnresolvedSelected =
     unresolvedCount > 0 &&
     items.filter((m) => !m.resolved).every((m) => selected.has(m.id));
+  const canShowRollover = canRollover && rolloverTargets.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
@@ -208,23 +266,98 @@ export function MaterialsPanel({
                   )}
                 </div>
                 {canResolve && (
-                  <Button
-                    type="button"
-                    variant={m.resolved ? "ghost" : "outline"}
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => toggle(m.id, !m.resolved)}
-                  >
-                    {m.resolved ? (
-                      <>
-                        <RotateCcw className="size-4" aria-hidden /> Obnovit
-                      </>
-                    ) : (
-                      <>
-                        <Check className="size-4" aria-hidden /> Vyřízeno
-                      </>
+                  <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-1">
+                      {canShowRollover && !m.resolved && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => openRollover(m.id)}
+                          aria-label="Přesunout položku na další den"
+                        >
+                          <ArrowRightCircle className="size-4" aria-hidden />
+                          Přesunout
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant={m.resolved ? "ghost" : "outline"}
+                        size="sm"
+                        disabled={pending}
+                        onClick={() => toggle(m.id, !m.resolved)}
+                      >
+                        {m.resolved ? (
+                          <>
+                            <RotateCcw className="size-4" aria-hidden /> Obnovit
+                          </>
+                        ) : (
+                          <>
+                            <Check className="size-4" aria-hidden /> Vyřízeno
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {rolloverOpenFor === m.id && (
+                      <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/40 p-2">
+                        <div className="grid gap-1">
+                          <Label
+                            htmlFor={`rollover-target-${m.id}`}
+                            className="text-xs"
+                          >
+                            Přesunout na
+                          </Label>
+                          <select
+                            id={`rollover-target-${m.id}`}
+                            value={rolloverDate}
+                            onChange={(e) => setRolloverDate(e.target.value)}
+                            disabled={pending}
+                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                          >
+                            {rolloverTargets.map((t) => (
+                              <option key={t.date} value={t.date}>
+                                {t.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => confirmRollover(m.id)}
+                        >
+                          {pending ? (
+                            <Loader2
+                              className="size-4 animate-spin"
+                              aria-hidden
+                            />
+                          ) : (
+                            <ArrowRightCircle className="size-4" aria-hidden />
+                          )}
+                          Potvrdit
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={pending}
+                          onClick={cancelRollover}
+                        >
+                          Zrušit
+                        </Button>
+                        {rolloverError && (
+                          <p
+                            className="basis-full text-xs text-destructive"
+                            role="alert"
+                          >
+                            {rolloverError}
+                          </p>
+                        )}
+                      </div>
                     )}
-                  </Button>
+                  </div>
                 )}
               </li>
             );

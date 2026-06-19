@@ -36,7 +36,8 @@ export type AuditAction =
   | "photo.delete"
   | "remark.create"
   | "material.create"
-  | "material.resolve";
+  | "material.resolve"
+  | "material.rollover";
 
 /**
  * Stripped-down audit row used both for hashing and for surfacing in
