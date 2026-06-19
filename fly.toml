@@ -1,12 +1,19 @@
 # Fly.io configuration for stavebni-denik.
-# Single-tenant deploy: one app, one machine, one volume.
 #
-# Setup steps (run once on a developer machine with `fly` CLI installed):
+# Single-tenant deploy: one web machine + one Postgres add-on + a
+# persistent volume mounted at /data for photos / audit-verify log
+# / PDF exports. Nightly maintenance (backup + audit chain verify)
+# runs as standalone scheduled machines created out-of-band — see
+# README "Backup & restore" and the audit-verify GitHub workflow.
+#
+# Full setup is in README "Production deployment (Fly.io)". TL;DR:
 #   fly apps create stavebni-denik
 #   fly volumes create stavebni_denik_data --size 10 --region fra
 #   fly postgres create --name stavebni-denik-db --region fra
 #   fly postgres attach stavebni-denik-db
-#   fly secrets set AUTH_SECRET="$(openssl rand -base64 32)" AUTH_URL="https://stavebni-denik.fly.dev"
+#   fly secrets set \
+#     AUTH_SECRET="$(openssl rand -base64 32)" \
+#     AUTH_URL="https://stavebni-denik.fly.dev"
 #   fly deploy
 
 app = "stavebni-denik"
@@ -24,6 +31,18 @@ kill_timeout = "30s"
   TZ = "Europe/Prague"
   OPEN_METEO_BASE = "https://api.open-meteo.com/v1"
   NEXT_PUBLIC_APP_NAME = "Stavební deník"
+  # AUTH_URL gets injected via secrets so a custom domain swap
+  # doesn't require an image rebuild.
+
+# Pre-traffic, post-build migration step. Fly spins up one ephemeral
+# machine, runs the command against the production DB, then proceeds
+# with the rolling deploy ONLY if it exits 0 — so a broken migration
+# never reaches users. The web `CMD` in Dockerfile keeps its own
+# `prisma migrate deploy` as a safety net for older machines that
+# boot before this release command runs (idempotent).
+[deploy]
+  release_command = "node_modules/.bin/prisma migrate deploy"
+  strategy = "rolling"
 
 # Persistent volume for photos, PDF exports and the audit-verify log.
 # `auto_extend_size_threshold` / `_increment_gb` keep us from filling up.
@@ -61,3 +80,14 @@ kill_timeout = "30s"
   size = "shared-cpu-1x"
   memory = "1gb"
   cpus = 1
+
+# ---------------------------------------------------------------------------
+# Logging / metrics
+# ---------------------------------------------------------------------------
+# stdout/stderr is forwarded by Fly's log shipper without extra config.
+# A Prometheus `/metrics` endpoint isn't exposed yet — when we add one,
+# uncomment the [metrics] section below and point it at the right path.
+#
+# [metrics]
+#   port = 9091
+#   path = "/metrics"

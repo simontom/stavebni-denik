@@ -275,8 +275,15 @@ Co dál po Kroku 6, mimo původní MVP scope:
   nedělá. README dostalo sekci s Fly secrets receptem.
 
 ### Deploy
-- [ ] Produkční nasazení na Fly.io (`fly apps create` …  `fly secrets
-  set` … `fly deploy` … `pnpm db:seed` přes `fly ssh console`).
-  Nastavit repo secret `AUDIT_DATABASE_URL` pro nightly verifikaci.
+- [x] **Fly deploy artefakty + runbook** — `fly.toml` doplněn o
+  `[deploy] release_command` (`prisma migrate deploy` před traffic-routem)
+  a komentáře k secrets / volume / VM, README dostal kompletní sekci
+  „Production deployment (Fly.io)" s bootstrap + release + nightly
+  maintenance + post-deploy verify + rollback runbookem (commit
+  pending).
+- [ ] **Provést produkční `fly deploy`** — vyžaduje Fly účet,
+  kreditku, secrety (`AUTH_SECRET`, `RESTIC_*`, volitelně `SMTP_*`
+  a `SENTRY_*`). Po deployi nastavit repo secret `AUDIT_DATABASE_URL`
+  pro nightly audit-verify workflow.
 - [ ] **Full login → PDF E2E** spec proti staging deployi (smoke
   layer v `e2e/smoke.spec.ts` je hotový jako základ).

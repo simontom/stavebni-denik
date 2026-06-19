@@ -64,22 +64,114 @@ App pojede na <http://localhost:3000>. Health check je na
 
 ## Production deployment (Fly.io)
 
+### Jednorázový bootstrap
+
+Předpoklady: `flyctl` (`brew install flyctl`), Fly účet, platná kreditní
+karta v billing. Adresa app a region jsou v `fly.toml` (`stavebni-denik`,
+`fra`); pokud potřebuješ jiné, edituj `fly.toml` ještě před `fly apps
+create`.
+
 ```bash
-# Jednorázové
+# 0. Přihlášení
+fly auth login
+
+# 1. App + persistentní volume + Postgres add-on
 fly apps create stavebni-denik
 fly volumes create stavebni_denik_data --size 10 --region fra
 fly postgres create --name stavebni-denik-db --region fra
-fly postgres attach stavebni-denik-db
+fly postgres attach stavebni-denik-db    # injectne DATABASE_URL secret
+
+# 2. Required secrets
 fly secrets set \
   AUTH_SECRET="$(openssl rand -base64 32)" \
   AUTH_URL="https://stavebni-denik.fly.dev"
 
-# Při každém releaseu
+# 3. Optional secrets (každý je no-op když chybí)
+# 3a. SMTP alerty pro audit verify failure
+fly secrets set \
+  SMTP_HOST="smtp.example.com" \
+  SMTP_PORT="587" \
+  SMTP_SECURE="false" \
+  SMTP_USER="alerts@example.com" \
+  SMTP_PASS="..." \
+  SMTP_FROM="Stavební deník <alerts@example.com>" \
+  ALERT_EMAIL="boss@example.com"
+
+# 3b. Restic + B2 (nebo S3) pro nightly zálohy — viz "Backup & restore"
+fly secrets set \
+  RESTIC_REPOSITORY="b2:stavebni-denik-backup:/restic" \
+  RESTIC_PASSWORD="$(openssl rand -base64 32)" \
+  B2_ACCOUNT_ID="<keyID>" \
+  B2_ACCOUNT_KEY="<applicationKey>"
+
+# 3c. Sentry runtime + source maps (viz "Monitoring (Sentry)")
+fly secrets set \
+  SENTRY_DSN="https://...@o0.ingest.sentry.io/0" \
+  SENTRY_ENVIRONMENT="production" \
+  SENTRY_TRACES_SAMPLE_RATE="0.1" \
+  SENTRY_ORG="my-org" \
+  SENTRY_PROJECT="stavebni-denik" \
+  SENTRY_AUTH_TOKEN="sntrys_..."
+
+# 4. První deploy. `[deploy] release_command` v fly.toml spustí
+#    `prisma migrate deploy` proti DB ještě před traffic-routem.
 fly deploy
+
+# 5. Nasaď BOSS účet (vygeneruje heslo, vypíše ho jednou)
+fly ssh console -C "pnpm tsx scripts/seed.ts"
+# Heslo si schovej — vyžaduje se při prvním přihlášení.
 ```
 
-Migrace běží automaticky při startu kontejneru
-(`prisma migrate deploy && node server.js` v `Dockerfile`).
+### Při každém releaseu
+
+```bash
+git push origin main && fly deploy
+```
+
+`fly deploy` strategie je `rolling`: Fly nejprve spustí ephemeral
+machine s `release_command` (`prisma migrate deploy`), pak teprve
+postupně vymění běžící machine. Když migrace selže (např. konflikt),
+deploy se přeruší a aktuální verze běží dál.
+
+### Nightly maintenance
+
+Tři nezávislé úlohy, každá je samostatný GitHub Action / Fly scheduled
+machine:
+
+| Co | Kde | Frekvence | Co potřebuje |
+| --- | --- | --------- | ------------ |
+| Audit chain verify | `.github/workflows/audit-verify.yml` | 04:00 UTC | repo secret `AUDIT_DATABASE_URL` (read-only role) |
+| `pg_dump` + photo backup | `fly machine run` schedule (níže) | 02:00 UTC | restic secrets z 3b |
+| Open-Meteo / Sentry | průběžně z app | requestem | nic |
+
+```bash
+# Vytvořit scheduled machine pro nightly backup (jednou).
+fly machine run . \
+  --schedule daily \
+  --command "/app/scripts/backup.sh" \
+  --region fra
+```
+
+### Po-deploy ověření
+
+```bash
+fly status
+fly logs --tail
+curl -s https://stavebni-denik.fly.dev/healthz | jq .   # 200 + status: ok
+fly ssh console -C "pnpm verify:audit"                  # OK / FAIL na stdout
+```
+
+### Rollback
+
+```bash
+fly releases                 # vypíše předchozí release id
+fly releases rollback <id>   # nasadí předchozí image
+```
+
+Pokud migrace přidala sloupec / tabulku, rollback **neumí** schema
+vrátit zpět — Prisma migrace jsou one-way. Schema kompatibilita
+předchozího kódu s novou DB je odpovědnost autora změny (přidej
+sloupec jako `NULLABLE` v jedné migraci, použij ho v další).
 
 ## Backup & restore
 
