@@ -206,18 +206,53 @@ export default async function DashboardPage() {
               <ul className="flex flex-col divide-y">
                 {data.pendingMaterials.map((m) => {
                   const reportDateStr = formatDateInput(m.reportDate);
+                  // Priority bands: red = past deadline, amber = due
+                  // today or tomorrow, plain otherwise. Items without
+                  // a `neededBy` are treated as low priority.
+                  const todayStart = new Date();
+                  todayStart.setHours(0, 0, 0, 0);
+                  const dayMs = 24 * 60 * 60 * 1000;
+                  const dueDays = m.neededBy
+                    ? Math.floor(
+                        (m.neededBy.getTime() - todayStart.getTime()) / dayMs,
+                      )
+                    : null;
+                  const overdue = dueDays !== null && dueDays < 0;
+                  const dueSoon =
+                    dueDays !== null && dueDays >= 0 && dueDays <= 1;
+                  const badgeVariant: "destructive" | "secondary" | "outline" =
+                    overdue ? "destructive" : dueSoon ? "secondary" : "outline";
+                  const badgeLabel = m.neededBy
+                    ? overdue
+                      ? `po termínu (${formatDate(m.neededBy)})`
+                      : dueDays === 0
+                        ? `dnes — ${formatDate(m.neededBy)}`
+                        : dueDays === 1
+                          ? `zítra — ${formatDate(m.neededBy)}`
+                          : `do ${formatDate(m.neededBy)}`
+                    : null;
+                  const rowAccent = overdue
+                    ? "border-l-2 border-destructive pl-3"
+                    : dueSoon
+                      ? "border-l-2 border-amber-500 pl-3"
+                      : "";
+
                   return (
-                    <li key={m.id} className="py-2">
+                    <li key={m.id} className={`py-2 ${rowAccent}`}>
                       <Link
                         href={`/projects/${m.projectId}/reports/${reportDateStr}`}
                         className="grid gap-0.5 hover:underline"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-                          <span className="font-medium">{m.text}</span>
-                          {m.neededBy && (
-                            <Badge variant="outline">
-                              do {formatDate(m.neededBy)}
-                            </Badge>
+                          <span
+                            className={
+                              overdue ? "font-medium text-destructive" : "font-medium"
+                            }
+                          >
+                            {m.text}
+                          </span>
+                          {badgeLabel && (
+                            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground">
