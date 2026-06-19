@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus, Loader2, Trash2 } from "lucide-react";
+import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,16 +24,25 @@ interface Props {
 }
 
 /**
- * Multi-file photo uploader. Reads `<input type="file" multiple>` and
- * POSTs everything to `/api/photos/upload` as multipart/form-data; on
- * success calls `router.refresh()` so the freshly created photos appear
- * in the gallery without a full page reload. Reports per-file errors
- * inline (image format unsupported, file too big, …) without dropping
- * the successful uploads.
+ * Multi-file photo uploader. Two entry points:
+ *   * a regular `<input type="file" multiple>` so the user can pick
+ *     several photos from the gallery / file system at once,
+ *   * a phone-friendly "Pořídit foto" button that triggers a hidden
+ *     `<input type="file" capture="environment">` so tapping it on a
+ *     phone opens the rear camera directly. On desktop the button
+ *     still works (file picker fallback when no camera is wired up).
+ *
+ * Both feed the same selected-files state and POST to
+ * `/api/photos/upload` as multipart/form-data; on success calls
+ * `router.refresh()` so the freshly created photos appear in the
+ * gallery without a full page reload. Reports per-file errors inline
+ * (image format unsupported, file too big, …) without dropping the
+ * successful uploads.
  */
 export function PhotoUploader({ reportId }: Props) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [failures, setFailures] = useState<UploadFailure[]>([]);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -41,7 +50,11 @@ export function PhotoUploader({ reportId }: Props) {
 
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const list = e.target.files ? Array.from(e.target.files) : [];
-    setFiles(list);
+    if (list.length === 0) return;
+    // Merge any camera-captured frame with the file-picker selection so
+    // a user can tap the camera, then tap "Vybrat z galerie", and we
+    // keep both. New entries dedupe by name+size+lastModified.
+    setFiles((prev) => mergeFiles(prev, list));
     setFailures([]);
     setServerError(null);
   }
@@ -51,6 +64,7 @@ export function PhotoUploader({ reportId }: Props) {
     setFailures([]);
     setServerError(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
   function upload() {
@@ -118,6 +132,26 @@ export function PhotoUploader({ reportId }: Props) {
           multiple
           onChange={onPick}
         />
+        {/* Phone-only: a hidden input with capture="environment" so
+            "Pořídit foto" jumps straight to the rear camera. */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+          capture="environment"
+          onChange={onPick}
+          className="hidden"
+          aria-hidden
+          tabIndex={-1}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => cameraInputRef.current?.click()}
+          className="self-start sm:hidden"
+        >
+          <Camera className="size-4" aria-hidden /> Pořídit foto
+        </Button>
       </div>
 
       {files.length > 0 && (
@@ -165,4 +199,19 @@ export function PhotoUploader({ reportId }: Props) {
       </div>
     </div>
   );
+}
+
+/** Dedupe by name+size+lastModified so re-picking the same shot doesn't double-upload. */
+function mergeFiles(prev: File[], incoming: File[]): File[] {
+  const keyOf = (f: File) => `${f.name}|${f.size}|${f.lastModified}`;
+  const seen = new Set(prev.map(keyOf));
+  const merged = [...prev];
+  for (const f of incoming) {
+    const k = keyOf(f);
+    if (!seen.has(k)) {
+      seen.add(k);
+      merged.push(f);
+    }
+  }
+  return merged;
 }

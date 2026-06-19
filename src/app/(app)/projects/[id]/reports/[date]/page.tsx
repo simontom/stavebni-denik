@@ -330,7 +330,7 @@ export default async function ReportPage({ params }: PageProps) {
                       />
                     </a>
                     {canDeletePhotos && (
-                      <div className="absolute top-1 right-1 opacity-0 transition group-hover:opacity-100">
+                      <div className="absolute top-1 right-1 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                         <DeletePhotoButton
                           photoId={p.id}
                           projectId={id}

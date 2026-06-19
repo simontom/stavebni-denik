@@ -247,8 +247,11 @@ Co dál po Kroku 6, mimo původní MVP scope:
   (commit pending).
 
 ### Mobile / UX
-- [ ] Mobile UX audit — touch targety, `capture="environment"` na photo
-  input pro přímý fotoaparát, pinch-to-zoom v galerii.
+- [x] **Mobile UX audit** — `capture="environment"` na photo input
+  (přímý fotoaparát na telefonu), delete tlačítko v galerii viditelné
+  i bez hoveru (touch zařízení), `pointer: coarse` media query
+  v `globals.css` zvedá min-height tlačítek/inputů na 44 px (iOS HIG)
+  — commit `pending`.
 - [ ] Calendar view v Záznamy tabu (vedle stávajícího seznamu).
 
 ### Domain polish

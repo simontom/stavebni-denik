@@ -150,4 +150,36 @@
       "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Liberation Sans",
       sans-serif;
   }
+
+  /*
+   * Touch-target sizing.
+   *
+   * shadcn buttons compile down to ~28–32 px tall (h-7 / h-8). On
+   * pointer:fine (mouse) that's fine; on pointer:coarse (touch) iOS /
+   * Android UX guidelines call for at least 44 px / 48 dp. We expand
+   * all interactive controls globally on coarse pointers so each
+   * caller doesn't have to remember a `lg` size.
+   *
+   * The match is scoped to the actual interactive controls; we
+   * deliberately skip menu items / chips that come pre-padded.
+   */
+  @media (pointer: coarse) {
+    button,
+    [role="button"],
+    a.button,
+    input[type="button"],
+    input[type="submit"],
+    input[type="reset"],
+    input[type="checkbox"],
+    input[type="radio"] {
+      min-height: 44px;
+    }
+    /* Native form controls — bump the default 32 px chrome to a
+       comfortable touch target. */
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,
+    textarea {
+      min-height: 44px;
+    }
+  }
 }
