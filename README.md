@@ -87,7 +87,11 @@ fly secrets set \
   AUTH_URL="https://stavebni-denik.fly.dev"
 
 # 3. Optional secrets (každý je no-op když chybí)
-# 3a. SMTP alerty pro audit verify failure
+# 3a. SMTP alerty pro audit verify failure (volitelné — v-app bell
+#     pokrývá tenhle use case automaticky pro každého BOSSe; SMTP
+#     je tu jen pro krew, který chce navíc e-mail. Fly.io samo
+#     o sobě SMTP nemá; nastavit s externím providerem (Mailgun,
+#     SendGrid, Resend), nebo úplně vynechat).
 fly secrets set \
   SMTP_HOST="smtp.example.com" \
   SMTP_PORT="587" \
