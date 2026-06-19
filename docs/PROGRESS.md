@@ -260,9 +260,12 @@ Co dál po Kroku 6, mimo původní MVP scope:
   záznamu (lepší historie).
 
 ### Maintenance
-- [ ] Větší major bumps: typescript 5 → 6, eslint 9 → 10,
-  testcontainers 11 → 12, @types/node 20 → 25 — nezávislé, jeden po
-  druhém s ověřením testů.
+- [x] **Větší major bumps**: typescript 5 → 6, @types/node 20 → 25,
+  testcontainers + @testcontainers/postgresql 11 → 12 (commit
+  pending). ESLint 9 → 10 zatím **blocked** — `eslint-plugin-react`
+  (transitivní z `eslint-config-next`) ještě nepodporuje nové
+  rule-context API; čekáme buď na patch pluginu nebo nový
+  `eslint-config-next`.
 - [ ] **Sentry source maps** přes `withSentryConfig` (vyžaduje
   `SENTRY_AUTH_TOKEN` v build env) — čitelné stack traces.
 
