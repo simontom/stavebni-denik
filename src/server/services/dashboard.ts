@@ -51,6 +51,20 @@ export interface TimelineProject {
   endedAt: Date | null;
 }
 
+export interface MaterialTimelineEntry {
+  id: string;
+  projectId: string;
+  projectName: string;
+  text: string;
+  /** When the requirement was raised. */
+  createdAt: Date;
+  /** Deadline if provided. */
+  neededBy: Date | null;
+  /** When the BOSS/WORKER ticked it as done; null while pending. */
+  resolvedAt: Date | null;
+  resolved: boolean;
+}
+
 export interface BossDashboard {
   activeProjects: number;
   archivedProjects: number;
@@ -62,6 +76,7 @@ export interface BossDashboard {
   pendingMaterials: PendingMaterialNeed[];
   recentReports: RecentReportRow[];
   timelineProjects: TimelineProject[];
+  materialsTimeline: MaterialTimelineEntry[];
 }
 
 /**
@@ -89,6 +104,7 @@ export async function getBossDashboard(
     pendingMaterialsRows,
     recentReportRows,
     timelineRows,
+    materialsTimelineRows,
   ] = await Promise.all([
     prisma.project.count({ where: { deletedAt: null } }),
     prisma.project.count({ where: { deletedAt: { not: null } } }),
@@ -150,6 +166,37 @@ export async function getBossDashboard(
       take: 50,
       select: { id: true, name: true, startedAt: true, endedAt: true },
     }),
+    // Materials timeline — rows with EITHER a neededBy deadline OR a
+    // recorded resolvedAt (so a bar always has a span). Pending items
+    // come first (the BOSS cares about what's outstanding), then the
+    // most recently resolved ones for context. Capped at 50 entries
+    // so the rendered Gantt stays readable.
+    prisma.materialNeed.findMany({
+      where: {
+        deletedAt: null,
+        report: { deletedAt: null, project: { deletedAt: null } },
+        OR: [{ neededBy: { not: null } }, { resolvedAt: { not: null } }],
+      },
+      orderBy: [
+        { resolved: "asc" }, // false first
+        { neededBy: "asc" },
+        { createdAt: "asc" },
+      ],
+      take: 50,
+      select: {
+        id: true,
+        text: true,
+        createdAt: true,
+        neededBy: true,
+        resolvedAt: true,
+        resolved: true,
+        report: {
+          select: {
+            project: { select: { id: true, name: true } },
+          },
+        },
+      },
+    }),
   ]);
 
   const projectIds = unsignedRows.map((r) => r.projectId);
@@ -205,5 +252,15 @@ export async function getBossDashboard(
           ]
         : [],
     ),
+    materialsTimeline: materialsTimelineRows.map((m) => ({
+      id: m.id,
+      projectId: m.report.project.id,
+      projectName: m.report.project.name,
+      text: m.text,
+      createdAt: m.createdAt,
+      neededBy: m.neededBy,
+      resolvedAt: m.resolvedAt,
+      resolved: m.resolved,
+    })),
   };
 }

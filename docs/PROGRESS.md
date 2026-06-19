@@ -241,14 +241,10 @@ install chromium` + běžící Postgres na 5432, 3/3 smoke).
 Co dál po Kroku 6, mimo původní MVP scope:
 
 ### Visualizace
-- [ ] **Day-coverage heatmap na detailu zakázky** — políčko na každý
-  kalendářní den v období zakázky obarvené podle stavu (chybí záznam /
-  záznam je / podepsáno). Doplní multi-project Gantt na `/` cílenějším
-  per-zakázkovým pohledem; klik = navigace na den.
-- [ ] **Materiálový Gantt** — `MaterialNeed` jako pruhy od `createdAt`
-  po `neededBy` / `resolvedAt`, seskupené po zakázkách. Buď karta na
-  BOSS dashboardu, nebo dedikovaný `/materials/timeline` pohled. Cíl:
-  vidět zpoždění dodávek.
+- [x] **Multi-project Gantt** na BOSS dashboardu (commit `3a7e19c`).
+- [x] **Day-coverage heatmap na detailu zakázky** (commit `808b73e`).
+- [x] **Materiálový Gantt** seskupený po zakázkách na dashboardu
+  (commit pending).
 
 ### Mobile / UX
 - [ ] Mobile UX audit — touch targety, `capture="environment"` na photo

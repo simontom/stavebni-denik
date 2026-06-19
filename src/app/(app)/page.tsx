@@ -24,6 +24,7 @@ import { requireUser } from "@/server/rbac";
 import { getBossDashboard } from "@/server/services/dashboard";
 
 import { ProjectsGantt } from "./ProjectsGantt";
+import { MaterialsGantt } from "./MaterialsGantt";
 
 export const dynamic = "force-dynamic";
 
@@ -245,6 +246,21 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent>
           <ProjectsGantt items={data.timelineProjects} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GanttChart className="size-4" aria-hidden /> Materiálový Gantt
+          </CardTitle>
+          <CardDescription>
+            Pruh od založení po termín nebo vyřízení, seskupené po zakázkách.
+            Pomáhá vidět zpoždění dodávek.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <MaterialsGantt items={data.materialsTimeline} />
         </CardContent>
       </Card>
 
