@@ -43,6 +43,14 @@ export interface RecentReportRow {
   signed: boolean;
 }
 
+export interface TimelineProject {
+  id: string;
+  name: string;
+  startedAt: Date;
+  /** `null` means the project is ongoing (no end date set). */
+  endedAt: Date | null;
+}
+
 export interface BossDashboard {
   activeProjects: number;
   archivedProjects: number;
@@ -53,6 +61,7 @@ export interface BossDashboard {
   unsignedByProject: UnsignedByProject[];
   pendingMaterials: PendingMaterialNeed[];
   recentReports: RecentReportRow[];
+  timelineProjects: TimelineProject[];
 }
 
 /**
@@ -79,6 +88,7 @@ export async function getBossDashboard(
     unsignedRows,
     pendingMaterialsRows,
     recentReportRows,
+    timelineRows,
   ] = await Promise.all([
     prisma.project.count({ where: { deletedAt: null } }),
     prisma.project.count({ where: { deletedAt: { not: null } } }),
@@ -132,6 +142,14 @@ export async function getBossDashboard(
         author: { select: { displayName: true } },
       },
     }),
+    // Timeline rows for the Gantt — only projects that have actually
+    // started (no `startedAt` = nothing to plot).
+    prisma.project.findMany({
+      where: { deletedAt: null, startedAt: { not: null } },
+      orderBy: { startedAt: "asc" },
+      take: 50,
+      select: { id: true, name: true, startedAt: true, endedAt: true },
+    }),
   ]);
 
   const projectIds = unsignedRows.map((r) => r.projectId);
@@ -175,5 +193,17 @@ export async function getBossDashboard(
       authorName: r.author.displayName,
       signed: r.signedAt !== null,
     })),
+    timelineProjects: timelineRows.flatMap((p) =>
+      p.startedAt
+        ? [
+            {
+              id: p.id,
+              name: p.name,
+              startedAt: p.startedAt,
+              endedAt: p.endedAt,
+            } satisfies TimelineProject,
+          ]
+        : [],
+    ),
   };
 }

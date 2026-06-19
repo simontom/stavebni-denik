@@ -5,6 +5,7 @@ import {
   Briefcase,
   CalendarDays,
   ClipboardList,
+  GanttChart,
   Lock,
   Package,
   Users,
@@ -21,6 +22,8 @@ import {
 import { formatDate, formatDateInput } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import { getBossDashboard } from "@/server/services/dashboard";
+
+import { ProjectsGantt } from "./ProjectsGantt";
 
 export const dynamic = "force-dynamic";
 
@@ -229,6 +232,21 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <GanttChart className="size-4" aria-hidden /> Časový přehled zakázek
+          </CardTitle>
+          <CardDescription>
+            Zahájení až dokončení (nebo „probíhá“). Šířka osy se přizpůsobí
+            nejdelší zakázce.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProjectsGantt items={data.timelineProjects} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
