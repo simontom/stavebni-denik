@@ -260,7 +260,18 @@ Co dál po Kroku 6, mimo původní MVP scope:
 - [x] **Audit log filter** — `/admin/audit` má teď datum od/do,
   actor select s nickname + displayName (místo holého UUID), entity
   type select, freetext entity ID, paginace forward přes `?cursor=…`
-  s tlačítkem „Načíst starších 100" (commit pending).
+  s tlačítkem „Načíst starších 100" (commit `99547e6`).
+- [x] **In-app notifikace** — nová Prisma model `Notification`
+  + migrace `20260619141212_notifications`, service `notifyUser` /
+  `notifyByRole` / `listNotificationsForUser` / `markNotificationRead`
+  / `markAllNotificationsRead` / `deleteNotification`,
+  bell ikona v `AppHeader` s nepřečteným badge a dropdown panelem,
+  `/notifications` stránka s `?filter=unread` toggle, `verify-audit`
+  cron při poškození chainu fan-outuje `audit.chain_broken` notifikaci
+  všem aktivním BOSS uživatelům (SMTP zůstává volitelný fallback,
+  Fly.io ho neumí samo o sobě). 6 nových integration testů
+  (recipient scoping, FK violations, mark read / delete idempotence)
+  — celkem 31 integration. Commit pending.
 
 ### Domain polish
 - [x] **Materiál „přesunout do dalšího dne"** — server `rolloverMaterial`

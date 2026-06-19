@@ -47,6 +47,7 @@ model User {
   remarksAuthored    Remark[]        @relation("RemarkAuthor")
   addendaAuthored    Addendum[]      @relation("AddendumAuthor")
   photosUploaded     Photo[]         @relation("PhotoUploader")
+  notifications      Notification[]  @relation("NotificationRecipient")
 
   @@index([deletedAt])
   @@map("users")
@@ -295,4 +296,33 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId, ts])
   @@map("audit_log")
+}
+
+/// Per-user in-app notification (bell in the header).
+///
+/// Intentionally NOT routed through `withAudit` — notifications are
+/// UI state (read / unread per recipient), not domain mutations, and
+/// auditing every read flip would just bloat the chain. Hard-deletes
+/// are allowed too: a user can clear old notifications without
+/// breaking forensic guarantees of the audit log.
+///
+/// `kind` is a stable string ('audit.chain_broken', 'report.signed', …)
+/// so the UI can render type-specific copy / icons; `payload` carries
+/// the kind-specific JSON (e.g. `{ rowId, rowHash }` for a chain break).
+model Notification {
+  id          String    @id @default(cuid())
+  recipientId String
+  kind        String
+  payload     Json
+  /// Optional deep-link the bell dropdown will route to on click.
+  href        String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  recipient User @relation("NotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // Hot path: 'list my unread'. The composite index also serves
+  // 'list newest N for me' because Postgres can read it backwards.
+  @@index([recipientId, readAt, createdAt])
+  @@map("notifications")
 }

@@ -15,6 +15,7 @@ export default async function AppLayout({
   const user = await requireUser();
   return (
     <div className="flex min-h-svh flex-col">
+      {/* AppHeader is async (it loads the user's notifications). */}
       <AppHeader user={user} />
       <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {children}
