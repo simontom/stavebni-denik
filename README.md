@@ -166,6 +166,21 @@ PII (cesty, request body) se **nenahrávají** (`sendDefaultPii: false`)
 — hesla z `/login` ani fotky z `/api/photos/upload` se v Sentry
 neobjeví.
 
+### Source maps (volitelné)
+
+`next.config.ts` je obalený `withSentryConfig`, který při produkčním
+buildu nahraje source maps do Sentry — minified server stack traces se
+v UI mapují zpět na TS řádky. Wrapper je no-op když chybí
+`SENTRY_AUTH_TOKEN`, takže `pnpm dev` / CI bez secretu nic nedělá.
+
+```bash
+fly secrets set \
+  SENTRY_ORG="my-org" \
+  SENTRY_PROJECT="stavebni-denik" \
+  SENTRY_AUTH_TOKEN="sntrys_..." \
+  SENTRY_RELEASE="$(git rev-parse --short HEAD)"
+```
+
 Healthcheck `/healthz` (DB + volume probe) běží průběžně z orchestrátoru
 a doporučené alerty na Fly pokrývají CPU/RAM/disk.
 

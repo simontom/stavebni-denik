@@ -261,13 +261,14 @@ Co dál po Kroku 6, mimo původní MVP scope:
 
 ### Maintenance
 - [x] **Větší major bumps**: typescript 5 → 6, @types/node 20 → 25,
-  testcontainers + @testcontainers/postgresql 11 → 12 (commit
-  pending). ESLint 9 → 10 zatím **blocked** — `eslint-plugin-react`
+  testcontainers + @testcontainers/postgresql 11 → 12 (commit `521e22a`).
+  ESLint 9 → 10 zatím **blocked** — `eslint-plugin-react`
   (transitivní z `eslint-config-next`) ještě nepodporuje nové
   rule-context API; čekáme buď na patch pluginu nebo nový
   `eslint-config-next`.
-- [ ] **Sentry source maps** přes `withSentryConfig` (vyžaduje
-  `SENTRY_AUTH_TOKEN` v build env) — čitelné stack traces.
+- [x] **Sentry source maps** přes `withSentryConfig` — wrapper je
+  no-op bez `SENTRY_AUTH_TOKEN`, takže lokál i CI bez secretu nic
+  nedělá. README dostalo sekci s Fly secrets receptem.
 
 ### Deploy
 - [ ] Produkční nasazení na Fly.io (`fly apps create` …  `fly secrets
