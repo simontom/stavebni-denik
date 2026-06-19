@@ -23,6 +23,7 @@ import {
 } from "@/server/services/projects";
 import {
   canCreateReport,
+  getReportCoverageForProject,
   listReportsForProject,
 } from "@/server/services/reports";
 
@@ -30,6 +31,7 @@ import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
 import { ProjectStatusButton } from "./ProjectStatusButton";
+import { ReportCoverageHeatmap } from "./ReportCoverageHeatmap";
 import { ReportsFilterBar } from "./ReportsFilterBar";
 
 type ProjectTab = "details" | "reports" | "members";
@@ -117,6 +119,10 @@ export default async function ProjectDetailPage({
       : filteredReports.length;
   const canCreate =
     tab === "reports" && !archived ? await canCreateReport(id, user) : false;
+  const coverage =
+    tab === "reports"
+      ? await getReportCoverageForProject({ projectId: id, user })
+      : null;
   const todayDateStr = formatDateInput(new Date());
 
   const gps =
@@ -263,6 +269,17 @@ export default async function ProjectDetailPage({
               <PdfExportForm projectId={id} />
             </CardContent>
           </Card>
+
+          {coverage && coverage.days.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Pokrytí dnů</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReportCoverageHeatmap projectId={id} coverage={coverage} />
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader>

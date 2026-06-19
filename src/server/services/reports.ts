@@ -16,7 +16,7 @@ import {
   canAccessProject,
   type SessionUser,
 } from "@/server/permissions";
-import { formatDateInput } from "@/lib/dates";
+import { formatDateInput, pragueDayStart } from "@/lib/dates";
 import {
   fetchWeatherSnapshot,
   type WeatherSnapshot,
@@ -976,6 +976,122 @@ export async function canCreateReport(
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Coverage heatmap (per-day status across the project lifetime)
+// ---------------------------------------------------------------------------
+
+export type ReportCoverageState = "missing" | "draft" | "signed";
+
+export interface ReportCoverageDay {
+  /** Prague calendar day at midnight. */
+  date: Date;
+  state: ReportCoverageState;
+}
+
+export interface ReportCoverage {
+  /** Inclusive range start (Prague midnight). */
+  from: Date;
+  /** Inclusive range end (Prague midnight). */
+  to: Date;
+  days: ReportCoverageDay[];
+  totals: { missing: number; draft: number; signed: number };
+}
+
+/**
+ * Build a day-by-day coverage record for the project lifetime: one
+ * entry per calendar day between `from` (defaults to project's
+ * `startedAt`) and `to` (defaults to `endedAt` if set, otherwise
+ * today). Each day is classified as `missing` (no report), `draft`
+ * (report exists but unsigned), or `signed`.
+ *
+ * The window is bounded — projects that span many years would
+ * produce thousands of cells, so we cap the total span at 366 days
+ * and clamp the range to the most recent year by default.
+ */
+export async function getReportCoverageForProject(opts: {
+  projectId: string;
+  user: SessionUser;
+  /** Optional override; defaults to project.startedAt (or today - 90d). */
+  from?: Date;
+  /** Optional override; defaults to project.endedAt ?? today. */
+  to?: Date;
+}): Promise<ReportCoverage | null> {
+  const { projectId, user } = opts;
+
+  try {
+    await loadProjectScope(projectId, user);
+  } catch {
+    return null;
+  }
+
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, deletedAt: null },
+    select: { startedAt: true, endedAt: true },
+  });
+  if (!project) return null;
+
+  const todayMidnight = pragueDayStart(new Date());
+  const defaultFrom =
+    opts.from ??
+    project.startedAt ??
+    new Date(todayMidnight.getTime() - 90 * 24 * 60 * 60 * 1000);
+  const defaultTo = opts.to ?? project.endedAt ?? todayMidnight;
+
+  let from = pragueDayStart(defaultFrom);
+  let to = pragueDayStart(defaultTo);
+  if (from > to) [from, to] = [to, from];
+
+  // Clamp to at most ~1 year so the rendered grid stays manageable.
+  const MAX_DAYS = 366;
+  const totalDays =
+    Math.floor((to.getTime() - from.getTime()) / DAY_MS) + 1;
+  if (totalDays > MAX_DAYS) {
+    from = new Date(to.getTime() - (MAX_DAYS - 1) * DAY_MS);
+  }
+
+  const reports = await prisma.dailyReport.findMany({
+    where: {
+      projectId,
+      deletedAt: null,
+      date: { gte: from, lte: to },
+    },
+    select: { date: true, signedAt: true },
+  });
+
+  // Map by the ISO Prague day so multiple rows for the same day (the
+  // unique constraint prevents this, but defensive) collapse onto one.
+  const byDay = new Map<string, ReportCoverageState>();
+  for (const r of reports) {
+    byDay.set(
+      isoPragueDay(r.date),
+      r.signedAt !== null ? "signed" : "draft",
+    );
+  }
+
+  const days: ReportCoverageDay[] = [];
+  const totals = { missing: 0, draft: 0, signed: 0 };
+  for (
+    let cursor = from.getTime();
+    cursor <= to.getTime();
+    cursor += DAY_MS
+  ) {
+    const d = new Date(cursor);
+    const iso = isoPragueDay(d);
+    const state = byDay.get(iso) ?? "missing";
+    days.push({ date: d, state });
+    totals[state] += 1;
+  }
+
+  return { from, to, days, totals };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** "2026-06-15" — stable key for Map lookups by Prague-calendar day. */
+function isoPragueDay(d: Date): string {
+  return pragueDayStart(d).toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
