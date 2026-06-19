@@ -31,6 +31,7 @@ import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
 import { ProjectStatusButton } from "./ProjectStatusButton";
+import { ReportCalendarMonth } from "./ReportCalendarMonth";
 import { ReportCoverageHeatmap } from "./ReportCoverageHeatmap";
 import { ReportsFilterBar } from "./ReportsFilterBar";
 
@@ -56,6 +57,35 @@ function readQuery(value: string | string[] | undefined): string {
   if (typeof value !== "string") return "";
   // Cap free-text length to keep the URL sane.
   return value.slice(0, 200).trim();
+}
+
+const MONTH_RE = /^(\d{4})-(\d{2})$/;
+
+/** Returns the first UTC day of the (year, month) at midnight. */
+function monthAnchorFromParam(
+  value: string | string[] | undefined,
+  fallback: Date,
+): Date {
+  if (typeof value === "string") {
+    const m = MONTH_RE.exec(value);
+    if (m) {
+      const year = Number(m[1]);
+      const monthIdx = Number(m[2]) - 1;
+      if (year >= 2000 && year < 2100 && monthIdx >= 0 && monthIdx <= 11) {
+        return new Date(Date.UTC(year, monthIdx, 1));
+      }
+    }
+  }
+  return new Date(
+    Date.UTC(fallback.getFullYear(), fallback.getMonth(), 1),
+  );
+}
+
+/** "YYYY-MM" param string for the month containing `d`. */
+function monthParam(d: Date): string {
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
 }
 
 export const dynamic = "force-dynamic";
@@ -123,6 +153,50 @@ export default async function ProjectDetailPage({
     tab === "reports"
       ? await getReportCoverageForProject({ projectId: id, user })
       : null;
+
+  // Calendar view (current month by default). Bounded fetch — only
+  // the visible month, so cheap regardless of project lifetime.
+  const today = new Date();
+  const calendarAnchor =
+    tab === "reports" ? monthAnchorFromParam(sp.month, today) : today;
+  const monthEnd =
+    tab === "reports"
+      ? new Date(
+          Date.UTC(
+            calendarAnchor.getUTCFullYear(),
+            calendarAnchor.getUTCMonth() + 1,
+            0,
+          ),
+        )
+      : today;
+  const calendarCoverage =
+    tab === "reports"
+      ? await getReportCoverageForProject({
+          projectId: id,
+          user,
+          from: calendarAnchor,
+          to: monthEnd,
+        })
+      : null;
+  const prevMonthParam = monthParam(
+    new Date(
+      Date.UTC(
+        calendarAnchor.getUTCFullYear(),
+        calendarAnchor.getUTCMonth() - 1,
+        1,
+      ),
+    ),
+  );
+  const nextMonthParam = monthParam(
+    new Date(
+      Date.UTC(
+        calendarAnchor.getUTCFullYear(),
+        calendarAnchor.getUTCMonth() + 1,
+        1,
+      ),
+    ),
+  );
+
   const todayDateStr = formatDateInput(new Date());
 
   const gps =
@@ -277,6 +351,23 @@ export default async function ProjectDetailPage({
               </CardHeader>
               <CardContent>
                 <ReportCoverageHeatmap projectId={id} coverage={coverage} />
+              </CardContent>
+            </Card>
+          )}
+
+          {calendarCoverage && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Kalendář</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ReportCalendarMonth
+                  projectId={id}
+                  monthAnchor={calendarAnchor}
+                  coverage={calendarCoverage}
+                  prevMonth={prevMonthParam}
+                  nextMonth={nextMonthParam}
+                />
               </CardContent>
             </Card>
           )}
