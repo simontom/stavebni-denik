@@ -252,7 +252,9 @@ Co dál po Kroku 6, mimo původní MVP scope:
   i bez hoveru (touch zařízení), `pointer: coarse` media query
   v `globals.css` zvedá min-height tlačítek/inputů na 44 px (iOS HIG)
   — commit `pending`.
-- [ ] Calendar view v Záznamy tabu (vedle stávajícího seznamu).
+- [x] **Calendar view** v Záznamy tabu — měsíční mřížka (po–ne),
+  prev/next navigace přes `?month=YYYY-MM`, kliknutelné dny s barevným
+  pozadím podle stavu, dnes ringem (commit `b6db23e`).
 
 ### Domain polish
 - [ ] Materiál „přesunout do dalšího dne" — když položka přechází na
