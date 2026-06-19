@@ -235,3 +235,41 @@ specifikaci. Aktuální zadání je v [`docs/plan.md`](./plan.md).
 Testy: `pnpm test` (unit, 71/71), `pnpm test:integration` (vyžaduje
 běžící Docker, 24/24), `pnpm test:e2e` (vyžaduje `pnpm exec playwright
 install chromium` + běžící Postgres na 5432, 3/3 smoke).
+
+## Backlog (post-MVP polish)
+
+Co dál po Kroku 6, mimo původní MVP scope:
+
+### Visualizace
+- [ ] **Day-coverage heatmap na detailu zakázky** — políčko na každý
+  kalendářní den v období zakázky obarvené podle stavu (chybí záznam /
+  záznam je / podepsáno). Doplní multi-project Gantt na `/` cílenějším
+  per-zakázkovým pohledem; klik = navigace na den.
+- [ ] **Materiálový Gantt** — `MaterialNeed` jako pruhy od `createdAt`
+  po `neededBy` / `resolvedAt`, seskupené po zakázkách. Buď karta na
+  BOSS dashboardu, nebo dedikovaný `/materials/timeline` pohled. Cíl:
+  vidět zpoždění dodávek.
+
+### Mobile / UX
+- [ ] Mobile UX audit — touch targety, `capture="environment"` na photo
+  input pro přímý fotoaparát, pinch-to-zoom v galerii.
+- [ ] Calendar view v Záznamy tabu (vedle stávajícího seznamu).
+
+### Domain polish
+- [ ] Materiál „přesunout do dalšího dne" — když položka přechází na
+  další den, ať dostane nový datum místo `resolved=false` na starém
+  záznamu (lepší historie).
+
+### Maintenance
+- [ ] Větší major bumps: typescript 5 → 6, eslint 9 → 10,
+  testcontainers 11 → 12, @types/node 20 → 25 — nezávislé, jeden po
+  druhém s ověřením testů.
+- [ ] **Sentry source maps** přes `withSentryConfig` (vyžaduje
+  `SENTRY_AUTH_TOKEN` v build env) — čitelné stack traces.
+
+### Deploy
+- [ ] Produkční nasazení na Fly.io (`fly apps create` …  `fly secrets
+  set` … `fly deploy` … `pnpm db:seed` přes `fly ssh console`).
+  Nastavit repo secret `AUDIT_DATABASE_URL` pro nightly verifikaci.
+- [ ] **Full login → PDF E2E** spec proti staging deployi (smoke
+  layer v `e2e/smoke.spec.ts` je hotový jako základ).
