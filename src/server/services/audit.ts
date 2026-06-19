@@ -104,3 +104,39 @@ export async function listAuditActions(): Promise<string[]> {
   `;
   return rows.map((r) => r.action);
 }
+
+/** Distinct entity types present in the log — populates the filter dropdown. */
+export async function listAuditEntityTypes(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ entity_type: string }>>`
+    SELECT DISTINCT entity_type FROM audit_log ORDER BY entity_type ASC
+  `;
+  return rows.map((r) => r.entity_type);
+}
+
+/**
+ * Lightweight actor list for the filter dropdown — every user that has
+ * ever produced an audit row, in nickname order. We don't exclude
+ * inactive users on purpose: audit is forensic, you want to filter on a
+ * deactivated account just as easily.
+ *
+ * `audit_log` columns are snake_case (Prisma migrations chose that
+ * style for the audit table); `users` columns are camelCase (the rest
+ * of the schema's default). The raw query reflects both.
+ */
+export async function listAuditActors(): Promise<
+  { id: string; nickname: string; displayName: string }[]
+> {
+  const rows = await prisma.$queryRaw<
+    Array<{ id: string; nickname: string; displayName: string }>
+  >`
+    SELECT u.id, u.nickname, u."displayName"
+    FROM users u
+    WHERE EXISTS (SELECT 1 FROM audit_log a WHERE a.actor_id = u.id)
+    ORDER BY u.nickname ASC
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    nickname: r.nickname,
+    displayName: r.displayName,
+  }));
+}

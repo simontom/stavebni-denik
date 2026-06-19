@@ -256,6 +256,12 @@ Co dál po Kroku 6, mimo původní MVP scope:
   prev/next navigace přes `?month=YYYY-MM`, kliknutelné dny s barevným
   pozadím podle stavu, dnes ringem (commit `b6db23e`).
 
+### Admin / forensic
+- [x] **Audit log filter** — `/admin/audit` má teď datum od/do,
+  actor select s nickname + displayName (místo holého UUID), entity
+  type select, freetext entity ID, paginace forward přes `?cursor=…`
+  s tlačítkem „Načíst starších 100" (commit pending).
+
 ### Domain polish
 - [x] **Materiál „přesunout do dalšího dne"** — server `rolloverMaterial`
   atomicky v jedné `withAudit` transakci vyřídí zdroj a vytvoří kopii

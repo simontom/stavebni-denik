@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,9 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatDateTime } from "@/lib/dates";
+import { formatDateTime, pragueDayStart } from "@/lib/dates";
 import { assertCan, requireUser } from "@/server/rbac";
-import { listAuditActions, listAuditEntries } from "@/server/services/audit";
+import {
+  listAuditActions,
+  listAuditActors,
+  listAuditEntityTypes,
+  listAuditEntries,
+} from "@/server/services/audit";
 
 import { VerifyChainButton } from "./VerifyChainButton";
 import { AuditRowDetails } from "./AuditRowDetails";
@@ -31,6 +38,26 @@ function pickString(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Read a YYYY-MM-DD search param as a Prague-midnight Date. */
+function pickDate(value: string | string[] | undefined): Date | undefined {
+  const s = pickString(value);
+  if (!s || !DATE_RE.test(s)) return undefined;
+  return pragueDayStart(s);
+}
+
+/** Cursor is a bigint serialized via JSON.stringify(.toString()). */
+function pickCursor(value: string | string[] | undefined): bigint | undefined {
+  const s = pickString(value);
+  if (!s) return undefined;
+  try {
+    return BigInt(s);
+  } catch {
+    return undefined;
+  }
+}
+
 export default async function AdminAuditPage({ searchParams }: PageProps) {
   const user = await requireUser();
   assertCan(user, "audit.read");
@@ -40,11 +67,50 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
   const entityType = pickString(params.entityType);
   const entityId = pickString(params.entityId);
   const actorId = pickString(params.actorId);
+  const from = pickDate(params.from);
+  const toRaw = pickDate(params.to);
+  // Inclusive `to`: callers pick a calendar day; bump to end-of-day so
+  // a single-day range actually returns that day's rows.
+  const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000 - 1) : undefined;
+  const cursor = pickCursor(params.cursor);
 
-  const [{ rows, nextCursor }, allActions] = await Promise.all([
-    listAuditEntries({ action, entityType, entityId, actorId, limit: 100 }),
-    listAuditActions(),
-  ]);
+  const [{ rows, nextCursor }, allActions, allEntityTypes, allActors] =
+    await Promise.all([
+      listAuditEntries({
+        action,
+        entityType,
+        entityId,
+        actorId,
+        from,
+        to,
+        cursor,
+        limit: 100,
+      }),
+      listAuditActions(),
+      listAuditEntityTypes(),
+      listAuditActors(),
+    ]);
+
+  const fromValue = pickString(params.from) ?? "";
+  const toValue = pickString(params.to) ?? "";
+  const hasFilter = Boolean(
+    action || entityType || entityId || actorId || from || to,
+  );
+
+  // Forward-only pagination: keep current filters but bump the cursor.
+  const nextHref = nextCursor
+    ? (() => {
+        const q = new URLSearchParams();
+        if (action) q.set("action", action);
+        if (entityType) q.set("entityType", entityType);
+        if (entityId) q.set("entityId", entityId);
+        if (actorId) q.set("actorId", actorId);
+        if (fromValue) q.set("from", fromValue);
+        if (toValue) q.set("to", toValue);
+        q.set("cursor", nextCursor);
+        return `/admin/audit?${q.toString()}`;
+      })()
+    : null;
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -68,7 +134,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
         <CardContent>
           <form
             method="get"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
           >
             <div className="flex flex-col gap-1">
               <Label htmlFor="action">Akce</Label>
@@ -88,28 +154,62 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="entityType">Typ entity</Label>
-              <Input
+              <select
                 id="entityType"
                 name="entityType"
                 defaultValue={entityType ?? ""}
-                placeholder="user / project / report …"
-              />
+                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+              >
+                <option value="">— všechny —</option>
+                {allEntityTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="actorId">Aktér</Label>
+              <select
+                id="actorId"
+                name="actorId"
+                defaultValue={actorId ?? ""}
+                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+              >
+                <option value="">— všichni —</option>
+                {allActors.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.displayName} ({a.nickname})
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-1">
               <Label htmlFor="entityId">ID entity</Label>
-              <Input id="entityId" name="entityId" defaultValue={entityId ?? ""} />
+              <Input
+                id="entityId"
+                name="entityId"
+                defaultValue={entityId ?? ""}
+                placeholder="přesný ID, např. cuid"
+              />
             </div>
             <div className="flex flex-col gap-1">
-              <Label htmlFor="actorId">ID aktéra</Label>
-              <Input id="actorId" name="actorId" defaultValue={actorId ?? ""} />
+              <Label htmlFor="from">Od (datum)</Label>
+              <Input id="from" name="from" type="date" defaultValue={fromValue} />
             </div>
-            <div className="sm:col-span-2 lg:col-span-4 flex justify-end gap-2">
-              <a
-                href="/admin/audit"
-                className="text-sm text-muted-foreground hover:underline"
-              >
-                Vymazat filtr
-              </a>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="to">Do (datum)</Label>
+              <Input id="to" name="to" type="date" defaultValue={toValue} />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3 flex items-center justify-end gap-2">
+              {hasFilter && (
+                <Link
+                  href="/admin/audit"
+                  className="text-sm text-muted-foreground hover:underline"
+                >
+                  Vymazat filtr
+                </Link>
+              )}
               <button
                 type="submit"
                 className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
@@ -175,10 +275,11 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
         </Table>
       </Card>
 
-      {nextCursor && (
-        <div className="text-center text-sm text-muted-foreground">
-          Pro starší záznamy upřesněte filtr — stránkování bude doplněno v
-          dalším milníku.
+      {nextHref && (
+        <div className="flex justify-center">
+          <Button variant="outline" size="sm" render={<Link href={nextHref} />}>
+            Načíst starších 100
+          </Button>
         </div>
       )}
     </div>
