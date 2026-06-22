@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File picker test</title>
+  <style>
+    body { font-family: sans-serif; padding: 16px; }
+    pre { background: #eee; padding: 8px; white-space: pre-wrap; font-size: 12px; }
+    button, input { font-size: 16px; padding: 8px; margin: 8px 0; display: block; }
+  </style>
+</head>
+<body>
+  <h1>File picker test (no React, no framework)</h1>
+  <p>Tap any of the buttons below, pick a photo, then watch the log.</p>
+
+  <p><strong>1. Native input (gallery):</strong></p>
+  <input id="gallery" type="file" accept="image/*">
+
+  <p><strong>2. Native input with multiple:</strong></p>
+  <input id="multiple" type="file" accept="image/*" multiple>
+
+  <p><strong>3. Camera capture via label:</strong></p>
+  <input id="camera" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px">
+  <label for="camera" style="display:inline-block;background:#0066cc;color:white;padding:8px 16px;border-radius:6px;cursor:pointer">📷 Vyfotit přes kameru</label>
+
+  <p><strong>4. Programmatic .click() via JS:</strong></p>
+  <input id="hidden" type="file" accept="image/*" style="position:absolute;left:-9999px">
+  <button onclick="document.getElementById('hidden').click()">Otevřít přes JS</button>
+
+  <h2>Log:</h2>
+  <pre id="log">(waiting…)</pre>
+
+  <script>
+    var log = document.getElementById('log');
+    function append(msg) {
+      log.textContent = new Date().toISOString().substr(11, 8) + ' ' + msg + '\n' + log.textContent;
+    }
+    append('Page loaded. UA=' + navigator.userAgent);
+
+    ['gallery', 'multiple', 'camera', 'hidden'].forEach(function (id) {
+      var el = document.getElementById(id);
+      el.addEventListener('change', function (e) {
+        var files = e.target.files;
+        if (!files || files.length === 0) {
+          append('[' + id + '] change fired, but files is empty');
+          return;
+        }
+        var names = [];
+        for (var i = 0; i < files.length; i++) {
+          var f = files[i];
+          names.push(f.name + ' (' + Math.round(f.size / 1024) + ' KB, ' + (f.type || '?') + ')');
+        }
+        append('[' + id + '] change fired with ' + files.length + ' file(s): ' + names.join(', '));
+      });
+      el.addEventListener('input', function () {
+        append('[' + id + '] input event fired');
+      });
+    });
+
+    // Polling fallback
+    setInterval(function () {
+      ['gallery', 'multiple', 'camera', 'hidden'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el.files && el.files.length > 0 && !el.dataset.reported) {
+          var f = el.files[0];
+          append('[' + id + '] POLLING found file: ' + f.name + ' (' + Math.round(f.size / 1024) + ' KB)');
+          el.dataset.reported = '1';
+        }
+      });
+    }, 500);
+  </script>
+</body>
+</html>
