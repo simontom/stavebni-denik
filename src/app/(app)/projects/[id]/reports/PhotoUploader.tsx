@@ -64,8 +64,20 @@ export function PhotoUploader({ reportId }: Props) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Debug counter — bumped every onPick call so we can see whether
+  // the event fires at all on weird mobile browsers. Drop together
+  // with the visible "Debug:" line below once mobile flow verified.
+  const [debugPickCount, setDebugPickCount] = useState(0);
+  const [debugLastFiles, setDebugLastFiles] = useState<string>("(none)");
+
   function onPick(e: React.ChangeEvent<HTMLInputElement>) {
     const list = e.target.files ? Array.from(e.target.files) : [];
+    setDebugPickCount((c) => c + 1);
+    setDebugLastFiles(
+      list.length === 0
+        ? "0 files received from picker"
+        : `${list.length} file(s): ${list.map((f) => `${f.name} (${(f.size / 1024).toFixed(0)} KB, type=${f.type || "?"})`).join(", ")}`,
+    );
     if (list.length === 0) return;
     // Merge any camera-captured frame with the file-picker selection so
     // a user can tap the camera, then tap "Vybrat z galerie", and we
@@ -227,27 +239,35 @@ export function PhotoUploader({ reportId }: Props) {
           onChange={onPick}
           className="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
         />
-        {/* Phone-only: a hidden input with capture="environment" so
-            "Pořídit foto" jumps straight to the rear camera. */}
+        {/* Phone-only: a `<label>` triggers the file input natively
+            (no JS .click() needed — that pattern fails on Chrome
+            Android because the hidden input has display:none).
+            The visible label is styled to look like a Button.
+            sr-only on the input keeps it focusable + clickable but
+            visually invisible. */}
         <input
           ref={cameraInputRef}
+          id="photo-camera-capture"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           capture="environment"
           onChange={onPick}
-          className="hidden"
-          aria-hidden
-          tabIndex={-1}
+          className="sr-only"
         />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => cameraInputRef.current?.click()}
-          className="self-start sm:hidden"
+        <label
+          htmlFor="photo-camera-capture"
+          className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 self-start rounded-lg border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted active:translate-y-px sm:hidden dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
         >
           <Camera className="size-4" aria-hidden /> Pořídit foto
-        </Button>
+        </label>
       </div>
+
+      {/* DEBUG — temporary visible state indicator to diagnose mobile
+          onChange. Remove once mobile flow is verified. */}
+      <p className="text-[10px] text-muted-foreground">
+        Debug: onPick={debugPickCount}×, files.length={files.length},
+        pending={String(pending)}, last={debugLastFiles}
+      </p>
 
       {files.length > 0 && (
         <p className="text-xs text-muted-foreground">
