@@ -222,23 +222,50 @@ workflow jako šablona.
 ## Backup & restore
 
 Nightly snapshot Postgres dumpu + `/data/photos` přes
-[restic](https://restic.net/) do Backblaze B2 / Cloudflare R2 / S3.
+[restic](https://restic.net/) do **Backblaze B2** (doporučeno).
 Skript je v `scripts/backup.sh` a v produkčním image je zkopírovaný
 do `/app/scripts/backup.sh`.
 
-### Konfigurace (Fly secrets)
+### Proč Backblaze B2 (a ne S3 / R2)?
+
+| | B2 | R2 | S3 |
+|---|---|---|---|
+| Egress / restore poplatek | **$0** | $0 | ~$0.09/GB |
+| Storage / GB / měsíc | **$0.006** | $0.015 | $0.023 |
+| restic kompatibilita | nativní | přes S3 API | nativní |
+| Setup | 5 min (keyID + key) | trochu složitější (CloudFlare účet) | nejvíc kroků |
+
+Pro stavební deník (~ jednotky GB fotek / projekt, restoru jednou
+za uherský rok) je **B2 jasně nejlevnější** — desítky korun ročně.
+S3/R2 podporujeme dál (přes `RESTIC_REPOSITORY=s3:...` a
+`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), ale defaultní cesta
+v dokumentaci je B2.
+
+### Konfigurace (Fly secrets — B2)
+
+Krok za krokem pro Backblaze B2:
 
 ```bash
+# 1. V Backblaze B2 console (https://www.backblaze.com/b2/) vytvoř:
+#    - Bucket "stavebni-denik-backup" (private, region "EU-Central")
+#    - App key omezený jen na tento bucket
+#      (Capabilities: listFiles, readFiles, writeFiles, deleteFiles)
+
+# 2. Nastav Fly secrets:
 fly secrets set \
   RESTIC_REPOSITORY="b2:stavebni-denik-backup:/restic" \
   RESTIC_PASSWORD="$(openssl rand -base64 32)" \
   B2_ACCOUNT_ID="<keyID>" \
   B2_ACCOUNT_KEY="<applicationKey>"
+
+# 3. RESTIC_PASSWORD si SCHOVEJ mimo Fly (heslový manažer / bezpečné
+#    místo) — bez něj se zálohy NEDEŠIFRUJÍ, restic password reset
+#    neexistuje. Doporučení: zapsat zároveň do off-site safe.
 ```
 
-(Pro S3/R2 použij `s3:https://endpoint/bucket` a `AWS_ACCESS_KEY_ID` /
-`AWS_SECRET_ACCESS_KEY`.) `RESTIC_PASSWORD` si **schovej** — bez něj
-zálohy nedešifruješ.
+> **Alternativa — S3 / R2:** `RESTIC_REPOSITORY=s3:https://endpoint/bucket`
+> + `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. Stejný restic
+> protokol, jiný backend.
 
 ### Spuštění zálohy
 

@@ -354,8 +354,10 @@ fotodokumentaci.
 - [x] **Roundtrip integration test** — pg_dump → restic backup →
   restic restore → psql restore → ověření schématu + audit chainu
   v jednom containeru (commit pending).
-- [ ] **B2 jako Doporučená cesta** v README (už podporujeme přes
-  restic; jen explicitní doporučení).
+- [x] **B2 jako Doporučená cesta** v README. Hotovo: nová podsekce
+  „Proč Backblaze B2" s porovnávací tabulkou (egress / cena /
+  setup) — B2 je defaultní cesta v dokumentaci, S3/R2 zůstávají
+  jako alternativy.
 
 #### Doménové & UX hinty
 - [x] **PDF archivace** — rozhodnutí: **NEukládat** soubory na
