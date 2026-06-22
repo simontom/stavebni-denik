@@ -22,7 +22,10 @@ interface Props {
 }
 
 export async function AppHeader({ user }: Props) {
-  const isBoss = user.role === "BOSS";
+  // Admin menu (Uživatelé + Audit log) viditelné pro app-admin
+  // VČETNĚ těch, kteří nejsou stavbyvedoucí. Naopak stavbyvedoucí
+  // bez isAdmin admin menu nevidí (typický venkovní stavbyvedoucí).
+  const isAdmin = user.isAdmin;
 
   // Bell payload — newest 10 + unread count. Bounded so the layout
   // render stays cheap on every navigation.
@@ -60,7 +63,7 @@ export async function AppHeader({ user }: Props) {
           >
             Zakázky
           </Link>
-          {isBoss && (
+          {isAdmin && (
             <>
               <Link
                 href="/admin/users"

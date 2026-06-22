@@ -125,6 +125,7 @@ export const { handlers, auth, signIn, signOut, unstable_update: update } =
             nickname: user.nickname,
             displayName: user.displayName,
             role: user.role,
+            isAdmin: user.isAdmin,
             mustChangePwd: user.mustChangePwd,
             sessionId: session.id,
           };

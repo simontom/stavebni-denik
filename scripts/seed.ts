@@ -80,6 +80,9 @@ async function main() {
         role: "BOSS",
         passwordHash,
         ckaitNumber,
+        // První seedovaný uživatel je VŽDY app-admin — jinak by
+        // /admin nikdo neotevřel a aplikace by nešla rozjet.
+        isAdmin: true,
         isActive: true,
         mustChangePwd: true,
       },
@@ -107,6 +110,7 @@ async function main() {
         displayName: created.displayName,
         role: created.role,
         ckaitNumber: created.ckaitNumber,
+        isAdmin: created.isAdmin,
         isActive: created.isActive,
         mustChangePwd: created.mustChangePwd,
         createdAt: created.createdAt.toISOString(),

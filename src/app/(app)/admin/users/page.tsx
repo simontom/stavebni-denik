@@ -16,7 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatDate } from "@/lib/dates";
-import { requireBoss } from "@/server/rbac";
+import { requireAdmin } from "@/server/rbac";
 import { listUsers } from "@/server/services/users";
 
 import { CreateUserDialog } from "./CreateUserDialog";
@@ -32,7 +32,7 @@ const ROLE_LABEL: Record<"BOSS" | "WORKER" | "GUEST", string> = {
 };
 
 export default async function AdminUsersPage() {
-  await requireBoss();
+  await requireAdmin();
   const users = await listUsers();
 
   return (
@@ -58,6 +58,7 @@ export default async function AdminUsersPage() {
               <TableHead>Přihlašovací jméno</TableHead>
               <TableHead>Jméno</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Admin</TableHead>
               <TableHead>ČKAIT</TableHead>
               <TableHead>Stav</TableHead>
               <TableHead>Vytvořen</TableHead>
@@ -68,7 +69,7 @@ export default async function AdminUsersPage() {
             {users.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="text-center text-muted-foreground"
                 >
                   Žádní uživatelé. Přidejte prvního pracovníka.
@@ -83,6 +84,13 @@ export default async function AdminUsersPage() {
                   <Badge variant={u.role === "BOSS" ? "default" : "secondary"}>
                     {ROLE_LABEL[u.role]}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  {u.isAdmin ? (
+                    <Badge variant="default">Ano</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="font-mono text-xs">
                   {u.ckaitNumber ?? "—"}

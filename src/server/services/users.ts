@@ -24,6 +24,7 @@ function projectUserForAudit(u: {
   displayName: string;
   role: Role;
   ckaitNumber: string | null;
+  isAdmin: boolean;
   isActive: boolean;
   mustChangePwd: boolean;
   createdAt: Date;
@@ -36,6 +37,7 @@ function projectUserForAudit(u: {
     displayName: u.displayName,
     role: u.role,
     ckaitNumber: u.ckaitNumber,
+    isAdmin: u.isAdmin,
     isActive: u.isActive,
     mustChangePwd: u.mustChangePwd,
     createdAt: u.createdAt.toISOString(),
@@ -68,6 +70,9 @@ export const createUserSchema = z.object({
     .max(32, "Maximálně 32 znaků.")
     .optional()
     .nullable(),
+  // App-admin flag — orthogonální k role. Default false, formulář
+  // pošle "true" jen když je checkbox zaškrtnutý.
+  isAdmin: z.boolean().optional().default(false),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
@@ -137,6 +142,7 @@ export async function createUser(
           displayName: data.displayName,
           role: data.role,
           ckaitNumber: data.ckaitNumber ?? null,
+          isAdmin: data.isAdmin,
           passwordHash,
           mustChangePwd: true,
           isActive: true,
@@ -261,6 +267,7 @@ export async function listUsers() {
       displayName: true,
       role: true,
       ckaitNumber: true,
+      isAdmin: true,
       isActive: true,
       mustChangePwd: true,
       createdAt: true,

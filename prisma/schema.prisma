@@ -13,6 +13,15 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Role uživatele v rámci stavby. BOSS = stavbyvedoucí (musí mít
+/// ČKAIT autorizační číslo dle § 153 stavebního zákona), WORKER =
+/// pracovník na stavbě, GUEST = dozor / TDS / projektant (read +
+/// remark.create only).
+///
+/// POZOR: BOSS NEZNAMENÁ "admin aplikace" — pro správu uživatelů
+/// a audit log se používá samostatný flag `User.isAdmin`. Jeden
+/// člověk může být oboje (typické pro malé firmy: majitel = admin
+/// + stavbyvedoucí), nebo jen jedno.
 enum Role {
   BOSS
   WORKER
@@ -27,6 +36,11 @@ model User {
   role          Role      @default(WORKER)
   // ČKAIT autorizační číslo stavbyvedoucího (povinné pro BOSS dle § 153 stavebního zákona).
   ckaitNumber   String?
+  // Administrátor aplikace — uživatel může spravovat uživatele
+  // (user.create / activate / deactivate) a číst audit log. Nezávisí
+  // na `role`: admin nemusí být stavbyvedoucí, stavbyvedoucí nemusí
+  // být admin. První seedovaný uživatel se zakládá s isAdmin=true.
+  isAdmin       Boolean   @default(false)
   isActive      Boolean   @default(true)
   // Po prvním přihlášení vygenerovaným heslem musí uživatel heslo změnit.
   mustChangePwd Boolean   @default(true)

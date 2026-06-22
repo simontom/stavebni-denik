@@ -11,7 +11,7 @@ import {
   setUserActive,
   type CreateUserResult,
 } from "@/server/services/users";
-import { requireBoss } from "@/server/rbac";
+import { requireAdmin } from "@/server/rbac";
 
 export type CreateUserState =
   | { status: "idle" }
@@ -27,7 +27,7 @@ export async function createUserAction(
 ): Promise<CreateUserState> {
   let actor;
   try {
-    actor = await requireBoss();
+    actor = await requireAdmin();
   } catch {
     return { status: "forbidden" };
   }
@@ -42,6 +42,9 @@ export async function createUserAction(
       const trimmed = String(raw).trim();
       return trimmed.length === 0 ? null : trimmed;
     })(),
+    // HTML checkbox: when checked, value is "true"; when unchecked,
+    // the field is absent (data.get returns null) → false.
+    isAdmin: data.get("isAdmin") === "true",
   });
 
   if (!parsed.success) {
@@ -75,7 +78,7 @@ const setActiveSchema = z.object({
 });
 
 export async function setUserActiveAction(data: FormData): Promise<void> {
-  await requireBoss();
+  await requireAdmin();
   const parsed = setActiveSchema.safeParse({
     userId: data.get("userId"),
     isActive: data.get("isActive"),

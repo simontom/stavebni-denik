@@ -14,6 +14,7 @@ declare module "next-auth" {
     nickname: string;
     displayName: string;
     role: "BOSS" | "WORKER" | "GUEST";
+    isAdmin: boolean;
     mustChangePwd: boolean;
     /** Server-side session row id (Postgres `Session.id`). */
     sessionId: string;
@@ -25,6 +26,7 @@ declare module "next-auth" {
       nickname: string;
       displayName: string;
       role: "BOSS" | "WORKER" | "GUEST";
+      isAdmin: boolean;
       mustChangePwd: boolean;
       sessionId: string;
     } & DefaultSession["user"];
@@ -37,6 +39,7 @@ declare module "next-auth/jwt" {
     nickname?: string;
     displayName?: string;
     role?: "BOSS" | "WORKER" | "GUEST";
+    isAdmin?: boolean;
     mustChangePwd?: boolean;
     sessionId?: string;
   }

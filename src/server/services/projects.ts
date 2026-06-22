@@ -540,12 +540,23 @@ export async function getProjectForUser(
 }
 
 /**
- * Active BOSS users — candidates for the site-manager select on the
- * "new project" form.
+ * Active BOSS users with ČKAIT autorizací — candidates for the
+ * site-manager picker (Project.siteManagerId).
+ *
+ * Filtrujeme tvrdě: `role = BOSS AND ckaitNumber IS NOT NULL`. Per
+ * Vyhláška 499/2006 § 153 stavbyvedoucí MUSÍ mít ČKAIT autorizační
+ * číslo — BOSS bez ČKAIT (např. první seedovaný admin účet) sem
+ * NEPATŘÍ. Admin uživatelé (isAdmin=true) bez role BOSS taky ne —
+ * jsou to správci aplikace, ne stavbyvedoucí.
  */
 export async function listSiteManagerCandidates() {
   return prisma.user.findMany({
-    where: { deletedAt: null, isActive: true, role: "BOSS" },
+    where: {
+      deletedAt: null,
+      isActive: true,
+      role: "BOSS",
+      ckaitNumber: { not: null },
+    },
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true, nickname: true },
   });

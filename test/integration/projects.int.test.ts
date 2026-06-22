@@ -44,6 +44,7 @@ function sessionUser(id: string, role: SessionUser["role"]): SessionUser {
     nickname: id,
     displayName: id,
     role,
+    isAdmin: true,
     mustChangePwd: false,
     sessionId: `sess-${id}`,
   };
@@ -72,7 +73,8 @@ beforeAll(async () => {
       displayName: "Šéf Stavbyvedoucí",
       passwordHash: "x",
       role: "BOSS",
-      mustChangePwd: false,
+      isAdmin: true,
+    mustChangePwd: false,
     },
   });
   const w1 = await db.user.create({
@@ -81,7 +83,8 @@ beforeAll(async () => {
       displayName: "Dělník Jedna",
       passwordHash: "x",
       role: "WORKER",
-      mustChangePwd: false,
+      isAdmin: true,
+    mustChangePwd: false,
     },
   });
   const w2 = await db.user.create({
@@ -90,7 +93,8 @@ beforeAll(async () => {
       displayName: "Dělník Dva",
       passwordHash: "x",
       role: "WORKER",
-      mustChangePwd: false,
+      isAdmin: true,
+    mustChangePwd: false,
     },
   });
 

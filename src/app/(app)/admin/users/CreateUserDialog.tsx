@@ -245,7 +245,9 @@ export function CreateUserDialog() {
                 <div className="grid gap-2">
                   <Label htmlFor="ckaitNumber">
                     Číslo autorizace ČKAIT{" "}
-                    <span className="text-muted-foreground">(volitelné)</span>
+                    <span className="text-muted-foreground">
+                      (povinné pro stavbyvedoucího — § 153 stavebního zákona)
+                    </span>
                   </Label>
                   <Input
                     id="ckaitNumber"
@@ -256,6 +258,25 @@ export function CreateUserDialog() {
                   />
                 </div>
               )}
+
+              <div className="grid gap-2">
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="isAdmin"
+                    value="true"
+                    className="mt-1 size-4"
+                  />
+                  <span>
+                    <span className="font-medium">Administrátor aplikace</span>
+                    <br />
+                    <span className="text-xs text-muted-foreground">
+                      Spravuje uživatele a čte audit log. Není nutné, aby byl
+                      zároveň stavbyvedoucí.
+                    </span>
+                  </span>
+                </label>
+              </div>
 
               <DialogFooter>
                 <Button

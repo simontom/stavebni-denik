@@ -37,6 +37,20 @@ export async function requireRole(...allowed: Role[]): Promise<SessionUser> {
   return user;
 }
 
+/** Stavbyvedoucí (role=BOSS) — operace na zakázkách, podpis deníku. */
 export async function requireBoss(): Promise<SessionUser> {
   return requireRole("BOSS");
+}
+
+/**
+ * App administrátor — správa uživatelů, čtení audit logu. Nezávisí
+ * na `role` (admin nemusí být stavbyvedoucí). Per Vyhláška 499/2006
+ * §153 musí mít stavbyvedoucí ČKAIT autorizaci — admin ne.
+ */
+export async function requireAdmin(): Promise<SessionUser> {
+  const user = await requireUser();
+  if (!user.isAdmin) {
+    throw new ForbiddenError("requires isAdmin");
+  }
+  return user;
 }

@@ -15,6 +15,17 @@ export interface SessionUser {
   nickname: string;
   displayName: string;
   role: Role;
+  /**
+   * App administrator — orthogonal to `role`. Admin spravuje
+   * uživatele a čte audit log (`user.create`, `audit.read`, …);
+   * NEZÁVISÍ to na tom, jestli je zároveň stavbyvedoucí. Per
+   * Vyhláška 499/2006 §153 musí mít stavbyvedoucí (BOSS) ČKAIT
+   * autorizační číslo — admin ne. Typický scénář: majitel firmy
+   * je `role=BOSS + isAdmin=true`; účetní co spravuje účty je
+   * `role=WORKER + isAdmin=true`; venkovní stavbyvedoucí je
+   * `role=BOSS + isAdmin=false`.
+   */
+  isAdmin: boolean;
   mustChangePwd: boolean;
   sessionId: string;
 }
@@ -78,14 +89,18 @@ export interface Resource {
  * the app then calls `assertCan`.
  */
 const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean> = {
-  // Admin
-  "user.create":      (u) => u.role === "BOSS",
-  "user.deactivate":  (u) => u.role === "BOSS",
-  "user.activate":    (u) => u.role === "BOSS",
-  "audit.read":       (u) => u.role === "BOSS",
-  "audit.verify":     (u) => u.role === "BOSS",
+  // App-admin (správa uživatelů, audit log) — orthogonální k role.
+  // Admin nemusí být stavbyvedoucí, stavbyvedoucí nemusí být admin.
+  "user.create":      (u) => u.isAdmin,
+  "user.deactivate":  (u) => u.isAdmin,
+  "user.activate":    (u) => u.isAdmin,
+  "audit.read":       (u) => u.isAdmin,
+  "audit.verify":     (u) => u.isAdmin,
 
-  // Projects
+  // Stavbyvedoucí (role=BOSS) operations — zakázky, podpis deníku.
+  // Tady BOSS znamená legal stavbyvedoucí dle § 153 stavebního zákona
+  // (musí mít ČKAIT autorizaci — kontroluje listSiteManagerCandidates
+  // při výběru pro Project.siteManagerId).
   "project.create":         (u) => u.role === "BOSS",
   "project.update":         (u) => u.role === "BOSS",
   "project.delete":         (u) => u.role === "BOSS",

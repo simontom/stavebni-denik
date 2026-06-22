@@ -65,6 +65,7 @@ function sessionUser(id: string, role: SessionUser["role"]): SessionUser {
     nickname: id,
     displayName: id,
     role,
+    isAdmin: true,
     mustChangePwd: false,
     sessionId: `sess-${id}`,
   };
