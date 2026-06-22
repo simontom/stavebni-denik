@@ -130,7 +130,14 @@ export function MembersPanel({
             <span className="text-sm font-medium">Přidat člena</span>
             <Select value={userId} onValueChange={(v) => setUserId(v as string)}>
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Vyberte uživatele" />
+                <SelectValue placeholder="Vyberte uživatele">
+                  {(value) => {
+                    const found = addableUsers.find((u) => u.id === value);
+                    return found
+                      ? `${found.displayName} (${found.nickname})`
+                      : "Vyberte uživatele";
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {addableUsers.map((u) => (
@@ -145,7 +152,9 @@ export function MembersPanel({
             <span className="text-sm font-medium">Role v zakázce</span>
             <Select value={role} onValueChange={(v) => setRole(v as Role)}>
               <SelectTrigger className="w-full sm:w-44">
-                <SelectValue />
+                <SelectValue>
+                  {(value) => ROLE_LABEL[value as Role] ?? value}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="WORKER">Pracovník</SelectItem>

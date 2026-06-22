@@ -205,7 +205,14 @@ export function ProjectForm({
               onValueChange={(v) => setSiteManagerId(v as string)}
             >
               <SelectTrigger id="siteManagerId" aria-invalid={!!fieldErrors?.siteManagerId}>
-                <SelectValue placeholder="Vyberte stavbyvedoucího" />
+                <SelectValue placeholder="Vyberte stavbyvedoucího">
+                  {(value) => {
+                    const found = siteManagers.find((m) => m.id === value);
+                    return found
+                      ? `${found.displayName} (${found.nickname})`
+                      : "Vyberte stavbyvedoucího";
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {siteManagers.map((m) => (

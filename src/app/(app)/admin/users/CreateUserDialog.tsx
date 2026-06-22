@@ -217,7 +217,12 @@ export function CreateUserDialog() {
                   }
                 >
                   <SelectTrigger id="role">
-                    <SelectValue />
+                    <SelectValue>
+                      {(value) =>
+                        ROLE_OPTIONS.find((o) => o.value === value)?.label ??
+                        value
+                      }
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {ROLE_OPTIONS.map((o) => (
