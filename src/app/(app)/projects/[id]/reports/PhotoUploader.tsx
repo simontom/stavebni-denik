@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
 
@@ -12,15 +12,6 @@ import {
   type PreparedPhoto,
 } from "@/lib/photo-client";
 import { PhotoGuidance } from "./PhotoGuidance";
-
-// PhotoGuidance is statically imported. The `dynamic({ ssr: false })`
-// wrapper we tried previously was suspected of remounting the
-// PhotoUploader subtree during hydration, breaking file-input event
-// listeners on mobile Chrome (picker would open + close cleanly but
-// `input.files` would stay empty). The simplified guidance widget
-// (no dismiss path) only varies between collapsed/expanded children
-// — useSyncExternalStore handles the rare structural mismatch
-// gracefully (warning, not error) so SSR is fine.
 
 interface UploadFailure {
   filename: string;
@@ -62,19 +53,8 @@ export function PhotoUploader({ reportId }: Props) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  // Debug counter — bumped every onPick call so we can see whether
-  // the event fires at all on weird mobile browsers. Drop together
-  // with the visible "Debug:" line below once mobile flow verified.
-  const [debugPickCount, setDebugPickCount] = useState(0);
-  const [debugLastFiles, setDebugLastFiles] = useState<string>("(none)");
-
-  function handleFiles(list: File[]): void {
-    setDebugPickCount((c) => c + 1);
-    setDebugLastFiles(
-      list.length === 0
-        ? "0 files received from picker"
-        : `${list.length} file(s): ${list.map((f) => `${f.name} (${(f.size / 1024).toFixed(0)} KB, type=${f.type || "?"})`).join(", ")}`,
-    );
+  function onPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files ? Array.from(e.target.files) : [];
     if (list.length === 0) return;
     // Merge any camera-captured frame with the file-picker selection so
     // a user can tap the camera, then tap "Vybrat z galerie", and we
@@ -83,47 +63,6 @@ export function PhotoUploader({ reportId }: Props) {
     setFailures([]);
     setServerError(null);
   }
-
-  // React 19 + Turbopack quirk: synthetic `onChange` on a
-  // `<input type="file">` does NOT fire on Chrome Android (verified
-  // by `onPick=0×` debug counter staying at 0 even after a successful
-  // gallery pick). Native `addEventListener("change", ...)` bypasses
-  // React's event delegation and reliably catches the DOM event.
-  useEffect(() => {
-    const fileEl = fileInputRef.current;
-    const camEl = cameraInputRef.current;
-    if (!fileEl && !camEl) return;
-    const handler = (e: Event) => {
-      const target = e.target as HTMLInputElement;
-      const list = target.files ? Array.from(target.files) : [];
-      handleFiles(list);
-    };
-    fileEl?.addEventListener("change", handler);
-    camEl?.addEventListener("change", handler);
-    return () => {
-      fileEl?.removeEventListener("change", handler);
-      camEl?.removeEventListener("change", handler);
-    };
-    // handleFiles closes over setFiles/setFailures/setServerError which
-    // are stable React 19 setters — safe single-shot wiring.
-  }, []);
-
-  // DEBUG belt-and-suspenders: poll the input's `files` attribute
-  // directly every 500 ms. If the DOM `change` event never fires
-  // (Chrome Android over HTTP?), polling still picks up the new
-  // file. Drop together with the visible debug line once verified.
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const file = fileInputRef.current?.files?.[0];
-      const cam = cameraInputRef.current?.files?.[0];
-      const bare = (document.getElementById("photo-bare-debug") as HTMLInputElement | null)?.files?.[0];
-      const picked = file ?? cam ?? bare;
-      if (picked && files.length === 0) {
-        handleFiles([picked]);
-      }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [files.length]);
 
   function clear() {
     setFiles([]);
@@ -259,51 +198,31 @@ export function PhotoUploader({ reportId }: Props) {
     <div className="flex flex-col gap-3">
       <PhotoGuidance />
 
-      {/* DEBUG — totally bare <input> mounted via dangerouslySetInnerHTML
-          so React never touches it. If THIS input fires change/sets
-          input.files normally, the bug is in React's reconciliation of
-          our other <input>; if not, the bug is in surrounding layout
-          (CSP, hydration, etc.). The polling tick in the useEffect
-          above will pick up its files too. */}
-      <div
-        className="rounded border border-dashed border-blue-400 p-2"
-        dangerouslySetInnerHTML={{
-          __html:
-            '<p style="font-size:11px;color:#666;margin:0 0 4px 0">DEBUG: bare input mimo React, sledováno pollingem (useEffect bug fileInputRef)</p>' +
-            '<input id="photo-bare-debug" type="file" accept="image/*" style="display:block;width:100%;font-size:14px;padding:4px"/>',
-        }}
-      />
-
       <div className="grid gap-1.5">
         <Label htmlFor="photo-files">Vyberte fotografie</Label>
-        {/* Use a native <input type="file"> instead of the shadcn
-            wrapper. Base UI's <Input> proxies value/onChange in a way
-            that swallows file-input changes on mobile (iOS Safari +
-            Android Chrome) — user picks a photo but the React
-            `onChange` never fires, so files state stays empty and the
-            "Nahrát" button is permanently disabled. Native <input>
-            sidesteps the wrapper entirely. Tailwind classes mirror
-            shadcn Input's look for visual consistency. */}
+        {/* Use a native <input type="file"> — shadcn's Base UI wrapper
+            proxies value/onChange in a way that breaks file-input
+            change events on mobile (iOS Safari + Android Chrome).
+            Tailwind classes mirror shadcn Input's look. */}
         <input
           ref={fileInputRef}
           id="photo-files"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           multiple
+          onChange={onPick}
           className="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
         />
-        {/* Phone-only: a `<label>` triggers the file input natively
-            (no JS .click() needed — that pattern fails on Chrome
-            Android because the hidden input has display:none).
-            The visible label is styled to look like a Button.
-            sr-only on the input keeps it focusable + clickable but
-            visually invisible. */}
+        {/* Phone-only camera capture: `<label>` triggers a hidden
+            input natively, no JS .click() needed (which fails on
+            Chrome Android against display:none inputs). */}
         <input
           ref={cameraInputRef}
           id="photo-camera-capture"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           capture="environment"
+          onChange={onPick}
           className="sr-only"
         />
         <label
@@ -313,13 +232,6 @@ export function PhotoUploader({ reportId }: Props) {
           <Camera className="size-4" aria-hidden /> Pořídit foto
         </label>
       </div>
-
-      {/* DEBUG — temporary visible state indicator to diagnose mobile
-          onChange. Remove once mobile flow is verified. */}
-      <p className="text-[10px] text-muted-foreground">
-        Debug: onPick={debugPickCount}×, files.length={files.length},
-        pending={String(pending)}, last={debugLastFiles}
-      </p>
 
       {files.length > 0 && (
         <p className="text-xs text-muted-foreground">
