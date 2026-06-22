@@ -48,6 +48,10 @@ next-env.d.ts
 # Local dev volume (photos, PDF exports, audit-verify log).
 /data
 /data/
+# DATA_DIR override pro `pnpm dev` lokálně (.env file ho nastavuje
+# na "./.dev-data" — udržujeme mimo repo).
+/.dev-data
+/.dev-data/
 
 # Playwright artifacts.
 /test-results
