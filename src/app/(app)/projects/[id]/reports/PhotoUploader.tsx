@@ -116,7 +116,8 @@ export function PhotoUploader({ reportId }: Props) {
     const interval = setInterval(() => {
       const file = fileInputRef.current?.files?.[0];
       const cam = cameraInputRef.current?.files?.[0];
-      const picked = file ?? cam;
+      const bare = (document.getElementById("photo-bare-debug") as HTMLInputElement | null)?.files?.[0];
+      const picked = file ?? cam ?? bare;
       if (picked && files.length === 0) {
         handleFiles([picked]);
       }
@@ -257,6 +258,22 @@ export function PhotoUploader({ reportId }: Props) {
   return (
     <div className="flex flex-col gap-3">
       <PhotoGuidance />
+
+      {/* DEBUG — totally bare <input> mounted via dangerouslySetInnerHTML
+          so React never touches it. If THIS input fires change/sets
+          input.files normally, the bug is in React's reconciliation of
+          our other <input>; if not, the bug is in surrounding layout
+          (CSP, hydration, etc.). The polling tick in the useEffect
+          above will pick up its files too. */}
+      <div
+        className="rounded border border-dashed border-blue-400 p-2"
+        dangerouslySetInnerHTML={{
+          __html:
+            '<p style="font-size:11px;color:#666;margin:0 0 4px 0">DEBUG: bare input mimo React, sledováno pollingem (useEffect bug fileInputRef)</p>' +
+            '<input id="photo-bare-debug" type="file" accept="image/*" style="display:block;width:100%;font-size:14px;padding:4px"/>',
+        }}
+      />
+
       <div className="grid gap-1.5">
         <Label htmlFor="photo-files">Vyberte fotografie</Label>
         {/* Use a native <input type="file"> instead of the shadcn
