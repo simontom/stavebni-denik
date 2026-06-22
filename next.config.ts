@@ -6,7 +6,20 @@ import { withSentryConfig } from "@sentry/nextjs";
  * authenticated SaaS app — no third-party scripts, no inline scripts
  * (Next.js inlines a small amount of JSON, which is allowed via
  * `'self'`), no framing.
+ *
+ * DEV-ONLY: `'unsafe-eval'` v script-src. React 19 v dev módu (HMR
+ * + Turbopack runtime) používá `eval()` pro hot reload a pro
+ * client-side hydrataci server-action form binding. Bez něj se form
+ * submituje s prázdnou FormData → každé přihlášení vrátí
+ * InvalidCredentials, i když credentials jsou správné. Produkce
+ * `'unsafe-eval'` NEMÁ (React production buildy ho nepotřebují).
  */
+const isDev = process.env.NODE_ENV !== "production";
+
+const scriptSrc = isDev
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+  : "script-src 'self' 'unsafe-inline'";
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -28,7 +41,7 @@ const securityHeaders = [
     // No third-party scripts or images — adjust if we ever embed maps etc.
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'",
+      scriptSrc,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",

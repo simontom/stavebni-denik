@@ -20,7 +20,11 @@ function isRedirectError(err: unknown): boolean {
 const formSchema = z.object({
   nickname: z.string().min(1).max(64),
   password: z.string().min(1).max(256),
-  callbackUrl: z.string().optional(),
+  // Hidden input is only rendered when callbackUrl is passed; FormData
+  // returns `null` for missing fields, NOT `undefined`. Zod 4's
+  // `.optional()` only allows undefined — use `.nullish()` to accept
+  // both.
+  callbackUrl: z.string().nullish(),
 });
 
 export type LoginState = {
