@@ -29,20 +29,25 @@ export const THUMB_DIMENSION_PX = 400;
 export const MAIN_JPEG_QUALITY = 82;
 export const THUMB_JPEG_QUALITY = 75;
 
-/** Maximum accepted upload size (bytes). 20 MiB is plenty for phone JPEGs. */
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+/** Maximum accepted upload size (bytes). 5 MiB pokryje post-resize
+ *  JPEG (typicky 300-700 KB, max ~1-2 MB) s 5× rezervou. Klient
+ *  resize na 1920 px je primární mechanismus — server byte cap jen
+ *  blokuje bypass (curl, raw upload). */
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 /**
- * Hard ceiling on decoded pixel count for inbound images. The client
- * is expected to resize 12 MP phone photos to 1920 px (~4 MP) before
- * upload (see `src/lib/photo-client.ts`); this guard rejects anyone
- * trying to bypass that resize and ship a 50 MP raw, which would
- * blow Sharp's heap on the 1 GB Fly machine.
+ * Hard ceiling on decoded pixel count for inbound images. Klient
+ * VŽDY resize-uje na 1920 px long edge (≈ 1920² = 3.7 MP v nejhorším
+ * případě 1:1, typicky 1920×1440 = 2.8 MP). Tento server-side strop
+ * 8 MP dává cca 2× rezervu nad post-resize výstupem a tvrdě odmítne:
  *
- * 64 MP = 8000×8000 — well above modern phones but a safe envelope
- * for the future.
+ *   - raw 12 MP foto z mobilu poslanou přes curl/API (bypass UI),
+ *   - 50+ MP HEIC z full-res režimu (overshoot bez resize),
+ *   - vícenásobné panorama (kde 1920 × cokoliv ≫ 8 MP).
+ *
+ * Tj. hlavní zmenšení dělá klient; tady jen safety net.
  */
-export const MAX_PIXELS = 64_000_000;
+export const MAX_PIXELS = 8_000_000;
 
 /**
  * MIME types we accept. The browser-reported MIME is not authoritative

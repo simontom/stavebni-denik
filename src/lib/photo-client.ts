@@ -32,12 +32,26 @@ export const CLIENT_RESIZE_MAX_PX = 1920;
 export const CLIENT_RESIZE_JPEG_QUALITY = 0.85;
 
 /**
- * Any source pixel count above this trips the server-side
- * `image-too-large` guard. Keeps the wire payload sane even when a
- * caller (or future browser) ignores the client-side resize and
- * sends raw bytes. 64 MP = 8000×8000; well over modern phones.
+ * Soft cap on the SOURCE pixel count we are willing to decode in
+ * the browser. Klient resize na 1920 px je hlavní bezpečnostní
+ * mechanismus — tahle hodnota je horní hranice toho, co browser
+ * vůbec zkusí dekódovat do bitmapy a propustit přes canvas resize.
+ *
+ * 60 MP = ~7700×7700. Pohodlně akceptuje:
+ *   - 12 MP default (Pixel, Samsung, iPhone),
+ *   - 24 MP iPhone 15/16 Pro default,
+ *   - 48 MP iPhone ProRAW full-res,
+ *   - 50 MP Pixel 8 Pro full-res.
+ *
+ * Odmítá jen extrémy (Samsung S24 Ultra 200 MP režim, panoramata
+ * 12000×6000) kde by browser snadno OOM-knul na raw bitmapě.
+ *
+ * POZN.: TO NENÍ totéž co server `MAX_PIXELS`. Server má mnohem
+ * tvrdší cap (8 MP) — bere ho na vstup PO klient resize, kde už
+ * payload nesmí být víc než ~3.7 MP. 60 MP je `decode budget` na
+ * klientovi, 8 MP je `wire payload limit` na serveru.
  */
-export const SERVER_MAX_PIXELS = 64_000_000;
+export const CLIENT_DECODE_MAX_PIXELS = 60_000_000;
 
 export interface PreparedPhoto {
   /** Resized JPEG blob, ready for the multipart upload. */
@@ -155,10 +169,10 @@ export async function preparePhotoForUpload(
 
   const srcW = bitmap.width;
   const srcH = bitmap.height;
-  if (srcW * srcH > SERVER_MAX_PIXELS) {
+  if (srcW * srcH > CLIENT_DECODE_MAX_PIXELS) {
     bitmap.close();
     throw new PhotoClientPrepareError(
-      `Obrázek je příliš velký (${srcW}×${srcH} = ${(srcW * srcH / 1_000_000).toFixed(1)} MP). Maximum je 64 MP.`,
+      `Obrázek je příliš velký (${srcW}×${srcH} = ${(srcW * srcH / 1_000_000).toFixed(1)} MP). Maximum je ${CLIENT_DECODE_MAX_PIXELS / 1_000_000} MP — v telefonu vypněte režim plného rozlišení.`,
     );
   }
 

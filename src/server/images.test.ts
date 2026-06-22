@@ -101,14 +101,13 @@ describe("processImage — failures", () => {
   });
 
   it("throws ImageTooLargeError on a decoded image past MAX_PIXELS", async () => {
-    // 9000×8000 = 72 MP, well above the 64 MP cap. Sharp's PNG
-    // encoder produces a small file (mostly solid colour) so the
-    // payload size guard is NOT what kicks in here — the metadata
-    // pixel-count check is.
+    // 4000×3000 = 12 MP, nad 8 MP cap. Sharp PNG enkodér produkuje
+    // malý soubor (jednolitá barva) takže byte-size guard nezáleží
+    // — kontrolujeme metadata pixel-count check.
     const tooManyPixels = await sharp({
       create: {
-        width: 9000,
-        height: 8000,
+        width: 4000,
+        height: 3000,
         channels: 3,
         background: { r: 0, g: 0, b: 0 },
       },
