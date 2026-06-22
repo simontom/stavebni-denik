@@ -12,6 +12,7 @@ import {
   preparePhotoForUpload,
   type PreparedPhoto,
 } from "@/lib/photo-client";
+import { PhotoGuidance } from "./PhotoGuidance";
 
 interface UploadFailure {
   filename: string;
@@ -196,6 +197,7 @@ export function PhotoUploader({ reportId }: Props) {
 
   return (
     <div className="flex flex-col gap-3">
+      <PhotoGuidance />
       <div className="grid gap-1.5">
         <Label htmlFor="photo-files">Vyberte fotografie</Label>
         <Input
