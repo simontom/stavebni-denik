@@ -304,3 +304,48 @@ Co dál po Kroku 6, mimo původní MVP scope:
   pro nightly audit-verify workflow.
 - [ ] **Full login → PDF E2E** spec proti staging deployi (smoke
   layer v `e2e/smoke.spec.ts` je hotový jako základ).
+
+### Hardening & resilience (nové, 2026-06-22)
+
+Podněty od uživatele + Gemini konverzace + Buldo článek o
+fotodokumentaci.
+
+#### OOM ochrana na malé Fly VM (1 GB)
+- [ ] **SWAP na Fly machine** — `fly.toml swap_size_mb` nebo
+  systemd-swap; pomoct sharpe + Chromiu přežít spike RAM místo OOM kill.
+- [ ] **PDF fronta** — in-process semaphore, jeden Chromium proces
+  v daný moment (`renderPdf()` souběh = oom magnet).
+
+#### Photo upload pipeline
+- [ ] **Klient-side resize** na 1920 px před uploadem (uspoří RAM
+  + bandwidth; sharp zůstane jako serverová pojistka).
+- [ ] **Server max-resolution guard** — odmítnout nadměrné rozlišení
+  s jasnou hláškou ještě před spuštěním sharp pipeline.
+- [ ] **EXIF z klienta** — po klientském resize se EXIF ztratí;
+  parsovat ho v prohlížeči a poslat `capturedAt` + `gps` separátními
+  poli.
+- [ ] **Disk ↔ DB reconcile** — script `pnpm reconcile:photos`
+  najde osiřelé soubory (pad / OOM kill v půlce uploadu) a osiřelé
+  DB řádky bez souboru. Spustitelné z `/admin` i z cronu.
+
+#### Backup
+- [x] **Roundtrip integration test** — pg_dump → restic backup →
+  restic restore → psql restore → ověření schématu + audit chainu
+  v jednom containeru (commit pending).
+- [ ] **B2 jako Doporučená cesta** v README (už podporujeme přes
+  restic; jen explicitní doporučení).
+
+#### Doménové & UX hinty
+- [ ] **PDF archivace** — rozhodnout, zda generovaná PDF ukládat na
+  `/data/pdf/{projectId}/{from}-{to}.pdf` s odkazem v audit_log
+  (audit-friendly historie). Retention cron maže staré.
+- [ ] **„Co a kdy fotit"** checklist na photo upload kartě
+  (https://www.buldo.cz/fotodokumentace-stavby-a-nejcastejsi-chyby-stavebniku/):
+  základy → instalace před zakrytím → hrubá stavba/izolace →
+  dokončovací → odkaz na článek, dismissible.
+
+#### Security
+- [ ] **Hardening review** — CSP, login rate-limit, upload size
+  guards, photo serve path-traversal (už máme `resolvePhotoAbsolutePath`),
+  Open-Meteo SSRF, surface raw SQL v `audit-service`. Napsat
+  findings jako README sekci „Security review".
