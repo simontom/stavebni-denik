@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { Camera, ChevronDown, ChevronUp, X } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
+import { Camera, ChevronDown, ChevronUp } from "lucide-react";
 
 /**
- * Dismissible „co a kdy fotit" checklist nad photo-uploaderem.
+ * Always-visible „co a kdy fotit" checklist nad photo-uploaderem.
  *
  * Stavební deník v ČR (Vyhláška 499/2006, příloha 16) vyžaduje
  * dokumentaci klíčových konstrukčních fází *před zakrytím*. Pokud
@@ -14,22 +12,21 @@ import { Button } from "@/components/ui/button";
  * důkaz** stavu (případný spor s investorem / projektantem). Tahle
  * komponenta je rychlý reminder, **co fotit** během dne — vychází
  * z článku Buldo "Fotodokumentace stavby a nejčastější chyby
- * stavebníků" (odkaz dole).
+ * stavebníků".
  *
  * UX:
- *   - sbalený stav defaultně, persistovaný v `localStorage`,
- *   - dismiss = „Skrýt napořád" → druhý localStorage flag,
- *   - po dismiss komponenta nic nerenderuje (user může reset přes
- *     vymazání cookies / lokálního úložiště v prohlížeči, pro
- *     stavební deník to není kritická funkce).
+ *   - Sbalený stav defaultně (jen klikatelná hlavička s ikonou).
+ *     Uživatel může rozbalit kliknutím; preference se ukládá
+ *     v `localStorage`.
+ *   - Žádné permanentní skrytí — banner je doménově důležitý
+ *     compliance reminder, nemá smysl ho úplně vypnout.
  *
  * Hydratujeme přes `useSyncExternalStore`, ne přes
  * useEffect+setState — React 19 to vidí jako čistý externí store
- * (server vrací `null` snapshot, klient pak rovnou skutečnou
- * hodnotu z LS bez „flash" obsahu).
+ * (server vrací `true` snapshot = collapsed; klient se může lišit
+ * jen v jediné konstantě, ne ve struktuře DOM).
  */
 
-const LS_KEY_DISMISSED = "photo-guidance-dismissed";
 const LS_KEY_COLLAPSED = "photo-guidance-collapsed";
 
 interface ChecklistGroup {
@@ -85,31 +82,21 @@ const CHECKLIST: ChecklistGroup[] = [
 
 // Module-level pub/sub — `localStorage` doesn't fire `storage` events
 // in the SAME tab, so we wake subscribers ourselves whenever we set
-// a key. Subscribe set is a Set so React's batched re-renders
-// don't duplicate notifications.
+// the key. Cross-tab updates piggyback on the native `storage` event.
 const subscribers = new Set<() => void>();
 function notify(): void {
   for (const fn of subscribers) fn();
 }
 function subscribe(fn: () => void): () => void {
   subscribers.add(fn);
-  // Cross-tab updates: another tab dismisses → this tab reflects.
   const handler = (e: StorageEvent) => {
-    if (e.key === LS_KEY_DISMISSED || e.key === LS_KEY_COLLAPSED) fn();
+    if (e.key === LS_KEY_COLLAPSED) fn();
   };
   window.addEventListener("storage", handler);
   return () => {
     subscribers.delete(fn);
     window.removeEventListener("storage", handler);
   };
-}
-
-function getDismissed(): boolean {
-  try {
-    return localStorage.getItem(LS_KEY_DISMISSED) === "1";
-  } catch {
-    return false;
-  }
 }
 
 function getCollapsed(): boolean {
@@ -120,26 +107,18 @@ function getCollapsed(): boolean {
   }
 }
 
-function setLs(key: string, value: string): void {
+function setLs(value: string): void {
   try {
-    localStorage.setItem(key, value);
+    localStorage.setItem(LS_KEY_COLLAPSED, value);
   } catch {
     // localStorage zablokovaný (incognito / restrictive policy) —
-    // změna stavu nezůstane mezi reloady, ale UI se update-ne
-    // přes notify() v rámci sezení.
+    // preference se neuloží mezi reloady, ale UI se update-ne
+    // v rámci sezení přes notify().
   }
   notify();
 }
 
 export function PhotoGuidance() {
-  const dismissed = useSyncExternalStore(
-    subscribe,
-    getDismissed,
-    // Server snapshot: nic — komponenta se na serveru NEVYKRESLÍ,
-    // protože je v "use client" hierarchii a renderuje se až po
-    // hydrataci. Tady stačí stabilní hodnota.
-    () => false,
-  );
   const collapsed = useSyncExternalStore(
     subscribe,
     getCollapsed,
@@ -147,44 +126,25 @@ export function PhotoGuidance() {
   );
 
   const toggle = useCallback(() => {
-    setLs(LS_KEY_COLLAPSED, collapsed ? "0" : "1");
+    setLs(collapsed ? "0" : "1");
   }, [collapsed]);
-
-  const dismiss = useCallback(() => {
-    setLs(LS_KEY_DISMISSED, "1");
-  }, []);
-
-  if (dismissed) return null;
 
   return (
     <aside className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900/60 dark:bg-amber-950/30">
-      <div className="flex items-start justify-between gap-2">
-        <button
-          type="button"
-          onClick={toggle}
-          aria-expanded={!collapsed}
-          className="flex flex-1 items-center gap-2 text-left font-medium text-amber-900 hover:underline dark:text-amber-200"
-        >
-          <Camera className="size-4 shrink-0" aria-hidden />
-          <span>Co stihnout vyfotit dnes</span>
-          {collapsed ? (
-            <ChevronDown className="size-4 shrink-0" aria-hidden />
-          ) : (
-            <ChevronUp className="size-4 shrink-0" aria-hidden />
-          )}
-        </button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={dismiss}
-          className="-mr-1 -mt-1 h-7 px-2 text-amber-900 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
-          aria-label="Skrýt napořád"
-          title="Skrýt napořád"
-        >
-          <X className="size-4" aria-hidden />
-        </Button>
-      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={!collapsed}
+        className="flex w-full items-center gap-2 text-left font-medium text-amber-900 hover:underline dark:text-amber-200"
+      >
+        <Camera className="size-4 shrink-0" aria-hidden />
+        <span className="flex-1">Co stihnout vyfotit dnes</span>
+        {collapsed ? (
+          <ChevronDown className="size-4 shrink-0" aria-hidden />
+        ) : (
+          <ChevronUp className="size-4 shrink-0" aria-hidden />
+        )}
+      </button>
 
       {!collapsed && (
         <div className="mt-3 space-y-3 text-amber-950 dark:text-amber-100">
