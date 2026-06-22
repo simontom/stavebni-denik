@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { Camera, ChevronDown, ChevronUp, ExternalLink, X } from "lucide-react";
+import { Camera, ChevronDown, ChevronUp, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -31,9 +31,6 @@ import { Button } from "@/components/ui/button";
 
 const LS_KEY_DISMISSED = "photo-guidance-dismissed";
 const LS_KEY_COLLAPSED = "photo-guidance-collapsed";
-
-const BULDO_URL =
-  "https://www.buldo.cz/fotodokumentace-stavby-a-nejcastejsi-chyby-stavebniku/";
 
 interface ChecklistGroup {
   title: string;
@@ -206,19 +203,6 @@ export function PhotoGuidance() {
               </ul>
             </div>
           ))}
-          <p className="pt-1 text-xs">
-            Více tipů a častých chyb:{" "}
-            <a
-              href={BULDO_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 underline"
-            >
-              článek Buldo
-              <ExternalLink className="size-3" aria-hidden />
-            </a>
-            .
-          </p>
         </div>
       )}
     </aside>
