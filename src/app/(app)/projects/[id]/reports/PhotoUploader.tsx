@@ -110,6 +110,22 @@ export function PhotoUploader({ reportId }: Props) {
     // are stable React 19 setters — safe single-shot wiring.
   }, []);
 
+  // DEBUG belt-and-suspenders: poll the input's `files` attribute
+  // directly every 500 ms. If the DOM `change` event never fires
+  // (Chrome Android over HTTP?), polling still picks up the new
+  // file. Drop together with the visible debug line once verified.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const file = fileInputRef.current?.files?.[0];
+      const cam = cameraInputRef.current?.files?.[0];
+      const picked = file ?? cam;
+      if (picked && files.length === 0) {
+        handleFiles([picked]);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [files.length]);
+
   function clear() {
     setFiles([]);
     setFailures([]);
