@@ -367,7 +367,18 @@ fotodokumentaci.
   dokončovací → odkaz na článek, dismissible.
 
 #### Security
-- [ ] **Hardening review** — CSP, login rate-limit, upload size
-  guards, photo serve path-traversal (už máme `resolvePhotoAbsolutePath`),
-  Open-Meteo SSRF, surface raw SQL v `audit-service`. Napsat
-  findings jako README sekci „Security review".
+- [x] **Hardening review** — CSP (už nasazené), login rate-limit (už),
+  path-traversal v photo serve (už — `resolvePhotoAbsolutePath`), raw
+  SQL surface (všechno tagged-template ✅). **Nově přidáno**:
+  - rate-limit `POST /api/photos/upload` 60/5 min/user → 429 +
+    Retry-After (`PHOTO_UPLOAD_USER_LIMIT`),
+  - rate-limit `GET /api/projects/[id]/pdf` 10/5 min/user → 429 +
+    Retry-After (`PDF_RENDER_USER_LIMIT`),
+  - SSRF guard na Open-Meteo: allow-list `api.open-meteo.com` +
+    HTTPS-only v produkci, `NODE_ENV=test` short-circuit.
+  - README sekce „Bezpečnost — vrstvy obrany" se kompletním přehledem
+    všech vrstev (CSP, auth, rate-limit, audit log, file upload,
+    SSRF, SQL injection, disk reconcile, otevřené TODO).
+  - 2 nové unit testy (weather SSRF guard) + 1 integration (upload
+    rate-limit 429 s pre-filled bucketem).
+  - Commit pending.

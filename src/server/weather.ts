@@ -3,6 +3,33 @@ import "server-only";
 import { env } from "@/lib/env";
 
 /**
+ * Allow-list of hosts the weather fetch may contact. Prevents
+ * SSRF if `OPEN_METEO_BASE` is misconfigured (e.g. pointed at
+ * `http://169.254.169.254/latest/meta-data/` to steal IMDS
+ * credentials) — even though only ops can set that env var, a
+ * defence-in-depth check costs nothing.
+ *
+ * `NODE_ENV === "test"` short-circuits the check so unit/integration
+ * tests can inject `https://example.test/v1` or `http://localhost:1`
+ * (deliberate fetch failure → fallback path).
+ */
+const ALLOWED_WEATHER_HOSTS = new Set([
+  "api.open-meteo.com",
+  "archive-api.open-meteo.com",
+]);
+
+function isAllowedWeatherUrl(rawUrl: string): boolean {
+  if (process.env.NODE_ENV === "test") return true;
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== "https:") return false;
+    return ALLOWED_WEATHER_HOSTS.has(u.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Open-Meteo weather snapshot for a construction-diary day.
  *
  * The weather is part of the *evidentiary* content of a daily report
@@ -199,6 +226,13 @@ export async function fetchWeatherSnapshot(opts: {
     end_date: date,
   });
   const url = `${env.openMeteoBase}/forecast?${params.toString()}`;
+
+  if (!isAllowedWeatherUrl(url)) {
+    return unavailableWeather(
+      date,
+      "Open-Meteo: nepovolený cíl (zkontrolujte OPEN_METEO_BASE).",
+    );
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), WEATHER_TIMEOUT_MS);

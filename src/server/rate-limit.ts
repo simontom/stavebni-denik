@@ -100,3 +100,27 @@ export const LOGIN_IP_LIMIT = {
   windowMs: 15 * 60 * 1000,
   max: 20,
 } as const;
+
+/**
+ * Per-user throttle for `POST /api/photos/upload`. Busy stavby
+ * uploadují typicky < 30 fotek za půl hodiny; 60 / 5 min je
+ * generous strop, ale brzdí leaked-credential útok (jeden hacknutý
+ * worker účet nedokáže DOS-nout sharp pipeline). Klíč = user id.
+ */
+export const PHOTO_UPLOAD_USER_LIMIT = {
+  bucket: "photo:upload",
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+} as const;
+
+/**
+ * Per-user throttle for `GET /api/projects/[id]/pdf`. Generování
+ * PDF přes Playwright je nejdražší operace (chromium + sharp).
+ * Reálné použití: BOSS si stáhne PDF maximálně několikrát denně,
+ * 10 / 5 min je generous a chrání 1 GB Fly mašinu proti spamu.
+ */
+export const PDF_RENDER_USER_LIMIT = {
+  bucket: "pdf:render",
+  windowMs: 5 * 60 * 1000,
+  max: 10,
+} as const;

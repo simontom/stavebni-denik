@@ -4,6 +4,10 @@ import { getAuditContext } from "@/server/audit-context";
 import { auth } from "@/server/auth";
 import { ForbiddenError, type SessionUser } from "@/server/permissions";
 import {
+  PHOTO_UPLOAD_USER_LIMIT,
+  checkRateLimit,
+} from "@/server/rate-limit";
+import {
   ImageTooLargeError,
   InvalidImageError,
   ProjectNotAccessibleError,
@@ -67,6 +71,25 @@ export async function POST(request: Request) {
   const user = session?.user as SessionUser | undefined;
   if (!user) {
     return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  }
+
+  // Per-user throttle BEFORE we read the multipart body — a leaked
+  // credential could otherwise spam sharp into OOM on the 1 GB Fly
+  // machine. 60 uploads / 5 min is comfortably above a busy
+  // construction crew (typically <30 photos per session).
+  const limit = await checkRateLimit({
+    ...PHOTO_UPLOAD_USER_LIMIT,
+    key: user.id,
+  });
+  if (!limit.allowed) {
+    const retrySeconds = Math.max(1, Math.ceil(limit.retryAfterMs / 1000));
+    return NextResponse.json(
+      { error: "Příliš mnoho nahrávání — zkuste to za chvíli znovu." },
+      {
+        status: 429,
+        headers: { "Retry-After": String(retrySeconds) },
+      },
+    );
   }
 
   let form: FormData;

@@ -4,6 +4,7 @@ import { env } from "@/lib/env";
 import { getLatestAuditHash } from "@/server/audit";
 import { formatDateInput } from "@/lib/dates";
 import type { SessionUser } from "@/server/permissions";
+import { PDF_RENDER_USER_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import { getProjectForUser } from "@/server/services/projects";
 
 /**
@@ -42,6 +43,18 @@ export async function GET(request: Request, context: RouteContext) {
   const project = await getProjectForUser(id, user);
   if (!project) {
     return new Response("Not found", { status: 404 });
+  }
+
+  // Throttle per user — PDF rendering spawns Chromium and is by far
+  // the most expensive operation in the app. PDF queue serialises
+  // the *work*; this rate limit caps the *queue depth*.
+  const limit = await checkRateLimit({ ...PDF_RENDER_USER_LIMIT, key: user.id });
+  if (!limit.allowed) {
+    const retrySeconds = Math.max(1, Math.ceil(limit.retryAfterMs / 1000));
+    return new Response("Příliš mnoho exportů — zkuste to za chvíli znovu.", {
+      status: 429,
+      headers: { "Retry-After": String(retrySeconds) },
+    });
   }
 
   const reqUrl = new URL(request.url);

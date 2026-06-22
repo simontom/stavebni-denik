@@ -322,6 +322,84 @@ fly secrets set \
 Healthcheck `/healthz` (DB + volume probe) běží průběžně z orchestrátoru
 a doporučené alerty na Fly pokrývají CPU/RAM/disk.
 
+## Bezpečnost — vrstvy obrany
+
+Stručný přehled toho, jak je aplikace „opevněná". Kompletní threat
+model + design rozhodnutí žije v `docs/plan.md`, tady je seznam
+**funkcionálních ochran**, aby bylo na první pohled vidět, co je
+nasazené.
+
+### HTTP hlavičky (`next.config.ts`)
+- **Content-Security-Policy** — `default-src 'self'`, žádné 3rd party
+  skripty / iframy. `connect-src` whitelist obsahuje pouze
+  `api.open-meteo.com`. `frame-ancestors 'none'` (anti-clickjacking).
+  Pozn.: `script-src 'unsafe-inline'` zůstává kvůli Next.js JSON
+  injection — nonce-based CSP je TODO.
+- **HSTS** `max-age=63072000; includeSubDomains; preload`.
+- **X-Frame-Options DENY**, **X-Content-Type-Options nosniff**,
+  **Referrer-Policy strict-origin-when-cross-origin**.
+- **Permissions-Policy** — `camera=(self), geolocation=(self),
+  microphone=()`.
+
+### Autentizace
+- **Auth.js v5** s argon2 hashem hesel (resp. via bcrypt-style adapter).
+- **Rate-limit přihlášení** (sliding window, Postgres-backed) —
+  `5 pokusů / 15 min / nickname` + `20 pokusů / 15 min / IP`.
+  Implementace `src/server/rate-limit.ts`.
+- **Cookie session** (HttpOnly, Secure v produkci, SameSite).
+- **Mandatory password change** při prvním přihlášení
+  (`mustChangePwd` flag).
+
+### Rate-limit drahých operací
+- **POST `/api/photos/upload`** — `60 / 5 min / user`. Bráni leaked-
+  credential útoku spamovat sharp pipeline (OOM risk na 1 GB Fly).
+- **GET `/api/projects/[id]/pdf`** — `10 / 5 min / user`. Chromium +
+  sharp je nejdražší operace; PDF queue serializuje běh, rate-limit
+  cap-uje hloubku fronty.
+- Při překročení → `429 Too Many Requests` + `Retry-After` header.
+
+### Audit log (tamper-evident)
+- Hash chain (SHA-256 přes serialized row + prev_hash) v `audit_log`.
+- DB triggery odmítají `UPDATE`/`DELETE` — append-only na úrovni
+  Postgresu, ne aplikace.
+- Denní `pnpm verify:audit` (cron / GitHub Actions). Při porušení
+  fanout in-app notifikace pro všechny BOSS + volitelný SMTP alert.
+
+### Soubory a path traversal
+- Photo serve route `/api/photos/[id]` filtruje absolutní path
+  resolvem přes `resolvePhotoAbsolutePath` (odmítá `../`,
+  `/etc/passwd`). Auth-gated; 404 místo 403/401 — žádný leak
+  existence.
+- Photo upload pipeline: client resize na 1920 px (max 60 MP vstup),
+  server pak `MAX_PIXELS = 8 MP` + `MAX_UPLOAD_BYTES = 5 MiB` (tvrdý
+  cap na bypass přes curl / API). Soubory ukládány pod UUID, nikdy
+  uživatelské jméno.
+
+### SSRF
+- Open-Meteo fetch má **allow-list hostů** (`api.open-meteo.com`,
+  `archive-api.open-meteo.com`) + vyžaduje **HTTPS** v produkci.
+  Brání útoku přes `OPEN_METEO_BASE` ukazující na internal služby
+  (např. AWS IMDS `169.254.169.254`). `NODE_ENV=test` short-circuit
+  kvůli mockovaným URL v testech.
+
+### SQL injection
+- Všechen raw SQL přes Prisma tagged template (`$queryRaw\`...\${param}\`` /
+  `$executeRaw`) → bind params, ne string concatenation. Žádné
+  uživatelské vstupy se neslejí do SQL stringu.
+
+### Disk ↔ DB konzistence
+- `pnpm reconcile:photos` (cron-friendly) najde:
+  - orphan soubory (OOM kill uprostřed uploadu),
+  - missing soubory (DB řádek bez bytu na disku).
+  - `--delete-orphans` smaže (s 5 min grace window proti in-flight uploadu).
+
+### Co ZBÝVÁ (nice-to-have, není blokátor produkce)
+- **Nonce-based CSP** místo `'unsafe-inline'` na script-src.
+- **Photo serve rate-limit** (currently jen filesystem read; nízká
+  cena).
+- **Brute-force protection na password-change** route (currently
+  jen na login).
+
 ## Project layout
 
 ```

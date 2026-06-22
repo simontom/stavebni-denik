@@ -376,6 +376,38 @@ describe("POST /api/photos/upload — happy path", () => {
     expect(body.failed).toHaveLength(2);
   });
 
+  it("returns 429 with Retry-After when the per-user upload rate-limit is exceeded", async () => {
+    // Pre-fill the rate-limit bucket to ABOVE the cap by inserting
+    // attempts directly — saves us from making 60 real uploads.
+    // `photo:upload` bucket / key = user.id / now-ish timestamp.
+    const now = new Date();
+    const rows = Array.from({ length: 61 }, (_, i) => ({
+      bucket: "photo:upload",
+      key: bossUser.id,
+      created_at: new Date(now.getTime() - i * 1000),
+    }));
+    await db.$executeRawUnsafe(
+      `INSERT INTO rate_limit_attempts (bucket, "key", created_at)
+       VALUES ${rows.map((_, i) => `($${i * 3 + 1}, $${i * 3 + 2}, $${i * 3 + 3})`).join(", ")}`,
+      ...rows.flatMap((r) => [r.bucket, r.key, r.created_at]),
+    );
+
+    const form = new FormData();
+    form.append("reportId", reportId);
+    form.append("files", fileFromBuffer(await makeJpeg(), "denied.jpg"));
+
+    const res = await POST(buildRequest(form));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toMatch(/^\d+$/);
+
+    // Clean up so the surrounding suite's happy path is not affected
+    // (rate-limit rows persist across `it` cases in the same describe).
+    await db.$executeRawUnsafe(
+      `DELETE FROM rate_limit_attempts WHERE bucket = 'photo:upload' AND "key" = $1`,
+      bossUser.id,
+    );
+  });
+
   it("prefers client-provided EXIF over the server-parsed copy", async () => {
     // The browser strips EXIF during resize, so we send a JPEG that
     // DOES still have EXIF (so the server CAN parse it) plus

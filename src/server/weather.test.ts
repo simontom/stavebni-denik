@@ -219,4 +219,45 @@ describe("fetchWeatherSnapshot", () => {
     expect(snap.source).toBe("unavailable");
     expect(snap.error).toMatch(/limit/i);
   });
+
+  it("refuses to fetch when OPEN_METEO_BASE points off the allow-list (SSRF guard)", async () => {
+    // Force production-mode validation; default NODE_ENV in tests
+    // short-circuits the host check so test fixtures can use
+    // example.test / localhost without false rejection.
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("OPEN_METEO_BASE", "http://169.254.169.254/latest/meta-data");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    try {
+      const snap = await fetchWeatherSnapshot({
+        lat: 50.0,
+        lon: 14.4,
+        date: "2026-06-16",
+      });
+      expect(snap.source).toBe("unavailable");
+      expect(snap.error).toMatch(/nepovolen/i);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("refuses an http:// (non-TLS) override in production mode", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("OPEN_METEO_BASE", "http://api.open-meteo.com/v1");
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    try {
+      const snap = await fetchWeatherSnapshot({
+        lat: 50.0,
+        lon: 14.4,
+        date: "2026-06-16",
+      });
+      expect(snap.source).toBe("unavailable");
+      expect(snap.error).toMatch(/nepovolen/i);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
