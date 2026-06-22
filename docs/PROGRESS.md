@@ -358,9 +358,14 @@ fotodokumentaci.
   restic; jen explicitní doporučení).
 
 #### Doménové & UX hinty
-- [ ] **PDF archivace** — rozhodnout, zda generovaná PDF ukládat na
-  `/data/pdf/{projectId}/{from}-{to}.pdf` s odkazem v audit_log
-  (audit-friendly historie). Retention cron maže staré.
+- [x] **PDF archivace** — rozhodnutí: **NEukládat** soubory na
+  disk. PDF je *view* (derivát) nad source-of-truth daty v DB
+  (audit_log + reports + photos). Místo toho audituj akci `pdf.
+  export` s anchor hashem (totéž je v PDF footeru) — soubor je
+  self-anchoring k bodu v hash chainu, reprodukce z backupu
+  + re-render dá identický obsah. Hotovo: nová akce `pdf.export`
+  v `audit-hash.ts`, appendAudit po úspěšném renderu v PDF route,
+  3 nové integration testy.
 - [ ] **„Co a kdy fotit"** checklist na photo upload kartě
   (https://www.buldo.cz/fotodokumentace-stavby-a-nejcastejsi-chyby-stavebniku/):
   základy → instalace před zakrytím → hrubá stavba/izolace →

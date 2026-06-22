@@ -1,7 +1,8 @@
 import { auth } from "@/server/auth";
 import { buildFooterTemplate, renderPdf } from "@/server/pdf";
 import { env } from "@/lib/env";
-import { getLatestAuditHash } from "@/server/audit";
+import { appendAudit, getLatestAuditHash } from "@/server/audit";
+import { getAuditContext } from "@/server/audit-context";
 import { formatDateInput } from "@/lib/dates";
 import type { SessionUser } from "@/server/permissions";
 import { PDF_RENDER_USER_LIMIT, checkRateLimit } from "@/server/rate-limit";
@@ -77,6 +78,36 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (err) {
     console.error("PDF render failed", err);
     return new Response("PDF generation failed", { status: 500 });
+  }
+
+  // Audit the export AFTER the render succeeds — we only want
+  // entries for real, delivered downloads. The audit row anchors
+  // the PDF: { project, range, bytes, latestHash at export time }
+  // is enough to prove WHAT data was rendered (a re-render with the
+  // same project + range + identical DB state will produce the same
+  // footer hash, hence the same content). No PDF blob is persisted
+  // — the hash chain alone is the evidence.
+  try {
+    const ctx = await getAuditContext();
+    await appendAudit(ctx, {
+      action: "pdf.export",
+      entityType: "project",
+      entityId: id,
+      after: {
+        projectName: project.project.name,
+        from: DATE_RE.test(from) ? from : null,
+        to: DATE_RE.test(to) ? to : null,
+        bytes: pdf.length,
+        // Truncated form matches what we burn into the PDF footer —
+        // so a recipient can cross-check the file against this row.
+        anchorHash: latestHash.slice(0, 16),
+        latestHashFull: latestHash,
+      },
+    });
+  } catch (err) {
+    // Never block a successful download on an audit append failure
+    // (e.g. transient DB hiccup) — log and continue.
+    console.error("[pdf.export] audit append failed", err);
   }
 
   const safeName = project.project.name.replace(/[^\p{L}\p{N}_-]+/gu, "_");

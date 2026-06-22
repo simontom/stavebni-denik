@@ -37,7 +37,8 @@ export type AuditAction =
   | "remark.create"
   | "material.create"
   | "material.resolve"
-  | "material.rollover";
+  | "material.rollover"
+  | "pdf.export";
 
 /**
  * Stripped-down audit row used both for hashing and for surfacing in
