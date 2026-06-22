@@ -46,9 +46,17 @@ function Button({
   size = "default",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  // Base UI Button defaultně předpokládá nativeButton=true (= výsledný
+  // element MUSÍ být <button>). Když volá někdo s `render={<Link/>}`
+  // nebo jiným ne-<button> elementem, Base UI to v dev modu logguje
+  // jako chybu o accessibility. Když je `render` poskytnut, automaticky
+  // přepínáme na nativeButton={false} — render kontroluje element a
+  // accessibility-attributy (Link sám = <a>, který má native semantics).
+  const hasCustomRender = "render" in props && props.render !== undefined
   return (
     <ButtonPrimitive
       data-slot="button"
+      nativeButton={!hasCustomRender}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
