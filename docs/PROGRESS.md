@@ -368,10 +368,13 @@ fotodokumentaci.
   + re-render dá identický obsah. Hotovo: nová akce `pdf.export`
   v `audit-hash.ts`, appendAudit po úspěšném renderu v PDF route,
   3 nové integration testy.
-- [ ] **„Co a kdy fotit"** checklist na photo upload kartě
-  (https://www.buldo.cz/fotodokumentace-stavby-a-nejcastejsi-chyby-stavebniku/):
-  základy → instalace před zakrytím → hrubá stavba/izolace →
-  dokončovací → odkaz na článek, dismissible.
+- [x] **„Co a kdy fotit"** checklist nad photo uploaderem (commit
+  `89deec1`). 5 kategorií (základy, hrubá stavba, instalace PŘED
+  zakrytím, izolace, dokončovací) z článku Buldo
+  (https://www.buldo.cz/fotodokumentace-stavby-a-nejcastejsi-chyby-stavebniku/).
+  Amber banner, dismissible (LS klíč `photo-guidance-dismissed`),
+  collapsible (LS klíč `photo-guidance-collapsed`). React 19
+  `useSyncExternalStore` pro SSR-safe hydrataci + cross-tab sync.
 
 #### Security
 - [x] **Hardening review** — CSP (už nasazené), login rate-limit (už),
