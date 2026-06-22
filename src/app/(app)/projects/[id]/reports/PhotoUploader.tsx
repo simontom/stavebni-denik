@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
@@ -70,8 +70,7 @@ export function PhotoUploader({ reportId }: Props) {
   const [debugPickCount, setDebugPickCount] = useState(0);
   const [debugLastFiles, setDebugLastFiles] = useState<string>("(none)");
 
-  function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const list = e.target.files ? Array.from(e.target.files) : [];
+  function handleFiles(list: File[]): void {
     setDebugPickCount((c) => c + 1);
     setDebugLastFiles(
       list.length === 0
@@ -86,6 +85,30 @@ export function PhotoUploader({ reportId }: Props) {
     setFailures([]);
     setServerError(null);
   }
+
+  // React 19 + Turbopack quirk: synthetic `onChange` on a
+  // `<input type="file">` does NOT fire on Chrome Android (verified
+  // by `onPick=0×` debug counter staying at 0 even after a successful
+  // gallery pick). Native `addEventListener("change", ...)` bypasses
+  // React's event delegation and reliably catches the DOM event.
+  useEffect(() => {
+    const fileEl = fileInputRef.current;
+    const camEl = cameraInputRef.current;
+    if (!fileEl && !camEl) return;
+    const handler = (e: Event) => {
+      const target = e.target as HTMLInputElement;
+      const list = target.files ? Array.from(target.files) : [];
+      handleFiles(list);
+    };
+    fileEl?.addEventListener("change", handler);
+    camEl?.addEventListener("change", handler);
+    return () => {
+      fileEl?.removeEventListener("change", handler);
+      camEl?.removeEventListener("change", handler);
+    };
+    // handleFiles closes over setFiles/setFailures/setServerError which
+    // are stable React 19 setters — safe single-shot wiring.
+  }, []);
 
   function clear() {
     setFiles([]);
@@ -236,7 +259,6 @@ export function PhotoUploader({ reportId }: Props) {
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           multiple
-          onChange={onPick}
           className="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
         />
         {/* Phone-only: a `<label>` triggers the file input natively
@@ -251,7 +273,6 @@ export function PhotoUploader({ reportId }: Props) {
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           capture="environment"
-          onChange={onPick}
           className="sr-only"
         />
         <label
