@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,17 @@ import {
   preparePhotoForUpload,
   type PreparedPhoto,
 } from "@/lib/photo-client";
-import { PhotoGuidance } from "./PhotoGuidance";
+
+// Client-only — banner reads localStorage at mount. Rendering it on
+// the server with a default snapshot and then hydrating with a
+// different value (when user previously dismissed / expanded) trips
+// React 19's strict hydration mismatch detector. Disable SSR for
+// this widget — the report page is already an SSR boundary, FOC of
+// the small banner is acceptable UX trade-off.
+const PhotoGuidance = dynamic(
+  () => import("./PhotoGuidance").then((mod) => mod.PhotoGuidance),
+  { ssr: false },
+);
 
 interface UploadFailure {
   filename: string;
