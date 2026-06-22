@@ -99,4 +99,25 @@ describe("processImage — failures", () => {
       ImageTooLargeError,
     );
   });
+
+  it("throws ImageTooLargeError on a decoded image past MAX_PIXELS", async () => {
+    // 9000×8000 = 72 MP, well above the 64 MP cap. Sharp's PNG
+    // encoder produces a small file (mostly solid colour) so the
+    // payload size guard is NOT what kicks in here — the metadata
+    // pixel-count check is.
+    const tooManyPixels = await sharp({
+      create: {
+        width: 9000,
+        height: 8000,
+        channels: 3,
+        background: { r: 0, g: 0, b: 0 },
+      },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    expect(tooManyPixels.length).toBeLessThan(MAX_UPLOAD_BYTES);
+    await expect(processImage(tooManyPixels)).rejects.toBeInstanceOf(
+      ImageTooLargeError,
+    );
+  });
 });

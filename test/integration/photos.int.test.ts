@@ -375,4 +375,66 @@ describe("POST /api/photos/upload — happy path", () => {
     expect(body.uploaded).toHaveLength(0);
     expect(body.failed).toHaveLength(2);
   });
+
+  it("prefers client-provided EXIF over the server-parsed copy", async () => {
+    // The browser strips EXIF during resize, so we send a JPEG that
+    // DOES still have EXIF (so the server CAN parse it) plus
+    // separate `capturedAt` / `gps` fields that DISAGREE with the
+    // file. The DB row must reflect the client-supplied values —
+    // they are the canonical record of what the camera shot before
+    // re-encoding.
+    const jpeg = await makeJpeg();
+    const clientCapturedAt = new Date("2025-04-01T08:30:00.000Z");
+    const clientGps = { lat: 50.1, lon: 14.4 };
+
+    const form = new FormData();
+    form.append("reportId", reportId);
+    form.append("files", fileFromBuffer(jpeg, "client-exif.jpg"));
+    form.append("capturedAt", clientCapturedAt.toISOString());
+    form.append("gps", JSON.stringify(clientGps));
+
+    const res = await POST(buildRequest(form));
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      uploaded: { id: string }[];
+      failed: unknown[];
+    };
+    expect(body.failed).toEqual([]);
+    expect(body.uploaded).toHaveLength(1);
+
+    const photo = await db.photo.findUniqueOrThrow({
+      where: { id: body.uploaded[0]!.id },
+    });
+    expect(photo.capturedAt?.toISOString()).toBe(
+      clientCapturedAt.toISOString(),
+    );
+    const gps = photo.gps as Record<string, number>;
+    expect(gps.lat).toBeCloseTo(clientGps.lat, 6);
+    expect(gps.lon).toBeCloseTo(clientGps.lon, 6);
+  });
+
+  it("accepts empty client meta fields as 'unknown' (capturedAt / gps null)", async () => {
+    // When the browser couldn't read EXIF (no metadata in the
+    // picture) it still sends the parallel fields, just empty. The
+    // server must treat that as "client says null", NOT fall back to
+    // re-parsing the buffer.
+    const jpeg = await makeJpeg();
+
+    const form = new FormData();
+    form.append("reportId", reportId);
+    form.append("files", fileFromBuffer(jpeg, "no-exif-from-client.jpg"));
+    form.append("capturedAt", "");
+    form.append("gps", "");
+
+    const res = await POST(buildRequest(form));
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as { uploaded: { id: string }[] };
+    const photo = await db.photo.findUniqueOrThrow({
+      where: { id: body.uploaded[0]!.id },
+    });
+    expect(photo.capturedAt).toBeNull();
+    expect(photo.gps).toBeNull();
+  });
 });

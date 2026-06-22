@@ -321,13 +321,25 @@ fotodokumentaci.
   (commit pending).
 
 #### Photo upload pipeline
-- [ ] **Klient-side resize** na 1920 px před uploadem (uspoří RAM
-  + bandwidth; sharp zůstane jako serverová pojistka).
-- [ ] **Server max-resolution guard** — odmítnout nadměrné rozlišení
-  s jasnou hláškou ještě před spuštěním sharp pipeline.
-- [ ] **EXIF z klienta** — po klientském resize se EXIF ztratí;
+- [x] **Klient-side resize** na 1920 px před uploadem (uspoří RAM
+  + bandwidth; sharp zůstane jako serverová pojistka). Hotovo —
+  `src/lib/photo-client.ts` (`preparePhotoForUpload`) +
+  `PhotoUploader.tsx` napojen, kvalita 0.85, `console.info` summary
+  „MB → KB". Commit pending.
+- [x] **Server max-resolution guard** — odmítnout nadměrné rozlišení
+  s jasnou hláškou ještě před spuštěním sharp pipeline. Hotovo —
+  `MAX_PIXELS = 64_000_000` v `src/server/images.ts` + nový test;
+  `ImageTooLargeError` se vrací z `processImage` ještě před resize
+  fází. Commit pending.
+- [x] **EXIF z klienta** — po klientském resize se EXIF ztratí;
   parsovat ho v prohlížeči a poslat `capturedAt` + `gps` separátními
-  poli.
+  poli. Hotovo — klient harvestuje EXIF přes `exifr` před resize,
+  posílá paralelní pole `capturedAt[]`/`gps[]`, route je rozparsuje
+  a předá do `uploadPhoto` jako `clientCapturedAt`/`clientGps`;
+  server EXIF parser zůstává jako fallback (legacy klienti,
+  integration testy bez paralelních polí). 2 nové integration testy
+  ověřují, že klient vyhrává a že prázdná pole = null. Commit
+  pending.
 - [ ] **Disk ↔ DB reconcile** — script `pnpm reconcile:photos`
   najde osiřelé soubory (pad / OOM kill v půlce uploadu) a osiřelé
   DB řádky bez souboru. Spustitelné z `/admin` i z cronu.

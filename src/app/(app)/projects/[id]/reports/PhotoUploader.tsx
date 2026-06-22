@@ -7,6 +7,11 @@ import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  PhotoClientPrepareError,
+  preparePhotoForUpload,
+  type PreparedPhoto,
+} from "@/lib/photo-client";
 
 interface UploadFailure {
   filename: string;
@@ -72,11 +77,66 @@ export function PhotoUploader({ reportId }: Props) {
     setFailures([]);
     setServerError(null);
 
-    const form = new FormData();
-    form.append("reportId", reportId);
-    for (const f of files) form.append("files", f);
-
     startTransition(async () => {
+      const form = new FormData();
+      form.append("reportId", reportId);
+      const clientFailures: UploadFailure[] = [];
+      let attached = 0;
+      let originalBytes = 0;
+      let resizedBytes = 0;
+
+      // Resize + EXIF-harvest each file on the client BEFORE we put
+      // it in the multipart payload. Saves bandwidth and lets the
+      // server skip the heavy sharp pipeline branch on the happy
+      // path. If a single file fails we keep the rest.
+      for (const file of files) {
+        try {
+          const prepared: PreparedPhoto = await preparePhotoForUpload(file);
+          attached += 1;
+          originalBytes += prepared.originalBytes;
+          resizedBytes += prepared.resizedBytes;
+
+          form.append(
+            "files",
+            new File([prepared.blob], prepared.filename, {
+              type: "image/jpeg",
+            }),
+          );
+          // Per-file metadata sidecar: index-aligned with the
+          // `files[]` entries so the server can match them up.
+          form.append(
+            "filenames",
+            prepared.filename,
+          );
+          form.append(
+            "capturedAt",
+            prepared.capturedAt ? prepared.capturedAt.toISOString() : "",
+          );
+          form.append(
+            "gps",
+            prepared.gps ? JSON.stringify(prepared.gps) : "",
+          );
+        } catch (err) {
+          clientFailures.push({
+            filename: file.name,
+            reason:
+              err instanceof PhotoClientPrepareError
+                ? err.message
+                : "Předzpracování v prohlížeči selhalo.",
+          });
+        }
+      }
+
+      if (attached === 0) {
+        setFailures(clientFailures);
+        setServerError(
+          clientFailures.length > 0
+            ? "Žádný soubor neprošel předzpracováním."
+            : "Nebyl vybrán žádný soubor.",
+        );
+        return;
+      }
+
       let res: Response;
       try {
         res = await fetch("/api/photos/upload", {
@@ -87,6 +147,7 @@ export function PhotoUploader({ reportId }: Props) {
         setServerError(
           err instanceof Error ? err.message : "Nahrání selhalo.",
         );
+        setFailures(clientFailures);
         return;
       }
 
@@ -107,14 +168,27 @@ export function PhotoUploader({ reportId }: Props) {
       }
       if (!res.ok && (!json || (json.uploaded ?? []).length === 0)) {
         setServerError(json?.error ?? `Nahrání selhalo (HTTP ${res.status}).`);
-        if (json?.failed) setFailures(json.failed);
+        if (json?.failed) {
+          setFailures([...clientFailures, ...json.failed]);
+        } else if (clientFailures.length > 0) {
+          setFailures(clientFailures);
+        }
         return;
       }
 
-      if (json?.failed?.length) setFailures(json.failed);
+      const serverFailures = json?.failed ?? [];
+      const allFailures = [...clientFailures, ...serverFailures];
+      if (allFailures.length > 0) setFailures(allFailures);
 
-      const allSucceeded = (json?.failed ?? []).length === 0;
-      if (allSucceeded) clear();
+      // Soft diagnostic — we don't surface bandwidth savings in the
+      // UI but log them in the console for the curious.
+      if (originalBytes > 0) {
+        console.info(
+          `[photo-uploader] resized ${attached} file(s): ${(originalBytes / 1024 / 1024).toFixed(2)} MB → ${(resizedBytes / 1024 / 1024).toFixed(2)} MB`,
+        );
+      }
+
+      if (allFailures.length === 0) clear();
       else setFiles([]);
       router.refresh();
     });

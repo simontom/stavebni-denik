@@ -33,6 +33,18 @@ export const THUMB_JPEG_QUALITY = 75;
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 /**
+ * Hard ceiling on decoded pixel count for inbound images. The client
+ * is expected to resize 12 MP phone photos to 1920 px (~4 MP) before
+ * upload (see `src/lib/photo-client.ts`); this guard rejects anyone
+ * trying to bypass that resize and ship a 50 MP raw, which would
+ * blow Sharp's heap on the 1 GB Fly machine.
+ *
+ * 64 MP = 8000×8000 — well above modern phones but a safe envelope
+ * for the future.
+ */
+export const MAX_PIXELS = 64_000_000;
+
+/**
  * MIME types we accept. The browser-reported MIME is not authoritative
  * — `sharp().metadata()` is checked too so a tampered .jpg.exe upload
  * cannot slip through.
@@ -90,14 +102,27 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
   }
 
   let format: string | undefined;
+  let metaWidth: number | undefined;
+  let metaHeight: number | undefined;
   try {
     const meta = await sharp(input).metadata();
     format = meta.format;
+    metaWidth = meta.width;
+    metaHeight = meta.height;
   } catch {
     throw new InvalidImageError("Soubor není rozpoznán jako obrázek.");
   }
   if (!format || !ACCEPTED_SHARP_FORMATS.has(format)) {
     throw new InvalidImageError(`Nepodporovaný formát obrázku: ${format ?? "neznámý"}.`);
+  }
+  if (
+    metaWidth !== undefined &&
+    metaHeight !== undefined &&
+    metaWidth * metaHeight > MAX_PIXELS
+  ) {
+    throw new ImageTooLargeError(
+      `Obrázek má příliš velké rozlišení (${metaWidth}×${metaHeight} = ${(metaWidth * metaHeight / 1_000_000).toFixed(1)} MP). Maximum je ${MAX_PIXELS / 1_000_000} MP — upravte rozlišení v telefonu.`,
+    );
   }
 
   // Rotate first so resize is based on the visually correct orientation,

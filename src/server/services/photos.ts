@@ -153,8 +153,17 @@ export async function uploadPhoto(opts: {
   buffer: Buffer;
   ctx: AuditContext;
   user: SessionUser;
+  clientCapturedAt?: Date | null;
+  clientGps?: { lat: number; lon: number } | null;
 }): Promise<UploadPhotoResult> {
-  const { reportId, buffer, ctx, user } = opts;
+  const {
+    reportId,
+    buffer,
+    ctx,
+    user,
+    clientCapturedAt,
+    clientGps,
+  } = opts;
 
   const reportCtx = await loadReportContext(reportId, user);
   if (reportCtx.reportLocked) throw new ReportLockedError();
@@ -164,11 +173,20 @@ export async function uploadPhoto(opts: {
   });
 
   const processed = await processImage(buffer);
-  // Extract EXIF capturedAt + GPS from the ORIGINAL bytes — `processed.main`
-  // already had EXIF stripped by `processImage`. This step is best-effort
-  // (returns nulls on any failure) so screenshots and other EXIF-less
-  // photos still upload cleanly.
-  const exif = await parseExifSafely(buffer);
+  // Prefer EXIF harvested by the browser BEFORE the resize stripped
+  // it. If the client did not (or could not) send any, fall back to
+  // server-side parsing — this still works for legacy clients or
+  // server-side ingestion paths (e.g. integration tests).
+  let capturedAt: Date | null;
+  let gps: { lat: number; lon: number } | null;
+  if (clientCapturedAt !== undefined || clientGps !== undefined) {
+    capturedAt = clientCapturedAt ?? null;
+    gps = clientGps ?? null;
+  } else {
+    const exif = await parseExifSafely(buffer);
+    capturedAt = exif.capturedAt;
+    gps = exif.gps;
+  }
   const stored = await writePhotoVariants({
     projectId: reportCtx.projectId,
     reportId: reportCtx.reportId,
@@ -196,8 +214,8 @@ export async function uploadPhoto(opts: {
             height: processed.height,
             bytes: stored.bytes,
             uploadedById: user.id,
-            capturedAt: exif.capturedAt,
-            gps: exif.gps ?? undefined,
+            capturedAt,
+            gps: gps ?? undefined,
           },
         }),
     );
