@@ -6,7 +6,6 @@ import dynamic from "next/dynamic";
 import { Camera, ImagePlus, Loader2, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   PhotoClientPrepareError,
@@ -211,13 +210,22 @@ export function PhotoUploader({ reportId }: Props) {
       <PhotoGuidance />
       <div className="grid gap-1.5">
         <Label htmlFor="photo-files">Vyberte fotografie</Label>
-        <Input
+        {/* Use a native <input type="file"> instead of the shadcn
+            wrapper. Base UI's <Input> proxies value/onChange in a way
+            that swallows file-input changes on mobile (iOS Safari +
+            Android Chrome) — user picks a photo but the React
+            `onChange` never fires, so files state stays empty and the
+            "Nahrát" button is permanently disabled. Native <input>
+            sidesteps the wrapper entirely. Tailwind classes mirror
+            shadcn Input's look for visual consistency. */}
+        <input
           ref={fileInputRef}
           id="photo-files"
           type="file"
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           multiple
           onChange={onPick}
+          className="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
         />
         {/* Phone-only: a hidden input with capture="environment" so
             "Pořídit foto" jumps straight to the rear camera. */}
