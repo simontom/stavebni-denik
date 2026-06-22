@@ -194,6 +194,31 @@ souběžné požadavky o `/api/projects/[id]/pdf` chromium spustí
 postupně. Druhý uživatel uvidí jen mírné zpoždění místo 500. Bumpni
 na 2+ teprve když má mašina ≥ 2 GB RAM.
 
+**Disk ↔ DB reconcile.** OOM kill nebo crash uprostřed
+`writePhotoVariants` může zanechat osiřelé JPEGy v
+`/data/photos/...` bez odpovídajícího řádku v `photos` tabulce
+(leak diskového quota), nebo obráceně řádek v DB bez souboru
+(404 na photo serve route). `pnpm reconcile:photos` projede oba
+zdroje a vypíše rozdíly:
+
+```bash
+# read-only report (human-readable)
+pnpm reconcile:photos
+
+# stejné, ale jednořádkový JSON pro cron / log scraping
+pnpm reconcile:photos --json
+
+# úklid: smaže orphan soubory starší než 5 min (grace window
+# kvůli in-flight uploadu)
+pnpm reconcile:photos --delete-orphans
+```
+
+Exit codes: `0` = clean, `1` = drift detected, `2` = unexpected
+error. Strukturovaný log se zapisuje do
+`{DATA_DIR}/reconcile-photos.log` (vedle `audit-verify.log`).
+Doporučeno spouštět z týdenního cronu — viz `verify-audit.yml`
+workflow jako šablona.
+
 ## Backup & restore
 
 Nightly snapshot Postgres dumpu + `/data/photos` přes

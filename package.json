@@ -16,6 +16,7 @@
     "db:reset": "prisma migrate reset --force",
     "db:seed": "tsx --env-file=.env scripts/seed.ts",
     "verify:audit": "tsx --env-file=.env scripts/verify-audit.ts",
+    "reconcile:photos": "tsx --env-file=.env scripts/reconcile-photos.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",

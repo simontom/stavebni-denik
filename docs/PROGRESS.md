@@ -340,9 +340,15 @@ fotodokumentaci.
   integration testy bez paralelních polí). 2 nové integration testy
   ověřují, že klient vyhrává a že prázdná pole = null. Commit
   pending.
-- [ ] **Disk ↔ DB reconcile** — script `pnpm reconcile:photos`
+- [x] **Disk ↔ DB reconcile** — script `pnpm reconcile:photos`
   najde osiřelé soubory (pad / OOM kill v půlce uploadu) a osiřelé
-  DB řádky bez souboru. Spustitelné z `/admin` i z cronu.
+  DB řádky bez souboru. Spustitelné z `/admin` i z cronu. Hotovo —
+  `src/server/services/photos-reconcile.ts` (čistý helper s grace
+  window 5 min proti race s in-flight uploady), `scripts/reconcile-
+  photos.ts` (CLI s `--json` + `--delete-orphans`, exit 0/1/2),
+  zápis do `{DATA_DIR}/reconcile-photos.log`, dokumentace v README
+  → OOM ochrana. 10 unit + 3 integration testů (orphan/missing,
+  soft-delete keep, --delete-orphans surgical). Commit pending.
 
 #### Backup
 - [x] **Roundtrip integration test** — pg_dump → restic backup →
