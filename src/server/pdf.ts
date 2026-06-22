@@ -46,8 +46,19 @@ export interface RenderPdfOptions {
  * Render the given URL to an A4 PDF buffer. Cleans up the browser even
  * when navigation / rendering throws, so a single failure doesn't leak
  * chromium processes.
+ *
+ * Calls are serialised through an in-process semaphore (default
+ * concurrency = 1, override via `PDF_RENDER_CONCURRENCY`). On a 1 GB
+ * Fly machine two parallel Chromium instances trip the OOM killer
+ * almost every time — queueing is a single line of business logic
+ * that buys us the same protection a full job broker would, without
+ * any external infrastructure.
  */
 export async function renderPdf(opts: RenderPdfOptions): Promise<Buffer> {
+  return acquirePdfSlot(() => renderPdfNow(opts));
+}
+
+async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
   const browser = await chromium.launch({ headless: true });
   try {
     const context = await browser.newContext({
@@ -81,6 +92,62 @@ export async function renderPdf(opts: RenderPdfOptions): Promise<Buffer> {
   } finally {
     await browser.close();
   }
+}
+
+// ---------------------------------------------------------------------------
+// In-process render queue (OOM protection on 1 GB Fly)
+// ---------------------------------------------------------------------------
+
+const PDF_CONCURRENCY = readPdfConcurrency();
+
+/**
+ * Parse `PDF_RENDER_CONCURRENCY` into a positive integer. The default
+ * matches the safest setting on a 1 GB shared-cpu-1x machine: one
+ * Chromium at a time. Set to 2+ once the box has at least 2 GB or
+ * the workload is dominated by network waits rather than RAM.
+ */
+function readPdfConcurrency(): number {
+  const raw = process.env.PDF_RENDER_CONCURRENCY;
+  if (!raw) return 1;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return n;
+}
+
+let inFlight = 0;
+const waiters: Array<() => void> = [];
+
+/**
+ * Run `task` once a render slot is available. The semaphore is module
+ * state — one queue per Node process. That matches the Next.js
+ * standalone deployment: a single server.js worker handles every
+ * request, so there's no other Chromium racing for memory.
+ *
+ * Exposed only so the unit test can drive it directly; production
+ * callers go through `renderPdf`.
+ */
+export async function acquirePdfSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (inFlight >= PDF_CONCURRENCY) {
+    await new Promise<void>((resolve) => waiters.push(resolve));
+  }
+  inFlight += 1;
+  try {
+    return await task();
+  } finally {
+    inFlight -= 1;
+    const next = waiters.shift();
+    if (next) next();
+  }
+}
+
+/** For tests + observability: how many renders are queued (not yet running). */
+export function getPdfQueueDepth(): number {
+  return waiters.length;
+}
+
+/** For tests + observability: how many renders are currently running. */
+export function getPdfInFlight(): number {
+  return inFlight;
 }
 
 /**

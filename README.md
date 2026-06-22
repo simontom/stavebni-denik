@@ -177,6 +177,23 @@ vrátit zpět — Prisma migrace jsou one-way. Schema kompatibilita
 předchozího kódu s novou DB je odpovědnost autora změny (přidej
 sloupec jako `NULLABLE` v jedné migraci, použij ho v další).
 
+## OOM ochrana
+
+Default Fly velikost (`shared-cpu-1x` + 1 GB RAM) je pro Sharp i
+Chromium na hraně. Bez ochrany jeden velký PDF export nebo dva
+souběžné uploady fotek tu mašinu zabijí.
+
+**SWAP na volume.** `fly.toml` má `swap_size_mb = 512` — Fly při
+startu vytvoří 512 MB swapfile na perzistentním volume. To zachytí
+přechodné špičky paměti místo OOM killu. Cena: 512 MB navíc na
+`/data` volume + lehké zpomalení při swappování.
+
+**PDF fronta.** `renderPdf()` v `src/server/pdf.ts` jde přes
+in-process semaphore. Default `PDF_RENDER_CONCURRENCY=1`, takže dva
+souběžné požadavky o `/api/projects/[id]/pdf` chromium spustí
+postupně. Druhý uživatel uvidí jen mírné zpoždění místo 500. Bumpni
+na 2+ teprve když má mašina ≥ 2 GB RAM.
+
 ## Backup & restore
 
 Nightly snapshot Postgres dumpu + `/data/photos` přes

@@ -311,10 +311,14 @@ Podněty od uživatele + Gemini konverzace + Buldo článek o
 fotodokumentaci.
 
 #### OOM ochrana na malé Fly VM (1 GB)
-- [ ] **SWAP na Fly machine** — `fly.toml swap_size_mb` nebo
-  systemd-swap; pomoct sharpe + Chromiu přežít spike RAM místo OOM kill.
-- [ ] **PDF fronta** — in-process semaphore, jeden Chromium proces
-  v daný moment (`renderPdf()` souběh = oom magnet).
+- [x] **SWAP na Fly machine** — `fly.toml` má `swap_size_mb = 512`
+  (swapfile na perzistentním volume, přežije restart) + README
+  sekce „OOM ochrana" (commit pending).
+- [x] **PDF fronta** — in-process semaphore v `src/server/pdf.ts`
+  (`acquirePdfSlot`), default `PDF_RENDER_CONCURRENCY=1`
+  konfigurovatelný env proměnnou. 2 nové unit testy
+  (serialisation + slot release on throw) — celkem 73 unit
+  (commit pending).
 
 #### Photo upload pipeline
 - [ ] **Klient-side resize** na 1920 px před uploadem (uspoří RAM

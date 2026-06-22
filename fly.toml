@@ -20,6 +20,12 @@ app = "stavebni-denik"
 primary_region = "fra"           # Frankfurt — closest EU region to CZ users.
 kill_signal = "SIGTERM"
 kill_timeout = "30s"
+# Memory headroom on the 1 GB shared-cpu-1x VM: sharp (photo
+# upload) and Chromium (PDF export) both spike RAM well past 1 GB
+# on bigger jobs and would otherwise trip Fly's OOM killer. The
+# swapfile lives on the persistent volume (/data) so it survives
+# restarts without competing with the rootfs for space.
+swap_size_mb = 512
 
 [build]
   dockerfile = "Dockerfile"
