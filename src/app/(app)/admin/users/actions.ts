@@ -5,9 +5,12 @@ import { z } from "zod";
 
 import { getAuditContext } from "@/server/audit-context";
 import {
+  CannotDeleteSelfError,
+  CannotDeleteSiteManagerError,
   NicknameInUseError,
   createUser,
   createUserSchema,
+  deleteUser,
   setUserActive,
   type CreateUserResult,
 } from "@/server/services/users";
@@ -77,18 +80,76 @@ const setActiveSchema = z.object({
   isActive: z.enum(["1", "0"]),
 });
 
-export async function setUserActiveAction(data: FormData): Promise<void> {
-  await requireAdmin();
+export type SetUserActiveResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function setUserActiveAction(
+  data: FormData,
+): Promise<SetUserActiveResult> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
+  }
   const parsed = setActiveSchema.safeParse({
     userId: data.get("userId"),
     isActive: data.get("isActive"),
   });
-  if (!parsed.success) return;
-  const ctx = await getAuditContext();
-  await setUserActive(
-    parsed.data.userId,
-    parsed.data.isActive === "1",
-    ctx,
-  );
+  if (!parsed.success) {
+    return { ok: false, error: "Neplatný požadavek." };
+  }
+  try {
+    const ctx = await getAuditContext();
+    await setUserActive(
+      parsed.data.userId,
+      parsed.data.isActive === "1",
+      ctx,
+    );
+  } catch (err) {
+    console.error("[setUserActiveAction]", err);
+    return {
+      ok: false,
+      error: "Změna stavu se nezdařila. Zkuste to znovu.",
+    };
+  }
   revalidatePath("/admin/users");
+  return { ok: true };
+}
+
+export type DeleteUserResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function deleteUserAction(
+  data: FormData,
+): Promise<DeleteUserResult> {
+  let actor;
+  try {
+    actor = await requireAdmin();
+  } catch {
+    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
+  }
+  const userId = String(data.get("userId") ?? "").trim();
+  if (userId.length === 0) {
+    return { ok: false, error: "Chybí ID uživatele." };
+  }
+  try {
+    const ctx = await getAuditContext();
+    await deleteUser(userId, ctx, actor.id);
+  } catch (err) {
+    if (err instanceof CannotDeleteSelfError) {
+      return { ok: false, error: err.message };
+    }
+    if (err instanceof CannotDeleteSiteManagerError) {
+      return { ok: false, error: err.message };
+    }
+    console.error("[deleteUserAction]", err);
+    return {
+      ok: false,
+      error: "Smazání se nezdařilo. Zkuste to znovu.",
+    };
+  }
+  revalidatePath("/admin/users");
+  return { ok: true };
 }

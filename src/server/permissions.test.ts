@@ -49,6 +49,7 @@ describe("can — BOSS (stavbyvedoucí, no isAdmin)", () => {
     // jen ČKAIT, ne adminship).
     expect(can(BOSS, "user.create")).toBe(false);
     expect(can(BOSS, "user.deactivate")).toBe(false);
+    expect(can(BOSS, "user.delete")).toBe(false);
     expect(can(BOSS, "audit.read")).toBe(false);
     expect(can(BOSS, "audit.verify")).toBe(false);
   });
@@ -70,6 +71,7 @@ describe("can — isAdmin flag (orthogonal to role)", () => {
   it("ADMIN_WORKER (účetní/asistent) spravuje uživatele, ale NE zakázky", () => {
     expect(can(ADMIN_WORKER, "user.create")).toBe(true);
     expect(can(ADMIN_WORKER, "user.deactivate")).toBe(true);
+    expect(can(ADMIN_WORKER, "user.delete")).toBe(true);
     expect(can(ADMIN_WORKER, "audit.read")).toBe(true);
     // Worker, i když je admin, NEMŮŽE založit projekt / podepsat
     // deník — to je doménová akce stavbyvedoucího (role=BOSS).

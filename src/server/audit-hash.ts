@@ -18,6 +18,7 @@ export type AuditAction =
   | "user.update"
   | "user.deactivate"
   | "user.activate"
+  | "user.delete"
   | "user.password-change"
   | "session.signin"
   | "session.signout"

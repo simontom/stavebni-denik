@@ -199,6 +199,74 @@ export async function setUserActive(
   }
 }
 
+export class CannotDeleteSelfError extends Error {
+  code = "CannotDeleteSelf" as const;
+  constructor() {
+    super("Nemůžete smazat svůj vlastní účet.");
+  }
+}
+
+export class CannotDeleteSiteManagerError extends Error {
+  code = "CannotDeleteSiteManager" as const;
+  constructor() {
+    super(
+      "Uživatel je stavbyvedoucí na aktivních zakázkách. Nejdřív tam přiřaďte jiného stavbyvedoucího.",
+    );
+  }
+}
+
+/**
+ * Soft-delete uživatele (`deletedAt` set). Splňuje audit-trail
+ * compliance — historická data (zápisy, fotky, audit log řádky)
+ * zůstávají, ale uživatel zmizí z výpisů, dropdownů a nemůže se
+ * přihlásit (auth.ts kontroluje `user.deletedAt === null`).
+ *
+ * Ochrany:
+ *   - `actorId === userId` → nelze smazat sebe (CannotDeleteSelfError),
+ *   - user je `siteManagerId` na nějaké aktivní zakázce →
+ *     `CannotDeleteSiteManagerError` (operátor musí nejdřív přepnout).
+ */
+export async function deleteUser(
+  userId: string,
+  ctx: AuditContext,
+  actorId: string,
+): Promise<void> {
+  if (userId === actorId) throw new CannotDeleteSelfError();
+
+  const before = await prisma.user.findUnique({ where: { id: userId } });
+  if (!before || before.deletedAt) return; // already gone, idempotent
+
+  // Nikoho, kdo je aktivně přiřazen jako stavbyvedoucí, nemažeme —
+  // jinak by se v Project.siteManagerId zachoval cizí id na účet co
+  // už neexistuje a všechny operace na zakázce by se rozpadly.
+  const blocking = await prisma.project.count({
+    where: { siteManagerId: userId, deletedAt: null },
+  });
+  if (blocking > 0) throw new CannotDeleteSiteManagerError();
+
+  await withAudit(
+    {
+      ctx,
+      action: "user.delete",
+      entityType: "user",
+      resolveEntityId: (u) => u.id,
+      before: projectUserForAudit(before),
+      projectAfter: projectUserForAudit,
+    },
+    (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: { deletedAt: new Date(), isActive: false },
+      }),
+  );
+
+  // Revoke any live sessions immediately.
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+}
+
 /**
  * Self-service password change. The acting user proves possession of
  * the old password before we accept the new one.

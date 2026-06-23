@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { Loader2, Power, PowerOff } from "lucide-react";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
@@ -25,8 +26,20 @@ export function ToggleActiveButton({ userId, isActive, displayName }: Props) {
     const fd = new FormData();
     fd.append("userId", userId);
     fd.append("isActive", isActive ? "0" : "1");
-    startTransition(() => {
-      void setUserActiveAction(fd);
+    // Use async callback so React 19 tracks the Promise — without
+    // `await` inside startTransition the call would fire-and-forget
+    // and revalidatePath could land after the transition ended.
+    startTransition(async () => {
+      const result = await setUserActiveAction(fd);
+      if (!result.ok) {
+        toast.error(result.error);
+      } else {
+        toast.success(
+          isActive
+            ? `${displayName} deaktivován.`
+            : `${displayName} aktivován.`,
+        );
+      }
     });
   }
 

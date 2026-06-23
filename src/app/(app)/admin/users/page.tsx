@@ -20,6 +20,7 @@ import { requireAdmin } from "@/server/rbac";
 import { listUsers } from "@/server/services/users";
 
 import { CreateUserDialog } from "./CreateUserDialog";
+import { DeleteUserButton } from "./DeleteUserButton";
 import { ToggleActiveButton } from "./ToggleActiveButton";
 
 export const metadata: Metadata = { title: "Uživatelé" };
@@ -32,7 +33,7 @@ const ROLE_LABEL: Record<"BOSS" | "WORKER" | "GUEST", string> = {
 };
 
 export default async function AdminUsersPage() {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const users = await listUsers();
 
   return (
@@ -110,11 +111,19 @@ export default async function AdminUsersPage() {
                   {formatDate(u.createdAt)}
                 </TableCell>
                 <TableCell className="text-right">
-                  <ToggleActiveButton
-                    userId={u.id}
-                    isActive={u.isActive}
-                    displayName={u.displayName}
-                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <ToggleActiveButton
+                      userId={u.id}
+                      isActive={u.isActive}
+                      displayName={u.displayName}
+                    />
+                    {u.id !== actor.id && (
+                      <DeleteUserButton
+                        userId={u.id}
+                        displayName={u.displayName}
+                      />
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

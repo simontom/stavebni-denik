@@ -51,6 +51,7 @@ export type Action =
   | "user.create"
   | "user.deactivate"
   | "user.activate"
+  | "user.delete"
   | "audit.read"
   | "audit.verify"
   // Projects
@@ -94,6 +95,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   "user.create":      (u) => u.isAdmin,
   "user.deactivate":  (u) => u.isAdmin,
   "user.activate":    (u) => u.isAdmin,
+  "user.delete":      (u) => u.isAdmin,
   "audit.read":       (u) => u.isAdmin,
   "audit.verify":     (u) => u.isAdmin,
 
