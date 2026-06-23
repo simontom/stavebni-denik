@@ -53,6 +53,7 @@ export type Action =
   | "user.deactivate"
   | "user.activate"
   | "user.delete"
+  | "user.password-reset"
   | "audit.read"
   | "audit.verify"
   // Projects
@@ -93,13 +94,14 @@ export interface Resource {
 const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean> = {
   // App-admin (správa uživatelů, audit log) — orthogonální k role.
   // Admin nemusí být stavbyvedoucí, stavbyvedoucí nemusí být admin.
-  "user.create":      (u) => u.isAdmin,
-  "user.update":      (u) => u.isAdmin,
-  "user.deactivate":  (u) => u.isAdmin,
-  "user.activate":    (u) => u.isAdmin,
-  "user.delete":      (u) => u.isAdmin,
-  "audit.read":       (u) => u.isAdmin,
-  "audit.verify":     (u) => u.isAdmin,
+  "user.create":         (u) => u.isAdmin,
+  "user.update":         (u) => u.isAdmin,
+  "user.deactivate":     (u) => u.isAdmin,
+  "user.activate":       (u) => u.isAdmin,
+  "user.delete":         (u) => u.isAdmin,
+  "user.password-reset": (u) => u.isAdmin,
+  "audit.read":          (u) => u.isAdmin,
+  "audit.verify":        (u) => u.isAdmin,
 
   // Stavbyvedoucí (role=BOSS) operations — zakázky, podpis deníku.
   // Tady BOSS znamená legal stavbyvedoucí dle § 153 stavebního zákona

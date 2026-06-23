@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { prisma } from "@/lib/db";
 import { getAuditContext } from "@/server/audit-context";
 import {
   CannotDeleteSelfError,
@@ -13,6 +14,7 @@ import {
   createUser,
   createUserSchema,
   deleteUser,
+  resetUserPasswordByAdmin,
   setUserActive,
   updateUser,
   updateUserSchema,
@@ -220,4 +222,54 @@ export async function deleteUserAction(
   }
   revalidatePath("/admin/users");
   return { ok: true };
+}
+
+export type ResetPasswordResult =
+  | { ok: true; generatedPassword: string; nickname: string; displayName: string }
+  | { ok: false; error: string };
+
+export async function resetUserPasswordAction(
+  data: FormData,
+): Promise<ResetPasswordResult> {
+  let actor;
+  try {
+    actor = await requireAdmin();
+  } catch {
+    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
+  }
+  const userId = String(data.get("userId") ?? "").trim();
+  if (userId.length === 0) {
+    return { ok: false, error: "Chybí ID uživatele." };
+  }
+  try {
+    const ctx = await getAuditContext();
+    const { generatedPassword } = await resetUserPasswordByAdmin(
+      userId,
+      ctx,
+      actor.id,
+    );
+    const target = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { nickname: true, displayName: true },
+    });
+    revalidatePath("/admin/users");
+    return {
+      ok: true,
+      generatedPassword,
+      nickname: target.nickname,
+      displayName: target.displayName,
+    };
+  } catch (err) {
+    if (err instanceof UserNotFoundError) {
+      return { ok: false, error: "Uživatel nebyl nalezen." };
+    }
+    if (err instanceof Error && err.message.includes("vlastního hesla")) {
+      return { ok: false, error: err.message };
+    }
+    console.error("[resetUserPasswordAction]", err);
+    return {
+      ok: false,
+      error: "Reset hesla se nezdařil. Zkuste to znovu.",
+    };
+  }
 }

@@ -20,6 +20,7 @@ export type AuditAction =
   | "user.activate"
   | "user.delete"
   | "user.password-change"
+  | "user.password-reset"
   | "session.signin"
   | "session.signout"
   // Forward-looking actions used in Stages 4-6. Kept here so the

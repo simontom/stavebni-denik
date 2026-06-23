@@ -271,6 +271,67 @@ export async function updateUser(
 }
 
 /**
+ * Admin generuje nové heslo uživateli, který zapomněl. Vrací plaintext
+ * jednorázově (admin ho předá uživateli bezpečně). User dostane
+ * `mustChangePwd=true` — při dalším přihlášení musí heslo změnit, ať
+ * ho admin nezná dlouhodobě.
+ *
+ * Pozor:
+ *   - UserNotFoundError pro missing / soft-deleted user.
+ *   - Resetnutí vlastního hesla NEDĚLÁ smysl přes tuhle cestu — admin
+ *     by si měl změnit heslo přes self-service `changePassword` (= zná
+ *     stávající). Aby si někdo omylem neresetnul, blokujeme actorId
+ *     === userId.
+ *   - Všechny aktivní session usera se revokují, ať se starým heslem
+ *     neexistuje žádná session-cookie cesta zpátky.
+ *   - Audit zapíšeme jako `user.password-reset` s actorId = admin.
+ */
+export async function resetUserPasswordByAdmin(
+  userId: string,
+  ctx: AuditContext,
+  actorId: string,
+): Promise<{ generatedPassword: string }> {
+  if (userId === actorId) {
+    throw new Error(
+      "Reset vlastního hesla přes admin flow není povolen — použij self-service.",
+    );
+  }
+
+  const before = await prisma.user.findUnique({ where: { id: userId } });
+  if (!before || before.deletedAt) throw new UserNotFoundError();
+
+  const generatedPassword = generatePassword();
+  const passwordHash = await hashPassword(generatedPassword);
+
+  await withAudit(
+    {
+      ctx,
+      action: "user.password-reset",
+      entityType: "user",
+      resolveEntityId: (u) => u.id,
+      before: projectUserForAudit(before),
+      projectAfter: projectUserForAudit,
+    },
+    (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash,
+          mustChangePwd: true,
+        },
+      }),
+  );
+
+  // Revoke all live sessions — staré heslo už nesmí mít cestu zpátky.
+  await prisma.session.updateMany({
+    where: { userId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+
+  return { generatedPassword };
+}
+
+/**
  * Sets `User.isActive`. Used by BOSS to suspend a user without deleting
  * any historical data (soft-delete-only policy).
  */

@@ -22,6 +22,7 @@ import { listUsers } from "@/server/services/users";
 import { CreateUserDialog } from "./CreateUserDialog";
 import { DeleteUserButton } from "./DeleteUserButton";
 import { EditUserDialog } from "./EditUserDialog";
+import { ResetPasswordButton } from "./ResetPasswordButton";
 import { ToggleActiveButton } from "./ToggleActiveButton";
 
 export const metadata: Metadata = { title: "Uživatelé" };
@@ -123,6 +124,12 @@ export default async function AdminUsersPage() {
                         isAdmin: u.isAdmin,
                       }}
                     />
+                    {u.id !== actor.id && (
+                      <ResetPasswordButton
+                        userId={u.id}
+                        displayName={u.displayName}
+                      />
+                    )}
                     <ToggleActiveButton
                       userId={u.id}
                       isActive={u.isActive}
