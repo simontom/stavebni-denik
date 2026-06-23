@@ -225,8 +225,8 @@ verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 | `reset-db` | Stop Postgres → drop volume → restart → migrate → seed (= čistý stav). |
 | `up` | Postgres up (compose) + Prisma generate + ověření env. |
 | `down` | Postgres down + cleanup hanging Node procesů. |
-| `prod-start` *(jen bash)* | `pnpm build && pnpm start` na pozadí přes nohup+disown. Detached od shell session — přežije zavření terminálu. Uloží PID do `/tmp/stavebni-prod.pid`, log do `/tmp/stavebni-prod.log`. |
-| `prod-stop` *(jen bash)* | Zabije prod server podle PID file (fallback: cokoliv na :3000). |
+| `prod-start` | Spustí **standalone bundle** (`node .next/standalone/server.js`) na pozadí. Detached — přežije zavření terminálu. Pokud `.next/standalone/server.js` chybí, zavolá `pnpm build` automaticky. Před startem zkopíruje `.next/static` a `public/` dovnitř standalone adresáře (Next standalone bundle je úmyslně neobsahuje). PID v `/tmp/stavebni-prod.pid` (`%TEMP%\stavebni-prod.pid` na Windows). Volitelně: `--build` / `-Build` vynutí rebuild. |
+| `prod-stop` | Zabije prod server podle PID file (fallback: cokoliv na :3000). |
 
 ### macOS / Linux / WSL:
 
@@ -235,6 +235,8 @@ verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 ./scripts/dev/reset-db.sh     # když chceš čistou DB
 ./scripts/dev/up.sh           # běžný start
 ./scripts/dev/down.sh         # zastavit a uklidit
+./scripts/dev/prod-start.sh   # production build na pozadí (přežije zavření shellu)
+./scripts/dev/prod-stop.sh
 ```
 
 ### Windows (PowerShell):
@@ -244,6 +246,8 @@ verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 .\scripts\dev\reset-db.ps1
 .\scripts\dev\up.ps1
 .\scripts\dev\down.ps1
+.\scripts\dev\prod-start.ps1   # production build na pozadí
+.\scripts\dev\prod-stop.ps1
 ```
 
 Pokud PowerShell brblá na execution policy:
@@ -284,9 +288,28 @@ Detail v `docs/ARCHITECTURE.md` § 5, bod 1.
 
 ### "Style sheet could not be loaded" / MIME mismatch po reloadu
 
-Browser drží zastaralou cached verzi HTML s odkazy na chunky, které
-už neexistují po `pnpm build`. Hard reload (Cmd+Shift+R / Ctrl+F5)
-nebo nové soukromé okno.
+**Příznaky:** `NS_ERROR_CORRUPTED_CONTENT`, _"resource was blocked due
+to MIME type ('text/plain') mismatch (X-Content-Type-Options:
+nosniff)"_, login stránka bez stylů a JS chunků 404.
+
+**Příčina #1 — `next start` se standalone configem.** `next.config.ts`
+má `output: "standalone"`, což znamená že `pnpm start` (= `next start`)
+sice nastartuje, ale **nedokáže správně servovat `_next/static/*`**
+(vrací `text/plain` místo `application/javascript`). Browser pak chunky
+odmítne kvůli `X-Content-Type-Options: nosniff`. V logu vedle toho
+najdeš warning *"next start does not work with output: standalone
+configuration"*.
+
+**Řešení:** používej **`./scripts/dev/prod-start.sh`** (resp.
+`prod-start.ps1`) — ten spouští `node .next/standalone/server.js`,
+což je správný způsob pro standalone build, a předtím zkopíruje
+`.next/static` a `public/` dovnitř standalone adresáře.
+
+**Příčina #2 — stará cache v browseru.** Pokud server odpovídá správným
+MIME (ověř `curl -I http://localhost:3000/_next/static/chunks/<chunk>.js`
+→ `content-type: application/javascript`), pak je problém v browseru.
+Hard reload (Cmd+Shift+R / Ctrl+F5), případně "Clear site data" v
+DevTools → Application.
 
 ### `dev/cmqp...` chunks na disku v `.next/static/`
 
@@ -306,6 +329,17 @@ Neškodné. Sentry SDK loaduje package, ale init je gated na
 
 Turbopack runtime warnings, neškodné. Souvisí s polyfilly pro Node
 moduly v browser kontextu.
+
+### "Production server umřel s SIGTERM 143"
+
+Pokud spouštíš production manuálně přes `pnpm start &` v interaktivním
+shellu (terminál, tmux session), `pnpm start` umře v okamžiku, kdy
+shell session zemře (zavření terminálu, agent shutdown, tmux detach).
+
+Řešení: **vždycky používej `./scripts/dev/prod-start.sh`** —
+ten používá `nohup + disown + </dev/null` pattern, který odpojí
+proces od controlling terminalu. PID je v `/tmp/stavebni-prod.pid`,
+log v `/tmp/stavebni-prod.log`. Stop přes `./scripts/dev/prod-stop.sh`.
 
 ---
 

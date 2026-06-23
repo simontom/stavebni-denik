@@ -366,11 +366,18 @@ Tyhle věci jsme objevili bolestivě, stojí za to si je zapsat:
    se mu, pokud to nutně nepotřebuješ (může způsobit remount
    problémy).
 
-9. **`output: standalone` v `next.config.ts`** → `pnpm start` varuje,
-   ale FUNGUJE (servíruje statiku). Pro skutečný standalone deploy
-   se používá `node .next/standalone/server.js`, ale ten potřebuje
-   `cp -r .next/static .next/standalone/.next/` + `cp -r public
-   .next/standalone/` jinak vrací MIME mismatch na statiky.
+9. **`output: standalone` v `next.config.ts`** → `pnpm start` (= `next
+   start`) ve standalone módu sice nastartuje, ale **NEUMÍ správně
+   servovat `_next/static/*`** — vrací `text/plain` místo
+   `application/javascript`. Browser pak kvůli `X-Content-Type-Options:
+   nosniff` chunky odmítne s `NS_ERROR_CORRUPTED_CONTENT` a frontend
+   nehydratuje. V logu vedle toho vidíš warning *"next start does not
+   work with output: standalone"*.
+
+   **Správný způsob:** `node .next/standalone/server.js`. Ale ten
+   potřebuje `.next/static` a `public/` zkopírované **dovnitř**
+   `.next/standalone/` (standalone bundle je úmyslně neobsahuje).
+   Helper `scripts/dev/prod-start.{sh,ps1}` to dělá automaticky.
 
 10. **Sentry SDK loaduje i bez `SENTRY_DSN`** — vidíš v devu
     `[@sentry/nextjs] DEPRECATION WARNING` v logu, ale samotná
