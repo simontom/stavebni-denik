@@ -225,6 +225,8 @@ verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 | `reset-db` | Stop Postgres → drop volume → restart → migrate → seed (= čistý stav). |
 | `up` | Postgres up (compose) + Prisma generate + ověření env. |
 | `down` | Postgres down + cleanup hanging Node procesů. |
+| `prod-start` *(jen bash)* | `pnpm build && pnpm start` na pozadí přes nohup+disown. Detached od shell session — přežije zavření terminálu. Uloží PID do `/tmp/stavebni-prod.pid`, log do `/tmp/stavebni-prod.log`. |
+| `prod-stop` *(jen bash)* | Zabije prod server podle PID file (fallback: cokoliv na :3000). |
 
 ### macOS / Linux / WSL:
 
