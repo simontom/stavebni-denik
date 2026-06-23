@@ -6,6 +6,7 @@ import { Archive, Briefcase, Menu, Users } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -46,22 +47,24 @@ export function MobileNavMenu({ isAdmin }: Props) {
         }
       />
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel>Navigace</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem render={<Link href="/projects" />}>
-          <Briefcase className="mr-2 size-4" aria-hidden /> Zakázky
-        </DropdownMenuItem>
-        {isAdmin && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem render={<Link href="/admin/users" />}>
-              <Users className="mr-2 size-4" aria-hidden /> Uživatelé
-            </DropdownMenuItem>
-            <DropdownMenuItem render={<Link href="/admin/audit" />}>
-              <Archive className="mr-2 size-4" aria-hidden /> Audit log
-            </DropdownMenuItem>
-          </>
-        )}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Navigace</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem render={<Link href="/projects" />}>
+            <Briefcase className="mr-2 size-4" aria-hidden /> Zakázky
+          </DropdownMenuItem>
+          {isAdmin && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem render={<Link href="/admin/users" />}>
+                <Users className="mr-2 size-4" aria-hidden /> Uživatelé
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/admin/audit" />}>
+                <Archive className="mr-2 size-4" aria-hidden /> Audit log
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

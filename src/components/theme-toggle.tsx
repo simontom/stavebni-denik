@@ -6,6 +6,7 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -102,20 +103,22 @@ export function ThemeToggle() {
         }
       />
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Motiv</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => choose("light")}>
-          <Sun className="mr-2 size-4" aria-hidden /> Světlý
-          {mode === "light" && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => choose("dark")}>
-          <Moon className="mr-2 size-4" aria-hidden /> Tmavý
-          {mode === "dark" && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => choose("system")}>
-          <Monitor className="mr-2 size-4" aria-hidden /> Systém
-          {mode === "system" && <span className="ml-auto text-xs">✓</span>}
-        </DropdownMenuItem>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Motiv</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => choose("light")}>
+            <Sun className="mr-2 size-4" aria-hidden /> Světlý
+            {mode === "light" && <span className="ml-auto text-xs">✓</span>}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => choose("dark")}>
+            <Moon className="mr-2 size-4" aria-hidden /> Tmavý
+            {mode === "dark" && <span className="ml-auto text-xs">✓</span>}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => choose("system")}>
+            <Monitor className="mr-2 size-4" aria-hidden /> Systém
+            {mode === "system" && <span className="ml-auto text-xs">✓</span>}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

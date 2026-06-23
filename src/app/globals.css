@@ -69,40 +69,40 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
   /*
-   * Construction-orange primary. Vivid enough to read on a phone in
-   * direct sunlight, warm enough to feel "stavební" without screaming.
-   * Foreground stays near-black because orange + white fails WCAG AA
-   * contrast (2.85:1 for #ED7A19 on white).
+   * Tlumenější construction-orange — chroma 0.12 dává teplý "stavební"
+   * tón aniž by byla křiklavá (saturation jako warm earth, ne neon).
+   * Foreground stále near-black: i tlumenější orange + white je 3.4:1
+   * (pod WCAG AA), tmavý text na orange button je bezpečný.
    */
-  --primary: oklch(0.69 0.184 50);
+  --primary: oklch(0.66 0.12 55);
   --primary-foreground: oklch(0.18 0 0);
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.97 0.01 50);
+  --accent: oklch(0.975 0.005 55);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.92 0 0);
   --input: oklch(0.92 0 0);
-  --ring: oklch(0.69 0.184 50 / 60%);
+  --ring: oklch(0.66 0.12 55 / 50%);
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --chart-1: oklch(0.69 0.184 50);
+  --chart-1: oklch(0.66 0.12 55);
   --chart-2: oklch(0.55 0.12 240);
   --chart-3: oklch(0.55 0.15 145);
   --chart-4: oklch(0.55 0.18 305);
   --chart-5: oklch(0.55 0.18 25);
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.69 0.184 50);
+  --sidebar-primary: oklch(0.66 0.12 55);
   --sidebar-primary-foreground: oklch(0.18 0 0);
-  --sidebar-accent: oklch(0.97 0.01 50);
+  --sidebar-accent: oklch(0.975 0.005 55);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.92 0 0);
-  --sidebar-ring: oklch(0.69 0.184 50 / 60%);
+  --sidebar-ring: oklch(0.66 0.12 55 / 50%);
 }
 
 .dark {
@@ -112,33 +112,33 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.21 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* Lehce světlejší orange pro lepší kontrast na tmavém pozadí. */
-  --primary: oklch(0.72 0.17 55);
+  /* Lehce světlejší v dark, stále tlumené chroma 0.12. */
+  --primary: oklch(0.7 0.12 55);
   --primary-foreground: oklch(0.18 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(0.32 0.04 55);
+  --accent: oklch(0.3 0.02 55);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.72 0.17 55 / 60%);
-  --chart-1: oklch(0.72 0.17 55);
+  --ring: oklch(0.7 0.12 55 / 50%);
+  --chart-1: oklch(0.7 0.12 55);
   --chart-2: oklch(0.65 0.14 240);
   --chart-3: oklch(0.65 0.16 145);
   --chart-4: oklch(0.65 0.18 305);
   --chart-5: oklch(0.65 0.18 25);
   --sidebar: oklch(0.21 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.72 0.17 55);
+  --sidebar-primary: oklch(0.7 0.12 55);
   --sidebar-primary-foreground: oklch(0.18 0 0);
-  --sidebar-accent: oklch(0.32 0.04 55);
+  --sidebar-accent: oklch(0.3 0.02 55);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.72 0.17 55 / 60%);
+  --sidebar-ring: oklch(0.7 0.12 55 / 50%);
 }
 
 @layer base {
