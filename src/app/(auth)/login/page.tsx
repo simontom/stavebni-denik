@@ -33,7 +33,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
         {/* Hero — schované na malých displejích, ať se vejde formulář bez scrollu */}
         <section className="hidden flex-col gap-5 lg:flex">
           <div className="flex items-center gap-3">
-            <div className="grid size-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+            <div className="grid size-12 place-items-center rounded-xl bg-brand text-brand-foreground shadow-lg shadow-brand/20">
               <HardHat className="size-6" aria-hidden />
             </div>
             <div>
@@ -55,7 +55,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
           <ul className="grid gap-3 text-sm">
             <li className="flex items-start gap-3">
               <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-primary"
+                className="mt-0.5 size-5 shrink-0 text-brand"
                 aria-hidden
               />
               <span>
@@ -65,7 +65,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
             </li>
             <li className="flex items-start gap-3">
               <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-primary"
+                className="mt-0.5 size-5 shrink-0 text-brand"
                 aria-hidden
               />
               <span>
@@ -75,7 +75,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
             </li>
             <li className="flex items-start gap-3">
               <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-primary"
+                className="mt-0.5 size-5 shrink-0 text-brand"
                 aria-hidden
               />
               <span>
@@ -88,7 +88,7 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
         {/* Brand bar pro mobily (lg:hidden) — drží spirit hero stránky aniž by zabralo místo */}
         <div className="flex items-center gap-3 lg:hidden">
-          <div className="grid size-10 place-items-center rounded-lg bg-primary text-primary-foreground shadow shadow-primary/20">
+          <div className="grid size-10 place-items-center rounded-lg bg-brand text-brand-foreground shadow shadow-brand/20">
             <HardHat className="size-5" aria-hidden />
           </div>
           <div>
