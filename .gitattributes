@@ -1,0 +1,30 @@
+# Force LF line endings for source files — keeps diffs clean when
+# vývojáři přepínají mezi Windows (CRLF) a macOS/Linux (LF).
+#
+# Klíčové, protože:
+#   * Některé skripty (`scripts/dev/*.sh`) nepustí bash, pokud mají
+#     CRLF.
+#   * Shebangs (`#!/usr/bin/env bash`) musí být na první řádce s LF.
+#   * Source TS/TSX se pak nedělí na diff jen z line endings.
+
+* text=auto eol=lf
+
+# Binary files — ne-konvertovat:
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.heic binary
+*.heif binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ico binary
+*.gz binary
+*.zip binary
+
+# Skripty: ZÁVAZNĚ LF (i na Windows checkout, jinak bash nepadne)
+*.sh text eol=lf
+
+# PowerShell skripty: CRLF (vyžaduje PowerShell ISE / nativní editor)
+*.ps1 text eol=crlf

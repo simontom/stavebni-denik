@@ -4,8 +4,12 @@ Elektronický stavební deník dle § 157 stavebního zákona (zák. č. 283/202
 a přílohy č. 16 vyhlášky 499/2006 Sb. Aplikace je **single-tenant** — jedna
 instance = jedna firma.
 
-> Pro architekturu a rozhodnutí viz [`docs/plan.md`](docs/plan.md);
-> aktuální stav vývoje je v [`docs/PROGRESS.md`](docs/PROGRESS.md).
+> 📖 **Dokumentace:**
+> - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — jak je app navržená, doménový model, klíčové moduly, gotchas.
+> - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — lokální dev setup (macOS + Windows).
+> - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Fly.io deploy guide.
+> - [`docs/plan.md`](docs/plan.md) — původní MVP spec.
+> - [`docs/PROGRESS.md`](docs/PROGRESS.md) — živý log práce.
 
 ## Tech stack
 
@@ -13,38 +17,41 @@ instance = jedna firma.
 | ---------------- | -------------------------------------------------------------- |
 | Framework        | Next.js 16 (App Router, React 19, RSC + server actions)        |
 | DB & ORM         | Postgres 16 + Prisma 7 (driver-adapter model, `@prisma/adapter-pg`) |
-| Auth             | Auth.js v5 Credentials + argon2id (Stage 2)                    |
-| RBAC             | Service-layer `assertCan(...)` (Stage 3)                       |
-| Audit log        | Append-only `audit_log` s hash chain (Stage 3)                 |
-| Storage fotek    | Lokální Fly volume `/data`, sharp resize (Stage 5)             |
-| Počasí           | Open-Meteo (zdarma, bez API klíče) (Stage 5)                   |
-| PDF              | Playwright headless Chromium (Stage 6)                         |
-| UI               | Tailwind 4 + shadcn/ui (Radix) + sonner                        |
+| Auth             | Auth.js v5 Credentials + argon2id                              |
+| RBAC             | Service-layer `assertCan(...)` + `requireBoss`/`requireAdmin`  |
+| Audit log        | Append-only `audit_log` s SHA-256 hash chain + DB trigger      |
+| Storage fotek    | Lokální Fly volume `/data`, client resize → sharp pipeline     |
+| Počasí           | Open-Meteo (zdarma, bez API klíče) + SSRF allow-list           |
+| PDF              | Playwright headless Chromium + in-process queue                |
+| UI               | Tailwind 4 + shadcn/ui (Base UI) + sonner                      |
 | Hosting          | Fly.io, Frankfurt region                                       |
 
-## Local development
-
-Předpoklady: Node 22+, pnpm 10+, Docker.
+## Local development — quick start
 
 ```bash
-# 1. Závislosti
-pnpm install
+# První run (jednou)
+./scripts/dev/setup.sh        # macOS / Linux / WSL
+.\scripts\dev\setup.ps1       # Windows PowerShell
 
-# 2. Lokální Postgres (běží v Dockeru na portu 5432)
-docker compose up -d postgres
-
-# 3. Env soubor — zkopíruj a uprav, pokud potřeba.
-cp .env.example .env  # .env je v .gitignore
-
-# 4. Migrace + Prisma client
-pnpm db:migrate
-
-# 5. Spuštění dev serveru
+# Běžný start
+./scripts/dev/up.sh           # nebo .ps1
 pnpm dev
+
+# Mobile testing (Turbopack dev nehydratuje na mobile!)
+pnpm build && pnpm start
+
+# Reset DB
+./scripts/dev/reset-db.sh
+
+# Vypnutí
+./scripts/dev/down.sh
 ```
 
 App pojede na <http://localhost:3000>. Health check je na
 <http://localhost:3000/healthz>.
+
+Pro detail (prerekvizity, Colima vs Docker Desktop, Windows-specific
+setup, troubleshooting) viz [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
 ## Scripts
 
