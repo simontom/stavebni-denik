@@ -7,11 +7,15 @@ import { getAuditContext } from "@/server/audit-context";
 import {
   CannotDeleteSelfError,
   CannotDeleteSiteManagerError,
+  CannotRemoveLastAdminError,
   NicknameInUseError,
+  UserNotFoundError,
   createUser,
   createUserSchema,
   deleteUser,
   setUserActive,
+  updateUser,
+  updateUserSchema,
   type CreateUserResult,
 } from "@/server/services/users";
 import { requireAdmin } from "@/server/rbac";
@@ -73,6 +77,70 @@ export async function createUserAction(
       message: "Vytvoření uživatele se nezdařilo.",
     };
   }
+}
+
+export type UpdateUserState =
+  | { status: "idle" }
+  | { status: "ok" }
+  | { status: "field-error"; fieldErrors: Record<string, string> }
+  | { status: "forbidden" }
+  | { status: "not-found" }
+  | { status: "last-admin" }
+  | { status: "error"; message: string };
+
+export async function updateUserAction(
+  _prev: UpdateUserState | undefined,
+  data: FormData,
+): Promise<UpdateUserState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { status: "forbidden" };
+  }
+
+  const userId = String(data.get("userId") ?? "").trim();
+  if (userId.length === 0) {
+    return { status: "error", message: "Chybí ID uživatele." };
+  }
+
+  const parsed = updateUserSchema.safeParse({
+    displayName: String(data.get("displayName") ?? ""),
+    role: String(data.get("role") ?? ""),
+    ckaitNumber: ((): string | null => {
+      const raw = data.get("ckaitNumber");
+      if (raw === null) return null;
+      const trimmed = String(raw).trim();
+      return trimmed.length === 0 ? null : trimmed;
+    })(),
+    isAdmin: data.get("isAdmin") === "true",
+  });
+  if (!parsed.success) {
+    const fieldErrors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0] as string | undefined;
+      if (field && !fieldErrors[field]) fieldErrors[field] = issue.message;
+    }
+    return { status: "field-error", fieldErrors };
+  }
+
+  try {
+    const ctx = await getAuditContext();
+    await updateUser(userId, parsed.data, ctx);
+  } catch (err) {
+    if (err instanceof UserNotFoundError) {
+      return { status: "not-found" };
+    }
+    if (err instanceof CannotRemoveLastAdminError) {
+      return { status: "last-admin" };
+    }
+    console.error("[updateUserAction]", err);
+    return {
+      status: "error",
+      message: "Uložení se nezdařilo. Zkuste to znovu.",
+    };
+  }
+  revalidatePath("/admin/users");
+  return { status: "ok" };
 }
 
 const setActiveSchema = z.object({

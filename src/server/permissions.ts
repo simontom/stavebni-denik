@@ -49,6 +49,7 @@ export class ForbiddenError extends Error {
 export type Action =
   // User admin
   | "user.create"
+  | "user.update"
   | "user.deactivate"
   | "user.activate"
   | "user.delete"
@@ -93,6 +94,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   // App-admin (správa uživatelů, audit log) — orthogonální k role.
   // Admin nemusí být stavbyvedoucí, stavbyvedoucí nemusí být admin.
   "user.create":      (u) => u.isAdmin,
+  "user.update":      (u) => u.isAdmin,
   "user.deactivate":  (u) => u.isAdmin,
   "user.activate":    (u) => u.isAdmin,
   "user.delete":      (u) => u.isAdmin,

@@ -47,6 +47,29 @@ function projectUserForAudit(u: {
 }
 
 /**
+ * Update schema — same shape as create but BEZ nickname (immutable
+ * identity) a BEZ password (separate reset flow). Server-action plně
+ * nahradí editovatelná pole; isAdmin a ckaitNumber jsou explicitní
+ * (žádné implicit-undefined merging) aby se omylem nezachovala
+ * stará hodnota.
+ */
+export const updateUserSchema = z.object({
+  displayName: z
+    .string()
+    .min(1, "Vyplňte jméno a příjmení.")
+    .max(128, "Maximálně 128 znaků."),
+  role: z.enum(["BOSS", "WORKER", "GUEST"]),
+  ckaitNumber: z
+    .string()
+    .max(32, "Maximálně 32 znaků.")
+    .optional()
+    .nullable(),
+  isAdmin: z.boolean().optional().default(false),
+});
+
+export type UpdateUserInput = z.infer<typeof updateUserSchema>;
+
+/**
  * Validation schema for creating a new user via the admin UI.
  * Nicknames are case-insensitive globally unique — we store them
  * lower-cased to avoid duplicates differing only by case.
@@ -158,6 +181,93 @@ export async function createUser(
     role: created.role,
     generatedPassword,
   };
+}
+
+export class UserNotFoundError extends Error {
+  code = "UserNotFound" as const;
+  constructor() {
+    super("Uživatel nebyl nalezen.");
+  }
+}
+
+export class CannotRemoveLastAdminError extends Error {
+  code = "CannotRemoveLastAdmin" as const;
+  constructor() {
+    super(
+      "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
+    );
+  }
+}
+
+/**
+ * Aktualizuje editovatelné fieldy uživatele (displayName, role,
+ * ckaitNumber, isAdmin). Nickname je IMMUTABLE (identity), heslo
+ * tudy taky nejde — to má vlastní flow (changePassword / future
+ * admin-reset).
+ *
+ * Ochrany:
+ *   - `UserNotFoundError` když user neexistuje nebo je soft-deleted,
+ *   - `CannotRemoveLastAdminError` když pokus o sundání isAdmin
+ *     z poslední aktivního admina (typical foot-gun — operátor by
+ *     se vyřadil ze správy aplikace navždy).
+ *
+ * No-op (žádný audit) když se po validaci nic nezměnilo.
+ */
+export async function updateUser(
+  userId: string,
+  input: UpdateUserInput,
+  ctx: AuditContext,
+): Promise<void> {
+  const data = updateUserSchema.parse(input);
+
+  const before = await prisma.user.findUnique({ where: { id: userId } });
+  if (!before || before.deletedAt) throw new UserNotFoundError();
+
+  // Defence in depth: nikoho neodřízneme z aplikace omylem. Pokud
+  // tenhle user JE jediný aktivní admin a pokoušíme se mu vzít
+  // isAdmin, blokujeme.
+  if (before.isAdmin && !data.isAdmin) {
+    const otherActiveAdmins = await prisma.user.count({
+      where: {
+        id: { not: userId },
+        isAdmin: true,
+        isActive: true,
+        deletedAt: null,
+      },
+    });
+    if (otherActiveAdmins === 0) {
+      throw new CannotRemoveLastAdminError();
+    }
+  }
+
+  // No-op check — žádný audit row, pokud se nic nemění.
+  const unchanged =
+    before.displayName === data.displayName &&
+    before.role === data.role &&
+    (before.ckaitNumber ?? null) === (data.ckaitNumber ?? null) &&
+    before.isAdmin === data.isAdmin;
+  if (unchanged) return;
+
+  await withAudit(
+    {
+      ctx,
+      action: "user.update",
+      entityType: "user",
+      resolveEntityId: (u) => u.id,
+      before: projectUserForAudit(before),
+      projectAfter: projectUserForAudit,
+    },
+    (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: {
+          displayName: data.displayName,
+          role: data.role,
+          ckaitNumber: data.ckaitNumber ?? null,
+          isAdmin: data.isAdmin,
+        },
+      }),
+  );
 }
 
 /**

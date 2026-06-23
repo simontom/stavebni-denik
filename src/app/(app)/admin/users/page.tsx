@@ -21,6 +21,7 @@ import { listUsers } from "@/server/services/users";
 
 import { CreateUserDialog } from "./CreateUserDialog";
 import { DeleteUserButton } from "./DeleteUserButton";
+import { EditUserDialog } from "./EditUserDialog";
 import { ToggleActiveButton } from "./ToggleActiveButton";
 
 export const metadata: Metadata = { title: "Uživatelé" };
@@ -112,6 +113,16 @@ export default async function AdminUsersPage() {
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
+                    <EditUserDialog
+                      userId={u.id}
+                      initialValues={{
+                        nickname: u.nickname,
+                        displayName: u.displayName,
+                        role: u.role,
+                        ckaitNumber: u.ckaitNumber,
+                        isAdmin: u.isAdmin,
+                      }}
+                    />
                     <ToggleActiveButton
                       userId={u.id}
                       isActive={u.isActive}
