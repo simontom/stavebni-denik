@@ -25,6 +25,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: process.env.CI ? "github" : "list",
+  // globalSetup používá Prisma napřímo k upsertu `e2e-admin` účtu se
+  // známým heslem — specs ho pak používají v login flow bez závislosti
+  // na seed scriptu.
+  globalSetup: "./e2e/global-setup.ts",
   use: {
     baseURL: process.env.BASE_URL ?? "http://localhost:3000",
     trace: "on-first-retry",
