@@ -10,6 +10,7 @@ import { formatDate, formatDateInput, formatDateTime, pragueDayStart } from "@/l
 import { requireUser } from "@/server/rbac";
 import { canCreateReport, getReportForUser } from "@/server/services/reports";
 import { listPhotosForReport } from "@/server/services/photos";
+import { listVisitsForReport } from "@/server/services/visits";
 
 import { AddendumForm } from "../AddendumForm";
 import { DeletePhotoButton } from "../DeletePhotoButton";
@@ -17,6 +18,7 @@ import { PhotoUploader } from "../PhotoUploader";
 import { ReportForm } from "../ReportForm";
 import { EMPTY_REPORT_VALUES } from "../report-form-types";
 import { SignReportButton } from "../SignReportButton";
+import { VisitsPanel } from "../VisitsPanel";
 import { createReportAction } from "../actions";
 import { ManualWeatherForm, MaterialsPanel, RemarkForm } from "../ReportPanels";
 
@@ -96,11 +98,34 @@ export default async function ReportPage({ params }: PageProps) {
   const { report, weather, workers, remarks, materials, addenda, locked } =
     detail;
   const photos = await listPhotosForReport({ reportId: report.id, user });
+  const visits = await listVisitsForReport(report.id);
   const canUploadPhotos =
     (user.role === "BOSS" || user.role === "WORKER") &&
     detail.isMember &&
     !locked;
   const canDeletePhotos = user.role === "BOSS" && detail.isMember && !locked;
+
+  // Návštěvy: smazat smí BOSS (vždy, pokud member) nebo autor (pokud member).
+  // GUEST nesmí mazat ani vlastní (jednou napsáno = audit-stable). Vstup
+  // disabled gate je nezávislý na canDelete — i locked report skryje formulář.
+  const canDeleteVisitFor = (authorId: string): boolean => {
+    if (!detail.isMember || locked) return false;
+    if (user.role === "BOSS") return true;
+    if (user.role === "WORKER") return authorId === user.id;
+    return false;
+  };
+  const visitItems = visits.map((v) => ({
+    id: v.id,
+    visitorName: v.visitorName,
+    visitorRole: v.visitorRole,
+    organization: v.organization,
+    visitedAt: v.visitedAt,
+    purpose: v.purpose,
+    notes: v.notes,
+    authorName: v.authorName,
+    canDelete: canDeleteVisitFor(v.authorId),
+  }));
+  const canRecordVisit = detail.isMember && !locked;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -267,6 +292,23 @@ export default async function ReportPage({ params }: PageProps) {
               showOfficialOption={detail.canMarkRemarkOfficial}
             />
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Návštěvy a kontroly ({visits.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <VisitsPanel
+            projectId={id}
+            dateStr={dateStr}
+            reportId={report.id}
+            items={visitItems}
+            disabled={!canRecordVisit}
+          />
         </CardContent>
       </Card>
 

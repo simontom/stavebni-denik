@@ -67,12 +67,14 @@ export type Action =
   | "report.update"
   | "report.sign"
   | "report.addendum.create"
-  // Photos, remarks, materials
+  // Photos, remarks, materials, visits
   | "photo.upload"
   | "photo.delete"
   | "remark.create"
   | "material.create"
-  | "material.resolve";
+  | "material.resolve"
+  | "visit.create"
+  | "visit.delete";
 
 export interface Resource {
   /** True when the acting user is a member of the project. */
@@ -141,6 +143,18 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
     r?.projectMember === true &&
     !r?.reportLocked,
   "material.resolve": (u, r) =>
+    (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
+
+  // Visits & inspections (§ 6 vyhlášky 499/2006).
+  // Kdokoliv s přístupem k projektu může zaznamenat návštěvu — typicky
+  // to bude TDS / dozor (GUEST role) sám sebe zaznamenávající. Locked-
+  // -report kontrolu řeší service (workflow se mění na addendum po
+  // podpisu).
+  "visit.create": (u, r) =>
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "GUEST") &&
+    r?.projectMember === true,
+  // Smazat smí BOSS nebo autor zápisu (check v service).
+  "visit.delete": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
 };
 

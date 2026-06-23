@@ -344,3 +344,106 @@ export async function addAddendumAction(data: FormData): Promise<void> {
   }
   revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
 }
+
+// ---------------------------------------------------------------------------
+// Visits / inspections (§ 6 vyhlášky 499/2006)
+// ---------------------------------------------------------------------------
+
+import {
+  ProjectAccessDeniedError as VisitProjectAccessError,
+  ReportLockedError as VisitReportLockedError,
+  VisitNotFoundError,
+  createVisit,
+  deleteVisit,
+} from "@/server/services/visits";
+
+export interface VisitFormState {
+  status: "ok" | "field-error" | "forbidden" | "locked" | "error";
+  fieldErrors?: Record<string, string>;
+  message?: string;
+}
+
+/**
+ * Add a visit/inspection entry to a daily report.
+ *
+ * Signature returns state (used by useActionState in VisitsPanel) instead
+ * of just void — visits have non-trivial validation (datetime parse,
+ * enum check) where we want field-level feedback.
+ */
+export async function addVisitAction(
+  projectId: string,
+  dateStr: string,
+  _prev: VisitFormState | undefined,
+  data: FormData,
+): Promise<VisitFormState> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+
+  // visitedAt přichází ve formátu "YYYY-MM-DDTHH:MM" (datetime-local input).
+  // Pokud chybí, vyrobíme z aktuálního času; pokud je validní, použij ho.
+  const visitedAtRaw = String(data.get("visitedAt") ?? "").trim();
+  const visitedAt =
+    visitedAtRaw.length > 0 ? new Date(visitedAtRaw) : new Date();
+
+  // Visitor role validation se delegateuje na Zod uvnitř createVisit
+  // — proto typujeme jen jako string a service ho zkontroluje.
+  const payload: Record<string, unknown> = {
+    reportId,
+    visitorName: String(data.get("visitorName") ?? ""),
+    visitorRole: String(data.get("visitorRole") ?? ""),
+    organization: String(data.get("organization") ?? ""),
+    visitedAt,
+    purpose: String(data.get("purpose") ?? ""),
+    notes: String(data.get("notes") ?? ""),
+  };
+
+  try {
+    const ctx = await getAuditContext();
+    await createVisit({
+      input: payload as Parameters<typeof createVisit>[0]["input"],
+      user,
+      ctx,
+    });
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { status: "forbidden" };
+    if (err instanceof VisitReportLockedError) return { status: "locked" };
+    if (err instanceof VisitProjectAccessError) return { status: "forbidden" };
+    if (err instanceof VisitNotFoundError) {
+      return { status: "error", message: "Záznam neexistuje." };
+    }
+    if (err instanceof Error && err.name === "ZodError") {
+      // Zod 4 ukládá issues v err.issues; pro jistotu fallback parse.
+      const issues = "issues" in err && Array.isArray((err as { issues: unknown }).issues)
+        ? ((err as { issues: { path: PropertyKey[]; message: string }[] }).issues)
+        : (JSON.parse(err.message) as { path: PropertyKey[]; message: string }[]);
+      const fieldErrors: Record<string, string> = {};
+      for (const issue of issues) {
+        const field = issue.path[0];
+        const key = typeof field === "string" ? field : "visitorName";
+        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+      }
+      return { status: "field-error", fieldErrors };
+    }
+    return { status: "error", message: "Uložení návštěvy se nezdařilo." };
+  }
+
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+  return { status: "ok" };
+}
+
+/** Delete (soft-delete) a visit. */
+export async function deleteVisitAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const id = String(data.get("id") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!id) return;
+
+  try {
+    const ctx = await getAuditContext();
+    await deleteVisit({ id, user, ctx });
+  } catch {
+    return;
+  }
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
+}

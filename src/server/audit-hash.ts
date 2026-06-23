@@ -40,6 +40,8 @@ export type AuditAction =
   | "material.create"
   | "material.resolve"
   | "material.rollover"
+  | "visit.create"
+  | "visit.delete"
   | "pdf.export";
 
 /**

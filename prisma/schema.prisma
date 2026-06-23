@@ -61,6 +61,7 @@ model User {
   remarksAuthored    Remark[]        @relation("RemarkAuthor")
   addendaAuthored    Addendum[]      @relation("AddendumAuthor")
   photosUploaded     Photo[]         @relation("PhotoUploader")
+  visitsAuthored     Visit[]         @relation("VisitAuthor")
   notifications      Notification[]  @relation("NotificationRecipient")
 
   @@index([deletedAt])
@@ -180,6 +181,7 @@ model DailyReport {
   signedBy      User?          @relation("ReportSigner", fields: [signedById], references: [id])
   photos        Photo[]
   remarks       Remark[]
+  visits        Visit[]
   materialNeeds MaterialNeed[]
   addenda       Addendum[]
 
@@ -310,6 +312,39 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorId, ts])
   @@map("audit_log")
+}
+
+/// Návštěva / kontrola na stavbě dle § 6 vyhlášky 499/2006 Sb.
+/// (TDS, autorský dozor, investor, stavební úřad, BOZP koordinátor apod.).
+/// Patří ke konkrétnímu dennímu záznamu. Soft delete only.
+model Visit {
+  id           String    @id @default(cuid())
+  reportId     String
+  // Jméno návštěvníka (povinné).
+  visitorName  String
+  // Role návštěvníka — předdefinovaný enum jako string (TDS, Investor, ...).
+  visitorRole  String
+  // Organizace / firma / orgán (volitelné).
+  organization String?
+  // Čas návštěvy (DateTime — datum + čas, ne jen datum).
+  visitedAt    DateTime
+  // Účel návštěvy (povinné).
+  purpose      String
+  // Poznámka / zjištění / pokyny (volitelné).
+  notes        String?
+  // Autor zápisu (uživatel, který návštěvu zaevidoval).
+  authorId     String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  author User        @relation("VisitAuthor", fields: [authorId], references: [id])
+
+  @@index([reportId])
+  @@index([deletedAt])
+  @@index([visitedAt])
+  @@map("visits")
 }
 
 /// Per-user in-app notification (bell in the header).
