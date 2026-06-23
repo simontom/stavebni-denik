@@ -577,3 +577,60 @@ export async function listAddableUsers(projectId: string) {
     select: { id: true, displayName: true, nickname: true, role: true },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Materiálový timeline (Gantt) — celá zakázka, ne jen jeden report
+// ---------------------------------------------------------------------------
+
+export interface MaterialGanttItem {
+  id: string;
+  text: string;
+  neededBy: Date | null;
+  resolved: boolean;
+  resolvedAt: Date | null;
+  /** Datum reportu, kde byla položka založena — odkaz na zdroj. */
+  reportDate: Date;
+  reportId: string;
+}
+
+/**
+ * Vrátí všechny MaterialNeed položky zakázky napříč všemi reporty,
+ * setříděné podle neededBy (nulls last) a pak podle reportDate.
+ * Použité v "Materiál" tabu na project detail page.
+ *
+ * RBAC: caller MUSÍ ověřit přístup k zakázce přes `getProjectForUser`
+ * + že role NENÍ GUEST (Dozor/TDS by checklist materiálu neměli vidět
+ * — je to vnitřní info brigády/firmy).
+ *
+ * Filtruje soft-delete: report.deletedAt = null AND material.deletedAt
+ * = null.
+ */
+export async function listMaterialsForProject(
+  projectId: string,
+): Promise<MaterialGanttItem[]> {
+  const rows = await prisma.materialNeed.findMany({
+    where: {
+      deletedAt: null,
+      report: { projectId, deletedAt: null },
+    },
+    orderBy: [{ neededBy: "asc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      text: true,
+      neededBy: true,
+      resolved: true,
+      resolvedAt: true,
+      reportId: true,
+      report: { select: { date: true } },
+    },
+  });
+  return rows.map((r) => ({
+    id: r.id,
+    text: r.text,
+    neededBy: r.neededBy,
+    resolved: r.resolved,
+    resolvedAt: r.resolvedAt,
+    reportDate: r.report.date,
+    reportId: r.reportId,
+  }));
+}

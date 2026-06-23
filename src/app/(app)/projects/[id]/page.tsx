@@ -20,6 +20,7 @@ import { requireUser } from "@/server/rbac";
 import {
   getProjectForUser,
   listAddableUsers,
+  listMaterialsForProject,
 } from "@/server/services/projects";
 import {
   canCreateReport,
@@ -30,15 +31,17 @@ import {
 import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
+import { MaterialGantt } from "./MaterialGantt";
 import { ProjectStatusButton } from "./ProjectStatusButton";
 import { ReportCalendarMonth } from "./ReportCalendarMonth";
 import { ReportCoverageHeatmap } from "./ReportCoverageHeatmap";
 import { ReportsFilterBar } from "./ReportsFilterBar";
 
-type ProjectTab = "details" | "reports" | "members";
+type ProjectTab = "details" | "reports" | "materials" | "members";
 
 function resolveTab(value: string | string[] | undefined): ProjectTab {
   if (value === "reports") return "reports";
+  if (value === "materials") return "materials";
   if (value === "members") return "members";
   return "details";
 }
@@ -187,6 +190,13 @@ export default async function ProjectDetailPage({
       ),
     ),
   );
+
+  // Materiálový tab data — jen když je tab aktivní A user není GUEST.
+  // GUEST nemá vidět ani odkaz, ani fetched data (defence in depth).
+  const materials =
+    tab === "materials" && user.role !== "GUEST"
+      ? await listMaterialsForProject(id)
+      : [];
   const nextMonthParam = monthParam(
     new Date(
       Date.UTC(
@@ -269,6 +279,20 @@ export default async function ProjectDetailPage({
         >
           Záznamy
         </Link>
+        {/* Materiálový tab — skrýt pro Dozor/TDS (GUEST). Tato role
+            má číst deník, ale interní materiál checklist firmy ne. */}
+        {user.role !== "GUEST" && (
+          <Link
+            href={`/projects/${id}?tab=materials`}
+            className={
+              tab === "materials"
+                ? "border-b-2 border-primary px-3 py-2 text-sm font-medium"
+                : "px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+            }
+          >
+            Materiál
+          </Link>
+        )}
         <Link
           href={`/projects/${id}?tab=members`}
           className={
@@ -449,6 +473,19 @@ export default async function ProjectDetailPage({
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {tab === "materials" && user.role !== "GUEST" && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Materiál — celá zakázka
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MaterialGantt projectId={id} items={materials} />
+          </CardContent>
+        </Card>
       )}
 
       {tab === "members" && (
