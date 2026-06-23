@@ -97,14 +97,19 @@
   --border: oklch(0.92 0 0);
   --input: oklch(0.92 0 0);
   /* Ring = warm orange (= brand). Viditelné jen při focus state. */
-  --ring: oklch(0.66 0.12 55 / 55%);
+  --ring: oklch(0.62 0.05 55 / 55%);
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  /* Brand orange — pro cílené hero spots. Hex ≈ #B27345. */
-  --brand: oklch(0.66 0.12 55);
-  --brand-foreground: oklch(0.18 0 0);
-  --chart-1: oklch(0.66 0.12 55);
+  /*
+   * Brand = ztlumený warm clay / taupe. Chroma 0.05 = sotva
+   * znatelný teplý nádech (ne jasně orange). User postupně
+   * snižoval saturation: 0.184 (vivid) → 0.12 (earth) → 0.05 (taupe).
+   * Hex ≈ #9D7A60.
+   */
+  --brand: oklch(0.62 0.05 55);
+  --brand-foreground: oklch(0.985 0 0);
+  --chart-1: oklch(0.62 0.05 55);
   --chart-2: oklch(0.55 0.12 240);
   --chart-3: oklch(0.55 0.15 145);
   --chart-4: oklch(0.55 0.18 305);
@@ -116,7 +121,7 @@
   --sidebar-accent: oklch(0.975 0.005 55);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.92 0 0);
-  --sidebar-ring: oklch(0.66 0.12 55 / 55%);
+  --sidebar-ring: oklch(0.62 0.05 55 / 55%);
 }
 
 .dark {
@@ -139,11 +144,11 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.7 0.12 55 / 55%);
+  --ring: oklch(0.68 0.05 55 / 55%);
   /* Brand v dark mode lehce světlejší pro kontrast */
-  --brand: oklch(0.7 0.12 55);
-  --brand-foreground: oklch(0.18 0 0);
-  --chart-1: oklch(0.7 0.12 55);
+  --brand: oklch(0.68 0.05 55);
+  --brand-foreground: oklch(0.145 0 0);
+  --chart-1: oklch(0.68 0.05 55);
   --chart-2: oklch(0.65 0.14 240);
   --chart-3: oklch(0.65 0.16 145);
   --chart-4: oklch(0.65 0.18 305);
@@ -155,7 +160,7 @@
   --sidebar-accent: oklch(0.3 0.015 55);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.7 0.12 55 / 55%);
+  --sidebar-ring: oklch(0.68 0.05 55 / 55%);
 }
 
 @layer base {
