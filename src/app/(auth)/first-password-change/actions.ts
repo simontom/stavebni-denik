@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { auth, signOut, update } from "@/server/auth";
+import { auth, update } from "@/server/auth";
 import { getAuditContext } from "@/server/audit-context";
 import {
   InvalidCurrentPasswordError,
@@ -84,11 +84,10 @@ export async function changePasswordAction(
     return { formError: "Nepodařilo se změnit heslo. Zkuste to znovu." };
   }
 
-  // Update the JWT in-place so `mustChangePwd` flips to false without
-  // forcing the user to log in again.
+  // Flip mustChangePwd=false in the JWT so middleware stops
+  // redirecting to /first-password-change on the next nav. The user
+  // just proved possession of the new password (typed twice) — no
+  // need to force re-login; keep their session and send them home.
   await update({ user: { mustChangePwd: false } });
-  // Defence in depth: force a fresh login so any leaked old credential
-  // is invalidated. Comment out if the UX overhead is unwelcome.
-  await signOut({ redirect: false });
-  redirect("/login?changed=1");
+  redirect("/");
 }
