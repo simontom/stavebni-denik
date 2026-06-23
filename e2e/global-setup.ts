@@ -15,10 +15,20 @@ export const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
 export const WORKER_NICKNAME = "e2e-worker";
 
 export default async function globalSetup(): Promise<void> {
+  // Playwright globalSetup runs in plain Node (no Next.js env loader),
+  // so we load .env ourselves. Node 20.6+ has process.loadEnvFile.
+  if (!process.env.DATABASE_URL) {
+    try {
+      process.loadEnvFile(path.resolve(__dirname, "..", ".env"));
+    } catch {
+      // .env optional — fall through to the error below
+    }
+  }
+
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(
-      "DATABASE_URL must be set for E2E (docker compose up postgres).",
+      "DATABASE_URL must be set for E2E (docker compose up postgres + .env).",
     );
   }
   const root = path.resolve(__dirname, "..");

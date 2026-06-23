@@ -5,6 +5,7 @@ import { Toaster } from "sonner";
 
 import { env } from "@/lib/env";
 import "./globals.css";
+import { THEME_INIT_SCRIPT } from "@/lib/theme-init";
 import { cn } from "@/lib/utils";
 
 // Latin Extended is required for full Czech diacritics (ě, š, č, ř, ž, ý, …).
@@ -40,6 +41,17 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="cs" className={cn("h-full", "antialiased", "font-sans", geist.variable)}>
+      <head>
+        {/*
+         * FOUC-free theme init — runs synchronously BEFORE React hydration
+         * to add `.dark` class on <html> if needed. Inline script is
+         * unavoidable for this case; CSP `script-src 'unsafe-inline'`
+         * already allows it (see next.config.ts comments).
+         */}
+        <script
+          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
+        />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground">
         {children}
         <Toaster

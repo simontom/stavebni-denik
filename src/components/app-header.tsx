@@ -1,7 +1,9 @@
 import Link from "next/link";
 
+import { MobileNavMenu } from "@/components/mobile-nav-menu";
 import { NotificationBell } from "@/components/notification-bell";
 import { SignOutButton } from "@/components/sign-out-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { env } from "@/lib/env";
 import type { SessionUser } from "@/server/rbac";
@@ -48,7 +50,9 @@ export async function AppHeader({ user }: Props) {
 
   return (
     <header className="border-b bg-card/50 backdrop-blur sticky top-0 z-30">
-      <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-4 py-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6 lg:px-8">
+        <MobileNavMenu isAdmin={isAdmin} />
+
         <Link
           href="/"
           className="text-base font-semibold hover:text-primary"
@@ -81,8 +85,9 @@ export async function AppHeader({ user }: Props) {
           )}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-2">
           <NotificationBell items={bellItems} unreadCount={unreadCount} />
+          <ThemeToggle />
           <div className="hidden text-sm sm:flex sm:flex-col sm:items-end sm:leading-tight">
             <span className="font-medium">{user.displayName}</span>
             <Badge variant="secondary" className="text-[10px] uppercase">
