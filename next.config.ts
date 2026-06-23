@@ -7,19 +7,15 @@ import { withSentryConfig } from "@sentry/nextjs";
  * (Next.js inlines a small amount of JSON, which is allowed via
  * `'self'`), no framing.
  *
- * DEV-ONLY: `'unsafe-eval'` v script-src. React 19 v dev módu (HMR
- * + Turbopack runtime) používá `eval()` pro hot reload a pro
- * client-side hydrataci server-action form binding. Bez něj se form
- * submituje s prázdnou FormData → každé přihlášení vrátí
- * InvalidCredentials, i když credentials jsou správné. Produkce
- * `'unsafe-eval'` NEMÁ (React production buildy ho nepotřebují).
+ * `'unsafe-eval'` v script-src je tu i v produkci. React 19 dev to
+ * potřebuje pro HMR; produkce by ideálně nemusela, ale **některé
+ * deps v bundlu** (next-auth JWT signing, crypto polyfilly,
+ * Turbopack runtime helpers) volají `vm.runInThisContext` /
+ * `new Function()` v browser kontextu. Bez `'unsafe-eval'` to spadne
+ * po loginu / form submitu s "EvalError: call to eval() blocked
+ * by CSP". Lepší fix je nonce-based CSP (TODO), ale na to potřebujeme
+ * refactor middlewaru + layoutu, který zatím odkládáme.
  */
-const isDev = process.env.NODE_ENV !== "production";
-
-const scriptSrc = isDev
-  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
-  : "script-src 'self' 'unsafe-inline'";
-
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
@@ -38,10 +34,11 @@ const securityHeaders = [
   {
     key: "Content-Security-Policy",
     // `'unsafe-inline'` on style covers Tailwind's CSS-variables injection.
+    // `'unsafe-eval'` is required by bundled deps (see comment above).
     // No third-party scripts or images — adjust if we ever embed maps etc.
     value: [
       "default-src 'self'",
-      scriptSrc,
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",
