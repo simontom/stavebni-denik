@@ -225,8 +225,8 @@ verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 | `reset-db` | Stop Postgres → drop volume → restart → migrate → seed (= čistý stav). |
 | `up` | Postgres up (compose) + Prisma generate + ověření env. |
 | `down` | Postgres down + cleanup hanging Node procesů. |
-| `prod-start` | Spustí **standalone bundle** (`node .next/standalone/server.js`) na pozadí. Detached — přežije zavření terminálu. Pokud `.next/standalone/server.js` chybí, zavolá `pnpm build` automaticky. Před startem zkopíruje `.next/static` a `public/` dovnitř standalone adresáře (Next standalone bundle je úmyslně neobsahuje). PID v `/tmp/stavebni-prod.pid` (`%TEMP%\stavebni-prod.pid` na Windows). Volitelně: `--build` / `-Build` vynutí rebuild. |
-| `prod-stop` | Zabije prod server podle PID file (fallback: cokoliv na :3000). |
+| `prod-start` | Spustí production server na pozadí jako **OS-managed service** (= přežije všechno: zavření terminálu, agent restart, sleep/wake, crash → auto-restart). Pod kapotou: **macOS** = launchd LaunchAgent (`~/Library/LaunchAgents/`), **Linux** = systemd user unit (`~/.config/systemd/user/`, s nohup fallbackem pokud user-systemd chybí), **Windows** = Scheduled Task (alt. `-NoTask` = Start-Process Hidden). Build pokud chybí (nebo `--build` / `-Build`). Volitelně `--restart` / `-Restart` jen restartuje bez kopírování staticu. |
+| `prod-stop` | Zastaví service podle OS detekce. `--purge` / `-Purge` smaže i plist/unit/Task definici. |
 
 ### macOS / Linux / WSL:
 
@@ -255,6 +255,35 @@ Pokud PowerShell brblá na execution policy:
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
+
+### Detail: jak prod-start na různých OS funguje
+
+| OS | Manager | Kde žije konfig | Auto-restart při crashi | Přežije logout | Status |
+|---|---|---|---|---|---|
+| **macOS** | launchd LaunchAgent | `~/Library/LaunchAgents/com.stavebnidenik.prod.plist` | ✅ (KeepAlive on Crashed) | ✅ | `launchctl print gui/$(id -u)/com.stavebnidenik.prod` |
+| **Linux (systemd)** | systemd user unit | `~/.config/systemd/user/stavebni-denik-prod.service` | ✅ (Restart=on-failure) | ⚠️ Vyžaduje `sudo loginctl enable-linger $USER` | `systemctl --user status stavebni-denik-prod` nebo `journalctl --user -u stavebni-denik-prod -f` |
+| **Linux (bez user-systemd)** | `nohup` fallback | `/tmp/stavebni-prod.pid` | ❌ | ❌ | `ps -p $(cat /tmp/stavebni-prod.pid)` |
+| **Windows** | Scheduled Task | `Get-ScheduledTask -TaskName StavebniDenikProd` | ✅ (RestartCount=3) | ⚠️ Spuštění jen at-logon | `Get-ScheduledTask -TaskName StavebniDenikProd | Get-ScheduledTaskInfo` |
+| **Windows (-NoTask)** | `Start-Process` Hidden | `$env:TEMP\stavebni-prod.pid` | ❌ | ❌ | `Get-Process -Id (Get-Content $env:TEMP\stavebni-prod.pid)` |
+
+**Proč to není jednoduché `nohup pnpm start &` všude:**
+- **macOS** po cca 15 min likviduje "unmanaged" procesy přes App Nap /
+  runningboardd (viděno v `log show`: _"removing inactive unmanaged
+  service: nohup.<pid>"_). Jediné spolehlivé řešení = launchd registrace.
+- **Linux** to bez systemd snese (cgroup v2 nemá App Nap ekvivalent),
+  ale auto-restart při crashi musíš mít přes systemd.
+- **Windows** nemá process group inheritance jako Unix, takže
+  `Start-Process` přežije zavření PowerShellu out-of-the-box. Ale
+  auto-restart vyžaduje Scheduled Task nebo Service.
+
+**`pnpm start` (= `next start`) místo `node .next/standalone/server.js`:**
+- next.config.ts má `output: "standalone"` (kvůli Docker imageu pro Fly).
+- V tomto módu `next start` vrací `_next/static/*` jako `text/plain`
+  místo `application/javascript` → browser je odmítá s
+  `NS_ERROR_CORRUPTED_CONTENT`.
+- Skripty proto spouští `node .next/standalone/server.js` přímo,
+  ALE musí předtím zkopírovat `.next/static` a `public/` dovnitř
+  `.next/standalone/` (Next je tam úmyslně nedává).
 
 ---
 
@@ -330,16 +359,27 @@ Neškodné. Sentry SDK loaduje package, ale init je gated na
 Turbopack runtime warnings, neškodné. Souvisí s polyfilly pro Node
 moduly v browser kontextu.
 
-### "Production server umřel s SIGTERM 143"
+### "Production server umřel sám od sebe / Unable to connect"
 
-Pokud spouštíš production manuálně přes `pnpm start &` v interaktivním
-shellu (terminál, tmux session), `pnpm start` umře v okamžiku, kdy
-shell session zemře (zavření terminálu, agent shutdown, tmux detach).
+Pokud spouštíš production manuálně přes `pnpm start &` nebo `nohup
+pnpm start &` v terminálu:
 
-Řešení: **vždycky používej `./scripts/dev/prod-start.sh`** —
-ten používá `nohup + disown + </dev/null` pattern, který odpojí
-proces od controlling terminalu. PID je v `/tmp/stavebni-prod.pid`,
-log v `/tmp/stavebni-prod.log`. Stop přes `./scripts/dev/prod-stop.sh`.
+- **macOS** ho po cca 15 min zabije ("unmanaged service" cleanup —
+  vidět v `log show --predicate 'eventMessage CONTAINS "removing
+  inactive unmanaged"'`).
+- **Linux** ho zabije až při sleep/shutdown, ale neumí auto-restart.
+- **Windows** ho zabije při zavření PowerShellu (Stop-Process všeho
+  v session).
+
+Řešení: **vždy používej `./scripts/dev/prod-start.sh`** (Unix) nebo
+`.\scripts\dev\prod-start.ps1` (Windows). Ty registrují server jako
+OS-managed service (launchd / systemd / Scheduled Task) — viz tabulka
+v § 5 výše.
+
+Status:
+- macOS: `launchctl print gui/$(id -u)/com.stavebnidenik.prod`
+- Linux: `systemctl --user status stavebni-denik-prod`
+- Windows: `Get-ScheduledTask -TaskName StavebniDenikProd`
 
 ---
 
