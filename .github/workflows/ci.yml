@@ -114,3 +114,99 @@ jobs:
         # Spins up a real Postgres via Docker (preinstalled on the runner)
         # and exercises the append-only triggers + hash-chain verifier.
         run: pnpm run test:integration
+
+  e2e:
+    name: E2E tests (Playwright + Postgres service)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [build]
+    services:
+      # Postgres jako GitHub Actions service container — víc real-world než
+      # Testcontainers (žádný in-test bootstrap), rychlejší startup mezi joby.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: devpassword
+          POSTGRES_DB: stavebni_denik
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:devpassword@localhost:5432/stavebni_denik?schema=public
+      AUTH_SECRET: ci-only-secret-not-used-for-anything-real
+      AUTH_URL: http://localhost:3000
+      DATA_DIR: /tmp/data
+      OPEN_METEO_BASE: https://api.open-meteo.com/v1
+      NEXT_PUBLIC_APP_NAME: Stavební deník
+      TZ: Europe/Prague
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Apply migrations
+        run: pnpm exec prisma migrate deploy
+
+      - name: Install Playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Create data dir
+        run: mkdir -p "$DATA_DIR"
+
+      - name: Run E2E tests
+        # Playwright config sám spustí `pnpm dev` přes webServer option,
+        # ALE my použijeme build + start pro stabilnější chování (Turbopack
+        # dev má známé hydratace problémy na CI).
+        # Místo toho: nejdřív build, pak start jako background a počkat
+        # na :3000, pak playwright bez webServer.
+        run: |
+          pnpm build
+          pnpm start &
+          NEXT_PID=$!
+          echo "Next.js PID: $NEXT_PID"
+          # Wait for /healthz
+          for i in {1..60}; do
+            if curl -fsS http://localhost:3000/healthz >/dev/null 2>&1; then
+              echo "Server ready"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://localhost:3000/healthz || (echo "Server did not start"; kill $NEXT_PID; exit 1)
+
+          BASE_URL=http://localhost:3000 pnpm exec playwright test --reporter=line
+          STATUS=$?
+          kill $NEXT_PID 2>/dev/null || true
+          exit $STATUS
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

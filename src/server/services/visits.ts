@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/db";
 import type { Visit } from "@/generated/prisma/client";
+import { VISITOR_ROLES, type VisitorRole } from "@/lib/visits-types";
 
 import type { AuditContext } from "@/server/audit";
 import { withAudit } from "@/server/audit";
@@ -14,29 +15,10 @@ import {
   type SessionUser,
 } from "@/server/permissions";
 
-// ---------------------------------------------------------------------------
-// Domain
-// ---------------------------------------------------------------------------
-
-/**
- * Předdefinované role návštěvníka.
- *
- * Vyhláška 499/2006 § 6 nepředepisuje konkrétní výčet; tohle pokrývá
- * 95 % případů + ponechává "Jiné" jako únikový východ pro vzácné role.
- * Pořadí: nejčastější první (TDS, investor) → výjimečné poslední.
- */
-export const VISITOR_ROLES = [
-  "TDS",
-  "Autorský dozor",
-  "Projektant",
-  "Investor",
-  "Stavební úřad",
-  "Koordinátor BOZP",
-  "Inspektorát práce",
-  "Jiné",
-] as const;
-
-export type VisitorRole = (typeof VISITOR_ROLES)[number];
+// Re-export pure constants tak, aby ostatní server kód mohl spolehlivě
+// brát všechno z jednoho místa.
+export { VISITOR_ROLES };
+export type { VisitorRole };
 
 // ---------------------------------------------------------------------------
 // Errors

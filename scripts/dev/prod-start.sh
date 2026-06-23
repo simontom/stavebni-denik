@@ -53,7 +53,11 @@ SERVICE_NAME="stavebni-denik-prod"            # systemd unit name
 LOG_FILE="/tmp/stavebni-prod.log"
 ERR_FILE="/tmp/stavebni-prod.err"
 PORT="${PORT:-3000}"
-HOSTNAME_BIND="${HOSTNAME:-0.0.0.0}"
+# POZOR: nepoužívat ${HOSTNAME:-...} jako default — bash má `HOSTNAME` jako
+# builtin proměnnou s machine hostname (např. "Mac"), Next standalone by
+# pak bindoval na hostname místo na 0.0.0.0 a curl localhost selže.
+# Místo toho explicit env var BIND_HOST (vlastní jméno), default 0.0.0.0.
+HOSTNAME_BIND="${BIND_HOST:-0.0.0.0}"
 UID_NUM="$(id -u)"
 
 FORCE_BUILD=0

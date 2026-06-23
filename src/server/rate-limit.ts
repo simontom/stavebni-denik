@@ -124,3 +124,20 @@ export const PDF_RENDER_USER_LIMIT = {
   windowMs: 5 * 60 * 1000,
   max: 10,
 } as const;
+
+/**
+ * Per-admin throttle for admin-initiated password resets.
+ *
+ * Reset hesla generuje nové heslo, hashe ho a revokuje VŠECHNY sessions
+ * dotčeného uživatele. Když admin klikne 50× (chyba UI, omylem, malice),
+ * vyrobí v audit logu šum a může dotčeným uživatelům zhodit produkci
+ * (každá reset = sessions revoked).
+ *
+ * 10 / hodina je víc než jakákoliv reálná onboarding kampaň (max 5 nových
+ * uživatelů týdně) a brzdí impulse-click. Klíč = admin actor id.
+ */
+export const ADMIN_PASSWORD_RESET_LIMIT = {
+  bucket: "admin:password-reset",
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+} as const;

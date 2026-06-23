@@ -31,6 +31,7 @@ import {
 import { MembersPanel } from "./MembersPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
+import { CsvExportButtons } from "./CsvExportButtons";
 import { MaterialGantt } from "./MaterialGantt";
 import { ProjectStatusButton } from "./ProjectStatusButton";
 import { ReportCalendarMonth } from "./ReportCalendarMonth";
@@ -365,6 +366,17 @@ export default async function ProjectDetailPage({
             </CardHeader>
             <CardContent>
               <PdfExportForm projectId={id} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Export tabulek (CSV)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <CsvExportButtons projectId={id} />
             </CardContent>
           </Card>
 

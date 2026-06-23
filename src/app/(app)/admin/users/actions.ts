@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/db";
 import { getAuditContext } from "@/server/audit-context";
+import { ADMIN_PASSWORD_RESET_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import {
   CannotDeleteSelfError,
   CannotDeleteSiteManagerError,
@@ -241,6 +242,22 @@ export async function resetUserPasswordAction(
   if (userId.length === 0) {
     return { ok: false, error: "Chybí ID uživatele." };
   }
+
+  // Rate limit per actor — viz ADMIN_PASSWORD_RESET_LIMIT v rate-limit.ts.
+  // Bez tohohle by admin mohl náhodným klikáním resetnout hesla a revokovat
+  // sessions desítkám uživatelů během minuty.
+  const rl = await checkRateLimit({
+    ...ADMIN_PASSWORD_RESET_LIMIT,
+    key: actor.id,
+  });
+  if (!rl.allowed) {
+    const minutes = Math.ceil(rl.retryAfterMs / 60_000);
+    return {
+      ok: false,
+      error: `Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`,
+    };
+  }
+
   try {
     const ctx = await getAuditContext();
     const { generatedPassword } = await resetUserPasswordByAdmin(
