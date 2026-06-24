@@ -243,6 +243,21 @@ export async function resetUserPasswordAction(
     return { ok: false, error: "Chybí ID uživatele." };
   }
 
+  // Validate the target BEFORE consuming a rate-limit token: a bogus /
+  // non-existent user id (mistyped, deleted in the meantime, …) must not
+  // burn the admin's reset budget. The limiter (see ADMIN_PASSWORD_RESET_LIMIT)
+  // is meant to throttle *real* resets — each of which generates a new
+  // password and revokes all of the target's sessions — not failed lookups.
+  let target;
+  try {
+    target = await prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { nickname: true, displayName: true },
+    });
+  } catch {
+    return { ok: false, error: "Uživatel nebyl nalezen." };
+  }
+
   // Rate limit per actor — viz ADMIN_PASSWORD_RESET_LIMIT v rate-limit.ts.
   // Bez tohohle by admin mohl náhodným klikáním resetnout hesla a revokovat
   // sessions desítkám uživatelů během minuty.
@@ -265,10 +280,6 @@ export async function resetUserPasswordAction(
       ctx,
       actor.id,
     );
-    const target = await prisma.user.findUniqueOrThrow({
-      where: { id: userId },
-      select: { nickname: true, displayName: true },
-    });
     revalidatePath("/admin/users");
     return {
       ok: true,

@@ -634,3 +634,62 @@ export async function listMaterialsForProject(
     reportId: r.reportId,
   }));
 }
+
+/**
+ * Quick statistiky pro project header — kolik reportů, fotek,
+ * návštěv, otevřených materiálů. Light query (jen counts),
+ * volá se na každý project detail render.
+ *
+ * Nevolá `assertCan` — caller (page.tsx) už si ověřil přístup
+ * přes `getProjectForUser`.
+ */
+export async function getProjectStats(projectId: string): Promise<{
+  reportsTotal: number;
+  reportsSignedTotal: number;
+  reportsLast30Days: number;
+  visitsTotal: number;
+  photosTotal: number;
+  materialsOpen: number;
+}> {
+  const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const baseReportFilter = { projectId, deletedAt: null };
+
+  const [
+    reportsTotal,
+    reportsSignedTotal,
+    reportsLast30Days,
+    visitsTotal,
+    photosTotal,
+    materialsOpen,
+  ] = await Promise.all([
+    prisma.dailyReport.count({ where: baseReportFilter }),
+    prisma.dailyReport.count({
+      where: { ...baseReportFilter, signedAt: { not: null } },
+    }),
+    prisma.dailyReport.count({
+      where: { ...baseReportFilter, date: { gte: since30 } },
+    }),
+    prisma.visit.count({
+      where: { report: baseReportFilter, deletedAt: null },
+    }),
+    prisma.photo.count({
+      where: { report: baseReportFilter, deletedAt: null },
+    }),
+    prisma.materialNeed.count({
+      where: {
+        report: baseReportFilter,
+        deletedAt: null,
+        resolved: false,
+      },
+    }),
+  ]);
+
+  return {
+    reportsTotal,
+    reportsSignedTotal,
+    reportsLast30Days,
+    visitsTotal,
+    photosTotal,
+    materialsOpen,
+  };
+}

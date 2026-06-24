@@ -59,7 +59,7 @@ setup, troubleshooting) viz [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 | -------------------------- | -------------------------------------------------------- |
 | `pnpm dev`                 | Next.js dev server.                                      |
 | `pnpm build`               | Produkční build (`output: standalone`).                  |
-| `pnpm start`               | Spustí produkční build.                                  |
+| `pnpm start`               | Spustí lokálně produkční standalone build (`node .next/standalone/server.js`); nejdřív zkopíruje `public/` + `.next/static/` vedle serveru, jinak by se assety neservírovaly. Vyžaduje předchozí `pnpm build`. |
 | `pnpm lint`                | ESLint.                                                  |
 | `pnpm typecheck`           | `tsc --noEmit`.                                          |
 | `pnpm format`              | Prettier (TS, CSS, Prisma).                              |

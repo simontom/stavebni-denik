@@ -24,9 +24,9 @@ stavební deník**, který musí splnit požadavky:
 
 - **Stavební zákon § 157** (povinnost vést deník u staveb od určité
   velikosti).
-- **Vyhláška 499/2006 Sb., příloha č. 16** — co všechno deník
+- **Vyhláška 499/2006 Sb., příloha č. 16 + § 6** — co všechno deník
   obsahuje (identifikace stavby, denní záznamy o pracích, počasí,
-  kontroly, podpisy, dodatky).
+  **návštěvy a kontroly**, podpisy, dodatky).
 - **Stavbyvedoucí (§ 153)** musí mít ČKAIT autorizační číslo —
   v aplikaci je to **`User.role = BOSS` + `User.ckaitNumber NOT NULL`**.
 - **Příloha** vyžaduje, aby se po podpisu denní záznam **zamkl**;
@@ -37,12 +37,13 @@ Z toho plyne pár zásadních invariantů, které se prolínají celým kódem:
 
 | Invariant | Kde se vynucuje |
 |---|---|
-| Žádné tvrdé smazání záznamů. Vše je `deletedAt` soft-delete. | `User`, `Project`, `DailyReport`, `Photo`, `MaterialNeed`, `Remark` — `deletedAt` sloupec, filtrace v queries |
-| Po podpisu (`signedAt + lockedAt`) se denní záznam **NESMÍ** měnit. | RBAC matrix (`report.update`: `!r?.reportLocked`), `assertCan` v každém mutating endpointu |
+| Žádné tvrdé smazání záznamů. Vše je `deletedAt` soft-delete. | `User`, `Project`, `DailyReport`, `Photo`, `MaterialNeed`, `Remark`, `Visit` — `deletedAt` sloupec, filtrace v queries |
+| Po podpisu (`signedAt + lockedAt`) se denní záznam **NESMÍ** měnit. | RBAC matrix (`report.update`: `!r?.reportLocked`), `assertCan` v každém mutating endpointu. Visit `createVisit`/`deleteVisit` taky čeká na unlock — po podpisu musí jít přes addendum. |
 | Stavbyvedoucí MUSÍ mít ČKAIT. | `listSiteManagerCandidates` filtruje `role = BOSS AND ckaitNumber IS NOT NULL`. Vynucená validace na vstupu (CreateUserDialog ČKAIT pole označené jako povinné pro BOSS). |
 | Audit log je `append-only`, i pro DB roota. | DB trigger blokuje `UPDATE`/`DELETE` na `audit_log`. Hash chain (SHA-256, prev_hash) detekuje retroaktivní změny i kdyby trigger někdo obešel. |
 | Počasí v denním záznamu je důkazní snapshot. | `weather` JSONB se zapíše JEDNOU při vytvoření reportu (z Open-Meteo) a NIKDY se nepřepíše. |
 | Fotky před zakrytím jsou často jediný důkaz. | PhotoGuidance banner v PhotoUploader; client resize zachovává EXIF (capturedAt + GPS). |
+| Návštěvy a kontroly (TDS, BOZP, stavební úřad, …) jsou součástí dne. | `Visit` model navázaný na `DailyReport`. RBAC dovoluje i GUEST roli (typicky TDS) zapsat vlastní návštěvu. Sleduje se `authorId` + `createdAt`. |
 
 ---
 

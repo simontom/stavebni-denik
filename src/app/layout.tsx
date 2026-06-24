@@ -40,7 +40,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="cs" className={cn("h-full", "antialiased", "font-sans", geist.variable)}>
+    // `suppressHydrationWarning` on <html> only: THEME_INIT_SCRIPT mutates
+    // documentElement (adds the `dark` class + `data-theme`) BEFORE React
+    // hydrates, so the server HTML and client DOM intentionally differ on
+    // this one element. Without this, React logs a hydration mismatch on
+    // every page that the user views with a dark/system preference. The
+    // suppression is shallow — it does not hide mismatches in descendants.
+    <html
+      lang="cs"
+      suppressHydrationWarning
+      className={cn("h-full", "antialiased", "font-sans", geist.variable)}
+    >
       <head>
         {/*
          * FOUC-free theme init — runs synchronously BEFORE React hydration

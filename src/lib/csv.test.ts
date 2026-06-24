@@ -32,6 +32,29 @@ describe("csvField — RFC 4180 escaping", () => {
     // Excel/Sheets aby správně detekly UTF-8.
     expect(csvField("Žluťoučký kůň úpěl")).toBe("Žluťoučký kůň úpěl");
   });
+
+  it("prefixes formula-injection payloads with a single quote", () => {
+    // Leading =, +, -, @, tab or CR would be executed as a formula.
+    expect(csvField("=1+1")).toBe("'=1+1");
+    expect(csvField("+1")).toBe("'+1");
+    expect(csvField("-1")).toBe("'-1");
+    expect(csvField("@SUM(A1)")).toBe("'@SUM(A1)");
+    // A leading tab is also a formula trigger; it gets the quote prefix
+    // (and a bare tab needs no RFC 4180 quoting).
+    expect(csvField("\tx")).toBe("'\tx");
+  });
+
+  it("combines the formula guard with RFC 4180 quoting", () => {
+    // `=cmd|...,x` is both a formula AND contains a comma → guard prefix
+    // first, then wrap the whole cell in quotes.
+    expect(csvField("=cmd,x")).toBe(`"'=cmd,x"`);
+  });
+
+  it("does not touch safe values that merely contain the chars", () => {
+    // Only a LEADING dangerous char triggers the guard.
+    expect(csvField("a=b")).toBe("a=b");
+    expect(csvField("1-2")).toBe("1-2");
+  });
 });
 
 describe("csvRow", () => {

@@ -8,7 +8,9 @@ import {
   ImageIcon,
   Lock,
   MessageSquare,
+  Package,
   Pencil,
+  UserCheck,
   Users,
 } from "lucide-react";
 
@@ -19,6 +21,7 @@ import { formatDate, formatDateInput } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import {
   getProjectForUser,
+  getProjectStats,
   listAddableUsers,
   listMaterialsForProject,
 } from "@/server/services/projects";
@@ -129,7 +132,15 @@ export default async function ProjectDetailPage({
 }: PageProps) {
   const user = await requireUser();
   const { id } = await params;
-  const detail = await getProjectForUser(id, user);
+
+  // Project access check and the lightweight header statistics are
+  // independent reads keyed only by `id`, so run them in parallel to save
+  // a DB round-trip on every render. `getProjectStats` is cheap (counts only)
+  // and its result is simply discarded if access is denied below.
+  const [detail, stats] = await Promise.all([
+    getProjectForUser(id, user),
+    getProjectStats(id),
+  ]);
   if (!detail) notFound();
 
   const { project, members, canManage } = detail;
@@ -257,6 +268,48 @@ export default async function ProjectDetailPage({
             </div>
           )}
         </CardHeader>
+        <CardContent>
+          {/* Quick stats — 5 chipů. Click sice neumí filter, jen vizualizace.
+              Visible všem rolím (GUEST taky vidí — counts jsou bezpečné). */}
+          <div className="flex flex-wrap gap-3 text-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
+              <CalendarDays className="size-3.5 text-muted-foreground" aria-hidden />
+              <strong>{stats.reportsTotal}</strong>
+              <span className="text-muted-foreground">záznamů</span>
+              {stats.reportsLast30Days > 0 && (
+                <span className="text-muted-foreground">
+                  (
+                  {stats.reportsLast30Days} za 30 dní
+                  )
+                </span>
+              )}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
+              <Lock className="size-3.5 text-muted-foreground" aria-hidden />
+              <strong>{stats.reportsSignedTotal}</strong>
+              <span className="text-muted-foreground">podepsaných</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
+              <UserCheck className="size-3.5 text-muted-foreground" aria-hidden />
+              <strong>{stats.visitsTotal}</strong>
+              <span className="text-muted-foreground">návštěv</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1">
+              <ImageIcon className="size-3.5 text-muted-foreground" aria-hidden />
+              <strong>{stats.photosTotal}</strong>
+              <span className="text-muted-foreground">fotek</span>
+            </span>
+            {stats.materialsOpen > 0 && (
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 dark:border-amber-900 dark:bg-amber-950/40">
+                <Package className="size-3.5 text-amber-700 dark:text-amber-300" aria-hidden />
+                <strong>{stats.materialsOpen}</strong>
+                <span className="text-amber-800 dark:text-amber-200">
+                  otevřených materiálů
+                </span>
+              </span>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       <nav className="flex gap-1 border-b" aria-label="Záložky zakázky">
