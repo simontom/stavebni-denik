@@ -6,7 +6,9 @@
 --
 -- Why a separate role?
 --   The migrator role must keep DDL + DML on every table. The runtime
---   role, however, must be unable to UPDATE/DELETE rows in `audit_log`.
+--   role, however, must be unable to DELETE rows in `audit_log`.
+--   (It retains UPDATE privilege only to allow SELECT ... FOR UPDATE row locks;
+--   actual updates are blocked by the audit_log_no_update trigger).
 --   Splitting the two enforces that property at the Postgres level —
 --   any future bug or compromised app secret cannot tamper with the
 --   audit chain.
@@ -29,7 +31,11 @@ END;
 $$;
 
 -- Default privileges on tables created later by migrations.
-GRANT CONNECT ON DATABASE CURRENT_DATABASE() TO app;
+DO $$
+BEGIN
+  EXECUTE format('GRANT CONNECT ON DATABASE %I TO app', current_database());
+END;
+$$;
 GRANT USAGE, CREATE ON SCHEMA public TO app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app;
@@ -42,7 +48,11 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'audit_log') THEN
-    EXECUTE 'REVOKE UPDATE, DELETE ON "audit_log" FROM app';
+    -- Postgres requires UPDATE privilege to use SELECT ... FOR UPDATE (row locking).
+    -- Since we use FOR UPDATE to prevent race conditions during audit hashing,
+    -- we must leave UPDATE granted. Actual data mutation is prevented by the
+    -- 'audit_log_no_update' trigger which aborts the transaction.
+    EXECUTE 'REVOKE DELETE ON "audit_log" FROM app';
   END IF;
 END;
 $$;
