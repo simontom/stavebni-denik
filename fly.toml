@@ -56,9 +56,9 @@ swap_size_mb = 512
   source = "stavebni_denik_data"
   destination = "/data"
   initial_size = "10gb"
-  auto_extend_size_threshold = 80
-  auto_extend_size_increment = "5gb"
-  auto_extend_size_limit = "50gb"
+  auto_extend_size_threshold = 90
+  auto_extend_size_increment = "1gb"
+  auto_extend_size_limit = "40gb"
 
 [http_service]
   internal_port = 3000
