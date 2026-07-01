@@ -32,7 +32,7 @@ export default async function globalSetup(): Promise<void> {
     );
   }
   const root = path.resolve(__dirname, "..");
-  execSync("pnpm exec tsx --env-file=.env scripts/dev/e2e-prepare.ts", {
+  execSync("pnpm exec tsx scripts/dev/e2e-prepare.ts", {
     cwd: root,
     stdio: "inherit",
     env: process.env,
