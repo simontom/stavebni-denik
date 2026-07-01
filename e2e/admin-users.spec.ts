@@ -17,7 +17,8 @@ import { expect, test } from "@playwright/test";
 
 const ADMIN_NICKNAME = "e2e-admin";
 const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
-const WORKER_NICKNAME = "e2e-worker";
+const runId = Date.now();
+const WORKER_NICKNAME = `e2e-worker-${runId}`;
 const WORKER_DISPLAY = "E2E Worker";
 const WORKER_DISPLAY_EDITED = "E2E Worker (upraveno)";
 
@@ -57,9 +58,12 @@ test("admin login + create + edit + deactivate + delete user", async ({
 
   // --- 4) Editovat usera -----------------------------------------------
   await workerRow.getByRole("button", { name: /upravit/i }).click();
-  await page.locator('input[name="displayName"]').fill(WORKER_DISPLAY_EDITED);
-  await page.getByRole("button", { name: /uložit změny/i }).click();
-  await expect(workerRow.getByText(WORKER_DISPLAY_EDITED)).toBeVisible({
+  
+  const editDialog = page.getByRole("dialog");
+  await editDialog.getByLabel("Jméno a příjmení").fill(WORKER_DISPLAY_EDITED);
+  await editDialog.getByRole("button", { name: /uložit změny/i }).click();
+  
+  await expect(page.locator("tr", { hasText: WORKER_DISPLAY_EDITED })).toBeVisible({
     timeout: 10_000,
   });
 
