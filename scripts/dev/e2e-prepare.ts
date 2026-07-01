@@ -4,7 +4,7 @@
  * globalSetup.
  *
  * Run:
- *   pnpm exec tsx --env-file=.env scripts/dev/e2e-prepare.ts
+ *   pnpm exec tsx scripts/dev/e2e-prepare.ts
  */
 import { PrismaPg } from "@prisma/adapter-pg";
 
