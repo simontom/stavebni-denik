@@ -32,6 +32,14 @@ export const CLIENT_RESIZE_MAX_PX = 1920;
 export const CLIENT_RESIZE_JPEG_QUALITY = 0.85;
 
 /**
+ * Maximum total size of ALL resized blobs in one upload batch (bytes).
+ * 20 MiB = ~20 post-resize photos (each typically 300–700 KB). Enforced
+ * client-side before the multipart POST is dispatched, and mirrored
+ * server-side in the upload route.
+ */
+export const MAX_BATCH_BYTES = 20 * 1024 * 1024;
+
+/**
  * Soft cap on the SOURCE pixel count we are willing to decode in
  * the browser. Klient resize na 1920 px je hlavní bezpečnostní
  * mechanismus — tahle hodnota je horní hranice toho, co browser

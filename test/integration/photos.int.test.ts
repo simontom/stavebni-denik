@@ -21,6 +21,7 @@ import {
 
 import { PrismaClient } from "@/generated/prisma/client";
 import type { SessionUser } from "@/server/permissions";
+import { MAX_BATCH_BYTES } from "@/lib/photo-client";
 
 /**
  * HTTP integration test for `POST /api/photos/upload`. Exercises the
@@ -471,5 +472,25 @@ describe("POST /api/photos/upload — happy path", () => {
     });
     expect(photo.capturedAt).toBeNull();
     expect(photo.gps).toBeNull();
+  });
+
+  it("returns 413 when Content-Length exceeds MAX_BATCH_BYTES", async () => {
+    const form = new FormData();
+    form.append("reportId", reportId);
+    form.append("files", fileFromBuffer(await makeJpeg(), "x.jpg"));
+
+    const req = new Request("http://localhost/api/photos/upload", {
+      method: "POST",
+      body: form,
+      headers: {
+        "Content-Length": String(MAX_BATCH_BYTES + 1),
+      },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(413);
+
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("překračuje limit");
   });
 });

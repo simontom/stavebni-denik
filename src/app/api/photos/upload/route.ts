@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getAuditContext } from "@/server/audit-context";
 import { auth } from "@/server/auth";
+import { MAX_BATCH_BYTES } from "@/lib/photo-client";
 import { ForbiddenError, type SessionUser } from "@/server/permissions";
 import {
   PHOTO_UPLOAD_USER_LIMIT,
@@ -89,6 +90,20 @@ export async function POST(request: Request) {
         status: 429,
         headers: { "Retry-After": String(retrySeconds) },
       },
+    );
+  }
+
+  // Reject oversized batches before we stream the body through the
+  // multipart parser (which buffers everything in memory). Content-Length
+  // is advisory for multipart — an attacker can omit it — but it lets us
+  // short-circuit the common accidental-overshoot case cheaply.
+  const contentLength = Number(request.headers.get("content-length") ?? 0);
+  if (contentLength > MAX_BATCH_BYTES) {
+    return NextResponse.json(
+      {
+        error: `Celkový objem nahrávaných fotek (${(contentLength / 1024 / 1024).toFixed(1)} MB) překračuje limit ${MAX_BATCH_BYTES / 1024 / 1024} MB.`,
+      },
+      { status: 413 },
     );
   }
 

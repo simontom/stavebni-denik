@@ -405,9 +405,9 @@ nasazené.
   `/etc/passwd`). Auth-gated; 404 místo 403/401 — žádný leak
   existence.
 - Photo upload pipeline: client resize na 1920 px (max 60 MP vstup),
-  server pak `MAX_PIXELS = 8 MP` + `MAX_UPLOAD_BYTES = 5 MiB` (tvrdý
-  cap na bypass přes curl / API). Soubory ukládány pod UUID, nikdy
-  uživatelské jméno.
+  celkový dávkový limit `MAX_BATCH_BYTES = 20 MiB`, server pak `MAX_PIXELS = 8 MP` +
+  `MAX_UPLOAD_BYTES = 5 MiB` (tvrdý cap na jednotlivé soubory i celou dávku přes curl / API).
+  Soubory ukládány pod UUID, nikdy uživatelské jméno.
 
 ### SSRF
 - Open-Meteo fetch má **allow-list hostů** (`api.open-meteo.com`,

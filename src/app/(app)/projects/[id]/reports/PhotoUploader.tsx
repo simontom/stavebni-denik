@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
   PhotoClientPrepareError,
+  MAX_BATCH_BYTES,
   preparePhotoForUpload,
   type PreparedPhoto,
 } from "@/lib/photo-client";
@@ -137,6 +138,15 @@ export function PhotoUploader({ reportId }: Props) {
         return;
       }
 
+      // Guard against uploading an oversized batch in one go.
+      if (resizedBytes > MAX_BATCH_BYTES) {
+        setFailures(clientFailures);
+        setServerError(
+          `Celková velikost vybraných fotek (${(resizedBytes / 1024 / 1024).toFixed(1)} MB) překračuje limit ${MAX_BATCH_BYTES / 1024 / 1024} MB. Vyberte méně fotek najednou.`,
+        );
+        return;
+      }
+
       let res: Response;
       try {
         res = await fetch("/api/photos/upload", {
@@ -236,7 +246,8 @@ export function PhotoUploader({ reportId }: Props) {
       {files.length > 0 && (
         <p className="text-xs text-muted-foreground">
           Připraveno k nahrání: {files.length}{" "}
-          {files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}.
+          {files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}
+          {" "}(max. {MAX_BATCH_BYTES / 1024 / 1024} MB celkem).
         </p>
       )}
 

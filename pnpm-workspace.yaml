@@ -1,0 +1,11 @@
+allowBuilds:
+  '@prisma/engines': true
+  '@sentry/cli': true
+  cpu-features: true
+  esbuild: true
+  msw: true
+  prisma: true
+  protobufjs: true
+  sharp: true
+  ssh2: true
+  unrs-resolver: true
