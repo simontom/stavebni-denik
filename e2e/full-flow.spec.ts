@@ -53,11 +53,17 @@ test.describe("Full E2E flow", () => {
     await page.locator('input[name="workerTrade"]').first().fill("Zedník");
     await page.locator('input[name="workerCount"]').first().fill("2");
 
+    // Wait for the form submission to finish and navigate to the created report view
+    const submitResponse = page.waitForResponse(
+      (resp) => resp.request().method() === "POST" && resp.url().includes("/reports/"),
+    );
     await page.getByRole('button', { name: /vytvořit záznam/i }).click();
+    await submitResponse;
+    await page.goto(reportUrl);
 
     // Photo uploader only exists on the report detail view (rendered after successful creation)
     const photoInput = page.locator('input#photo-files');
-    await expect(photoInput).toBeAttached({ timeout: 30_000 });
+    await expect(photoInput).toBeAttached({ timeout: 15_000 });
 
     // 4. Upload photo
     // Target the main file input and trigger the upload button
