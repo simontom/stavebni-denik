@@ -8,7 +8,7 @@ test.describe("Full E2E flow", () => {
     await page.goto("/login");
     await page.locator('input[name="nickname"]').fill(ADMIN_NICKNAME);
     await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
-    await page.locator('button[type="submit"]').click();
+    await page.getByRole('button', { name: /přihlásit se/i }).click();
     await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
     await page.goto("/projects");
     await expect(page).toHaveURL("/projects");
@@ -28,7 +28,7 @@ test.describe("Full E2E flow", () => {
     await page.getByRole('option', { name: new RegExp(ADMIN_NICKNAME) }).click();
     
     // Submit project form
-    await page.locator('button[type="submit"]').click();
+    await page.getByRole('button', { name: /založit zakázku/i }).click();
     
     // Wait for redirect to project page: /projects/[cuid]
     await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+/);
