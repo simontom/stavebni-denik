@@ -49,6 +49,19 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
   force: true,
 });
 
+// Native packages (sharp / libvips / prisma) have platform-specific binaries
+// that Next.js standalone file-tracing might not fully pull through pnpm symlinks.
+for (const mod of ["@img", "sharp", "@prisma", "prisma"]) {
+  const src = join(root, "node_modules", mod);
+  if (existsSync(src)) {
+    cpSync(src, join(standalone, "node_modules", mod), {
+      recursive: true,
+      force: true,
+      dereference: true,
+    });
+  }
+}
+
 // Hand off to the standalone server, inheriting stdio and env (PORT,
 // HOSTNAME, DATABASE_URL, AUTH_*, …). `server.js` reads next.config values
 // that were serialized into it at build time.
