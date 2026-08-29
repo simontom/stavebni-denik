@@ -14,7 +14,7 @@ test.describe("Full E2E flow", () => {
     await expect(page).toHaveURL("/projects");
 
     // 2. Create Project
-    await page.getByRole('link', { name: /nová zakázka/i }).click();
+    await page.locator('a[href="/projects/new"]').click();
     await expect(page).toHaveURL("/projects/new");
     await page.locator('input[name="name"]').fill("E2E Test Project");
     await page.locator('input[name="address"]').fill("E2E Street 1");
