@@ -60,18 +60,21 @@ test.describe("Full E2E flow", () => {
     await page.getByRole('button', { name: /vytvořit záznam/i }).click();
     await submitResponse;
     await page.goto(reportUrl);
-
-    // Photo uploader only exists on the report detail view (rendered after successful creation)
-    const photoInput = page.locator('input#photo-files');
-    await expect(photoInput).toBeAttached({ timeout: 15_000 });
+    await page.waitForLoadState("networkidle");
 
     // 4. Upload photo
     // Target the main file input and trigger the upload button
+    const photoInput = page.locator('input#photo-files');
+    await expect(photoInput).toBeVisible({ timeout: 15_000 });
+
     const uploadResponse = page.waitForResponse(
       (resp) => resp.url().includes("/api/photos/upload") && resp.status() === 200,
     );
-    await photoInput.setInputFiles(path.resolve(__dirname, 'fixtures/dummy-photo.jpg'));
-    await expect(page.getByRole('button', { name: /nahrát fotky/i })).toBeEnabled({ timeout: 15_000 });
+    await expect(async () => {
+      await photoInput.setInputFiles(path.resolve(__dirname, 'fixtures/dummy-photo.jpg'));
+      await expect(page.getByRole('button', { name: /nahrát fotky/i })).toBeEnabled({ timeout: 2000 });
+    }).toPass({ timeout: 15_000 });
+
     await page.getByRole('button', { name: /nahrát fotky/i }).click();
     await uploadResponse;
     
