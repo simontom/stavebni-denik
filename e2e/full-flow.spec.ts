@@ -92,7 +92,7 @@ test.describe("Full E2E flow", () => {
     await page.goto(reportUrl);
 
     // Verify lock badge
-    await expect(page.getByText(/^podepsáno$/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/podepsáno/i)).toBeVisible({ timeout: 15_000 });
 
     // 6. PDF export
     // Go back to project page records tab

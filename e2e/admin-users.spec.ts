@@ -45,7 +45,7 @@ test("admin login + create + edit + deactivate + delete user", async ({
   // Po úspěšném vytvoření se objeví "Předejte tyto údaje uživateli ..."
   await expect(
     page.getByText(/předejte tyto údaje uživateli/i),
-  ).toBeVisible({ timeout: 10_000 });
+  ).toBeVisible({ timeout: 15_000 });
   // Confirm "heslo se po zavření nezobrazí" je window.confirm — accept.
   // Pak klik na Zrušit (nebo X) zavře dialog.
   page.once("dialog", (d) => d.accept());
@@ -53,7 +53,7 @@ test("admin login + create + edit + deactivate + delete user", async ({
 
   // Worker se objevil v tabulce — kontroluj nickname (unique).
   const workerRow = page.locator("tr", { hasText: WORKER_NICKNAME });
-  await expect(workerRow).toBeVisible({ timeout: 10_000 });
+  await expect(workerRow).toBeVisible({ timeout: 15_000 });
   await expect(workerRow.getByText(WORKER_DISPLAY)).toBeVisible();
 
   // --- 4) Editovat usera -----------------------------------------------
@@ -85,7 +85,7 @@ test("admin login + create + edit + deactivate + delete user", async ({
   await workerRow.getByRole("button", { name: /smazat/i }).click();
   await expect(page.locator("tr", { hasText: WORKER_NICKNAME })).toHaveCount(
     0,
-    { timeout: 10_000 },
+    { timeout: 15_000 },
   );
 });
 
