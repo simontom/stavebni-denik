@@ -1,5 +1,5 @@
 // @ts-check
-import { cpSync, existsSync, rmSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -51,9 +51,11 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
 
 // Native packages (sharp / libvips / prisma) have platform-specific binaries
 // that Next.js standalone file-tracing might not fully pull through pnpm symlinks.
-for (const mod of ["@img", "sharp", "@prisma", "prisma"]) {
+const standaloneModules = join(standalone, "node_modules");
+
+for (const mod of ["@img", "sharp", "@prisma", "prisma", "detect-libc", "semver"]) {
   const src = join(root, "node_modules", mod);
-  const dest = join(standalone, "node_modules", mod);
+  const dest = join(standaloneModules, mod);
   if (existsSync(src)) {
     rmSync(dest, { recursive: true, force: true });
     cpSync(src, dest, {
@@ -61,6 +63,41 @@ for (const mod of ["@img", "sharp", "@prisma", "prisma"]) {
       force: true,
       dereference: true,
     });
+  }
+}
+
+// Also scan node_modules/.pnpm for any sharp/libvips/@img packages not directly hoisted
+const pnpmDir = join(root, "node_modules", ".pnpm");
+if (existsSync(pnpmDir)) {
+  for (const entry of readdirSync(pnpmDir)) {
+    if (entry.startsWith("sharp@") || entry.startsWith("@img+")) {
+      const nested = join(pnpmDir, entry, "node_modules");
+      if (existsSync(nested)) {
+        for (const mod of readdirSync(nested)) {
+          const srcMod = join(nested, mod);
+          const destMod = join(standaloneModules, mod);
+          if (mod === "@img") {
+            for (const sub of readdirSync(srcMod)) {
+              const srcSub = join(srcMod, sub);
+              const destSub = join(destMod, sub);
+              rmSync(destSub, { recursive: true, force: true });
+              cpSync(srcSub, destSub, {
+                recursive: true,
+                force: true,
+                dereference: true,
+              });
+            }
+          } else {
+            rmSync(destMod, { recursive: true, force: true });
+            cpSync(srcMod, destMod, {
+              recursive: true,
+              force: true,
+              dereference: true,
+            });
+          }
+        }
+      }
+    }
   }
 }
 
