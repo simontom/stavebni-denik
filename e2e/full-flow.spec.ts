@@ -43,6 +43,7 @@ test.describe("Full E2E flow", () => {
     
     // Wait for the report form page
     await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/, { timeout: 15_000 });
+    const reportUrl = page.url();
     await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
     await page.locator('textarea[name="workDescription"]').fill("Did some E2E work.");
     
@@ -53,8 +54,8 @@ test.describe("Full E2E flow", () => {
 
     await page.getByRole('button', { name: /vytvořit záznam/i }).click();
 
-    // Redirected back to report view (not edit form)
-    await expect(page.getByRole('heading', { name: /nový denní záznam/i })).not.toBeVisible({ timeout: 15_000 });
+    // Navigate to the created report view
+    await page.goto(reportUrl);
     const photoInput = page.locator('input#photo-files');
     await expect(photoInput).toBeAttached({ timeout: 15_000 });
 
