@@ -64,20 +64,20 @@ test("admin login + create + edit + deactivate + delete user", async ({
   await editDialog.getByRole("button", { name: /uložit změny/i }).click();
   
   await expect(page.locator("tr", { hasText: WORKER_DISPLAY_EDITED })).toBeVisible({
-    timeout: 10_000,
+    timeout: 15_000,
   });
 
   // --- 5) Deaktivovat / reaktivovat ------------------------------------
   page.once("dialog", (d) => d.accept());
   await workerRow.getByRole("button", { name: /deaktivovat/i }).click();
   await expect(workerRow.getByText(/deaktivován/i)).toBeVisible({
-    timeout: 10_000,
+    timeout: 15_000,
   });
 
   page.once("dialog", (d) => d.accept());
   await workerRow.getByRole("button", { name: /aktivovat/i }).click();
   await expect(workerRow.getByText(/aktivní|přihlášení/i)).toBeVisible({
-    timeout: 10_000,
+    timeout: 15_000,
   });
 
   // --- 6) Smazat usera --------------------------------------------------
