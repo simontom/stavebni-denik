@@ -1,5 +1,5 @@
 // @ts-check
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -53,8 +53,10 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
 // that Next.js standalone file-tracing might not fully pull through pnpm symlinks.
 for (const mod of ["@img", "sharp", "@prisma", "prisma"]) {
   const src = join(root, "node_modules", mod);
+  const dest = join(standalone, "node_modules", mod);
   if (existsSync(src)) {
-    cpSync(src, join(standalone, "node_modules", mod), {
+    rmSync(dest, { recursive: true, force: true });
+    cpSync(src, dest, {
       recursive: true,
       force: true,
       dereference: true,
