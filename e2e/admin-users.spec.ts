@@ -17,14 +17,14 @@ import { expect, test } from "@playwright/test";
 
 const ADMIN_NICKNAME = "e2e-admin";
 const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
-const runId = Date.now();
-const WORKER_NICKNAME = `e2e-worker-${runId}`;
-const WORKER_DISPLAY = "E2E Worker";
-const WORKER_DISPLAY_EDITED = "E2E Worker (upraveno)";
-
 test("admin login + create + edit + deactivate + delete user", async ({
   page,
 }) => {
+  const runId = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+  const WORKER_NICKNAME = `e2e-worker-${runId}`;
+  const WORKER_DISPLAY = "E2E Worker";
+  const WORKER_DISPLAY_EDITED = "E2E Worker (upraveno)";
+
   // --- 1) Login --------------------------------------------------------
   await page.goto("/login");
   await page.locator('input[name="nickname"]').fill(ADMIN_NICKNAME);

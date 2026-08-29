@@ -77,6 +77,7 @@ test.describe("Full E2E flow", () => {
 
     await page.getByRole('button', { name: /nahrát fotky/i }).click();
     await uploadResponse;
+    await page.goto(reportUrl);
     
     // Wait for upload to complete and image to appear
     await expect(page.locator('img[alt^="Fotka"]').first()).toBeVisible({ timeout: 15_000 });
@@ -88,6 +89,7 @@ test.describe("Full E2E flow", () => {
     );
     await page.getByRole('button', { name: /podepsat a uzamknout/i }).click();
     await signResponse;
+    await page.goto(reportUrl);
 
     // Verify lock badge
     await expect(page.getByText(/^podepsáno$/i)).toBeVisible({ timeout: 15_000 });
