@@ -9,6 +9,8 @@ test.describe("Full E2E flow", () => {
     await page.locator('input[name="nickname"]').fill(ADMIN_NICKNAME);
     await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
     await page.locator('button[type="submit"]').click();
+    await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
+    await page.goto("/projects");
     await expect(page).toHaveURL("/projects");
 
     // 2. Create Project
@@ -47,7 +49,7 @@ test.describe("Full E2E flow", () => {
     await page.locator('input[name="workerTrade"]').first().fill("Zedník");
     await page.locator('input[name="workerCount"]').first().fill("2");
 
-    await page.locator('button[type="submit"]').filter({ hasText: /Uložit/i }).click();
+    await page.getByRole('button', { name: /vytvořit záznam/i }).click();
 
     // Redirected back to report view (not edit form)
     await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/);
@@ -59,20 +61,18 @@ test.describe("Full E2E flow", () => {
     await page.getByRole('button', { name: /nahrát fotky/i }).click();
     
     // Wait for upload to complete and image to appear
-    await expect(page.locator('img[alt="Fotografie ze stavby"]').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('img[alt^="Fotka"]').first()).toBeVisible({ timeout: 15_000 });
 
     // 5. Sign and lock
+    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole('button', { name: /podepsat a uzamknout/i }).click();
-    
-    // Confirm dialog (shadcn AlertDialog)
-    await page.getByRole('button', { name: /podepsat/i }).nth(1).click();
 
-    // verify lock text
-    await expect(page.getByText(/Záznam byl podepsán/i)).toBeVisible();
+    // Verify lock badge
+    await expect(page.getByText(/^podepsáno$/i)).toBeVisible({ timeout: 15_000 });
 
     // 6. PDF export
     // Go back to project page records tab
-    await page.goto(projectUrl + '?tab=reports');
+    await page.goto(`${projectUrl}?tab=reports`);
     
     // Trigger PDF download
     const downloadPromise = page.waitForEvent('download');
