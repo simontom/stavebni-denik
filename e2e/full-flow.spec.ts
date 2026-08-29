@@ -67,8 +67,13 @@ test.describe("Full E2E flow", () => {
 
     // 4. Upload photo
     // Target the main file input and trigger the upload button
+    const uploadResponse = page.waitForResponse(
+      (resp) => resp.url().includes("/api/photos/upload") && resp.status() === 200,
+    );
     await photoInput.setInputFiles(path.resolve(__dirname, 'fixtures/dummy-photo.jpg'));
+    await expect(page.getByRole('button', { name: /nahrát fotky/i })).toBeEnabled({ timeout: 15_000 });
     await page.getByRole('button', { name: /nahrát fotky/i }).click();
+    await uploadResponse;
     
     // Wait for upload to complete and image to appear
     await expect(page.locator('img[alt^="Fotka"]').first()).toBeVisible({ timeout: 15_000 });
@@ -83,9 +88,10 @@ test.describe("Full E2E flow", () => {
     // 6. PDF export
     // Go back to project page records tab
     await page.goto(`${projectUrl}?tab=reports`);
+    await expect(page.getByRole('button', { name: /stáhnout pdf/i })).toBeVisible({ timeout: 15_000 });
     
     // Trigger PDF download
-    const downloadPromise = page.waitForEvent('download');
+    const downloadPromise = page.waitForEvent('download', { timeout: 30_000 });
     await page.getByRole('button', { name: /stáhnout pdf/i }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/.*\.pdf/);
