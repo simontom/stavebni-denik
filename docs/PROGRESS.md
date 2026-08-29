@@ -179,11 +179,9 @@ Tailwind 4 + shadcn/ui. Detail v `README.md`.
 ### Krok 6 — co zbývá
 
 - **Plný E2E flow** (login → projekt → report → fotka → podpis → PDF):
-  smoke layer je hotový (`pnpm test:e2e`, 3 testy), ale „dlouhý" flow
-  s reálným přihlášením potřebuje seedovaného uživatele a tedy buď
-  staging deploy nebo CI workflow s vlastním Postgres + seed krokem.
-  Aktuálně smoke spec ověřuje: middleware redirect na `/login`,
-  validační chybu při špatných údajích, `GET /healthz` → 200.
+  hotovo — v `e2e/full-flow.spec.ts` byla napsána detailní E2E zkouška pokrývající
+  celou happy-path od přihlášení až po generování PDF. Test závisí na
+  existenci `e2e-admin` uživatele (viz `scripts/dev/e2e-prepare.ts`).
 - Orchestrátorové alerty (Fly CPU/RAM/disk) — konfigurace na
   straně provideru, ne v repu.
 
@@ -302,8 +300,7 @@ Co dál po Kroku 6, mimo původní MVP scope:
   kreditku, secrety (`AUTH_SECRET`, `RESTIC_*`, volitelně `SMTP_*`
   a `SENTRY_*`). Po deployi nastavit repo secret `AUDIT_DATABASE_URL`
   pro nightly audit-verify workflow.
-- [ ] **Full login → PDF E2E** spec proti staging deployi (smoke
-  layer v `e2e/smoke.spec.ts` je hotový jako základ).
+- [x] **Full login → PDF E2E** spec proti staging deployi (implementováno v `e2e/full-flow.spec.ts`).
 
 ### Hardening & resilience (nové, 2026-06-22)
 
