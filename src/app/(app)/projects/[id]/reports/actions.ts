@@ -75,6 +75,7 @@ export async function createReportAction(
   }
 
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
   redirect(`/projects/${projectId}/reports/${dateStr}`);
 }
 
@@ -101,6 +102,7 @@ export async function updateReportAction(
   }
 
   revalidatePath(`/projects/${projectId}`);
+  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
   redirect(`/projects/${projectId}/reports/${dateStr}`);
 }
 
