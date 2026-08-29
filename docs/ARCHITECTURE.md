@@ -9,6 +9,7 @@ Doplňující čtení:
 
 - [`docs/DEVELOPMENT.md`](./DEVELOPMENT.md) — jak rozjet lokální dev
   (macOS Colima i Windows Docker Desktop).
+- [`docs/SECURITY.md`](./SECURITY.md) — bezpečnostní architektura a airlock pipeline pro fotky.
 - [`docs/DEPLOYMENT.md`](./DEPLOYMENT.md) — jak nasadit na Fly.io.
 - [`docs/PROGRESS.md`](./PROGRESS.md) — *kronika* rozhodnutí a změn.
   Tady popisuju **statický stav**; PROGRESS je historie.

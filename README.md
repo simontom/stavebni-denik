@@ -6,6 +6,7 @@ instance = jedna firma.
 
 > 📖 **Dokumentace:**
 > - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — jak je app navržená, doménový model, klíčové moduly, gotchas.
+> - [`docs/SECURITY.md`](docs/SECURITY.md) — bezpečnostní architektura a pipeline pro upload fotek.
 > - [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — lokální dev setup (macOS + Windows).
 > - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — Fly.io deploy guide.
 > - [`docs/plan.md`](docs/plan.md) — původní MVP spec.
