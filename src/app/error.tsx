@@ -5,14 +5,15 @@ import Link from "next/link";
 import { AlertTriangle, RotateCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { logger } from "@/lib/logger";
 
 /**
  * Top-level error boundary — chytá uncaught runtime errors v server
  * komponentách i client componentech. Next.js zavolá automaticky.
  *
- * Loguje do konzole (server side přes Sentry init, client side přes
- * Sentry browser SDK pokud je dostupný). User vidí přátelskou zprávu
- * + reset button (Next ji použije pro client retry).
+ * User vidí přátelskou zprávu + reset button (Next ji použije pro
+ * client retry). Server-side i client-side errory se zapíší přes
+ * náš logger.
  */
 export default function ErrorPage({
   error,
@@ -22,9 +23,7 @@ export default function ErrorPage({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Sentry SDK auto-captures unhandled errors; tohle je jen pojistka
-    // pro lokální debug bez Sentry DSN.
-    console.error("[app error]", error);
+    logger.error("app.error", error, { digest: error.digest });
   }, [error]);
 
   return (

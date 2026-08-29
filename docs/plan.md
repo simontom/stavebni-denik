@@ -463,6 +463,6 @@ BOSS podepíše denní záznam a tím ho uzamkne; produkční instance je nasaze
 - Playwright PDF: route `/print/project/[id]?from=&to=`, `src/server/pdf.ts` spouští Chromium headless v containeru, výstup obsahuje hlavičku stavby, denní záznamy, fotky (thumb), počasí, podpisy a v patičce každého listu `audit row hash` posledního zahrnutého řádku.
 - Tlačítko „Stáhnout PDF za období“ na `/projects/[id]`.
 - Backup job (nightly): `pg_dump | gzip | restic` na Backblaze B2 nebo R2 (přes env credentials), spolu s `/data/photos`. Restore runbook v `README.md`.
-- Monitoring: Sentry (errors), `/healthz` probe, Fly alerty na CPU/RAM/disk.
+- Monitoring: Plain-text logs, `/healthz` probe, Fly alerty na CPU/RAM/disk.
 - Smoke E2E v CI proti dočasné staging instanci: login → vytvoř projekt → vytvoř report → upload fotky → podepiš → stáhni PDF.
 - README s deploy guide, seed scriptem (1× BOSS účet), návodem k obnově.

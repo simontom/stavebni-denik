@@ -87,7 +87,7 @@ export async function reconcilePhotos(
   const absFound = await walkJpegs(root);
 
   const foundRelative = new Set<string>(
-    absFound.map((abs) => path.relative(dataDir, abs)),
+    absFound.map((abs) => path.relative(dataDir, abs).replace(/\\/g, "/")),
   );
 
   // Orphans: on disk, missing in DB. Skip recent files so an

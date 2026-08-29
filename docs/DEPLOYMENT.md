@@ -147,7 +147,6 @@ do repa.
 | `DATABASE_URL` | ano (auto z `postgres attach`) | Connection string na Fly Postgres |
 | `AUTH_SECRET` | ano | JWT signing secret. **Generuj `openssl rand -base64 32`**. Změna invaliduje všechny session. |
 | `AUTH_URL` | ano | Plně-qualified URL appky (např. `https://stavebni-denik.fly.dev`). Auth.js callbacks ji vyžadují. |
-| `SENTRY_DSN` | ne | Pokud nastavíš, server errors půjdou do Sentry. Bez něj je SDK no-op. |
 | `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` | ne | Pro source-map upload při buildu (build-time, ne runtime) |
 | `RESTIC_REPOSITORY` | jen pro backup | např. `b2:stavebni-denik-backup:/restic` |
 | `RESTIC_PASSWORD` | jen pro backup | **ULOŽ MIMO Fly** — bez něj zálohy nedešifruješ! |
@@ -253,12 +252,12 @@ Pokud `verify:audit` nahlásí porušení, je obnovený stav nedůvěryhodný
 
 | Co | Kde |
 |---|---|
-| **Server errors** | Sentry (pokud `SENTRY_DSN` nastaven) |
+| **Server errors** | stdout plain-text logy ve Fly Grafaně |
 | **Healthcheck** | `/healthz` (DB + volume probe) — Fly machines health check |
 | **Audit chain integrity** | Daily cron `pnpm verify:audit` → exit 1 + in-app notification pro každého isAdmin uživatele |
 | **CPU / RAM / disk** | Fly dashboard, alerty v Fly UI |
 | **Backup success** | restic exit code + log do `/data/backup.log` |
-| **PDF render slowness** | Sentry transaction (pokud SENTRY_DSN) + `getPdfQueueDepth` exportovat do `/healthz` (TODO) |
+| **PDF render slowness** | stdout access / time logy |
 
 ---
 

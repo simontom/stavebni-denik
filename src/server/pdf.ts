@@ -1,6 +1,7 @@
 import "server-only";
 
 import { chromium } from "playwright";
+import { logger } from "@/lib/logger";
 
 /**
  * Headless-Chromium PDF wrapper.
@@ -75,6 +76,9 @@ async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
       waitUntil: "networkidle",
       timeout: NAV_TIMEOUT_MS,
     });
+    
+    logger.info("pdf.start", { url: opts.url, inFlight: getPdfInFlight(), queued: getPdfQueueDepth() });
+    const startedRender = Date.now();
 
     const buffer = await page.pdf({
       format: "A4",
@@ -88,7 +92,11 @@ async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
           "</div>",
       margin: A4_MARGIN,
     });
+    logger.info("pdf.done", { url: opts.url, durationMs: Date.now() - startedRender, bytes: buffer.length });
     return buffer;
+  } catch (err) {
+    logger.error("pdf.error", err, { url: opts.url });
+    throw err;
   } finally {
     await browser.close();
   }

@@ -349,11 +349,6 @@ rm -rf .next
 # nebo: ./scripts/dev/down.sh
 ```
 
-### Sentry "DEPRECATION WARNING" v logu
-
-Neškodné. Sentry SDK loaduje package, ale init je gated na
-`SENTRY_DSN` (v lokálním devu prázdné → SDK je no-op).
-
 ### Vidím `Couldn't load fs` / `Couldn't load zlib` v logu
 
 Turbopack runtime warnings, neškodné. Souvisí s polyfilly pro Node

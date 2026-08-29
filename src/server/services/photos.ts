@@ -22,6 +22,7 @@ import {
   resolvePhotoAbsolutePath,
   writePhotoVariants,
 } from "@/server/photo-storage";
+import { logger } from "@/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -172,7 +173,19 @@ export async function uploadPhoto(opts: {
     reportLocked: reportCtx.reportLocked,
   });
 
-  const processed = await processImage(buffer);
+  const startedRender = Date.now();
+  let processed;
+  try {
+    processed = await processImage(buffer);
+  } catch (err) {
+    if (err instanceof InvalidImageError || err instanceof ImageTooLargeError) {
+      logger.warn("photo.upload.invalid", { reason: err.message, bytes: buffer.length });
+    } else {
+      logger.error("photo.upload.error", err, { bytes: buffer.length });
+    }
+    throw err;
+  }
+  
   // Prefer EXIF harvested by the browser BEFORE the resize stripped
   // it. If the client did not (or could not) send any, fall back to
   // server-side parsing — this still works for legacy clients or
@@ -219,6 +232,7 @@ export async function uploadPhoto(opts: {
           },
         }),
     );
+    logger.info("photo.upload.done", { userId: user.id, photoId: photo.id, bytes: stored.bytes, durationMs: Date.now() - startedRender });
     return {
       id: photo.id,
       width: photo.width,

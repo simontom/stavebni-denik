@@ -115,14 +115,6 @@ fly secrets set \
   B2_ACCOUNT_ID="<keyID>" \
   B2_ACCOUNT_KEY="<applicationKey>"
 
-# 3c. Sentry runtime + source maps (viz "Monitoring (Sentry)")
-fly secrets set \
-  SENTRY_DSN="https://...@o0.ingest.sentry.io/0" \
-  SENTRY_ENVIRONMENT="production" \
-  SENTRY_TRACES_SAMPLE_RATE="0.1" \
-  SENTRY_ORG="my-org" \
-  SENTRY_PROJECT="stavebni-denik" \
-  SENTRY_AUTH_TOKEN="sntrys_..."
 
 # 4. První deploy. `[deploy] release_command` v fly.toml spustí
 #    `prisma migrate deploy` proti DB ještě před traffic-routem.
@@ -153,7 +145,7 @@ machine:
 | --- | --- | --------- | ------------ |
 | Audit chain verify | `.github/workflows/audit-verify.yml` | 04:00 UTC | repo secret `AUDIT_DATABASE_URL` (read-only role) |
 | `pg_dump` + photo backup | `fly machine run` schedule (níže) | 02:00 UTC | restic secrets z 3b |
-| Open-Meteo / Sentry | průběžně z app | requestem | nic |
+| Open-Meteo | průběžně z app | requestem | nic |
 
 ```bash
 # Vytvořit scheduled machine pro nightly backup (jednou).
@@ -317,40 +309,17 @@ pnpm verify:audit
 Pokud `verify:audit` nahlásí porušení, je obnovený stav nedůvěryhodný
 — vyber starší snapshot a opakuj.
 
-## Monitoring (Sentry)
+## Observability (Logs & Healthchecks)
 
-Server + edge errors jsou hlášené do [Sentry](https://sentry.io/) pokud
-je `SENTRY_DSN` v env. Když je prázdné (lokální vývoj, CI), SDK je
-úplně neaktivní — žádný síťový provoz, žádná režie.
-
-```bash
-fly secrets set \
-  SENTRY_DSN="https://...@o0.ingest.sentry.io/0" \
-  SENTRY_ENVIRONMENT="production" \
-  SENTRY_TRACES_SAMPLE_RATE="0.1"
-```
-
-`instrumentation.ts` v rootu repa registruje `Sentry.init()` při startu
-workeru a `onRequestError` zachycuje chyby z route handlerů / server
-actions / RSC.
-
-PII (cesty, request body) se **nenahrávají** (`sendDefaultPii: false`)
-— hesla z `/login` ani fotky z `/api/photos/upload` se v Sentry
-neobjeví.
-
-### Source maps (volitelné)
-
-`next.config.ts` je obalený `withSentryConfig`, který při produkčním
-buildu nahraje source maps do Sentry — minified server stack traces se
-v UI mapují zpět na TS řádky. Wrapper je no-op když chybí
-`SENTRY_AUTH_TOKEN`, takže `pnpm dev` / CI bez secretu nic nedělá.
+Aplikace zapisuje plain-text key=value logy na standardní výstup (stdout). Jsou
+záměrně optimalizované pro lidské čtení v terminálu a textové vyhledávání ve
+Fly.io Grafaně (která parsování strukturovaného JSON logu stejně nepodporuje).
+Chyby obsahují odsazený stack trace.
 
 ```bash
-fly secrets set \
-  SENTRY_ORG="my-org" \
-  SENTRY_PROJECT="stavebni-denik" \
-  SENTRY_AUTH_TOKEN="sntrys_..." \
-  SENTRY_RELEASE="$(git rev-parse --short HEAD)"
+fly logs --tail
+# Vyhledávání:
+fly logs -q "audit.chain_broken"
 ```
 
 Healthcheck `/healthz` (DB + volume probe) běží průběžně z orchestrátoru
@@ -473,5 +442,5 @@ Detailní plán v [`docs/plan.md`](docs/plan.md), živý stav v
 - **Stage 4 — Zakázky a identifikační údaje stavby** — ✅ hotovo.
 - **Stage 5 — Denní záznamy, fotky, počasí, materiál** — ✅ hotovo.
 - **Stage 6 — Podpisy, lock, PDF export a produkční hardening** — ✅
-  hotovo (sign + PDF + backup + Sentry + smoke e2e foundation;
+  hotovo (sign + PDF + backup + logs + smoke e2e foundation;
   rozšířený login-to-PDF E2E čeká na staging deploy).

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { verifyPassword } from "@/lib/crypto";
 import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
 import { appendAudit } from "./audit";
 import { authConfig } from "./auth.config";
@@ -61,22 +62,34 @@ export const { handlers, auth, signIn, signOut, unstable_update: update } =
           // Rate limit BEFORE touching the DB to fight credential stuffing.
           const ipKey = clientIp ?? "unknown";
           const ipLimit = await checkRateLimit({ ...LOGIN_IP_LIMIT, key: ipKey });
-          if (!ipLimit.allowed) throw new RateLimitedError();
+          if (!ipLimit.allowed) {
+            logger.warn("login.rate_limited", { ip: ipKey, nickname, limit: "ip" });
+            throw new RateLimitedError();
+          }
 
           const nickLimit = await checkRateLimit({
             ...LOGIN_NICKNAME_LIMIT,
             key: nickname.toLowerCase(),
           });
-          if (!nickLimit.allowed) throw new RateLimitedError();
+          if (!nickLimit.allowed) {
+            logger.warn("login.rate_limited", { ip: ipKey, nickname, limit: "nickname" });
+            throw new RateLimitedError();
+          }
 
           const user = await prisma.user.findUnique({
             where: { nickname },
           });
-          if (!user || user.deletedAt) throw new InvalidCredentialsError();
-          if (!user.isActive) throw new AccountDisabledError();
+          if (!user || user.deletedAt || !user.isActive) {
+            logger.warn("login.invalid_credentials", { ip: ipKey, nickname, reason: "user_not_found_or_disabled" });
+            if (!user || user.deletedAt) throw new InvalidCredentialsError();
+            throw new AccountDisabledError();
+          }
 
           const ok = await verifyPassword(password, user.passwordHash);
-          if (!ok) throw new InvalidCredentialsError();
+          if (!ok) {
+            logger.warn("login.invalid_credentials", { ip: ipKey, nickname, reason: "wrong_password" });
+            throw new InvalidCredentialsError();
+          }
 
           // Successful login — clear failure counters and persist a
           // session row for revocation + audit visibility.
@@ -120,6 +133,8 @@ export const { handlers, auth, signIn, signOut, unstable_update: update } =
             },
           );
 
+          logger.info("login.success", { userId: user.id, nickname: user.nickname, role: user.role, sessionId: session.id, ip: ipKey });
+
           return {
             id: user.id,
             nickname: user.nickname,
@@ -156,6 +171,7 @@ export const { handlers, auth, signIn, signOut, unstable_update: update } =
             after: { sessionId, userId: userId ?? null },
           },
         );
+        logger.info("logout", { userId: userId ?? "unknown", sessionId });
       },
     },
   });

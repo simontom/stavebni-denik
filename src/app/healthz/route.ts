@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
+import { logger } from "@/lib/logger";
 
 // Health checks must always hit live services — never serve from cache.
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ async function probeDatabase(): Promise<ProbeResult> {
     await prisma.$queryRaw`SELECT 1`;
     return { status: "ok", durationMs: Date.now() - started };
   } catch (err) {
+    logger.error("healthcheck.failed", err, { component: "database" });
     return {
       status: "error",
       durationMs: Date.now() - started,
@@ -42,6 +44,7 @@ async function probeVolume(): Promise<ProbeResult> {
     await fs.unlink(probeFile);
     return { status: "ok", durationMs: Date.now() - started };
   } catch (err) {
+    logger.error("healthcheck.failed", err, { component: "volume" });
     return {
       status: "error",
       durationMs: Date.now() - started,

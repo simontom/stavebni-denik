@@ -7,6 +7,7 @@ import { formatDateInput } from "@/lib/dates";
 import type { SessionUser } from "@/server/permissions";
 import { PDF_RENDER_USER_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import { getProjectForUser } from "@/server/services/projects";
+import { logger } from "@/lib/logger";
 
 /**
  * `GET /api/projects/[id]/pdf?from=&to=`
@@ -51,6 +52,7 @@ export async function GET(request: Request, context: RouteContext) {
   // the *work*; this rate limit caps the *queue depth*.
   const limit = await checkRateLimit({ ...PDF_RENDER_USER_LIMIT, key: user.id });
   if (!limit.allowed) {
+    logger.warn("pdf.rate_limited", { userId: user.id, projectId: id });
     const retrySeconds = Math.max(1, Math.ceil(limit.retryAfterMs / 1000));
     return new Response("Příliš mnoho exportů — zkuste to za chvíli znovu.", {
       status: 429,
@@ -75,8 +77,8 @@ export async function GET(request: Request, context: RouteContext) {
       cookieHeader: request.headers.get("cookie"),
       footerHtml,
     });
-  } catch (err) {
-    console.error("PDF render failed", err);
+  } catch {
+    // pdf.ts already logs pdf.error
     return new Response("PDF generation failed", { status: 500 });
   }
 
@@ -107,7 +109,7 @@ export async function GET(request: Request, context: RouteContext) {
   } catch (err) {
     // Never block a successful download on an audit append failure
     // (e.g. transient DB hiccup) — log and continue.
-    console.error("[pdf.export] audit append failed", err);
+    logger.error("[pdf.export] audit append failed", err);
   }
 
   const safeName = project.project.name.replace(/[^\p{L}\p{N}_-]+/gu, "_");

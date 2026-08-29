@@ -59,7 +59,6 @@ Z toho plyne pár zásadních invariantů, které se prolínají celým kódem:
 | Auth | Auth.js v5 (NextAuth) + Credentials provider | JWT session, argon2id hashe |
 | Fotky | **sharp** (server resize + EXIF strip) + **exifr** (client + server EXIF parse) + nativní `createImageBitmap` v prohlížeči | Client resize před uploadem = 5× menší payload na LTE |
 | PDF | **Playwright + Chromium** přes `/print/project/[id]` server route | Tisk přes plnohodnotný browser engine = stejný výsledek jako Ctrl+P |
-| Sentry | `@sentry/nextjs` (volitelný — gated na `SENTRY_DSN`) | Server-side errors v produkci |
 | Backup | **restic** → Backblaze B2 | Deduplikované enkryptované zálohy |
 | Deploy | **Fly.io** (single-region) | Volume pro `/data`, Fly Postgres, secrets, machines |
 
@@ -137,7 +136,7 @@ PDF queue je in-process semafor (`src/server/pdf.ts` `acquirePdfSlot`).
 │  │
 │  ├─ types/                     # Next-auth modulové augmentace
 │  ├─ proxy.ts                   # Edge middleware (Next 16 rename)
-│  └─ instrumentation.ts         # Sentry init
+│  └─ instrumentation.ts         # Instrumentace
 │
 ├─ test/
 │  ├─ integration/               # Postgres přes Testcontainers
@@ -380,9 +379,7 @@ Tyhle věci jsme objevili bolestivě, stojí za to si je zapsat:
    `.next/standalone/` (standalone bundle je úmyslně neobsahuje).
    Helper `scripts/dev/prod-start.{sh,ps1}` to dělá automaticky.
 
-10. **Sentry SDK loaduje i bez `SENTRY_DSN`** — vidíš v devu
-    `[@sentry/nextjs] DEPRECATION WARNING` v logu, ale samotná
-    aktivace (network calls) je gated na `SENTRY_DSN`. To je OK.
+10. **Aplikace nepoužívá komplexní loggovací frameworky**, ale nativní stdout loggování optimalizované pro Grafanu.
 
 ---
 

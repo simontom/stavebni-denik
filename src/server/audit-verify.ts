@@ -9,6 +9,7 @@ import {
 // `server-only` / Next.js side effects and can be used from the verify
 // cron script (run via `tsx`) as well as from server actions.
 import type { PrismaClient } from "../generated/prisma/client";
+import { logger } from "@/lib/logger";
 
 /** Minimal slice of PrismaClient that the verifier needs. */
 type RawQueryClient = Pick<PrismaClient, "$queryRaw">;
@@ -53,6 +54,7 @@ export async function verifyAuditChainWithClient(
       totalRows++;
       const reason = checkChainRow(lastHash, r);
       if (reason) {
+        logger.warn("audit.chain_broken", { brokenAtId: r.id, reason });
         return {
           ok: false,
           totalRows,

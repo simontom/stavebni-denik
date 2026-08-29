@@ -55,8 +55,8 @@ export async function writePhotoVariants(opts: {
   ]);
 
   return {
-    pathOriginal: path.join(relDir, fileMain),
-    pathThumb: path.join(relDir, fileThumb),
+    pathOriginal: path.posix.join(PHOTOS_SUBDIR, projectId, reportId, fileMain),
+    pathThumb: path.posix.join(PHOTOS_SUBDIR, projectId, reportId, fileThumb),
     bytes: main.length,
   };
 }

@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 
 /**
  * Baseline security headers applied to every response. Tuned for an
@@ -74,30 +73,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-/**
- * Wrap the config with Sentry so production builds upload source maps
- * (translating minified server stack traces back to TS lines) and
- * automatically tree-shake debug logger calls.
- *
- * The wrapper is a no-op unless `SENTRY_AUTH_TOKEN` is present — local
- * `pnpm dev`/`pnpm build` and CI runs without secrets stay quiet.
- * Required when uploading: `SENTRY_ORG`, `SENTRY_PROJECT`,
- * `SENTRY_AUTH_TOKEN`. Optional: `SENTRY_RELEASE` (commit SHA).
- */
-export default withSentryConfig(nextConfig, {
-  org: process.env.SENTRY_ORG,
-  project: process.env.SENTRY_PROJECT,
-  authToken: process.env.SENTRY_AUTH_TOKEN,
-  // Hide source uploads from the public bundle directory (we still
-  // ship `*.map` files into Sentry, but not into `.next/static`).
-  sourcemaps: {
-    deleteSourcemapsAfterUpload: true,
-  },
-  // Quieter build output unless we're explicitly debugging.
-  silent: !process.env.CI,
-  // Skip the whole plugin (no init network call, no validation
-  // warning) when the auth token is missing.
-  disableLogger: true,
-  telemetry: false,
-  release: { name: process.env.SENTRY_RELEASE },
-});
+export default nextConfig;

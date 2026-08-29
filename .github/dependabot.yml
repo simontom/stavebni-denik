@@ -30,9 +30,6 @@ updates:
         patterns:
           - "prisma"
           - "@prisma/*"
-      sentry:
-        patterns:
-          - "@sentry/*"
       types:
         patterns:
           - "@types/*"
