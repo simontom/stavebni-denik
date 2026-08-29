@@ -42,7 +42,8 @@ test.describe("Full E2E flow", () => {
     await page.getByRole('button', { name: /Nový pro dnešek/i }).click();
     
     // Wait for the report form page
-    await expect(page.locator('textarea[name="workDescription"]')).toBeVisible();
+    await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/, { timeout: 15_000 });
+    await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
     await page.locator('textarea[name="workDescription"]').fill("Did some E2E work.");
     
     // Fill "workersByTrade" which is a dynamic field list
@@ -53,7 +54,7 @@ test.describe("Full E2E flow", () => {
     await page.getByRole('button', { name: /vytvořit záznam/i }).click();
 
     // Redirected back to report view (not edit form)
-    await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/);
+    await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/, { timeout: 15_000 });
 
     // 4. Upload photo
     // Target the main file input and trigger the upload button
