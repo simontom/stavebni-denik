@@ -83,7 +83,11 @@ test.describe("Full E2E flow", () => {
 
     // 5. Sign and lock
     page.once("dialog", (dialog) => dialog.accept());
+    const signResponse = page.waitForResponse(
+      (resp) => resp.request().method() === "POST" && resp.url().includes("/reports/"),
+    );
     await page.getByRole('button', { name: /podepsat a uzamknout/i }).click();
+    await signResponse;
 
     // Verify lock badge
     await expect(page.getByText(/^podepsáno$/i)).toBeVisible({ timeout: 15_000 });
