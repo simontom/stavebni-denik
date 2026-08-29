@@ -53,9 +53,10 @@ test.describe("Full E2E flow", () => {
     await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+\/reports\/\d{4}-\d{2}-\d{2}$/);
 
     // 4. Upload photo
-    // The photo upload input is a file input. Let's find it.
-    const photoInput = page.locator('input[type="file"]');
+    // Target the main file input and trigger the upload button
+    const photoInput = page.locator('input#photo-files');
     await photoInput.setInputFiles(path.resolve(__dirname, 'fixtures/dummy-photo.jpg'));
+    await page.getByRole('button', { name: /nahrát fotky/i }).click();
     
     // Wait for upload to complete and image to appear
     await expect(page.locator('img[alt="Fotografie ze stavby"]').first()).toBeVisible({ timeout: 15_000 });
