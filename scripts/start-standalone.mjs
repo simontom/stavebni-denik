@@ -101,12 +101,54 @@ if (existsSync(pnpmDir)) {
   }
 }
 
+// Find all libvips library directories to export in LD_LIBRARY_PATH for Linux dynamic loader
+function findLibvipsDirs(dir, depth = 0) {
+  if (depth > 4 || !existsSync(dir)) return [];
+  const dirs = [];
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const full = join(dir, entry.name);
+        if (entry.name.includes("sharp-libvips")) {
+          const libDir = join(full, "lib");
+          if (existsSync(libDir)) dirs.push(libDir);
+        } else if (
+          entry.name === "@img" ||
+          entry.name === ".pnpm" ||
+          entry.name === "node_modules"
+        ) {
+          dirs.push(...findLibvipsDirs(full, depth + 1));
+        }
+      }
+    }
+  } catch {}
+  return dirs;
+}
+
+const libvipsDirs = [
+  ...new Set([
+    ...findLibvipsDirs(join(standalone, "node_modules")),
+    ...findLibvipsDirs(join(root, "node_modules")),
+  ]),
+];
+
+const env = { ...process.env };
+if (libvipsDirs.length > 0) {
+  env.LD_LIBRARY_PATH = [
+    ...libvipsDirs,
+    process.env.LD_LIBRARY_PATH || "",
+  ]
+    .filter(Boolean)
+    .join(":");
+}
+
 // Hand off to the standalone server, inheriting stdio and env (PORT,
 // HOSTNAME, DATABASE_URL, AUTH_*, …). `server.js` reads next.config values
 // that were serialized into it at build time.
 const child = spawn(process.execPath, [join(standalone, "server.js")], {
   stdio: "inherit",
-  env: process.env,
+  env,
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));
