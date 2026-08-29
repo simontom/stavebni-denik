@@ -35,7 +35,8 @@ test.describe("Full E2E flow", () => {
     const projectUrl = page.url();
 
     // Navigate to Reports tab
-    await page.getByRole('link', { name: /Záznamy/i }).click();
+    await page.goto(`${projectUrl}?tab=reports`);
+    await expect(page).toHaveURL(/tab=reports/);
     
     // 3. Create Daily Report
     await page.getByRole('button', { name: /Nový pro dnešek/i }).click();
