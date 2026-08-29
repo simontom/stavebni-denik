@@ -53,7 +53,16 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
 // that Next.js standalone file-tracing might not fully pull through pnpm symlinks.
 const standaloneModules = join(standalone, "node_modules");
 
-for (const mod of ["@img", "sharp", "@prisma", "prisma", "detect-libc", "semver"]) {
+for (const mod of [
+  "@img",
+  "sharp",
+  "@prisma",
+  "prisma",
+  "playwright",
+  "playwright-core",
+  "detect-libc",
+  "semver",
+]) {
   const src = join(root, "node_modules", mod);
   const dest = join(standaloneModules, mod);
   if (existsSync(src)) {
@@ -66,11 +75,25 @@ for (const mod of ["@img", "sharp", "@prisma", "prisma", "detect-libc", "semver"
   }
 }
 
-// Also scan node_modules/.pnpm for any sharp/libvips/@img packages not directly hoisted
+// Also scan node_modules/.pnpm for any sharp/libvips/@img/playwright packages not directly hoisted
 const pnpmDir = join(root, "node_modules", ".pnpm");
 if (existsSync(pnpmDir)) {
+  const standalonePnpm = join(standaloneModules, ".pnpm");
   for (const entry of readdirSync(pnpmDir)) {
-    if (entry.startsWith("sharp@") || entry.startsWith("@img+")) {
+    if (
+      entry.startsWith("sharp@") ||
+      entry.startsWith("@img+") ||
+      entry.startsWith("playwright")
+    ) {
+      const srcEntry = join(pnpmDir, entry);
+      const destEntry = join(standalonePnpm, entry);
+      rmSync(destEntry, { recursive: true, force: true });
+      cpSync(srcEntry, destEntry, {
+        recursive: true,
+        force: true,
+        dereference: true,
+      });
+
       const nested = join(pnpmDir, entry, "node_modules");
       if (existsSync(nested)) {
         for (const mod of readdirSync(nested)) {
