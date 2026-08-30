@@ -59,9 +59,13 @@ const nextConfig: NextConfig = {
   // upwards or pull files from sibling repos into the build trace.
   outputFileTracingRoot: __dirname,
 
-  // sharp, pg, prisma, playwright are on Next's default external list as of
-  // v15+, so we don't need to repeat them here. Add custom natives if/when
-  // they appear.
+  serverExternalPackages: [
+    "playwright",
+    "playwright-core",
+    "sharp",
+    "@prisma/client",
+    "prisma",
+  ],
 
   async headers() {
     return [

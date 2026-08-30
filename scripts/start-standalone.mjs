@@ -1,5 +1,5 @@
 // @ts-check
-import { cpSync, existsSync } from "node:fs";
+import { cpSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -49,12 +49,129 @@ cpSync(join(root, ".next", "static"), join(standalone, ".next", "static"), {
   force: true,
 });
 
+// Native packages (sharp / libvips / prisma) have platform-specific binaries
+// that Next.js standalone file-tracing might not fully pull through pnpm symlinks.
+const standaloneModules = join(standalone, "node_modules");
+
+for (const mod of [
+  "@img",
+  "sharp",
+  "@prisma",
+  "prisma",
+  "playwright",
+  "playwright-core",
+  "detect-libc",
+  "semver",
+]) {
+  const src = join(root, "node_modules", mod);
+  const dest = join(standaloneModules, mod);
+  if (existsSync(src)) {
+    rmSync(dest, { recursive: true, force: true });
+    cpSync(src, dest, {
+      recursive: true,
+      force: true,
+      dereference: true,
+    });
+  }
+}
+
+// Also scan node_modules/.pnpm for any sharp/libvips/@img/playwright packages not directly hoisted
+const pnpmDir = join(root, "node_modules", ".pnpm");
+if (existsSync(pnpmDir)) {
+  const standalonePnpm = join(standaloneModules, ".pnpm");
+  for (const entry of readdirSync(pnpmDir)) {
+    if (
+      entry.startsWith("sharp@") ||
+      entry.startsWith("@img+") ||
+      entry.startsWith("playwright")
+    ) {
+      const srcEntry = join(pnpmDir, entry);
+      const destEntry = join(standalonePnpm, entry);
+      rmSync(destEntry, { recursive: true, force: true });
+      cpSync(srcEntry, destEntry, {
+        recursive: true,
+        force: true,
+        dereference: true,
+      });
+
+      const nested = join(pnpmDir, entry, "node_modules");
+      if (existsSync(nested)) {
+        for (const mod of readdirSync(nested)) {
+          const srcMod = join(nested, mod);
+          const destMod = join(standaloneModules, mod);
+          if (mod === "@img") {
+            for (const sub of readdirSync(srcMod)) {
+              const srcSub = join(srcMod, sub);
+              const destSub = join(destMod, sub);
+              rmSync(destSub, { recursive: true, force: true });
+              cpSync(srcSub, destSub, {
+                recursive: true,
+                force: true,
+                dereference: true,
+              });
+            }
+          } else {
+            rmSync(destMod, { recursive: true, force: true });
+            cpSync(srcMod, destMod, {
+              recursive: true,
+              force: true,
+              dereference: true,
+            });
+          }
+        }
+      }
+    }
+  }
+}
+
+// Find all libvips library directories to export in LD_LIBRARY_PATH for Linux dynamic loader
+function findLibvipsDirs(dir, depth = 0) {
+  if (depth > 4 || !existsSync(dir)) return [];
+  const dirs = [];
+  try {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        const full = join(dir, entry.name);
+        if (entry.name.includes("sharp-libvips")) {
+          const libDir = join(full, "lib");
+          if (existsSync(libDir)) dirs.push(libDir);
+        } else if (
+          entry.name === "@img" ||
+          entry.name === ".pnpm" ||
+          entry.name === "node_modules"
+        ) {
+          dirs.push(...findLibvipsDirs(full, depth + 1));
+        }
+      }
+    }
+  } catch {}
+  return dirs;
+}
+
+const libvipsDirs = [
+  ...new Set([
+    ...findLibvipsDirs(join(standalone, "node_modules")),
+    ...findLibvipsDirs(join(root, "node_modules")),
+  ]),
+];
+
+const env = { ...process.env };
+if (libvipsDirs.length > 0) {
+  env.LD_LIBRARY_PATH = [
+    ...libvipsDirs,
+    process.env.LD_LIBRARY_PATH || "",
+  ]
+    .filter(Boolean)
+    .join(":");
+}
+
 // Hand off to the standalone server, inheriting stdio and env (PORT,
 // HOSTNAME, DATABASE_URL, AUTH_*, …). `server.js` reads next.config values
 // that were serialized into it at build time.
 const child = spawn(process.execPath, [join(standalone, "server.js")], {
   stdio: "inherit",
-  env: process.env,
+  env,
 });
 
 child.on("exit", (code) => process.exit(code ?? 0));

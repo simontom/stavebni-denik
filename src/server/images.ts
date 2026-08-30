@@ -71,6 +71,78 @@ const ACCEPTED_SHARP_FORMATS = new Set([
   "avif",
 ]);
 
+// ---------------------------------------------------------------------------
+// Magic byte (file-signature) validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum number of leading bytes we need to inspect in order to
+ * identify every accepted format.  HEIF/HEIC needs bytes 4-11,
+ * WebP needs bytes 8-11, PNG header is 8 bytes → 12 is enough.
+ */
+const MAGIC_HEADER_BYTES = 12;
+
+/**
+ * Check that `buf` starts with one of the binary signatures of the
+ * image formats we accept.  This is intentionally a fast, zero-alloc
+ * pre-flight check that runs BEFORE we hand the buffer to sharp's
+ * native decoder — it eliminates obvious non-images (EXEs, scripts,
+ * PDFs, SVGs, …) cheaply and reduces the attack surface of the C++
+ * image parsers.
+ *
+ * Returns `true` when the buffer looks like a plausible image.
+ * Callers MUST still run `sharp().metadata()` for the authoritative
+ * format check.
+ */
+export function hasValidImageSignature(buf: Buffer): boolean {
+  if (buf.length < MAGIC_HEADER_BYTES) return false;
+
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return true;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4E &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0D &&
+    buf[5] === 0x0A &&
+    buf[6] === 0x1A &&
+    buf[7] === 0x0A
+  ) {
+    return true;
+  }
+
+  // WebP: RIFF....WEBP  (bytes 0-3 = "RIFF", bytes 8-11 = "WEBP")
+  if (
+    buf[0] === 0x52 && // R
+    buf[1] === 0x49 && // I
+    buf[2] === 0x46 && // F
+    buf[3] === 0x46 && // F
+    buf[8] === 0x57 && // W
+    buf[9] === 0x45 && // E
+    buf[10] === 0x42 && // B
+    buf[11] === 0x50   // P
+  ) {
+    return true;
+  }
+
+  // HEIF / HEIC / AVIF: ISO Base Media File Format — "ftyp" box at
+  // offset 4 followed by a brand tag. We accept the container
+  // signature (ftyp) and let sharp resolve the specific codec.
+  if (
+    buf[4] === 0x66 && // f
+    buf[5] === 0x74 && // t
+    buf[6] === 0x79 && // y
+    buf[7] === 0x70    // p
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export class InvalidImageError extends Error {
   code = "InvalidImage" as const;
 }
@@ -103,6 +175,15 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
   if (input.length > MAX_UPLOAD_BYTES) {
     throw new ImageTooLargeError(
       `Soubor je větší než ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB.`,
+    );
+  }
+
+  // Fast pre-flight: inspect the first 12 bytes for a known image
+  // file signature. Rejects EXEs, scripts, PDFs, SVGs, etc. before
+  // the expensive sharp native decoder is even loaded.
+  if (!hasValidImageSignature(input)) {
+    throw new InvalidImageError(
+      "Soubor nemá platnou hlavičku obrázku (nepodporovaný nebo poškozený formát).",
     );
   }
 
