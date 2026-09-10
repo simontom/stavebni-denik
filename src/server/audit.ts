@@ -74,11 +74,14 @@ export async function withAudit<T>(
   return prisma.$transaction(async (tx) => {
     const result = await fn(tx);
 
-    // Lock the chain tail so concurrent transactions queue instead of
-    // forking. Postgres `FOR UPDATE` on the most recent row is enough
-    // — the next insert will wait for our commit.
+    // Serialize concurrent appends with an advisory lock. A plain
+    // `FOR UPDATE` on the tail row does NOT serialize inserts under
+    // READ COMMITTED (two blocked writers re-read the same old tail).
+    // Advisory lock 42 = "audit chain append" mutex; released on
+    // commit/rollback automatically (`pg_advisory_xact_lock`).
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(42)`;
     const tail = await tx.$queryRaw<Array<{ row_hash: string }>>`
-      SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1 FOR UPDATE
+      SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1
     `;
     const prevHash = tail[0]?.row_hash ?? GENESIS_HASH;
 
@@ -142,8 +145,9 @@ export async function appendAudit<E>(
   },
 ): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(42)`;
     const tail = await tx.$queryRaw<Array<{ row_hash: string }>>`
-      SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1 FOR UPDATE
+      SELECT row_hash FROM audit_log ORDER BY id DESC LIMIT 1
     `;
     const prevHash = tail[0]?.row_hash ?? GENESIS_HASH;
 

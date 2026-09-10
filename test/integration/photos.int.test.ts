@@ -491,6 +491,29 @@ describe("POST /api/photos/upload — happy path", () => {
     expect(res.status).toBe(413);
 
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("překračuje limit");
+    expect(body.error).toContain("Limit je 20 MB");
+  });
+
+  it("returns 413 when the actual stream exceeds MAX_BATCH_BYTES even with spoofed Content-Length: 0", async () => {
+    // We construct a valid multipart form data payload that exceeds the limit
+    const form = new FormData();
+    form.append("reportId", reportId);
+    
+    // Create an oversized payload (just a large array of zeroes, but wrapped as a File so formData() can parse it eventually, OR it hits the cap first)
+    // We want the stream to be large enough to trigger the withBodyLimit cap before formData finishes.
+    const bigBuffer = Buffer.alloc(MAX_BATCH_BYTES + 1024);
+    form.append("files", fileFromBuffer(bigBuffer, "big.jpg"));
+    
+    const req = new Request("http://localhost/api/photos/upload", {
+      method: "POST",
+      body: form,
+      headers: {
+        "Content-Length": "0",
+      },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(413);
   });
 });
+

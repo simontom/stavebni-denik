@@ -6,14 +6,17 @@ import type { NextConfig } from "next";
  * (Next.js inlines a small amount of JSON, which is allowed via
  * `'self'`), no framing.
  *
- * `'unsafe-eval'` v script-src je tu i v produkci. React 19 dev to
- * potřebuje pro HMR; produkce by ideálně nemusela, ale **některé
- * deps v bundlu** (next-auth JWT signing, crypto polyfilly,
- * Turbopack runtime helpers) volají `vm.runInThisContext` /
- * `new Function()` v browser kontextu. Bez `'unsafe-eval'` to spadne
- * po loginu / form submitu s "EvalError: call to eval() blocked
- * by CSP". Lepší fix je nonce-based CSP (TODO), ale na to potřebujeme
- * refactor middlewaru + layoutu, který zatím odkládáme.
+ * `'unsafe-inline'` on script-src is required by Next.js' inline
+ * bootstrap chunks. A nonce-based CSP would let us drop it too, but
+ * that requires a per-request middleware that generates and injects
+ * the nonce into both the CSP header and every `<script>` tag — a
+ * larger refactor tracked separately.
+ *
+ * `'unsafe-eval'` was previously included for compatibility with
+ * bundled deps (JWT helpers, Turbopack runtime). As of Next.js 16
+ * standalone builds these no longer use eval — removed for a
+ * tighter security posture. If a regression surfaces, add it back
+ * scoped to `script-src` only and track a nonce-based CSP migration.
  */
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -33,11 +36,12 @@ const securityHeaders = [
   {
     key: "Content-Security-Policy",
     // `'unsafe-inline'` on style covers Tailwind's CSS-variables injection.
-    // `'unsafe-eval'` is required by bundled deps (see comment above).
     // No third-party scripts or images — adjust if we ever embed maps etc.
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      // 'unsafe-eval' is required by webpack HMR and React DevTools in development.
+      // Next.js 16 standalone builds no longer use eval, so we can safely drop it in production.
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob:",
       "font-src 'self' data:",

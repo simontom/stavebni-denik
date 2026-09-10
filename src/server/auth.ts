@@ -41,10 +41,72 @@ const credentialsSchema = z.object({
   userAgent: z.string().optional(),
 });
 
+/**
+ * How often the `jwt` callback verifies the session hasn't been
+ * revoked (ms). 30 minutes = max staleness after an admin resets
+ * a password or deactivates a user. Cost: one `findUnique` by PK
+ * per user per 30 min — negligible.
+ */
+const SESSION_CHECK_INTERVAL_MS = 30 * 60 * 1000;
+
 export const { handlers, auth, signIn, signOut, unstable_update: update } =
   NextAuth({
     ...authConfig,
     secret: env.authSecret,
+    callbacks: {
+      // Inherit the route-level gate from authConfig.
+      authorized: authConfig.callbacks!.authorized!,
+
+      /**
+       * Extends the base jwt callback with a periodic session-
+       * revocation check. The base callback (authConfig) copies
+       * user metadata into the token on sign-in; this wrapper adds
+       * a DB lookup every SESSION_CHECK_INTERVAL_MS to verify the
+       * session row hasn't been revoked.
+       */
+      async jwt({ token, user, trigger, session: updatedSession }) {
+        // Delegate to the base callback for metadata propagation.
+        const baseResult = authConfig.callbacks!.jwt!({
+          token,
+          user,
+          trigger,
+          session: updatedSession,
+          // Auth.js internal — not relevant for our logic but
+          // required by the type signature.
+          account: null,
+        } as Parameters<NonNullable<typeof authConfig.callbacks.jwt>>[0]);
+        const resolved =
+          baseResult instanceof Promise ? await baseResult : baseResult;
+        if (!resolved || typeof resolved !== "object") return resolved;
+
+        // Periodic revocation check — skip on initial sign-in (user
+        // is set) since we just created the session row.
+        if (!user && resolved.sessionId) {
+          const lastCheck =
+            (resolved.lastRevocationCheck as number | undefined) ?? 0;
+          if (Date.now() - lastCheck > SESSION_CHECK_INTERVAL_MS) {
+            const sess = await prisma.session.findUnique({
+              where: { id: resolved.sessionId as string },
+              select: { revokedAt: true },
+            });
+            if (!sess || sess.revokedAt) {
+              // Session was revoked — force sign-out by returning an
+              // empty token. Auth.js will clear the cookie.
+              logger.info("jwt.session_revoked", {
+                sessionId: resolved.sessionId,
+              });
+              return {} as typeof resolved;
+            }
+            resolved.lastRevocationCheck = Date.now();
+          }
+        }
+
+        return resolved;
+      },
+
+      // Session callback is unchanged from authConfig.
+      session: authConfig.callbacks!.session!,
+    },
     providers: [
       Credentials({
         name: "Stavební deník",

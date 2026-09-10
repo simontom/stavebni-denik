@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useState, useTransition } from "react";
 import { Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,50 +56,51 @@ export function EditUserDialog({ userId, initialValues }: Props) {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>(initialValues.role);
   const [isAdmin, setIsAdmin] = useState<boolean>(initialValues.isAdmin);
-  const [state, formAction, isPending] = useActionState<
-    UpdateUserState | undefined,
-    FormData
-  >(updateUserAction, undefined);
+  const [state, setState] = useState<UpdateUserState | undefined>(undefined);
+  const [isPending, startTransition] = useTransition();
 
   const fieldErrors =
     state?.status === "field-error" ? state.fieldErrors : undefined;
 
-  /* eslint-disable react-hooks/set-state-in-effect -- legitimate
-     side-effect: dialog must close + toast must fire when the
-     server action returns. There's no synchronous callback from
-     useActionState in React 19; the recommended `key` reset would
-     lose form values on validation errors. */
-
-  // Reset controlled fields zpět na initial při otevření dialogu.
-  useEffect(() => {
-    if (open) {
+  function handleOpenChange(next: boolean) {
+    if (next) {
       setRole(initialValues.role);
       setIsAdmin(initialValues.isAdmin);
+      setState(undefined);
+    } else {
+      setState(undefined);
     }
-  }, [open, initialValues.role, initialValues.isAdmin]);
+    setOpen(next);
+  }
 
-  // Po úspěšném save toast + zavřít dialog. Last-admin / not-found
-  // / forbidden chyby zobrazujeme jako toast.error.
-  useEffect(() => {
-    if (state?.status === "ok") {
-      toast.success(`${initialValues.displayName} aktualizován.`);
-      setOpen(false);
-    } else if (state?.status === "forbidden") {
-      toast.error("Nemáte oprávnění (přihlaste se znovu jako admin).");
-    } else if (state?.status === "not-found") {
-      toast.error("Uživatel nebyl nalezen.");
-    } else if (state?.status === "last-admin") {
-      toast.error(
-        "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
-      );
-    } else if (state?.status === "error") {
-      toast.error(state.message);
-    }
-  }, [state, initialValues.displayName]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const res = await updateUserAction(undefined, formData);
+      if (res.status === "ok") {
+        toast.success(`${initialValues.displayName} aktualizován.`);
+        setOpen(false);
+        setState(undefined);
+      } else {
+        setState(res);
+        if (res.status === "forbidden") {
+          toast.error("Nemáte oprávnění (přihlaste se znovu jako admin).");
+        } else if (res.status === "not-found") {
+          toast.error("Uživatel nebyl nalezen.");
+        } else if (res.status === "last-admin") {
+          toast.error(
+            "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
+          );
+        } else if (res.status === "error") {
+          toast.error(res.message);
+        }
+      }
+    });
+  }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger
         render={
           <Button
@@ -121,7 +122,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
             jméno a heslo se zde nemění.
           </DialogDescription>
         </DialogHeader>
-        <form action={formAction} noValidate className="flex flex-col gap-4">
+        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
           <input type="hidden" name="userId" value={userId} />
 
           <div className="grid gap-2">

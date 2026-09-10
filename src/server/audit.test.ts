@@ -30,7 +30,9 @@ vi.mock("@/generated/prisma/client", () => ({
 
 vi.mock("@/lib/db", () => {
   const tx = {
-    // The append path locks the chain tail to source `prev_hash`.
+    // Advisory lock — no-op in unit tests.
+    $executeRaw: async () => 0,
+    // The append path reads the chain tail to source `prev_hash`.
     $queryRaw: async () =>
       h.created.length === 0
         ? []
