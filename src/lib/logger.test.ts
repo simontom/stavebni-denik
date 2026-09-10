@@ -48,6 +48,28 @@ describe("logger", () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(expected);
   });
 
+  it("formats error logs with context only (no error instance)", () => {
+    logger.error("audit.chain_broken", { brokenAtId: "42", reason: "hash mismatch" });
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[error] audit.chain_broken  brokenAtId=42 reason="hash mismatch"'
+    );
+  });
+
+  it("formats error logs with error instance only (no context)", () => {
+    const err = new Error("Disk full");
+    err.stack = "Error: Disk full\n    at /app/disk.js:1:1";
+    logger.error("storage.full", err);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      '[error] storage.full  err="Disk full"\n        Error: Disk full\n        at /app/disk.js:1:1'
+    );
+  });
+
+  it("formats error logs without context or error", () => {
+    logger.error("fatal.crash");
+    expect(consoleErrorSpy).toHaveBeenCalledWith("[error] fatal.crash");
+  });
+
   it("logs undefined and null values explicitly", () => {
     logger.info("user.updated", { id: 42, name: null, role: undefined });
     expect(consoleInfoSpy).toHaveBeenCalledWith(

@@ -7,6 +7,31 @@
  * it is readable directly in `fly logs` while debugging in the terminal.
  */
 
+function logError(event: string, ctx?: Record<string, unknown>): void;
+function logError(event: string, err: unknown, ctx?: Record<string, unknown>): void;
+function logError(
+  event: string,
+  errOrCtx?: unknown,
+  maybeCtx?: Record<string, unknown>,
+): void {
+  if (maybeCtx !== undefined) {
+    console.error(formatLine("error", event, maybeCtx, errOrCtx));
+    return;
+  }
+
+  if (errOrCtx instanceof Error) {
+    console.error(formatLine("error", event, undefined, errOrCtx));
+    return;
+  }
+
+  if (isRecord(errOrCtx)) {
+    console.error(formatLine("error", event, errOrCtx, undefined));
+    return;
+  }
+
+  console.error(formatLine("error", event, undefined, errOrCtx));
+}
+
 export const logger = {
   info(event: string, ctx?: Record<string, unknown>): void {
     console.info(formatLine("info", event, ctx));
@@ -14,10 +39,12 @@ export const logger = {
   warn(event: string, ctx?: Record<string, unknown>): void {
     console.warn(formatLine("warn", event, ctx));
   },
-  error(event: string, err?: unknown, ctx?: Record<string, unknown>): void {
-    console.error(formatLine("error", event, ctx, err));
-  },
+  error: logError,
 };
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
 
 function formatLine(
   level: "info" | "warn" | "error",

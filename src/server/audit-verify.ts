@@ -54,7 +54,7 @@ export async function verifyAuditChainWithClient(
       totalRows++;
       const reason = checkChainRow(lastHash, r);
       if (reason) {
-        logger.warn("audit.chain_broken", { brokenAtId: r.id, reason });
+        logger.error("audit.chain_broken", { brokenAtId: r.id, reason });
         return {
           ok: false,
           totalRows,
