@@ -25,6 +25,7 @@ test("admin login + create + edit + deactivate + delete user", async ({
   const WORKER_DISPLAY = "E2E Worker";
   const WORKER_DISPLAY_EDITED = "E2E Worker (upraveno)";
 
+
   // --- 1) Login --------------------------------------------------------
   await page.goto("/login");
   await page.locator('input[name="nickname"]').fill(ADMIN_NICKNAME);
@@ -34,6 +35,7 @@ test("admin login + create + edit + deactivate + delete user", async ({
 
   // --- 2) Navigovat na /admin/users ------------------------------------
   await page.goto("/admin/users");
+  await page.waitForLoadState("networkidle");
   // CardTitle je <div>, ne <h1> — použít text match.
   await expect(page.getByText("Uživatelé", { exact: true }).first()).toBeVisible();
 

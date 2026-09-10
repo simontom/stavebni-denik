@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState, useTransition } from "react";
 import { Check, Copy, Loader2, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 
@@ -36,15 +36,22 @@ const ROLE_OPTIONS: Array<{ value: "BOSS" | "WORKER" | "GUEST"; label: string }>
 export function CreateUserDialog() {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<"BOSS" | "WORKER" | "GUEST">("WORKER");
-  const [state, formAction, isPending] = useActionState<
-    CreateUserState | undefined,
-    FormData
-  >(createUserAction, undefined);
+  const [state, setState] = useState<CreateUserState | undefined>(undefined);
+  const [isPending, startTransition] = useTransition();
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   const created = state?.status === "ok" ? state.result : null;
   const fieldErrors =
     state?.status === "field-error" ? state.fieldErrors : undefined;
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    startTransition(async () => {
+      const res = await createUserAction(undefined, formData);
+      setState(res);
+    });
+  }
 
   function handleCopyPassword() {
     if (!created) return;
@@ -65,9 +72,14 @@ export function CreateUserDialog() {
       );
       if (!confirmed) return;
     }
-    // Reset transient UI state whenever the dialog opens. The action
-    // state is preserved between submits to surface validation errors.
-    if (next) setPasswordCopied(false);
+    // Reset transient UI state whenever the dialog opens or closes.
+    if (next) {
+      setPasswordCopied(false);
+      setState(undefined);
+      setRole("WORKER");
+    } else {
+      setState(undefined);
+    }
     setOpen(next);
   }
 
@@ -150,7 +162,7 @@ export function CreateUserDialog() {
               </DialogDescription>
             </DialogHeader>
 
-            <form action={formAction} className="flex flex-col gap-4" noValidate>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
               {state?.status === "nickname-in-use" && (
                 <Alert variant="destructive">
                   <AlertDescription>
