@@ -54,9 +54,16 @@ export interface RenderPdfOptions {
  * almost every time — queueing is a single line of business logic
  * that buys us the same protection a full job broker would, without
  * any external infrastructure.
+ *
+ * @param signal  Optional `AbortSignal` (typically `request.signal`)
+ *   — when the client disconnects, queued renders are evicted before
+ *   Chromium is launched, saving CPU/RAM on the constrained machine.
  */
-export async function renderPdf(opts: RenderPdfOptions): Promise<Buffer> {
-  return acquirePdfSlot(() => renderPdfNow(opts));
+export async function renderPdf(
+  opts: RenderPdfOptions,
+  signal?: AbortSignal,
+): Promise<Buffer> {
+  return acquirePdfSlot(() => renderPdfNow(opts), signal);
 }
 
 async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
@@ -123,7 +130,12 @@ function readPdfConcurrency(): number {
 }
 
 let inFlight = 0;
-const waiters: Array<() => void> = [];
+
+interface Waiter {
+  resolve: () => void;
+  reject: (err: Error) => void;
+}
+const waiters: Waiter[] = [];
 
 /**
  * Run `task` once a render slot is available. The semaphore is module
@@ -131,20 +143,54 @@ const waiters: Array<() => void> = [];
  * standalone deployment: a single server.js worker handles every
  * request, so there's no other Chromium racing for memory.
  *
+ * When an `AbortSignal` is provided (typically `request.signal`),
+ * disconnected clients are evicted from the queue BEFORE Chromium is
+ * launched — this prevents wasted renders that would otherwise block
+ * the single-slot queue for 10–60 seconds each.
+ *
  * Exposed only so the unit test can drive it directly; production
  * callers go through `renderPdf`.
  */
-export async function acquirePdfSlot<T>(task: () => Promise<T>): Promise<T> {
+export async function acquirePdfSlot<T>(
+  task: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   if (inFlight >= PDF_CONCURRENCY) {
-    await new Promise<void>((resolve) => waiters.push(resolve));
+    await new Promise<void>((resolve, reject) => {
+      const entry: Waiter = { resolve, reject };
+      waiters.push(entry);
+
+      // If the caller disconnects while queued, remove the entry
+      // and reject so we never launch Chromium for a dead request.
+      if (signal) {
+        const onAbort = () => {
+          const idx = waiters.indexOf(entry);
+          if (idx !== -1) {
+            waiters.splice(idx, 1);
+            reject(new DOMException("PDF render aborted", "AbortError"));
+          }
+        };
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
   }
+
   inFlight += 1;
   try {
+    // Check inside the try so the finally block always releases the slot
+    // and wakes the next waiter — even if the signal fired between being
+    // dequeued and reaching here (which would deadlock the queue if we
+    // threw before incrementing inFlight).
+    signal?.throwIfAborted();
     return await task();
   } finally {
     inFlight -= 1;
     const next = waiters.shift();
-    if (next) next();
+    if (next) next.resolve();
   }
 }
 

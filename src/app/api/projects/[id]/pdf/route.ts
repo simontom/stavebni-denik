@@ -72,12 +72,19 @@ export async function GET(request: Request, context: RouteContext) {
 
   let pdf: Buffer;
   try {
-    pdf = await renderPdf({
-      url: printUrl.toString(),
-      cookieHeader: request.headers.get("cookie"),
-      footerHtml,
-    });
-  } catch {
+    pdf = await renderPdf(
+      {
+        url: printUrl.toString(),
+        cookieHeader: request.headers.get("cookie"),
+        footerHtml,
+      },
+      request.signal,
+    );
+  } catch (err) {
+    // Client disconnected while queued or during render — not an error.
+    if (err instanceof DOMException && err.name === "AbortError") {
+      return new Response(null, { status: 499 });
+    }
     // pdf.ts already logs pdf.error
     return new Response("PDF generation failed", { status: 500 });
   }

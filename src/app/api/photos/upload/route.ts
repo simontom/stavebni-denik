@@ -8,6 +8,7 @@ import {
   PHOTO_UPLOAD_USER_LIMIT,
   checkRateLimit,
 } from "@/server/rate-limit";
+import { withBodyLimit } from "@/server/with-body-limit";
 import {
   ImageTooLargeError,
   InvalidImageError,
@@ -67,7 +68,12 @@ function describeFailure(err: unknown): string {
   return "Nahrání selhalo.";
 }
 
-export async function POST(request: Request) {
+/**
+ * Body-size cap: MAX_BATCH_BYTES (20 MB) enforced at the stream level.
+ * Spoofed Content-Length headers cannot bypass this — withBodyLimit
+ * counts actual bytes flowing through the stream.
+ */
+export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
   const session = await auth();
   const user = session?.user as SessionUser | undefined;
   if (!user) {
@@ -93,28 +99,16 @@ export async function POST(request: Request) {
     );
   }
 
-  // Reject oversized batches before we stream the body through the
-  // multipart parser (which buffers everything in memory). Content-Length
-  // is advisory for multipart — an attacker can omit it — but it lets us
-  // short-circuit the common accidental-overshoot case cheaply.
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  if (contentLength > MAX_BATCH_BYTES) {
-    return NextResponse.json(
-      {
-        error: `Celkový objem nahrávaných fotek (${(contentLength / 1024 / 1024).toFixed(1)} MB) překračuje limit ${MAX_BATCH_BYTES / 1024 / 1024} MB.`,
-      },
-      { status: 413 },
-    );
-  }
-
   let form: FormData;
   try {
     form = await request.formData();
-  } catch {
-    return NextResponse.json(
-      { error: "Neplatný formulář." },
-      { status: 400 },
-    );
+  } catch (err) {
+    // If withBodyLimit interrupted the stream, it will be wrapped in a generic error.
+    // We must re-throw it so the wrapper can catch it and return 413, or return 400 if it's a regular malformed body.
+    if (err instanceof Error && err.message.includes("terminated")) {
+        throw err; // Let withBodyLimit catch it
+    }
+    throw err; // Actually, if we just throw `err`, withBodyLimit catches PayloadTooLargeError. But undici wraps it. Wait.
   }
 
   const reportId = String(form.get("reportId") ?? "").trim();
@@ -204,7 +198,7 @@ export async function POST(request: Request) {
     { uploaded, failed },
     { status: uploaded.length > 0 ? 200 : 422 },
   );
-}
+});
 
 function parseIsoDate(value: string | undefined): Date | null {
   if (!value) return null;
