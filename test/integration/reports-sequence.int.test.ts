@@ -179,4 +179,31 @@ describe("Report Sequence and Acknowledgement", () => {
     expect(ack.acknowledgedAt).not.toBeNull();
     expect(ack.acknowledgedById).toBe(investorUser.id);
   });
+
+  it("should prevent double acknowledgement of a report", async () => {
+    const r = await svc.createReport({
+      projectId,
+      date: pragueDayStart(new Date("2026-09-05T10:00:00Z")),
+      input: {
+        workersByTrade: [], workDescription: "...", isControlDay: false, constructionObj: null,
+        materialsIn: null, machinery: null, testsAndChecks: null, safetyNotes: null, defects: null, otherNotes: null,
+      },
+      ctx,
+      user: bossUser,
+    });
+
+    await svc.acknowledgeReport({
+      reportId: r.id,
+      ctx: { ...ctx, actor: { id: investorUser.id } },
+      user: investorUser,
+    });
+
+    await expect(
+      svc.acknowledgeReport({
+        reportId: r.id,
+        ctx: { ...ctx, actor: { id: investorUser.id } },
+        user: investorUser,
+      })
+    ).rejects.toThrowError("Denní záznam již byl investorem potvrzen.");
+  });
 });

@@ -37,7 +37,7 @@ export interface HandoverItem {
   type: string;
   date: Date | string;
   participants: string;
-  meterStates: MeterState[] | any;
+  meterStates: MeterState[] | unknown;
   notes?: string | null;
   signedAt?: Date | string | null;
 }

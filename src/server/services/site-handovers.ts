@@ -27,9 +27,19 @@ export async function createHandover(projectId: string, actorId: string, data: a
   );
 }
 
+export class HandoverAlreadySignedError extends Error {
+  code = "HandoverAlreadySigned" as const;
+  constructor() {
+    super("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
+  }
+}
+
 export async function updateHandover(id: string, actorId: string, data: any): Promise<SiteHandover> {
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   const before = await prisma.siteHandover.findUnique({ where: { id } });
+  
+  if (!before) throw new Error("Not found");
+  if (before.signedAt) throw new HandoverAlreadySignedError();
   
   return withAudit(
     {
@@ -55,6 +65,9 @@ export async function updateHandover(id: string, actorId: string, data: any): Pr
 export async function deleteHandover(id: string, actorId: string): Promise<SiteHandover> {
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   const before = await prisma.siteHandover.findUnique({ where: { id } });
+  
+  if (!before) throw new Error("Not found");
+  if (before.signedAt) throw new HandoverAlreadySignedError();
   
   return withAudit(
     {

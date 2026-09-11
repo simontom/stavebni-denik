@@ -424,6 +424,13 @@ export async function updateReport(opts: {
   );
 }
 
+export class ReportAlreadyAcknowledgedError extends Error {
+  code = "ReportAlreadyAcknowledged" as const;
+  constructor() {
+    super("Denní záznam již byl investorem potvrzen.");
+  }
+}
+
 /**
  * Acknowledge a daily report. Only INVESTOR role on the project can do this.
  */
@@ -438,6 +445,7 @@ export async function acknowledgeReport(opts: {
     where: { id: reportId, deletedAt: null },
   });
   if (!before) throw new ReportNotFoundError();
+  if (before.acknowledgedAt) throw new ReportAlreadyAcknowledgedError();
 
   const project = await prisma.project.findFirst({
     where: { id: before.projectId, deletedAt: null },
@@ -1363,9 +1371,13 @@ export interface ProjectExportPhoto {
 export interface ProjectExportDay {
   id: string;
   date: Date;
+  sequenceNumber: number;
+  isControlDay: boolean;
+  constructionObj: string | null;
   authorName: string;
   signedByName: string | null;
   signedAt: Date | null;
+  acknowledgedByName: string | null;
   lockedAt: Date | null;
   weather: WeatherSnapshot;
   workers: WorkerLine[];
@@ -1417,6 +1429,7 @@ export async function getProjectExportForUser(opts: {
     include: {
       author: { select: { displayName: true } },
       signedBy: { select: { displayName: true } },
+      acknowledgedBy: { select: { displayName: true } },
       remarks: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -1442,9 +1455,13 @@ export async function getProjectExportForUser(opts: {
     days: rows.map((r) => ({
       id: r.id,
       date: r.date,
+      sequenceNumber: r.sequenceNumber,
+      isControlDay: r.isControlDay,
+      constructionObj: r.constructionObj,
       authorName: r.author.displayName,
       signedByName: r.signedBy?.displayName ?? null,
       signedAt: r.signedAt,
+      acknowledgedByName: r.acknowledgedBy?.displayName ?? null,
       lockedAt: r.lockedAt,
       weather: parseWeather(r.weather),
       workers: parseWorkers(r.workersByTrade),

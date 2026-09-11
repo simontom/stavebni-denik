@@ -54,11 +54,15 @@ function DaySection({ day, index }: { day: ProjectExportDay; index: number }) {
   return (
     <section className={index === 0 ? "day" : "day day-break"}>
       <header className="day-header">
-        <h2>{formatDate(day.date)}</h2>
+        <h2>Záznam č. {day.sequenceNumber} ze dne {formatDate(day.date)}</h2>
+        {day.isControlDay && <span className="official" style={{marginLeft: "8px", verticalAlign: "middle"}}>Kontrolní den</span>}
         <div className="day-meta">
           Zapsal: {day.authorName}
           {day.signedByName && day.signedAt && (
             <> · Podepsal: {day.signedByName} ({formatDateTime(day.signedAt)})</>
+          )}
+          {day.acknowledgedByName && (
+            <> · Potvrdil investor: {day.acknowledgedByName}</>
           )}
         </div>
       </header>
@@ -83,6 +87,7 @@ function DaySection({ day, index }: { day: ProjectExportDay; index: number }) {
           : day.workers.map((w) => `${w.trade} ${w.count}×`).join(", ")}
       </div>
 
+      <Field label="Stavební objekt" value={day.constructionObj} />
       <Field label="Popis prací" value={day.workDescription} />
       <Field label="Dodávky materiálu" value={day.materialsIn} />
       <Field label="Mechanizace" value={day.machinery} />
@@ -239,6 +244,30 @@ export default async function PrintProjectPage({
               <>
                 <dt>Č. stavebního povolení</dt>
                 <dd>{project.project.permitNumber}</dd>
+              </>
+            )}
+            {project.project.contractNumber && (
+              <>
+                <dt>Číslo smlouvy</dt>
+                <dd>{project.project.contractNumber}</dd>
+              </>
+            )}
+            {project.project.contractDate && (
+              <>
+                <dt>Datum smlouvy</dt>
+                <dd>{formatDate(project.project.contractDate)}</dd>
+              </>
+            )}
+            {project.project.designDocVersion && (
+              <>
+                <dt>Verze PD</dt>
+                <dd>{project.project.designDocVersion}</dd>
+              </>
+            )}
+            {project.project.designDocDate && (
+              <>
+                <dt>Datum PD</dt>
+                <dd>{formatDate(project.project.designDocDate)}</dd>
               </>
             )}
             <dt>Stavebník</dt>

@@ -144,4 +144,26 @@ describe("Site Handovers", () => {
     });
     await expect(signHandover(handover.id, s.worker.id)).rejects.toThrow();
   });
+
+  it("prevents updating a signed handover", async () => {
+    const s = await createScenario();
+    const handover = await createHandover(s.project.id, s.boss.id, {
+      type: "handover",
+      date: new Date(),
+      participants: "John",
+    });
+    await signHandover(handover.id, s.boss.id);
+    await expect(updateHandover(handover.id, s.boss.id, { notes: "Updated" })).rejects.toThrowError("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
+  });
+
+  it("prevents deleting a signed handover", async () => {
+    const s = await createScenario();
+    const handover = await createHandover(s.project.id, s.boss.id, {
+      type: "handover",
+      date: new Date(),
+      participants: "John",
+    });
+    await signHandover(handover.id, s.boss.id);
+    await expect(deleteHandover(handover.id, s.boss.id)).rejects.toThrowError("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
+  });
 });

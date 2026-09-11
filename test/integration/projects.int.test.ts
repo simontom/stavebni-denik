@@ -213,4 +213,26 @@ describe("projects — scope & audit (real Postgres)", () => {
     const result = await verifyAuditChainWithClient(db);
     expect(result.ok).toBe(true);
   });
+
+  it("auto-syncs AuthorizedPerson on removeProjectMember", async () => {
+    const authSvc = await import("@/server/services/authorized-persons");
+    await svc.addProjectMember(projectId, worker2.id, "WORKER", ctx, bossUser.id);
+    
+    // There should be a linked AuthorizedPerson
+    const linked = await db.authorizedPerson.findFirst({
+      where: { projectId, linkedUserId: worker2.id }
+    });
+    expect(linked).not.toBeNull();
+    expect(linked?.revokedAt).toBeNull();
+
+    // Remove the member
+    await svc.removeProjectMember(projectId, worker2.id, ctx);
+
+    // The AuthorizedPerson should be revoked, not deleted
+    const revoked = await db.authorizedPerson.findFirst({
+      where: { projectId, linkedUserId: worker2.id }
+    });
+    expect(revoked).not.toBeNull();
+    expect(revoked?.revokedAt).not.toBeNull();
+  });
 });
