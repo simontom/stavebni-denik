@@ -24,6 +24,10 @@ export interface ProjectFormValues {
   tdsName: string;
   bozpName: string;
   designerName: string;
+  contractNumber: string;
+  contractDate: string;
+  designDocVersion: string;
+  designDocDate: string;
   gpsLat: string;
   gpsLon: string;
   startedAt: string;
@@ -49,6 +53,10 @@ export const EMPTY_PROJECT_VALUES: ProjectFormValues = {
   tdsName: "",
   bozpName: "",
   designerName: "",
+  contractNumber: "",
+  contractDate: "",
+  designDocVersion: "",
+  designDocDate: "",
   gpsLat: "",
   gpsLon: "",
   startedAt: "",

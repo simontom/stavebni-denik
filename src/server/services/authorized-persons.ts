@@ -114,3 +114,9 @@ export async function syncSystemMember(
     });
   }
 }
+export async function listAuthorizedPersons(projectId: string) {
+  return prisma.authorizedPerson.findMany({
+    where: { projectId },
+    orderBy: { createdAt: 'desc' }
+  });
+}

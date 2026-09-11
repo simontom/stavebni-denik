@@ -201,6 +201,28 @@ export function ReportForm({
           <CardTitle className="text-base">Průběh prací</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
+          <div className="flex items-center gap-2 mb-2">
+            <input
+              type="checkbox"
+              id="isControlDay"
+              name="isControlDay"
+              value="true"
+              className="size-4"
+              defaultChecked={defaultValues.isControlDay}
+            />
+            <Label htmlFor="isControlDay">Kontrolní den</Label>
+          </div>
+          
+          <div className="grid gap-1.5 mb-2">
+            <Label htmlFor="constructionObj">Stavební objekt (SO / IO) <span className="text-muted-foreground">(volitelné)</span></Label>
+            <Input
+              id="constructionObj"
+              name="constructionObj"
+              defaultValue={defaultValues.constructionObj}
+            />
+            {fieldErrors?.constructionObj && <p className="text-sm text-destructive">{fieldErrors.constructionObj}</p>}
+          </div>
+
           <AreaField
             name="workDescription"
             label="Popis provedených prací"

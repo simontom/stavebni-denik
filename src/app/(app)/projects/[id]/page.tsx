@@ -30,8 +30,12 @@ import {
   getReportCoverageForProject,
   listReportsForProject,
 } from "@/server/services/reports";
+import { listHandovers } from "@/server/services/site-handovers";
+import { listAuthorizedPersons } from "@/server/services/authorized-persons";
 
 import { MembersPanel } from "./MembersPanel";
+import { AuthorizedPersonsPanel } from "./AuthorizedPersonsPanel";
+import { HandoversPanel } from "./HandoversPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
 import { CsvExportButtons } from "./CsvExportButtons";
@@ -41,12 +45,13 @@ import { ReportCalendarMonth } from "./ReportCalendarMonth";
 import { ReportCoverageHeatmap } from "./ReportCoverageHeatmap";
 import { ReportsFilterBar } from "./ReportsFilterBar";
 
-type ProjectTab = "details" | "reports" | "materials" | "members";
+type ProjectTab = "details" | "reports" | "materials" | "members" | "handovers";
 
 function resolveTab(value: string | string[] | undefined): ProjectTab {
   if (value === "reports") return "reports";
   if (value === "materials") return "materials";
   if (value === "members") return "members";
+  if (value === "handovers") return "handovers";
   return "details";
 }
 
@@ -158,6 +163,9 @@ export default async function ProjectDetailPage({
           status: reportsStatus,
         })
       : [];
+
+  const authorizedPersons = tab === "members" ? await listAuthorizedPersons(id) : [];
+  const handovers = tab === "handovers" ? await listHandovers(id) : [];
   const totalReports =
     tab === "reports" && (reportsQuery.length > 0 || reportsStatus !== "all")
       ? (await listReportsForProject(id, user)).length
@@ -357,6 +365,16 @@ export default async function ProjectDetailPage({
         >
           Členové ({members.length})
         </Link>
+        <Link
+          href={`/projects/${id}?tab=handovers`}
+          className={
+            tab === "handovers"
+              ? "border-b-2 border-primary px-3 py-2 text-sm font-medium"
+              : "px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+          }
+        >
+          Předání staveniště
+        </Link>
       </nav>
 
       {tab === "details" && (
@@ -554,6 +572,7 @@ export default async function ProjectDetailPage({
       )}
 
       {tab === "members" && (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Členové zakázky</CardTitle>
@@ -578,6 +597,12 @@ export default async function ProjectDetailPage({
             />
           </CardContent>
         </Card>
+        <AuthorizedPersonsPanel persons={authorizedPersons} />
+      </>
+      )}
+
+      {tab === "handovers" && (
+        <HandoversPanel handovers={handovers} />
       )}
     </div>
   );

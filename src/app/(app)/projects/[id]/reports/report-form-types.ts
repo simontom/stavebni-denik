@@ -27,6 +27,8 @@ export interface ReportFormValues {
   safetyNotes: string;
   defects: string;
   otherNotes: string;
+  isControlDay: boolean;
+  constructionObj: string;
 }
 
 /** Blank values used when creating a new daily report. */
@@ -39,4 +41,6 @@ export const EMPTY_REPORT_VALUES: ReportFormValues = {
   safetyNotes: "",
   defects: "",
   otherNotes: "",
+  isControlDay: false,
+  constructionObj: "",
 };

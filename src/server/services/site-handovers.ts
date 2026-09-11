@@ -98,3 +98,9 @@ export async function signHandover(id: string, actorId: string): Promise<SiteHan
     })
   );
 }
+export async function listHandovers(projectId: string): Promise<SiteHandover[]> {
+  return prisma.siteHandover.findMany({
+    where: { projectId, deletedAt: null },
+    orderBy: { date: 'desc' }
+  });
+}

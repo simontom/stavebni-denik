@@ -66,6 +66,7 @@ export type Action =
   | "report.create"
   | "report.update"
   | "report.sign"
+  | "report.acknowledge"
   | "report.addendum.create"
   // Photos, remarks, materials, visits
   | "photo.upload"
@@ -125,6 +126,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
         r?.projectMember === true &&
         r?.authorId === u.id)),
   "report.sign": (u) => u.role === "BOSS",
+  "report.acknowledge": (u, r) => u.role === "INVESTOR" && r?.projectMember === true,
   "report.addendum.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
 

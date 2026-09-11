@@ -1071,6 +1071,7 @@ export interface ReportDetail {
   projectName: string;
   authorName: string;
   signedByName: string | null;
+  acknowledgedByName: string | null;
   weather: WeatherSnapshot;
   workers: WorkerLine[];
   remarks: RemarkView[];
@@ -1087,6 +1088,7 @@ export interface ReportDetail {
   canResolveMaterial: boolean;
   canRolloverMaterial: boolean;
   canSign: boolean;
+  canAcknowledge: boolean;
   canAddAddendum: boolean;
 }
 
@@ -1115,6 +1117,7 @@ export async function getReportForUser(opts: {
       project: { select: { name: true } },
       author: { select: { displayName: true } },
       signedBy: { select: { displayName: true } },
+      acknowledgedBy: { select: { displayName: true } },
       remarks: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -1152,6 +1155,7 @@ export async function getReportForUser(opts: {
     project,
     author,
     signedBy,
+    acknowledgedBy,
     remarks,
     materialNeeds,
     addenda,
@@ -1164,9 +1168,9 @@ export async function getReportForUser(opts: {
     authorId: report.authorId,
   };
   const canRolloverMaterial =
-    !locked &&
+    rolloverCandidates.length > 0 &&
     can(user, "material.resolve", resource) &&
-    can(user, "material.create", resource);
+    can(user, "material.create", { projectMember: isMember, reportLocked: false });
 
   return {
     report: rest as DailyReport,
@@ -1174,6 +1178,7 @@ export async function getReportForUser(opts: {
     projectName: project.name,
     authorName: author.displayName,
     signedByName: signedBy?.displayName ?? null,
+    acknowledgedByName: acknowledgedBy?.displayName ?? null,
     weather: parseWeather(report.weather),
     workers: parseWorkers(report.workersByTrade),
     remarks: remarks.map((rm) => ({
@@ -1211,6 +1216,7 @@ export async function getReportForUser(opts: {
     canResolveMaterial: can(user, "material.resolve", resource),
     canRolloverMaterial,
     canSign: !locked && can(user, "report.sign", resource),
+    canAcknowledge: !report.acknowledgedAt && can(user, "report.acknowledge", resource),
     canAddAddendum:
       locked && can(user, "report.addendum.create", resource),
   };

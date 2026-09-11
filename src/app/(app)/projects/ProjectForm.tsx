@@ -259,6 +259,40 @@ export function ProjectForm({
 
       <Card>
         <CardHeader>
+          <CardTitle className="text-base">Legislativa a smlouvy</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <Field
+            name="contractNumber"
+            label="Číslo smlouvy o dílo"
+            defaultValue={defaultValues.contractNumber}
+            error={fieldErrors?.contractNumber}
+          />
+          <Field
+            name="contractDate"
+            label="Datum podpisu smlouvy"
+            type="date"
+            defaultValue={defaultValues.contractDate}
+            error={fieldErrors?.contractDate}
+          />
+          <Field
+            name="designDocVersion"
+            label="Stupeň/verze projektové dokumentace"
+            defaultValue={defaultValues.designDocVersion}
+            error={fieldErrors?.designDocVersion}
+          />
+          <Field
+            name="designDocDate"
+            label="Datum projektové dokumentace"
+            type="date"
+            defaultValue={defaultValues.designDocDate}
+            error={fieldErrors?.designDocDate}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle className="text-base">Termíny a poloha</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
