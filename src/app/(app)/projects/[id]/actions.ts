@@ -19,8 +19,23 @@ import {
 } from "@/server/services/projects";
 
 import type { ProjectFormState } from "../form-types";
+import {
+  authorizedPersonSchema,
+  createHandoverSchema,
+  projectMemberRoleSchema,
+} from "@/server/services/legislative-validation";
+import {
+  createHandover,
+  deleteHandover,
+  signHandover,
+} from "@/server/services/site-handovers";
+import {
+  addExternalPerson,
+  revokePerson,
+  updatePerson,
+} from "@/server/services/authorized-persons";
 
-const roleSchema = z.enum(["BOSS", "WORKER", "INSPECTOR"]);
+const roleSchema = projectMemberRoleSchema;
 
 /**
  * Edit an existing project. The project id is bound on the server
@@ -124,4 +139,100 @@ export async function restoreProjectAction(data: FormData): Promise<void> {
   revalidatePath("/projects");
   revalidatePath(`/projects/${projectId}`);
   redirect(`/projects/${projectId}`);
+}
+
+export async function createHandoverAction(
+  projectId: string,
+  data: FormData,
+): Promise<{ error?: string }> {
+  const actor = await requireBoss();
+  const raw = {
+    type: String(data.get("type") ?? ""),
+    date: String(data.get("date") ?? ""),
+    participants: String(data.get("participants") ?? ""),
+    meterStates: String(data.get("meterStates") ?? ""),
+    notes: String(data.get("notes") ?? ""),
+  };
+
+  const parsed = createHandoverSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
+  }
+
+  await createHandover(projectId, actor.id, parsed.data);
+  revalidatePath(`/projects/${projectId}`);
+  return {};
+}
+
+export async function signHandoverAction(
+  handoverId: string,
+  projectId: string,
+): Promise<void> {
+  const actor = await requireBoss();
+  await signHandover(handoverId, actor.id);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function deleteHandoverAction(
+  handoverId: string,
+  projectId: string,
+): Promise<void> {
+  const actor = await requireBoss();
+  await deleteHandover(handoverId, actor.id);
+  revalidatePath(`/projects/${projectId}`);
+}
+
+export async function addAuthorizedPersonAction(
+  projectId: string,
+  data: FormData,
+): Promise<{ error?: string }> {
+  await requireBoss();
+  const raw = {
+    name: String(data.get("name") ?? ""),
+    company: String(data.get("company") ?? ""),
+    authorization: String(data.get("authorization") ?? ""),
+  };
+
+  const parsed = authorizedPersonSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
+  }
+
+  const ctx = await getAuditContext();
+  await addExternalPerson({ projectId, ...parsed.data }, ctx);
+  revalidatePath(`/projects/${projectId}`);
+  return {};
+}
+
+export async function updateAuthorizedPersonAction(
+  personId: string,
+  projectId: string,
+  data: FormData,
+): Promise<{ error?: string }> {
+  await requireBoss();
+  const raw = {
+    name: String(data.get("name") ?? ""),
+    company: String(data.get("company") ?? ""),
+    authorization: String(data.get("authorization") ?? ""),
+  };
+
+  const parsed = authorizedPersonSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
+  }
+
+  const ctx = await getAuditContext();
+  await updatePerson(personId, parsed.data, ctx);
+  revalidatePath(`/projects/${projectId}`);
+  return {};
+}
+
+export async function revokeAuthorizedPersonAction(
+  personId: string,
+  projectId: string,
+): Promise<void> {
+  await requireBoss();
+  const ctx = await getAuditContext();
+  await revokePerson(personId, ctx);
+  revalidatePath(`/projects/${projectId}`);
 }

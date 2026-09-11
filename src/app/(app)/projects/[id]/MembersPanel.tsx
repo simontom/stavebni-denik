@@ -160,6 +160,7 @@ export function MembersPanel({
               <SelectContent>
                 <SelectItem value="WORKER">Pracovník</SelectItem>
                 <SelectItem value="INSPECTOR">Dozor / TDS</SelectItem>
+                <SelectItem value="INVESTOR">Investor</SelectItem>
                 <SelectItem value="BOSS">Stavbyvedoucí</SelectItem>
               </SelectContent>
             </Select>

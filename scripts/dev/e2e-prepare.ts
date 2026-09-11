@@ -14,6 +14,8 @@ import { hashPassword } from "../../src/lib/crypto";
 const ADMIN_NICKNAME = "e2e-admin";
 const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
 const WORKER_NICKNAME = "e2e-worker";
+const INVESTOR_NICKNAME = "e2e-investor";
+const INVESTOR_PASSWORD = "E2E-Inv3stor!Pass#2026";
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
@@ -43,10 +45,30 @@ async function main(): Promise<void> {
         deletedAt: null,
       },
     });
+    const investorHash = await hashPassword(INVESTOR_PASSWORD);
+    await prisma.user.upsert({
+      where: { nickname: INVESTOR_NICKNAME },
+      create: {
+        nickname: INVESTOR_NICKNAME,
+        displayName: "E2E Investor",
+        passwordHash: investorHash,
+        role: "INVESTOR",
+        isAdmin: false,
+        isActive: true,
+        mustChangePwd: false,
+      },
+      update: {
+        passwordHash: investorHash,
+        role: "INVESTOR",
+        isActive: true,
+        mustChangePwd: false,
+        deletedAt: null,
+      },
+    });
     await prisma.user.deleteMany({
       where: { nickname: { in: [WORKER_NICKNAME] } },
     });
-    console.log("[e2e-prepare] OK — admin upsertnut, worker cleanup");
+    console.log("[e2e-prepare] OK — admin & investor upsertnuti, worker cleanup");
   } finally {
     await prisma.$disconnect();
   }

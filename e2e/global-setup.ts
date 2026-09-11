@@ -13,6 +13,8 @@ import path from "node:path";
 export const ADMIN_NICKNAME = "e2e-admin";
 export const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
 export const WORKER_NICKNAME = "e2e-worker";
+export const INVESTOR_NICKNAME = "e2e-investor";
+export const INVESTOR_PASSWORD = "E2E-Inv3stor!Pass#2026";
 
 export default async function globalSetup(): Promise<void> {
   // Playwright globalSetup runs in plain Node (no Next.js env loader),

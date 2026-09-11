@@ -601,12 +601,20 @@ export default async function ProjectDetailPage({
             />
           </CardContent>
         </Card>
-        <AuthorizedPersonsPanel persons={authorizedPersons} />
+        <AuthorizedPersonsPanel
+          projectId={id}
+          persons={authorizedPersons}
+          canManage={canManage && !archived}
+        />
       </>
       )}
 
       {tab === "handovers" && (
-        <HandoversPanel handovers={handovers} />
+        <HandoversPanel
+          projectId={id}
+          handovers={handovers}
+          canManage={canManage && !archived}
+        />
       )}
     </div>
   );

@@ -138,7 +138,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   "photo.delete": (u, r) =>
     u.role === "BOSS" && r?.projectMember === true && !r?.reportLocked,
   "remark.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR") &&
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR" || u.role === "INVESTOR") &&
     r?.projectMember === true,
   "material.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") &&
