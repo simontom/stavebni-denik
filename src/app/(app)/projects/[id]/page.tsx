@@ -394,6 +394,10 @@ export default async function ProjectDetailPage({
               />
               <DetailRow label="Stavebník" value={project.builder} />
               <DetailRow label="Zhotovitel" value={project.contractor} />
+              <DetailRow label="Smlouva o dílo" value={project.contractNumber} />
+              <DetailRow label="Datum smlouvy" value={project.contractDate ? formatDate(project.contractDate) : null} />
+              <DetailRow label="Verze PD" value={project.designDocVersion} />
+              <DetailRow label="Datum PD" value={project.designDocDate ? formatDate(project.designDocDate) : null} />
               <DetailRow label="Stavbyvedoucí" value={project.siteManagerName} />
               <DetailRow
                 label="Technický dozor stavebníka"
