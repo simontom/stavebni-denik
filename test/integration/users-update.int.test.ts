@@ -50,7 +50,7 @@ afterAll(async () => {
 
 async function createUserRow(opts: {
   nickname: string;
-  role?: "BOSS" | "WORKER" | "GUEST";
+  role?: "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
   isAdmin?: boolean;
   ckaitNumber?: string | null;
 }) {

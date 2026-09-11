@@ -88,7 +88,7 @@ async function seed(): Promise<Scenario> {
         { trade: "zedník", count: 3 },
         { trade: "tesař", count: 1 },
       ],
-      workDescription: 'Betonáž základů (komentář s "uvozovkami" a, čárkou)',
+      sequenceNumber: 1, isControlDay: false, constructionObj: null, workDescription: 'Betonáž základů (komentář s "uvozovkami" a, čárkou)',
       materialsIn: "Beton C25/30\n3 m³",
       machinery: "Domíchávač Tatra",
       weather: {},
@@ -141,7 +141,7 @@ describe("buildProjectCsv — reports", () => {
         date: new Date("2026-07-15T00:00:00Z"),
         authorId: s.boss.id,
         workersByTrade: [{ trade: "natěrač", count: 1 }],
-        workDescription: "Mimo rozsah",
+        sequenceNumber: 2, isControlDay: false, constructionObj: null, workDescription: "Mimo rozsah",
         weather: {},
       },
     });

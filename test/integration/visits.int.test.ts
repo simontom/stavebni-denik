@@ -90,7 +90,7 @@ async function createScenario(suffix: string): Promise<Scenario> {
       nickname: `guest-${suffix}`,
       displayName: "TDS Novák",
       passwordHash: "x",
-      role: "GUEST",
+      role: "INSPECTOR",
     },
   });
   const outsider = await db.user.create({
@@ -117,7 +117,7 @@ async function createScenario(suffix: string): Promise<Scenario> {
     data: [
       { projectId: project.id, userId: boss.id, role: "BOSS" },
       { projectId: project.id, userId: worker.id, role: "WORKER" },
-      { projectId: project.id, userId: guest.id, role: "GUEST" },
+      { projectId: project.id, userId: guest.id, role: "INSPECTOR" },
     ],
   });
   const report = await db.dailyReport.create({
@@ -126,7 +126,7 @@ async function createScenario(suffix: string): Promise<Scenario> {
       date: new Date("2026-06-23T00:00:00Z"),
       authorId: boss.id,
       workersByTrade: [{ trade: "zedník", count: 2 }],
-      workDescription: "test",
+      sequenceNumber: 1, isControlDay: false, constructionObj: null, workDescription: "test",
       weather: {},
     },
   });
@@ -158,7 +158,7 @@ function actor(
     id: u.id,
     nickname: u.nickname,
     displayName: u.nickname,
-    role: which === "boss" ? "BOSS" : which === "worker" ? "WORKER" : "GUEST",
+    role: which === "boss" ? "BOSS" : which === "worker" ? "WORKER" : "INSPECTOR",
     isAdmin: false,
     mustChangePwd: false,
     sessionId: "test-session",

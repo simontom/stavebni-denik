@@ -20,7 +20,7 @@ import {
 
 import type { ProjectFormState } from "../form-types";
 
-const roleSchema = z.enum(["BOSS", "WORKER", "GUEST"]);
+const roleSchema = z.enum(["BOSS", "WORKER", "INSPECTOR"]);
 
 /**
  * Edit an existing project. The project id is bound on the server

@@ -193,7 +193,7 @@ beforeAll(async () => {
       date: new Date("2026-06-15T00:00:00.000Z"),
       authorId: boss.id,
       workersByTrade: [],
-      workDescription: "test",
+      sequenceNumber: 1, isControlDay: false, constructionObj: null, workDescription: "test",
       weather: fakeWeather,
     },
   });
@@ -205,7 +205,7 @@ beforeAll(async () => {
       date: new Date("2026-06-16T00:00:00.000Z"),
       authorId: boss.id,
       workersByTrade: [],
-      workDescription: "locked",
+      sequenceNumber: 2, isControlDay: false, constructionObj: null, workDescription: "locked",
       weather: fakeWeather,
       signedAt: new Date(),
       signedById: boss.id,

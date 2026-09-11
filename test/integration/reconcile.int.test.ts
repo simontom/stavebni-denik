@@ -102,7 +102,7 @@ beforeAll(async () => {
       authorId: bossId,
       createdById: bossId,
       workersByTrade: [],
-      workDescription: "Test",
+      sequenceNumber: 1, isControlDay: false, constructionObj: null, workDescription: "Test",
       weather: { error: "n/a", fetchedAt: new Date().toISOString() },
     },
   });

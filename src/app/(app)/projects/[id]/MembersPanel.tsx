@@ -24,12 +24,13 @@ import { formatDate } from "@/lib/dates";
 
 import { addMemberAction, removeMemberAction } from "./actions";
 
-type Role = "BOSS" | "WORKER" | "GUEST";
+type Role = "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
 
 const ROLE_LABEL: Record<Role, string> = {
   BOSS: "Stavbyvedoucí",
   WORKER: "Pracovník",
-  GUEST: "Dozor / TDS",
+  INSPECTOR: "Dozor / TDS",
+  INVESTOR: "Investor",
 };
 
 export interface MemberRow {
@@ -158,7 +159,7 @@ export function MembersPanel({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="WORKER">Pracovník</SelectItem>
-                <SelectItem value="GUEST">Dozor / TDS</SelectItem>
+                <SelectItem value="INSPECTOR">Dozor / TDS</SelectItem>
                 <SelectItem value="BOSS">Stavbyvedoucí</SelectItem>
               </SelectContent>
             </Select>

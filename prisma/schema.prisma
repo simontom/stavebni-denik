@@ -25,7 +25,13 @@ datasource db {
 enum Role {
   BOSS
   WORKER
-  GUEST
+  INSPECTOR
+  INVESTOR
+}
+
+enum RemarkType {
+  INSPECTOR_REMARK
+  INVESTOR_NOTE
 }
 
 model User {
@@ -58,6 +64,7 @@ model User {
   // Denní záznamy, fotky, připomínky a dodatky, které uživatel vytvořil.
   reportsAuthored    DailyReport[]   @relation("ReportAuthor")
   reportsSigned      DailyReport[]   @relation("ReportSigner")
+  reportsAcknowledged DailyReport[]  @relation("ReportAcknowledger")
   remarksAuthored    Remark[]        @relation("RemarkAuthor")
   addendaAuthored    Addendum[]      @relation("AddendumAuthor")
   photosUploaded     Photo[]         @relation("PhotoUploader")
@@ -105,6 +112,10 @@ model Project {
   tdsName       String?
   bozpName      String?
   designerName  String?
+  contractNumber String?
+  contractDate  DateTime?
+  designDocVersion String?
+  designDocDate DateTime?
   // GPS stavby pro snapshot počasí (Open-Meteo) v dalším kroku.
   gpsLat        Float?
   gpsLon        Float?
@@ -116,13 +127,53 @@ model Project {
   // Soft delete only — archivace zakázky bez ztráty deníku.
   deletedAt     DateTime?
 
-  siteManager User            @relation("ProjectSiteManager", fields: [siteManagerId], references: [id])
-  members     ProjectMember[]
-  reports     DailyReport[]
+  siteManager       User               @relation("ProjectSiteManager", fields: [siteManagerId], references: [id])
+  members           ProjectMember[]
+  reports           DailyReport[]
+  handovers         SiteHandover[]
+  authorizedPersons AuthorizedPerson[]
 
   @@index([deletedAt])
   @@index([siteManagerId])
   @@map("projects")
+}
+
+model SiteHandover {
+  id            String    @id @default(cuid())
+  projectId     String
+  type          String
+  date          DateTime
+  participants  String
+  meterStates   Json?
+  notes         String?
+  signedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([deletedAt])
+  @@map("site_handovers")
+}
+
+model AuthorizedPerson {
+  id            String    @id @default(cuid())
+  projectId     String
+  linkedUserId  String?
+  name          String
+  company       String?
+  authorization String?
+  revokedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([linkedUserId])
+  @@map("authorized_persons")
 }
 
 /// Přiřazení uživatele k zakázce — určuje přístupový scope pro WORKER/GUEST.
@@ -150,9 +201,16 @@ model ProjectMember {
 model DailyReport {
   id              String    @id @default(cuid())
   projectId       String
+  sequenceNumber  Int
   // Den záznamu — půlnoc v Europe/Prague uložená jako UTC (viz lib/dates).
   date            DateTime
   authorId        String
+  constructionObj String?
+  isControlDay    Boolean   @default(false)
+  meetingNotes    String?
+  meetingAttendees Json?
+  workSuspended   Boolean   @default(false)
+  suspensionReason String?
   // Počet pracovníků po profesích: [{ "trade": "zedník", "count": 3 }, ...].
   workersByTrade  Json
   workDescription String
@@ -171,21 +229,25 @@ model DailyReport {
   signedAt        DateTime?
   signedById      String?
   lockedAt        DateTime?
+  acknowledgedAt   DateTime?
+  acknowledgedById String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   createdById     String?
   deletedAt       DateTime?
 
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  author        User           @relation("ReportAuthor", fields: [authorId], references: [id])
-  signedBy      User?          @relation("ReportSigner", fields: [signedById], references: [id])
-  photos        Photo[]
-  remarks       Remark[]
-  visits        Visit[]
-  materialNeeds MaterialNeed[]
-  addenda       Addendum[]
+  project        Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author         User           @relation("ReportAuthor", fields: [authorId], references: [id])
+  signedBy       User?          @relation("ReportSigner", fields: [signedById], references: [id])
+  acknowledgedBy User?          @relation("ReportAcknowledger", fields: [acknowledgedById], references: [id])
+  photos         Photo[]
+  remarks        Remark[]
+  visits         Visit[]
+  materialNeeds  MaterialNeed[]
+  addenda        Addendum[]
 
   @@unique([projectId, date])
+  @@unique([projectId, sequenceNumber])
   @@index([deletedAt])
   @@index([authorId])
   @@map("daily_reports")
@@ -221,13 +283,14 @@ model Photo {
 /// Připomínka TDS / koordinátora BOZP / projektanta ke dni. Píší ji
 /// i GUEST/DOZOR uživatelé (jediná mutace, kterou role GUEST smí).
 model Remark {
-  id         String    @id @default(cuid())
+  id         String     @id @default(cuid())
   reportId   String
   authorId   String
+  type       RemarkType @default(INSPECTOR_REMARK)
   text       String
   // Oficiální (podepsaná) připomínka TDS při návštěvě — workflow v Kroku 6.
-  isOfficial Boolean   @default(false)
-  createdAt  DateTime  @default(now())
+  isOfficial Boolean    @default(false)
+  createdAt  DateTime   @default(now())
   deletedAt  DateTime?
 
   report DailyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)

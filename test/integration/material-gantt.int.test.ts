@@ -68,7 +68,7 @@ afterAll(async () => {
   await container?.stop();
 });
 
-async function makeReport(date: Date) {
+let seq = 1; async function makeReport(date: Date) {
   return db.dailyReport.create({
     data: {
       projectId,
@@ -76,7 +76,7 @@ async function makeReport(date: Date) {
       authorId: userId,
       createdById: userId,
       workersByTrade: [],
-      workDescription: "Test",
+      sequenceNumber: seq++, isControlDay: false, constructionObj: null, workDescription: "Test",
       weather: { error: "n/a", fetchedAt: new Date().toISOString() },
     },
   });

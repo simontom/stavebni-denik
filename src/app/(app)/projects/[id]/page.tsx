@@ -206,7 +206,7 @@ export default async function ProjectDetailPage({
   // Materiálový tab data — jen když je tab aktivní A user není GUEST.
   // GUEST nemá vidět ani odkaz, ani fetched data (defence in depth).
   const materials =
-    tab === "materials" && user.role !== "GUEST"
+    tab === "materials" && user.role !== "INSPECTOR"
       ? await listMaterialsForProject(id)
       : [];
   const nextMonthParam = monthParam(
@@ -335,7 +335,7 @@ export default async function ProjectDetailPage({
         </Link>
         {/* Materiálový tab — skrýt pro Dozor/TDS (GUEST). Tato role
             má číst deník, ale interní materiál checklist firmy ne. */}
-        {user.role !== "GUEST" && (
+        {user.role !== "INSPECTOR" && (
           <Link
             href={`/projects/${id}?tab=materials`}
             className={
@@ -540,7 +540,7 @@ export default async function ProjectDetailPage({
         </div>
       )}
 
-      {tab === "materials" && user.role !== "GUEST" && (
+      {tab === "materials" && user.role !== "INSPECTOR" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">

@@ -8,7 +8,7 @@
  * re-exports everything from here.
  */
 
-export type Role = "BOSS" | "WORKER" | "GUEST";
+export type Role = "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
 
 export interface SessionUser {
   id: string;
@@ -136,7 +136,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   "photo.delete": (u, r) =>
     u.role === "BOSS" && r?.projectMember === true && !r?.reportLocked,
   "remark.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER" || u.role === "GUEST") &&
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR") &&
     r?.projectMember === true,
   "material.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") &&
@@ -151,7 +151,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   // -report kontrolu řeší service (workflow se mění na addendum po
   // podpisu).
   "visit.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER" || u.role === "GUEST") &&
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR") &&
     r?.projectMember === true,
   // Smazat smí BOSS nebo autor zápisu (check v service).
   "visit.delete": (u, r) =>

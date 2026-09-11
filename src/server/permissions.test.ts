@@ -28,7 +28,7 @@ function user(
 
 const BOSS = user("BOSS", "boss1");
 const WORKER = user("WORKER", "worker1");
-const GUEST = user("GUEST", "guest1");
+const GUEST = user("INSPECTOR", "guest1");
 
 // Admin users — orthogonal to role. ADMIN_BOSS = majitel firmy
 // (typický seedovaný admin); ADMIN_WORKER = účetní/asistent co
@@ -130,8 +130,8 @@ describe("canAccessProject — visibility scope", () => {
   it("lets WORKER/GUEST see a project only when they are a member", () => {
     expect(canAccessProject("WORKER", true)).toBe(true);
     expect(canAccessProject("WORKER", false)).toBe(false);
-    expect(canAccessProject("GUEST", true)).toBe(true);
-    expect(canAccessProject("GUEST", false)).toBe(false);
+    expect(canAccessProject("INSPECTOR", true)).toBe(true);
+    expect(canAccessProject("INSPECTOR", false)).toBe(false);
   });
 });
 

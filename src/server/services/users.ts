@@ -58,7 +58,7 @@ export const updateUserSchema = z.object({
     .string()
     .min(1, "Vyplňte jméno a příjmení.")
     .max(128, "Maximálně 128 znaků."),
-  role: z.enum(["BOSS", "WORKER", "GUEST"]),
+  role: z.enum(["BOSS", "WORKER", "INSPECTOR", "INVESTOR"]),
   ckaitNumber: z
     .string()
     .max(32, "Maximálně 32 znaků.")
@@ -87,7 +87,7 @@ export const createUserSchema = z.object({
     .string()
     .min(1, "Vyplňte jméno a příjmení.")
     .max(128, "Maximálně 128 znaků."),
-  role: z.enum(["BOSS", "WORKER", "GUEST"]),
+  role: z.enum(["BOSS", "WORKER", "INSPECTOR", "INVESTOR"]),
   ckaitNumber: z
     .string()
     .max(32, "Maximálně 32 znaků.")

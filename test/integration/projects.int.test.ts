@@ -125,7 +125,7 @@ function baseInput(siteManagerId: string): CreateProjectInput {
     permitNumber: null,
     tdsName: null,
     bozpName: null,
-    designerName: null,
+    designerName: null, contractNumber: null, contractDate: null, designDocVersion: null, designDocDate: null,
     gpsLat: 49.8209,
     gpsLon: 18.1925,
     startedAt: null,

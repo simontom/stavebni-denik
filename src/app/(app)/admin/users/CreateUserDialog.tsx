@@ -27,15 +27,15 @@ import {
 
 import { createUserAction, type CreateUserState } from "./actions";
 
-const ROLE_OPTIONS: Array<{ value: "BOSS" | "WORKER" | "GUEST"; label: string }> = [
+const ROLE_OPTIONS: Array<{ value: "BOSS" | "WORKER" | "INSPECTOR"; label: string }> = [
   { value: "WORKER", label: "Pracovník" },
-  { value: "GUEST", label: "Dozor / TDS" },
+  { value: "INSPECTOR", label: "Dozor / TDS" },
   { value: "BOSS", label: "Stavbyvedoucí" },
 ];
 
 export function CreateUserDialog() {
   const [open, setOpen] = useState(false);
-  const [role, setRole] = useState<"BOSS" | "WORKER" | "GUEST">("WORKER");
+  const [role, setRole] = useState<"BOSS" | "WORKER" | "INSPECTOR">("WORKER");
   const [state, setState] = useState<CreateUserState | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
   const [passwordCopied, setPasswordCopied] = useState(false);
@@ -225,7 +225,7 @@ export function CreateUserDialog() {
                 <Select
                   value={role}
                   onValueChange={(v) =>
-                    setRole(v as "BOSS" | "WORKER" | "GUEST")
+                    setRole(v as "BOSS" | "WORKER" | "INSPECTOR")
                   }
                 >
                   <SelectTrigger id="role">
