@@ -9,7 +9,7 @@ export interface HandoverInput {
   date: Date;
   participants: string;
   meterStates: Prisma.JsonValue;
-  notes?: string;
+  notes?: string | null;
 }
 
 export async function createHandover(projectId: string, actorId: string, data: HandoverInput): Promise<SiteHandover> {

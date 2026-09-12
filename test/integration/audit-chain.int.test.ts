@@ -1,3 +1,4 @@
+import type { SessionUser } from "@/server/permissions";
 import { execSync } from "node:child_process";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -151,17 +152,17 @@ describe("audit_log integrity (real Postgres)", () => {
     await authPersonSvc.revokePerson(ap.id, ctxB);
 
     // report.create & report.acknowledge
-    const userMockBoss: unknown = { id: boss.id, role: "BOSS" };
-    const userMockInv: unknown = { id: inv.id, role: "INVESTOR" };
+    const userMockBoss = { id: boss.id, role: "BOSS" };
+    const userMockInv = { id: inv.id, role: "INVESTOR" };
 
     const report = await reportsSvc.createReport({
       projectId: project.id, date: pragueDayStart(new Date()),
       input: { workersByTrade: [], workDescription: "Work", materialsIn: null, machinery: null, testsAndChecks: null, safetyNotes: null, defects: null, otherNotes: null, isControlDay: false, constructionObj: null },
-      ctx: ctxB, user: userMockBoss
+      ctx: ctxB, user: userMockBoss as SessionUser
     });
 
     await reportsSvc.acknowledgeReport({
-      reportId: report.id, ctx: ctxI, user: userMockInv
+      reportId: report.id, ctx: ctxI, user: userMockInv as SessionUser
     });
 
     // Verify chain

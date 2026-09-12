@@ -10,10 +10,10 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 let container: StartedPostgreSqlContainer;
 let db: PrismaClient;
-let createHandover: unknown;
-let updateHandover: unknown;
-let deleteHandover: unknown;
-let signHandover: unknown;
+let createHandover: typeof import("@/server/services/site-handovers").createHandover;
+let updateHandover: typeof import("@/server/services/site-handovers").updateHandover;
+let deleteHandover: typeof import("@/server/services/site-handovers").deleteHandover;
+let signHandover: typeof import("@/server/services/site-handovers").signHandover;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();
@@ -105,7 +105,7 @@ describe("Site Handovers", () => {
     const data = {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     };
     const handover = await createHandover(s.project.id, s.boss.id, data);
     const updated = await updateHandover(handover.id, s.boss.id, { notes: "Updated" });
@@ -117,7 +117,7 @@ describe("Site Handovers", () => {
     const handover = await createHandover(s.project.id, s.boss.id, {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     });
     await deleteHandover(handover.id, s.boss.id);
     const inDb = await db.siteHandover.findUnique({ where: { id: handover.id } });
@@ -129,7 +129,7 @@ describe("Site Handovers", () => {
     const handover = await createHandover(s.project.id, s.boss.id, {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     });
     const signed = await signHandover(handover.id, s.boss.id);
     expect(signed.signedAt).not.toBeNull();
@@ -140,7 +140,7 @@ describe("Site Handovers", () => {
     const handover = await createHandover(s.project.id, s.worker.id, {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     });
     await expect(signHandover(handover.id, s.worker.id)).rejects.toThrow();
   });
@@ -150,7 +150,7 @@ describe("Site Handovers", () => {
     const handover = await createHandover(s.project.id, s.boss.id, {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     });
     await signHandover(handover.id, s.boss.id);
     await expect(updateHandover(handover.id, s.boss.id, { notes: "Updated" })).rejects.toThrowError("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
@@ -161,7 +161,7 @@ describe("Site Handovers", () => {
     const handover = await createHandover(s.project.id, s.boss.id, {
       type: "handover",
       date: new Date(),
-      participants: "John",
+      participants: "John", meterStates: [],
     });
     await signHandover(handover.id, s.boss.id);
     await expect(deleteHandover(handover.id, s.boss.id)).rejects.toThrowError("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
