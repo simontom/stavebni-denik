@@ -2,11 +2,9 @@
 
 import { useState, useTransition } from "react";
 import {
-  CheckCircle,
   Loader2,
   Pencil,
   Plus,
-  ShieldAlert,
   UserCheck,
   XCircle,
 } from "lucide-react";

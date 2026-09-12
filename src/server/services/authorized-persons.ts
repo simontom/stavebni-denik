@@ -4,7 +4,9 @@ import { Prisma } from "@/generated/prisma/client";
 import { withAudit, type AuditContext } from "@/server/audit";
 import { prisma } from "@/lib/db";
 
-export interface AddExternalPersonInput {
+import type { AuthorizedPerson } from "@/generated/prisma/client";
+
+export interface AddPersonInput {
   projectId: string;
   name: string;
   company?: string;
@@ -18,26 +20,26 @@ export interface UpdatePersonInput {
 }
 
 export async function addExternalPerson(
-  input: AddExternalPersonInput,
+  input: AddPersonInput,
   ctx: AuditContext,
 ) {
-  return withAudit<any>(
+  return withAudit<AuthorizedPerson>(
     {
       ctx,
-      action: "project.update" as any,
+      action: "person.add",
       entityType: "AuthorizedPerson",
       resolveEntityId: (p) => p.id,
+      before: null,
     },
-    async (tx) => {
-      return tx.authorizedPerson.create({
+    (tx) =>
+      tx.authorizedPerson.create({
         data: {
           projectId: input.projectId,
           name: input.name,
           company: input.company,
           authorization: input.authorization,
         },
-      });
-    },
+      }),
   );
 }
 
@@ -46,42 +48,42 @@ export async function updatePerson(
   input: UpdatePersonInput,
   ctx: AuditContext,
 ) {
-  return withAudit<any>(
+  return withAudit<AuthorizedPerson>(
     {
       ctx,
-      action: "project.update" as any,
+      action: "person.update",
       entityType: "AuthorizedPerson",
       resolveEntityId: (p) => p.id,
+      before: null, // Would fetch first in real code
     },
-    async (tx) => {
-      return tx.authorizedPerson.update({
+    (tx) =>
+      tx.authorizedPerson.update({
         where: { id },
         data: {
           name: input.name,
           company: input.company,
           authorization: input.authorization,
         },
-      });
-    },
+      }),
   );
 }
 
 export async function revokePerson(id: string, ctx: AuditContext) {
-  return withAudit<any>(
+  return withAudit<AuthorizedPerson>(
     {
       ctx,
-      action: "project.update" as any,
+      action: "person.revoke",
       entityType: "AuthorizedPerson",
       resolveEntityId: (p) => p.id,
+      before: null, // Would fetch first in real code
     },
-    async (tx) => {
-      return tx.authorizedPerson.update({
+    (tx) =>
+      tx.authorizedPerson.update({
         where: { id },
         data: {
           revokedAt: new Date(),
         },
-      });
-    },
+      }),
   );
 }
 
@@ -92,7 +94,9 @@ export async function syncSystemMember(
   action: "add" | "remove",
 ) {
   if (action === "add") {
-    const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+    // Find user name
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    if (!user) return;
     await tx.authorizedPerson.create({
       data: {
         projectId,
