@@ -12,10 +12,10 @@ import { PrismaClient } from "../../src/generated/prisma/client";
 import { hashPassword } from "../../src/lib/crypto";
 
 const ADMIN_NICKNAME = "e2e-admin";
-const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
+const ADMIN_PASSWORD = "test1234";
 const WORKER_NICKNAME = "e2e-worker";
 const INVESTOR_NICKNAME = "e2e-investor";
-const INVESTOR_PASSWORD = "E2E-Inv3stor!Pass#2026";
+const INVESTOR_PASSWORD = "test1234";
 
 async function main(): Promise<void> {
   const url = process.env.DATABASE_URL;
