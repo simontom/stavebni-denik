@@ -11,7 +11,7 @@ import { pragueDayStart } from "@/lib/dates";
 
 let container: StartedPostgreSqlContainer;
 let db: PrismaClient;
-let getProjectExportForUser: any;
+let getProjectExportForUser: unknown;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();

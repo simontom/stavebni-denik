@@ -65,7 +65,7 @@ afterAll(async () => {
 
 describe("Authorized Persons", () => {
   it("adds an external person", async () => {
-    const person: any = await svc.addExternalPerson(
+    const person = await svc.addExternalPerson(
       {
         projectId: "proj1",
         name: "John Doe",
@@ -82,14 +82,14 @@ describe("Authorized Persons", () => {
   });
 
   it("updates a person", async () => {
-    const person: any = await svc.addExternalPerson(
+    const person = await svc.addExternalPerson(
       {
         projectId: "proj1",
         name: "Jane Doe",
       },
       ctx,
     );
-    const updated: any = await svc.updatePerson(
+    const updated = await svc.updatePerson(
       person.id,
       {
         name: "Jane Smith",
@@ -103,14 +103,14 @@ describe("Authorized Persons", () => {
   });
 
   it("revokes a person without deleting", async () => {
-    const person: any = await svc.addExternalPerson(
+    const person = await svc.addExternalPerson(
       {
         projectId: "proj1",
         name: "To Revoke",
       },
       ctx,
     );
-    const revoked: any = await svc.revokePerson(person.id, ctx);
+    const revoked = await svc.revokePerson(person.id, ctx);
     expect(revoked.revokedAt).not.toBeNull();
 
     // Check DB that it wasn't hard deleted

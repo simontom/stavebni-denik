@@ -215,7 +215,7 @@ describe("projects — scope & audit (real Postgres)", () => {
   });
 
   it("auto-syncs AuthorizedPerson on removeProjectMember", async () => {
-    const authSvc = await import("@/server/services/authorized-persons");
+    // const authSvc = await import("@/server/services/authorized-persons");
     await svc.addProjectMember(projectId, worker2.id, "WORKER", ctx, bossUser.id);
     
     // There should be a linked AuthorizedPerson

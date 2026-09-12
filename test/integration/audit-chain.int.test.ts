@@ -151,8 +151,8 @@ describe("audit_log integrity (real Postgres)", () => {
     await authPersonSvc.revokePerson(ap.id, ctxB);
 
     // report.create & report.acknowledge
-    const userMockBoss: any = { id: boss.id, role: "BOSS" };
-    const userMockInv: any = { id: inv.id, role: "INVESTOR" };
+    const userMockBoss: unknown = { id: boss.id, role: "BOSS" };
+    const userMockInv: unknown = { id: inv.id, role: "INVESTOR" };
 
     const report = await reportsSvc.createReport({
       projectId: project.id, date: pragueDayStart(new Date()),
