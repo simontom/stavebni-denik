@@ -10,10 +10,10 @@ import { PrismaClient } from "@/generated/prisma/client";
 
 let container: StartedPostgreSqlContainer;
 let db: PrismaClient;
-let createHandover: any;
-let updateHandover: any;
-let deleteHandover: any;
-let signHandover: any;
+let createHandover: unknown;
+let updateHandover: unknown;
+let deleteHandover: unknown;
+let signHandover: unknown;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();

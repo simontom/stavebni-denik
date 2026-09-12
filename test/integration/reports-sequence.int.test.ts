@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { PrismaClient } from "@/generated/prisma/client";
 import type { AuditContext } from "@/server/audit";
-import { , type SessionUser } from "@/server/permissions";
+import { type SessionUser } from "@/server/permissions";
 import { pragueDayStart } from "@/lib/dates";
 
 let container: StartedPostgreSqlContainer;
