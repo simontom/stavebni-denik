@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 import { prisma } from "@/lib/db";
 import type { SiteHandover, Prisma } from "@/generated/prisma/client";
@@ -31,7 +31,7 @@ export async function createHandover(projectId: string, actorId: string, data: H
         participants: data.participants,
         meterStates: data.meterStates ?? [],
         notes: data.notes,
-        
+        createdById: actorId,
       }
     })
   );
@@ -117,7 +117,10 @@ export async function signHandover(id: string, actorId: string): Promise<SiteHan
     },
     (tx) => tx.siteHandover.update({
       where: { id },
-      data: { signedAt: new Date() }
+      data: {
+        signedAt: new Date(),
+        signedById: actorId,
+      }
     })
   );
 }

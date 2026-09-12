@@ -98,6 +98,7 @@ describe("Site Handovers", () => {
     expect(handover.id).toBeTruthy();
     expect(handover.projectId).toBe(s.project.id);
     expect(handover.type).toBe("handover");
+    expect(handover.createdById).toBe(s.boss.id);
   });
 
   it("updates a handover", async () => {
@@ -133,6 +134,7 @@ describe("Site Handovers", () => {
     });
     const signed = await signHandover(handover.id, s.boss.id);
     expect(signed.signedAt).not.toBeNull();
+    expect(signed.signedById).toBe(s.boss.id);
   });
 
   it("prevents signing a handover by WORKER", async () => {
