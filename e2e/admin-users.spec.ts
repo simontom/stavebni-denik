@@ -1,22 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-/**
- * Authenticated smoke for the admin/users management area. Exercises:
- *
- *   1. login jako e2e-admin (account upsertnutý v globalSetup),
- *   2. /admin/users — vytvoření nového usera,
- *   3. /admin/users — editace usera (displayName),
- *   4. /admin/users — deaktivace + reaktivace,
- *   5. /admin/users — smazání (soft-delete) usera,
- *   6. admin nav linky viditelné.
- *
- * Předpoklad: globalSetup upsertne `e2e-admin` s heslem
- * `E2E-Adm1n!Pass#2026` a smaže předchozí `e2e-worker`. Spec běží
- * proti REAL local server (BASE_URL nebo `pnpm dev` přes webServer).
- */
-
-const ADMIN_NICKNAME = "e2e-admin";
-const ADMIN_PASSWORD = "E2E-Adm1n!Pass#2026";
+import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
 test("admin login + create + edit + deactivate + delete user", async ({
   page,
 }) => {
