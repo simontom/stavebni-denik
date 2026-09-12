@@ -14,10 +14,10 @@ Tento dokument slouží jako backlog technického dluhu, nápadů na refactoring
   - _Problém:_ Generování PDF sestává z obrovského JSX bloku, který míchá logiku deníku i hlaviček.
   - _Řešení:_ Rozdělit do menších, čistě prezentačních tiskových komponent (např. `<PrintCoverPage />`, `<PrintDailyRecord />`, `<PrintFooter />`), což usnadní přidávání případných dalších legislativních dokumentů v budoucnu.
 
-- [ ] **Striktní Error Handling & Types (Server Actions)**
+- [ ] **Striktní Error Handling & Types (Server Actions pomocí `next-safe-action`)**
   - _Kde:_ Globálně v Server Actions a chytání chyb v UI komponentách.
-  - _Problém:_ Občasné spoléhání na `unknown`/`any` při `try/catch`.
-  - _Řešení:_ Zavést jednotnou třídu (např. `AppError`) a vytvořit wrapper typu `safeAction` pro Server Actions. Tím se zajistí, že akce budou na frontend vracet jasně definovaný a silně typovaný výsledek/chybu, což eliminuje nutnost odchytávat a typovat obecné výjimky.
+  - _Problém:_ Nativní Server Actions postrádají type-safety pro návratové hodnoty, vyžadují manuální Zod validaci a `try/catch` bloky v každé akci. Vzniká tak redundantní boilerplate, zvláště pro ověřování přihlášeného uživatele.
+  - _Řešení:_ Implementovat knihovnu `next-safe-action` v7+. Vytvořit globální `authActionClient` s middlewarem pro verifikaci uživatele, což zaručí konzistentní a plně typované API pro validace i ošetření chyb. Na frontendu pak pro volání akcí využít hook `useAction`.
 
 ## 🚀 2. DevOps a Pull Request Flow
 
