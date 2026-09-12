@@ -1,3 +1,4 @@
+import type { SessionUser } from "@/server/permissions";
 import { execSync } from "node:child_process";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -101,5 +102,71 @@ describe("audit_log integrity (real Postgres)", () => {
     expect(result.ok).toBe(false);
     expect(result.brokenAtId).toBe(targetId);
     expect(result.reason).toContain("row_hash mismatch");
+  });
+
+  it("verifies chain integrity after full legislative flow (handover, authorized person, report acknowledge)", async () => {
+    // We start from the tampered state so clear it
+    await db.$executeRawUnsafe("ALTER TABLE audit_log DISABLE TRIGGER USER");
+    await db.$executeRawUnsafe("DELETE FROM audit_log");
+    await db.$executeRawUnsafe("ALTER TABLE audit_log ENABLE TRIGGER USER");
+    
+    const projSvc = await import("@/server/services/projects");
+    const handoversSvc = await import("@/server/services/site-handovers");
+    const authPersonSvc = await import("@/server/services/authorized-persons");
+    const reportsSvc = await import("@/server/services/reports");
+    const { pragueDayStart } = await import("@/lib/dates");
+
+    const boss = await db.user.create({
+      data: { nickname: "boss2", displayName: "Boss", passwordHash: "x", role: "BOSS", isAdmin: true, mustChangePwd: false }
+    });
+    const inv = await db.user.create({
+      data: { nickname: "inv2", displayName: "Inv", passwordHash: "x", role: "INVESTOR", isAdmin: false, mustChangePwd: false }
+    });
+
+    const ctxB: AuditContext = { actor: { id: boss.id }, ip: "127.0.0.1", userAgent: "test" };
+    const ctxI: AuditContext = { actor: { id: inv.id }, ip: "127.0.0.1", userAgent: "test" };
+
+    const project = await projSvc.createProject({
+      name: "Proj", address: "A", cadastralArea: "C", parcelNumbers: "1", builder: "B", contractor: "C",
+      siteManagerId: boss.id,
+      permitNumber: null, tdsName: null, bozpName: null, designerName: null, contractNumber: null, contractDate: null, designDocVersion: null, designDocDate: null,
+      gpsLat: 1, gpsLon: 1, startedAt: null, endedAt: null,
+    }, ctxB, boss.id);
+
+    await projSvc.addProjectMember(project.id, inv.id, "INVESTOR", ctxB, boss.id);
+
+    // handover.create
+    const handover = await handoversSvc.createHandover(project.id, boss.id, {
+      type: "handover", date: new Date(), participants: "P", meterStates: [], notes: ""
+    });
+
+    // handover.sign
+    await handoversSvc.signHandover(handover.id, boss.id);
+
+    // authorized_person.create
+    const ap = await authPersonSvc.addExternalPerson({
+      projectId: project.id, name: "AP", company: "C", authorization: "A"
+    }, ctxB);
+
+    // authorized_person.revoke
+    await authPersonSvc.revokePerson(ap.id, ctxB);
+
+    // report.create & report.acknowledge
+    const userMockBoss = { id: boss.id, role: "BOSS" };
+    const userMockInv = { id: inv.id, role: "INVESTOR" };
+
+    const report = await reportsSvc.createReport({
+      projectId: project.id, date: pragueDayStart(new Date()),
+      input: { workersByTrade: [], workDescription: "Work", materialsIn: null, machinery: null, testsAndChecks: null, safetyNotes: null, defects: null, otherNotes: null, isControlDay: false, constructionObj: null },
+      ctx: ctxB, user: userMockBoss as SessionUser
+    });
+
+    await reportsSvc.acknowledgeReport({
+      reportId: report.id, ctx: ctxI, user: userMockInv as SessionUser
+    });
+
+    // Verify chain
+    const result = await verifyAuditChainWithClient(db);
+    expect(result.ok).toBe(true);
   });
 });

@@ -110,7 +110,7 @@ beforeAll(async () => {
       nickname: "tds",
       displayName: "Technický Dozor",
       passwordHash: "x",
-      role: "GUEST",
+      role: "INSPECTOR",
       isAdmin: true,
     mustChangePwd: false,
     },
@@ -120,7 +120,7 @@ beforeAll(async () => {
   bossUser = sessionUser(boss.id, "BOSS");
   workerMember = sessionUser(wMember.id, "WORKER");
   workerOutsider = sessionUser(wOut.id, "WORKER");
-  guestMember = sessionUser(guest.id, "GUEST");
+  guestMember = sessionUser(guest.id, "INSPECTOR");
 
   // Two projects: the primary one the worker + guest are members of,
   // and a second one nobody but the BOSS belongs to (used for the
@@ -137,7 +137,7 @@ beforeAll(async () => {
     permitNumber: null,
     tdsName: null,
     bozpName: null,
-    designerName: null,
+    designerName: null, contractNumber: null, contractDate: null, designDocVersion: null, designDocDate: null,
     gpsLat: 49.82,
     gpsLon: 18.19,
     startedAt: null,
@@ -146,7 +146,7 @@ beforeAll(async () => {
   const proj = await projSvc.createProject(baseInput(boss.id), ctx, boss.id);
   projectId = proj.id;
   await projSvc.addProjectMember(projectId, wMember.id, "WORKER", ctx, boss.id);
-  await projSvc.addProjectMember(projectId, guest.id, "GUEST", ctx, boss.id);
+  await projSvc.addProjectMember(projectId, guest.id, "INSPECTOR", ctx, boss.id);
 
   const other = await projSvc.createProject(
     { ...baseInput(boss.id), name: "Stavba B", parcelNumbers: "2/2" },
@@ -198,7 +198,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
       date: day,
       input: {
         workersByTrade: [{ trade: "zedník", count: 3 }],
-        workDescription: "Bednění stropu nad 1. NP.",
+        isControlDay: false, constructionObj: null, workDescription: "Bednění stropu nad 1. NP.",
         materialsIn: null,
         machinery: null,
         testsAndChecks: null,
@@ -231,7 +231,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
         date: pragueDayStart("2026-06-15"),
         input: {
           workersByTrade: [],
-          workDescription: "Druhý pokus.",
+          isControlDay: false, constructionObj: null, workDescription: "Druhý pokus.",
           materialsIn: null,
           machinery: null,
           testsAndChecks: null,
@@ -252,7 +252,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
       date: dayOk,
       input: {
         workersByTrade: [{ trade: "tesař", count: 2 }],
-        workDescription: "Tesařské práce nad 1. NP.",
+        isControlDay: false, constructionObj: null, workDescription: "Tesařské práce nad 1. NP.",
         materialsIn: null,
         machinery: null,
         testsAndChecks: null,
@@ -272,7 +272,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
         date: pragueDayStart("2026-06-17"),
         input: {
           workersByTrade: [],
-          workDescription: "Cizí worker by neměl projít.",
+          isControlDay: false, constructionObj: null, workDescription: "Cizí worker by neměl projít.",
           materialsIn: null,
           machinery: null,
           testsAndChecks: null,
@@ -308,7 +308,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
         date: pragueDayStart("2026-06-18"),
         input: {
           workersByTrade: [],
-          workDescription: "Guest by neměl moct.",
+          isControlDay: false, constructionObj: null, workDescription: "Guest by neměl moct.",
           materialsIn: null,
           machinery: null,
           testsAndChecks: null,
@@ -381,7 +381,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
         reportId: before.id,
         input: {
           workersByTrade: [],
-          workDescription: "Po podpisu už ne.",
+          isControlDay: false, constructionObj: null, workDescription: "Po podpisu už ne.",
           materialsIn: null,
           machinery: null,
           testsAndChecks: null,
@@ -426,7 +426,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
       date: day,
       input: {
         workersByTrade: [],
-        workDescription: "Den pro test dodatku.",
+        isControlDay: false, constructionObj: null, workDescription: "Den pro test dodatku.",
         materialsIn: null,
         machinery: null,
         testsAndChecks: null,
@@ -521,7 +521,7 @@ describe("daily reports — scope, lock, audit (real Postgres)", () => {
       date: targetDay,
       input: {
         workersByTrade: [],
-        workDescription: "Den pro test rolloveru — cíl.",
+        isControlDay: false, constructionObj: null, workDescription: "Den pro test rolloveru — cíl.",
         materialsIn: null,
         machinery: null,
         testsAndChecks: null,

@@ -26,11 +26,11 @@ import {
 
 import { updateUserAction, type UpdateUserState } from "./actions";
 
-type Role = "BOSS" | "WORKER" | "GUEST";
+type Role = "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
 
 const ROLE_OPTIONS: Array<{ value: Role; label: string }> = [
   { value: "WORKER", label: "Pracovník" },
-  { value: "GUEST", label: "Dozor / TDS" },
+  { value: "INSPECTOR", label: "Dozor / TDS" },
   { value: "BOSS", label: "Stavbyvedoucí" },
 ];
 

@@ -55,6 +55,10 @@ export const createProjectSchema = z.object({
   tdsName: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
   bozpName: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
   designerName: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
+  contractNumber: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
+  contractDate: z.date().nullable(),
+  designDocVersion: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
+  designDocDate: z.date().nullable(),
   gpsLat: z
     .number()
     .min(-90, "Zeměpisná šířka musí být mezi -90 a 90.")
@@ -111,6 +115,10 @@ export function normalizeProjectForm(data: FormData): Record<string, unknown> {
     tdsName: optStr("tdsName"),
     bozpName: optStr("bozpName"),
     designerName: optStr("designerName"),
+    contractNumber: optStr("contractNumber"),
+    contractDate: optDate("contractDate"),
+    designDocVersion: optStr("designDocVersion"),
+    designDocDate: optDate("designDocDate"),
     gpsLat: optNum("gpsLat"),
     gpsLon: optNum("gpsLon"),
     startedAt: optDate("startedAt"),
@@ -219,6 +227,10 @@ export async function createProject(
           tdsName: data.tdsName,
           bozpName: data.bozpName,
           designerName: data.designerName,
+          contractNumber: data.contractNumber,
+          contractDate: data.contractDate,
+          designDocVersion: data.designDocVersion,
+          designDocDate: data.designDocDate,
           gpsLat: data.gpsLat,
           gpsLon: data.gpsLon,
           startedAt: data.startedAt,
@@ -271,6 +283,10 @@ export async function updateProject(
           tdsName: data.tdsName,
           bozpName: data.bozpName,
           designerName: data.designerName,
+          contractNumber: data.contractNumber,
+          contractDate: data.contractDate,
+          designDocVersion: data.designDocVersion,
+          designDocDate: data.designDocDate,
           gpsLat: data.gpsLat,
           gpsLon: data.gpsLon,
           startedAt: data.startedAt,
@@ -368,12 +384,16 @@ export async function addProjectMember(
       before: existing ? { projectId, userId, role: existing.role } : null,
       projectAfter: () => ({ projectId, userId, role }),
     },
-    (tx) =>
-      tx.projectMember.upsert({
+    async (tx) => {
+      const member = await tx.projectMember.upsert({
         where: { projectId_userId: { projectId, userId } },
         create: { projectId, userId, role, addedById },
         update: { role },
-      }),
+      });
+      const { syncSystemMember } = await import("./authorized-persons");
+      await syncSystemMember(tx, projectId, userId, "add");
+      return member;
+    },
   );
 }
 
@@ -397,10 +417,14 @@ export async function removeProjectMember(
       before: { projectId, userId, role: existing.role },
       projectAfter: () => null,
     },
-    (tx) =>
-      tx.projectMember.delete({
+    async (tx) => {
+      const member = await tx.projectMember.delete({
         where: { projectId_userId: { projectId, userId } },
-      }),
+      });
+      const { syncSystemMember } = await import("./authorized-persons");
+      await syncSystemMember(tx, projectId, userId, "remove");
+      return member;
+    },
   );
 }
 

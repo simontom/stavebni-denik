@@ -94,7 +94,7 @@ export async function notifyUser(opts: {
  * the chain breaks.
  */
 export async function notifyByRole(opts: {
-  roles: Array<"BOSS" | "WORKER" | "GUEST">;
+  roles: Array<"BOSS" | "WORKER" | "INSPECTOR">;
   kind: NotificationKind;
   payload: Record<string, unknown>;
   href?: string | null;

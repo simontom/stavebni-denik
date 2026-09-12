@@ -16,7 +16,8 @@ import { presentNotification } from "@/server/services/notification-presentation
 const ROLE_LABEL: Record<SessionUser["role"], string> = {
   BOSS: "Stavbyvedoucí",
   WORKER: "Pracovník",
-  GUEST: "Dozor / TDS",
+  INSPECTOR: "Dozor / TDS",
+  INVESTOR: "Investor",
 };
 
 interface Props {

@@ -14,6 +14,7 @@ import {
   assertCan,
   can,
   canAccessProject,
+  ForbiddenError,
   type SessionUser,
 } from "@/server/permissions";
 import { formatDateInput, pragueDayStart } from "@/lib/dates";
@@ -53,6 +54,8 @@ export const reportFormSchema = z.object({
   safetyNotes: z.string().trim().max(LONG_TEXT_MAX).nullable(),
   defects: z.string().trim().max(LONG_TEXT_MAX).nullable(),
   otherNotes: z.string().trim().max(LONG_TEXT_MAX).nullable(),
+  isControlDay: z.boolean().optional().default(false),
+  constructionObj: z.string().trim().max(LONG_TEXT_MAX).nullable().optional().default(null),
 });
 
 export type ReportInput = z.infer<typeof reportFormSchema>;
@@ -115,6 +118,8 @@ export function normalizeReportForm(data: FormData): Record<string, unknown> {
     safetyNotes: optStr("safetyNotes"),
     defects: optStr("defects"),
     otherNotes: optStr("otherNotes"),
+    isControlDay: data.get("isControlDay") === "true",
+    constructionObj: optStr("constructionObj"),
   };
 }
 
@@ -221,6 +226,7 @@ function reportForAudit(r: DailyReport) {
   return {
     id: r.id,
     projectId: r.projectId,
+    sequenceNumber: r.sequenceNumber,
     date: r.date.toISOString(),
     authorId: r.authorId,
     workersByTrade: r.workersByTrade,
@@ -231,10 +237,14 @@ function reportForAudit(r: DailyReport) {
     safetyNotes: r.safetyNotes,
     defects: r.defects,
     otherNotes: r.otherNotes,
+    isControlDay: r.isControlDay,
+    constructionObj: r.constructionObj,
     weather: r.weather,
     signedAt: r.signedAt ? r.signedAt.toISOString() : null,
     signedById: r.signedById,
     lockedAt: r.lockedAt ? r.lockedAt.toISOString() : null,
+    acknowledgedAt: r.acknowledgedAt ? r.acknowledgedAt.toISOString() : null,
+    acknowledgedById: r.acknowledgedById,
     deletedAt: r.deletedAt ? r.deletedAt.toISOString() : null,
   };
 }
@@ -307,34 +317,43 @@ export async function createReport(opts: {
   });
 
   try {
-    return await withAudit<DailyReport>(
-      {
-        ctx,
-        action: "report.create",
-        entityType: "report",
-        resolveEntityId: (r) => r.id,
-        before: null,
-        projectAfter: reportForAudit,
-      },
-      (tx) =>
-        tx.dailyReport.create({
-          data: {
-            projectId,
-            date,
-            authorId: user.id,
-            createdById: user.id,
-            workersByTrade: asJson(data.workersByTrade),
-            workDescription: data.workDescription,
-            materialsIn: data.materialsIn,
-            machinery: data.machinery,
-            testsAndChecks: data.testsAndChecks,
-            safetyNotes: data.safetyNotes,
-            defects: data.defects,
-            otherNotes: data.otherNotes,
-            weather: asJson(weather),
-          },
-        }),
-    );
+      return await withAudit<DailyReport>(
+        {
+          ctx,
+          action: "report.create",
+          entityType: "report",
+          resolveEntityId: (r) => r.id,
+          before: null,
+          projectAfter: reportForAudit,
+        },
+        async (tx) => {
+          const res = await tx.$queryRaw<{max_seq: number}[]>`
+            SELECT "sequenceNumber" as max_seq FROM daily_reports WHERE "projectId" = ${projectId} ORDER BY "sequenceNumber" DESC LIMIT 1 FOR UPDATE
+          `;
+          const sequenceNumber = (res[0]?.max_seq || 0) + 1;
+
+          return tx.dailyReport.create({
+            data: {
+              projectId,
+              sequenceNumber,
+              date,
+              authorId: user.id,
+              createdById: user.id,
+              workersByTrade: asJson(data.workersByTrade),
+              workDescription: data.workDescription,
+              materialsIn: data.materialsIn,
+              machinery: data.machinery,
+              testsAndChecks: data.testsAndChecks,
+              safetyNotes: data.safetyNotes,
+              defects: data.defects,
+              otherNotes: data.otherNotes,
+              isControlDay: data.isControlDay,
+              constructionObj: data.constructionObj,
+              weather: asJson(weather),
+            },
+          });
+        }
+      );
   } catch (err) {
     // Unique constraint race — another writer created the day first.
     if (
@@ -398,6 +417,65 @@ export async function updateReport(opts: {
           safetyNotes: data.safetyNotes,
           defects: data.defects,
           otherNotes: data.otherNotes,
+          isControlDay: data.isControlDay,
+          constructionObj: data.constructionObj,
+        },
+      }),
+  );
+}
+
+export class ReportAlreadyAcknowledgedError extends Error {
+  code = "ReportAlreadyAcknowledged" as const;
+  constructor() {
+    super("Denní záznam již byl investorem potvrzen.");
+  }
+}
+
+/**
+ * Acknowledge a daily report. Only INVESTOR role on the project can do this.
+ */
+export async function acknowledgeReport(opts: {
+  reportId: string;
+  ctx: AuditContext;
+  user: SessionUser;
+}): Promise<DailyReport> {
+  const { reportId, ctx, user } = opts;
+
+  const before = await prisma.dailyReport.findFirst({
+    where: { id: reportId, deletedAt: null },
+  });
+  if (!before) throw new ReportNotFoundError();
+  if (before.acknowledgedAt) throw new ReportAlreadyAcknowledgedError();
+
+  const project = await prisma.project.findFirst({
+    where: { id: before.projectId, deletedAt: null },
+    select: {
+      members: { where: { userId: user.id } },
+    },
+  });
+  
+  if (!project) throw new ProjectNotAccessibleError();
+  const membership = project.members[0];
+  if (!membership || membership.role !== "INVESTOR") {
+    throw new ForbiddenError("report.acknowledge");
+  }
+
+  const now = new Date();
+  return withAudit<DailyReport>(
+    {
+      ctx,
+      action: "report.acknowledge",
+      entityType: "report",
+      resolveEntityId: (r) => r.id,
+      before: reportForAudit(before),
+      projectAfter: reportForAudit,
+    },
+    (tx) =>
+      tx.dailyReport.update({
+        where: { id: reportId },
+        data: {
+          acknowledgedAt: now,
+          acknowledgedById: user.id,
         },
       }),
   );
@@ -507,7 +585,7 @@ export async function addRemark(opts: {
   // of an official remark belongs to the dozor (TDS/BOZP/projektant),
   // not to the worker filling in the diary.
   const isOfficialResolved =
-    isOfficial === true && (user.role === "GUEST" || user.role === "BOSS");
+    isOfficial === true && (user.role === "INSPECTOR" || user.role === "BOSS");
 
   await withAudit(
     {
@@ -1001,6 +1079,7 @@ export interface ReportDetail {
   projectName: string;
   authorName: string;
   signedByName: string | null;
+  acknowledgedByName: string | null;
   weather: WeatherSnapshot;
   workers: WorkerLine[];
   remarks: RemarkView[];
@@ -1017,6 +1096,7 @@ export interface ReportDetail {
   canResolveMaterial: boolean;
   canRolloverMaterial: boolean;
   canSign: boolean;
+  canAcknowledge: boolean;
   canAddAddendum: boolean;
 }
 
@@ -1045,6 +1125,7 @@ export async function getReportForUser(opts: {
       project: { select: { name: true } },
       author: { select: { displayName: true } },
       signedBy: { select: { displayName: true } },
+      acknowledgedBy: { select: { displayName: true } },
       remarks: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -1082,6 +1163,7 @@ export async function getReportForUser(opts: {
     project,
     author,
     signedBy,
+    acknowledgedBy,
     remarks,
     materialNeeds,
     addenda,
@@ -1094,9 +1176,9 @@ export async function getReportForUser(opts: {
     authorId: report.authorId,
   };
   const canRolloverMaterial =
-    !locked &&
+    rolloverCandidates.length > 0 &&
     can(user, "material.resolve", resource) &&
-    can(user, "material.create", resource);
+    can(user, "material.create", { projectMember: isMember, reportLocked: false });
 
   return {
     report: rest as DailyReport,
@@ -1104,6 +1186,7 @@ export async function getReportForUser(opts: {
     projectName: project.name,
     authorName: author.displayName,
     signedByName: signedBy?.displayName ?? null,
+    acknowledgedByName: acknowledgedBy?.displayName ?? null,
     weather: parseWeather(report.weather),
     workers: parseWorkers(report.workersByTrade),
     remarks: remarks.map((rm) => ({
@@ -1136,11 +1219,12 @@ export async function getReportForUser(opts: {
     canAddRemark: can(user, "remark.create", resource),
     canMarkRemarkOfficial:
       can(user, "remark.create", resource) &&
-      (user.role === "BOSS" || user.role === "GUEST"),
+      (user.role === "BOSS" || user.role === "INSPECTOR"),
     canAddMaterial: can(user, "material.create", resource),
     canResolveMaterial: can(user, "material.resolve", resource),
     canRolloverMaterial,
     canSign: !locked && can(user, "report.sign", resource),
+    canAcknowledge: !report.acknowledgedAt && can(user, "report.acknowledge", resource),
     canAddAddendum:
       locked && can(user, "report.addendum.create", resource),
   };
@@ -1287,9 +1371,13 @@ export interface ProjectExportPhoto {
 export interface ProjectExportDay {
   id: string;
   date: Date;
+  sequenceNumber: number;
+  isControlDay: boolean;
+  constructionObj: string | null;
   authorName: string;
   signedByName: string | null;
   signedAt: Date | null;
+  acknowledgedByName: string | null;
   lockedAt: Date | null;
   weather: WeatherSnapshot;
   workers: WorkerLine[];
@@ -1341,6 +1429,7 @@ export async function getProjectExportForUser(opts: {
     include: {
       author: { select: { displayName: true } },
       signedBy: { select: { displayName: true } },
+      acknowledgedBy: { select: { displayName: true } },
       remarks: {
         where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
@@ -1366,9 +1455,13 @@ export async function getProjectExportForUser(opts: {
     days: rows.map((r) => ({
       id: r.id,
       date: r.date,
+      sequenceNumber: r.sequenceNumber,
+      isControlDay: r.isControlDay,
+      constructionObj: r.constructionObj,
       authorName: r.author.displayName,
       signedByName: r.signedBy?.displayName ?? null,
       signedAt: r.signedAt,
+      acknowledgedByName: r.acknowledgedBy?.displayName ?? null,
       lockedAt: r.lockedAt,
       weather: parseWeather(r.weather),
       workers: parseWorkers(r.workersByTrade),

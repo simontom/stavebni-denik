@@ -13,7 +13,7 @@ declare module "next-auth" {
     id: string;
     nickname: string;
     displayName: string;
-    role: "BOSS" | "WORKER" | "GUEST";
+    role: "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
     isAdmin: boolean;
     mustChangePwd: boolean;
     /** Server-side session row id (Postgres `Session.id`). */
@@ -25,7 +25,7 @@ declare module "next-auth" {
       id: string;
       nickname: string;
       displayName: string;
-      role: "BOSS" | "WORKER" | "GUEST";
+      role: "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
       isAdmin: boolean;
       mustChangePwd: boolean;
       sessionId: string;
@@ -38,7 +38,7 @@ declare module "next-auth/jwt" {
     userId?: string;
     nickname?: string;
     displayName?: string;
-    role?: "BOSS" | "WORKER" | "GUEST";
+    role?: "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
     isAdmin?: boolean;
     mustChangePwd?: boolean;
     sessionId?: string;

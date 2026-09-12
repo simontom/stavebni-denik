@@ -8,7 +8,7 @@
  * re-exports everything from here.
  */
 
-export type Role = "BOSS" | "WORKER" | "GUEST";
+export type Role = "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
 
 export interface SessionUser {
   id: string;
@@ -66,6 +66,7 @@ export type Action =
   | "report.create"
   | "report.update"
   | "report.sign"
+  | "report.acknowledge"
   | "report.addendum.create"
   // Photos, remarks, materials, visits
   | "photo.upload"
@@ -125,6 +126,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
         r?.projectMember === true &&
         r?.authorId === u.id)),
   "report.sign": (u) => u.role === "BOSS",
+  "report.acknowledge": (u, r) => u.role === "INVESTOR" && r?.projectMember === true,
   "report.addendum.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
 
@@ -136,7 +138,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   "photo.delete": (u, r) =>
     u.role === "BOSS" && r?.projectMember === true && !r?.reportLocked,
   "remark.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER" || u.role === "GUEST") &&
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR" || u.role === "INVESTOR") &&
     r?.projectMember === true,
   "material.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") &&
@@ -151,7 +153,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   // -report kontrolu řeší service (workflow se mění na addendum po
   // podpisu).
   "visit.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER" || u.role === "GUEST") &&
+    (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR") &&
     r?.projectMember === true,
   // Smazat smí BOSS nebo autor zápisu (check v service).
   "visit.delete": (u, r) =>

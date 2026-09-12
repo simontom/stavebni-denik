@@ -30,8 +30,12 @@ import {
   getReportCoverageForProject,
   listReportsForProject,
 } from "@/server/services/reports";
+import { listHandovers } from "@/server/services/site-handovers";
+import { listAuthorizedPersons } from "@/server/services/authorized-persons";
 
 import { MembersPanel } from "./MembersPanel";
+import { AuthorizedPersonsPanel } from "./AuthorizedPersonsPanel";
+import { HandoversPanel } from "./HandoversPanel";
 import { NewReportDayPicker } from "./NewReportDayPicker";
 import { PdfExportForm } from "./PdfExportForm";
 import { CsvExportButtons } from "./CsvExportButtons";
@@ -41,12 +45,13 @@ import { ReportCalendarMonth } from "./ReportCalendarMonth";
 import { ReportCoverageHeatmap } from "./ReportCoverageHeatmap";
 import { ReportsFilterBar } from "./ReportsFilterBar";
 
-type ProjectTab = "details" | "reports" | "materials" | "members";
+type ProjectTab = "details" | "reports" | "materials" | "members" | "handovers";
 
 function resolveTab(value: string | string[] | undefined): ProjectTab {
   if (value === "reports") return "reports";
   if (value === "materials") return "materials";
   if (value === "members") return "members";
+  if (value === "handovers") return "handovers";
   return "details";
 }
 
@@ -158,6 +163,9 @@ export default async function ProjectDetailPage({
           status: reportsStatus,
         })
       : [];
+
+  const authorizedPersons = tab === "members" ? await listAuthorizedPersons(id) : [];
+  const handovers = tab === "handovers" ? await listHandovers(id) : [];
   const totalReports =
     tab === "reports" && (reportsQuery.length > 0 || reportsStatus !== "all")
       ? (await listReportsForProject(id, user)).length
@@ -206,7 +214,7 @@ export default async function ProjectDetailPage({
   // Materiálový tab data — jen když je tab aktivní A user není GUEST.
   // GUEST nemá vidět ani odkaz, ani fetched data (defence in depth).
   const materials =
-    tab === "materials" && user.role !== "GUEST"
+    tab === "materials" && user.role !== "INSPECTOR"
       ? await listMaterialsForProject(id)
       : [];
   const nextMonthParam = monthParam(
@@ -335,7 +343,7 @@ export default async function ProjectDetailPage({
         </Link>
         {/* Materiálový tab — skrýt pro Dozor/TDS (GUEST). Tato role
             má číst deník, ale interní materiál checklist firmy ne. */}
-        {user.role !== "GUEST" && (
+        {user.role !== "INSPECTOR" && (
           <Link
             href={`/projects/${id}?tab=materials`}
             className={
@@ -357,6 +365,16 @@ export default async function ProjectDetailPage({
         >
           Členové ({members.length})
         </Link>
+        <Link
+          href={`/projects/${id}?tab=handovers`}
+          className={
+            tab === "handovers"
+              ? "border-b-2 border-primary px-3 py-2 text-sm font-medium"
+              : "px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+          }
+        >
+          Předání staveniště
+        </Link>
       </nav>
 
       {tab === "details" && (
@@ -376,6 +394,10 @@ export default async function ProjectDetailPage({
               />
               <DetailRow label="Stavebník" value={project.builder} />
               <DetailRow label="Zhotovitel" value={project.contractor} />
+              <DetailRow label="Smlouva o dílo" value={project.contractNumber} />
+              <DetailRow label="Datum smlouvy" value={project.contractDate ? formatDate(project.contractDate) : null} />
+              <DetailRow label="Verze PD" value={project.designDocVersion} />
+              <DetailRow label="Datum PD" value={project.designDocDate ? formatDate(project.designDocDate) : null} />
               <DetailRow label="Stavbyvedoucí" value={project.siteManagerName} />
               <DetailRow
                 label="Technický dozor stavebníka"
@@ -540,7 +562,7 @@ export default async function ProjectDetailPage({
         </div>
       )}
 
-      {tab === "materials" && user.role !== "GUEST" && (
+      {tab === "materials" && user.role !== "INSPECTOR" && (
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -554,6 +576,7 @@ export default async function ProjectDetailPage({
       )}
 
       {tab === "members" && (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Členové zakázky</CardTitle>
@@ -578,6 +601,20 @@ export default async function ProjectDetailPage({
             />
           </CardContent>
         </Card>
+        <AuthorizedPersonsPanel
+          projectId={id}
+          persons={authorizedPersons}
+          canManage={canManage && !archived}
+        />
+      </>
+      )}
+
+      {tab === "handovers" && (
+        <HandoversPanel
+          projectId={id}
+          handovers={handovers}
+          canManage={canManage && !archived}
+        />
       )}
     </div>
   );

@@ -18,6 +18,7 @@ import { PhotoUploader } from "../PhotoUploader";
 import { ReportForm } from "../ReportForm";
 import { EMPTY_REPORT_VALUES } from "../report-form-types";
 import { SignReportButton } from "../SignReportButton";
+import { AcknowledgeReportButton } from "../AcknowledgeReportButton";
 import { VisitsPanel } from "../VisitsPanel";
 import { createReportAction } from "../actions";
 import { ManualWeatherForm, MaterialsPanel, RemarkForm } from "../ReportPanels";
@@ -135,6 +136,16 @@ export default async function ReportPage({ params }: PageProps) {
         <div className="flex flex-col gap-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl font-semibold">{weekdayLabel(date)}</h1>
+            {report.isControlDay && (
+              <Badge variant="default" className="bg-red-600 hover:bg-red-700">
+                Kontrolní den
+              </Badge>
+            )}
+            {report.constructionObj && (
+              <Badge variant="outline">
+                SO: {report.constructionObj}
+              </Badge>
+            )}
             {locked && (
               <Badge variant="secondary">
                 <Lock className="size-3" aria-hidden /> Podepsáno
@@ -151,6 +162,12 @@ export default async function ReportPage({ params }: PageProps) {
                 ({formatDateTime(report.signedAt)})
               </>
             )}
+            {report.acknowledgedAt && detail.acknowledgedByName && (
+              <>
+                <br />
+                Potvrzeno investorem ({detail.acknowledgedByName}): {formatDateTime(report.acknowledgedAt)}
+              </>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -165,6 +182,13 @@ export default async function ReportPage({ params }: PageProps) {
           )}
           {detail.canSign && (
             <SignReportButton
+              reportId={report.id}
+              projectId={id}
+              date={dateStr}
+            />
+          )}
+          {detail.canAcknowledge && (
+            <AcknowledgeReportButton
               reportId={report.id}
               projectId={id}
               date={dateStr}

@@ -16,17 +16,24 @@ Aplikace běží jako **single-tenant** instance jedné firmy na Fly.io, fotogra
 
 #### In Scope
 - Ruční správa uživatelů administrátorem (přidání podle nickname, systém generuje silné heslo).
-- Role **BOSS** (stavbyvedoucí / admin), **WORKER** (pracovník), **GUEST/DOZOR** (TDS, koordinátor BOZP, investor) a rozšiřitelný číselník rolí.
+- Role **BOSS** (stavbyvedoucí / admin), **WORKER** (pracovník), **INSPECTOR** (TDS, koordinátor BOZP), **INVESTOR** (čtení a archivace) a rozšiřitelný číselník rolí.
 - RBAC s wildcard-resistentními kontrolami v service layeru.
-- Správa zakázek (staveb) s identifikačními údaji dle vyhlášky.
-- Denní záznamy (hlášení / „kontrolní den“) se všemi povinnými položkami.
+- Správa zakázek (staveb) s identifikačními údaji dle vyhlášky, vč. volitelných údajů o SoD a PD.
+- Předání a převzetí staveniště jako vyhrazený formulář (více per zakázku, s fotkami a stavy měřidel).
+- Seznam pověřených osob (auto-sync z členů + ruční přidání externích osob bez účtu).
+- Denní záznamy (hlášení / „kontrolní den“) se všemi povinnými položkami a sekvenčním číslováním.
+- Volitelné zařazení denního záznamu ke stavebnímu objektu (SO) přes textový combo-box s našeptávačem.
+- Kontrolní dny jako rozšířený typ denního záznamu (příznak + zápis z jednání + účastníci).
+- Evidence přerušení a obnovení stavby (příznak na denním záznamu + důvod).
 - Upload fotek s automatickým resize (sharp) a generováním náhledu.
 - Snapshot aktuálního počasí z Open-Meteo při vytvoření denního záznamu.
 - Checklist „materiál na další dny“.
-- Připomínky TDS / dozoru jako samostatné záznamy ke dni.
+- Připomínky TDS / dozoru (INSPECTOR_REMARK) a poznámky investora (INVESTOR_NOTE) jako typované záznamy ke dni.
 - Workflow podpisů: denní podpis stavbyvedoucího, podpisy TDS při návštěvě; po podpisu se den uzamkne.
+- Potvrzení (acknowledge) denních záznamů investorem — nevratné, s důkazní hodnotou.
 - Tamper-evident audit log (hash chain) všech mutací, žádné tvrdé mazání.
 - PDF export deníku ke kontrole / archivaci.
+- Asynchronní ZIP export celé stavby (PDF + originály fotek) pro desetiletou offline archivaci.
 
 #### Out of Scope
 - Multi-tenant (více firem v jedné instanci).
@@ -42,9 +49,11 @@ Aplikace běží jako **single-tenant** instance jedné firmy na Fly.io, fotogra
 - Jako **WORKER** chci vytvořit denní hlášení, nahrát fotky a popsat provedené práce, abych splnil povinnost denního záznamu.
 - Jako **WORKER** chci, aby se mi při vytvoření hlášení automaticky vyplnilo aktuální počasí (povinný údaj), abych nemusel ručně dohledávat.
 - Jako **WORKER** chci do hlášení doplnit checklist „materiál na další dny“, abych předal informace dál.
-- Jako **GUEST/DOZOR** (TDS) chci si přečíst denní záznamy a přidat svou připomínku, ale nesmím nic mazat ani měnit cizí záznamy.
+- Jako **INSPECTOR** (TDS/BOZP) chci si přečíst denní záznamy a přidat svou připomínku, ale nesmím nic mazat ani měnit cizí záznamy.
+- Jako **INVESTOR** chci mít read-only přístup k záznamům své stavby a možnost stáhnout archiv, abych měl nad stavbou kontrolu.
 - Jako **BOSS** chci denně podepsat záznam a tím ho uzamknout, aby splňoval požadavek § 157.
-- Jako **BOSS** chci si stáhnout PDF deníku za libovolné období pro stavební úřad nebo investora.
+- Jako **BOSS** chci si stáhnout PDF deníku za libovolné období pro stavební úřad.
+- Jako **BOSS** chci po dokončení stavby exportovat kompletní ZIP archiv (PDF + originály fotek) pro povinnou desetiletou archivaci.
 - Jako **BOSS** chci v audit logu vidět kdo a kdy co změnil, abych nemohl být obviněn z falšování.
 
 ### Functional Requirements
@@ -64,6 +73,11 @@ Aplikace běží jako **single-tenant** instance jedné firmy na Fly.io, fotogra
 - Připomínky TDS, koordinátora BOZP, projektanta.
 - Další skutečnosti významné pro průběh stavby.
 - Podpisy (denně stavbyvedoucí, při návštěvě TDS).
+- **Volitelně**: Zařazení prací k určitému stavebnímu objektu (SO) pomocí textového štítku (našeptávač dříve použitých hodnot).
+
+#### Úvodní listy a speciální záznamy
+- **Předání a převzetí staveniště**: vyhrazený formulář pro zapsání stavu měřidel a podmínek převzetí staveniště, tvořící úvodní list deníku.
+- **Seznam pověřených osob**: seznam osob s dispozičním právem provádět zápisy (na úrovni detailu zakázky).
 
 #### Identifikační údaje stavby (vyplňují se 1× při založení)
 Název a místo stavby, parcelní čísla a katastr, stavebník, zhotovitel, stavbyvedoucí (jméno + autorizace ČKAIT), TDS, koordinátor BOZP, projektant, číslo stavebního povolení / společného povolení.
@@ -82,7 +96,7 @@ Název a místo stavby, parcelní čísla a katastr, stavebník, zhotovitel, sta
 - **Přístupnost**: responsive layout od 360 px, mobile-first; čitelné na slunci (kontrast, velká tlačítka).
 - **Výkon**: TTFB < 500 ms u typických stránek; upload fotky do 10 MB.
 - **Provoz**: denní automatický dump Postgresu + snapshot volume; runbook pro obnovu.
-- **Compliance**: GDPR — minimum osobních údajů, retence dle zákona (deník 10 let po kolaudaci).
+- **Compliance**: GDPR — minimum osobních údajů, retence dle zákona (deník 10 let po kolaudaci). Právní základ zpracování: § 157 stavebního zákona (zákonná povinnost archivace). Anonymizace osobních údajů po uplynutí archivační lhůty je plánovaná future-work funkce.
 
 # Technical Design
 
@@ -95,7 +109,7 @@ Projekt začíná na zelené louce. Repo `nessenceai/mn4-hlaseni` není dostupn�
 - **Framework**: Next.js 15 (App Router) v TypeScriptu. Jeden deploy unit, React Server Components pro většinu stránek, server actions pro mutace, API route handlers pro upload a webhooky.
 - **ORM + DB**: Prisma 5 + Postgres 16. Migrace přes `prisma migrate`.
 - **Auth**: vlastní implementace s `Auth.js v5` (next-auth) Credentials providerem, `argon2id` hashování přes balíček `@node-rs/argon2`, sessions v Postgres tabulce, HTTP-only secure cookies. Žádní externí provideři.
-- **RBAC**: tabulka `role` + enum-like seed (`BOSS`, `WORKER`, `GUEST`), permissions kontrolovány v service layeru (`assertCan(user, 'report.sign', report)`), middleware na route úrovni je jen druhá obrana.
+- **RBAC**: tabulka `role` + enum-like seed (`BOSS`, `WORKER`, `INSPECTOR`, `INVESTOR`), permissions kontrolovány v service layeru (`assertCan(user, 'report.sign', report)`), middleware na route úrovni je jen druhá obrana. INVESTOR nemá přístup k audit logu ani admin sekci.
 - **Audit log s hash chain**: každá mutace prochází `withAudit(...)` wrapperem v service layeru. Tabulka `audit_log` je append-only — Postgres role aplikace má `INSERT, SELECT` práva, ale `REVOKE UPDATE, DELETE`. Každý řádek nese `prev_hash` (= hash předchozího řádku) a `row_hash` (= sha256 ze serializovaného obsahu + `prev_hash`). Cron job (denně) ověří celou řetěz a zaloguje výsledek.
 - **Storage fotek**: lokální Fly volume v `/data/photos/{projectId}/{reportId}/{uuid}.{jpg|webp}`, metadata v Postgres tabulce `photo`. Soubory čte jen aplikace, ven se servírují přes auth-gated route.
 - **Image processing**: `sharp` — resize na 1920 px delší stranu (JPEG q=82) + 400 px thumbnail; EXIF se strippuje kromě `DateTimeOriginal` a `GPSLatitude/Longitude` (uložené do `photo.captured_at`, `photo.gps`).
@@ -156,7 +170,7 @@ model User {
   sessions      Session[]
 }
 
-enum Role { BOSS WORKER GUEST }
+enum Role { BOSS WORKER INSPECTOR INVESTOR }
 
 model Session {
   id        String   @id @default(cuid())
@@ -178,6 +192,10 @@ model Project { // zakázka / stavba
   tdsName       String?
   bozpName      String?
   designerName  String?
+  contractNumber String? // číslo SoD (volitelné)
+  contractDate  DateTime? // datum SoD
+  designDocVersion String? // verze PD
+  designDocDate DateTime?  // datum PD
   gpsLat        Float?
   gpsLon        Float?
   startedAt     DateTime?
@@ -185,6 +203,34 @@ model Project { // zakázka / stavba
   deletedAt     DateTime?
   reports       DailyReport[]
   members       ProjectMember[]
+  handovers     SiteHandover[]
+  authorizedPersons AuthorizedPerson[]
+}
+
+model SiteHandover { // Předání a převzetí staveniště
+  id            String   @id @default(cuid())
+  projectId     String
+  type          String   // combo-box: "Předání staveniště", "Zpětné předání", "Dílčí předání", nebo volný text
+  date          DateTime
+  participants  String   // Kdo předává a přebírá
+  meterStates   Json?    // Dynamická tabulka [{name, number, value}]
+  notes         String?
+  signedAt      DateTime?
+  deletedAt     DateTime?
+  photos        Photo[]  // Fotky stavu měřidel / staveniště
+  project       Project  @relation(fields: [projectId], references: [id])
+}
+
+model AuthorizedPerson { // Osoba oprávněná k zápisům
+  id            String   @id @default(cuid())
+  projectId     String
+  linkedUserId  String?  // null = externí osoba bez účtu
+  name          String
+  company       String?
+  authorization String?  // textový popis oprávnění
+  revokedAt     DateTime? // kdy ztratil oprávnění (null = aktivní)
+  createdAt     DateTime @default(now())
+  project       Project  @relation(fields: [projectId], references: [id])
 }
 
 model ProjectMember {
@@ -197,8 +243,18 @@ model ProjectMember {
 model DailyReport {
   id              String   @id @default(cuid())
   projectId       String
+  sequenceNumber  Int      // auto-přidělené v transakci (SELECT MAX+1 FOR UPDATE)
   date            DateTime // den
   authorId        String
+  constructionObj String?  // Stavební objekt (SO) - combo-box s našeptávačem
+  // Kontrolní den
+  isControlDay    Boolean  @default(false)
+  meetingNotes    String?  // Zápis z jednání (jen pro kontrolní dny)
+  meetingAttendees Json?   // [{name, role}]
+  // Přerušení stavby
+  workSuspended   Boolean  @default(false)
+  suspensionReason String? // Důvod přerušení
+  // Standardní povinné položky
   workersByTrade  Json     // [{trade, count}]
   workDescription String
   materialsIn     String?
@@ -208,15 +264,20 @@ model DailyReport {
   defects         String?
   otherNotes      String?
   weather         Json     // snapshot z Open-Meteo
+  // Podpis a lock
   signedAt        DateTime?
   signedById      String?
   lockedAt        DateTime?
+  // Acknowledge investorem (nevratné)
+  acknowledgedAt  DateTime?
+  acknowledgedById String?
   deletedAt       DateTime?
   photos          Photo[]
   remarks         Remark[]
   materialNeeds   MaterialNeed[]
   addenda         Addendum[]
   @@unique([projectId, date])
+  @@unique([projectId, sequenceNumber])
 }
 
 model Photo {
@@ -234,14 +295,17 @@ model Photo {
   deletedAt   DateTime?
 }
 
-model Remark { // připomínka TDS / dozoru
-  id        String   @id @default(cuid())
+model Remark { // připomínka TDS / dozoru / poznámka investora
+  id        String     @id @default(cuid())
   reportId  String
   authorId  String
+  type      RemarkType @default(INSPECTOR_REMARK)
   text      String
   createdAt DateTime @default(now())
   deletedAt DateTime?
 }
+
+enum RemarkType { INSPECTOR_REMARK INVESTOR_NOTE }
 
 model MaterialNeed { // checklist materiálu na další dny
   id        String   @id @default(cuid())
@@ -312,12 +376,13 @@ REVOKE UPDATE, DELETE ON audit_log FROM app;
 ### Components
 - **`/app/(auth)/login`** — login formulář, povinný first-time password change.
 - **`/app/admin/users`** — BOSS: seznam, vytvoření (modal s generovaným heslem zobrazeným 1×), deaktivace.
-- **`/app/projects`** — seznam zakázek (BOSS vytváří, WORKER/GUEST vidí přiřazené).
-- **`/app/projects/[id]`** — detail zakázky + kalendář dní + tlačítko „Nový denní záznam“.
-- **`/app/projects/[id]/reports/[date]`** — denní záznam: formulář, fotky, počasí (snapshot), připomínky, checklist materiálu, tlačítko „Podepsat a uzamknout“.
-- **`/app/admin/audit`** — BOSS-only: prohlížeč audit logu + tlačítko „Ověřit integritu řetězu“.
-- **`/app/print/project/[id]`** — server-rendered HTML pro Playwright PDF.
-- **API**: `POST /api/photos/upload`, `GET /photos/[id]`, `GET /api/weather?lat&lon&date`, `POST /api/reports/[id]/sign`.
+- **`/app/projects`** — seznam zakázek (BOSS vytváří, WORKER/INSPECTOR/INVESTOR vidí přiřazené).
+- **`/app/projects/[id]`** — detail zakázky + záložky: Záznamy (kalendář + sekvenční seznam) / Předání staveniště / Pověřené osoby / Členové / Údaje.
+- **`/app/projects/[id]/reports/[date]`** — denní záznam: formulář s SO combo-boxem, kontrolní den / přerušení flagy, fotky, počasí (snapshot), připomínky (INSPECTOR_REMARK / INVESTOR_NOTE), checklist materiálu, acknowledge pro INVESTOR, tlačítko „Podepsat a uzamknout" pro BOSS.
+- **`/app/projects/[id]/handovers/new`** — formulář předání staveniště (BOSS-only): typ combo-box, účastníci, dynamická tabulka měřidel, fotky, poznámky.
+- **`/app/admin/audit`** — BOSS-only: prohlížeč audit logu + tlačítko „Ověřit integritu řetězu".
+- **`/app/print/project/[id]`** — server-rendered HTML pro Playwright PDF (vč. úvodních listů).
+- **API**: `POST /api/photos/upload`, `GET /photos/[id]`, `GET /api/weather?lat&lon&date`, `POST /api/reports/[id]/sign`, `POST /api/reports/[id]/acknowledge`, `POST /api/projects/[id]/export-zip`.
 
 ### File Structure
 ```
@@ -333,11 +398,14 @@ repo-root/
 │  │  ├─ projects/page.tsx
 │  │  ├─ projects/[id]/page.tsx
 │  │  ├─ projects/[id]/reports/[date]/page.tsx
+│  │  ├─ projects/[id]/handovers/new/page.tsx
 │  │  ├─ print/project/[id]/page.tsx
 │  │  └─ api/
 │  │     ├─ photos/upload/route.ts
 │  │     ├─ photos/[id]/route.ts
-│  │     └─ reports/[id]/sign/route.ts
+│  │     ├─ reports/[id]/sign/route.ts
+│  │     ├─ reports/[id]/acknowledge/route.ts
+│  │     └─ projects/[id]/export-zip/route.ts
 │  ├─ server/
 │  │  ├─ auth.ts            // Auth.js config + argon2
 │  │  ├─ audit.ts           // withAudit + verifyChain
@@ -345,12 +413,14 @@ repo-root/
 │  │  ├─ weather.ts         // Open-Meteo client
 │  │  ├─ images.ts          // sharp pipeline
 │  │  ├─ pdf.ts             // Playwright wrapper
-│  │  └─ services/{users,projects,reports,photos}.ts
+│  │  ├─ export.ts          // async ZIP generátor + semaphore
+│  │  └─ services/{users,projects,reports,photos,handovers,authorized-persons}.ts
 │  ├─ components/ui/...     // shadcn/ui
 │  ├─ components/forms/...
 │  └─ lib/{db.ts, crypto.ts, password-gen.ts, dates.ts}
 ├─ scripts/
 │  ├─ verify-audit.ts        // cron entry-point
+│  ├─ cleanup-exports.ts     // TTL úklid ZIP souborů (48h)
 │  └─ seed.ts
 ├─ Dockerfile
 ├─ fly.toml
@@ -364,6 +434,7 @@ repo-root/
 - **Open-Meteo nedostupné**: fallback — uložit `weather = {error, fetchedAt}`, ruční doplnění s flagem `manuallyEntered=true` v auditu.
 - **Diakritika v PDF**: Playwright + systémové fonty (Liberation Sans / Inter) ji zvládají, ale je třeba ověřit v CI screenshot testem.
 - **Kvalifikace ČKAIT a elektronický podpis**: aktuální verze nenahrazuje QES; výstup je „elektronicky vedený deník“ s vlastní integritou. Pro plné nahrazení v budoucnu lze doplnit eIDAS/QES.
+- **ZIP export OOM / Disk Full**: asynchronní ZIP může na 1 GB stroji sežrat RAM nebo místo. Mitigace — semaphore (max 1 běžící job), TTL úklid (smazat exporty po 48h), quota check před startem (<20 % free → odmítnout).
 
 # Testing
 
@@ -375,7 +446,8 @@ Každá stage v Delivery Plan obsahuje vlastní testy. Důraz je na **audit log 
 - **BOSS přidá WORKERa**: heslo se vygeneruje, zobrazí přesně jednou, hash se uloží, v audit logu je `user.create` s `before=null`, `after={...bez hashe}`.
 - **WORKER vytvoří denní záznam**: formulář projde validací (zod), počasí se snapshotuje z Open-Meteo (v testu mock), audit log obsahuje `report.create`.
 - **Upload fotky**: 5 MB JPEG → resize na 1920 px + thumb 400 px, EXIF strippován (kromě GPS), audit log `photo.upload` s velikostí a hash.
-- **GUEST přidá připomínku, ale nemůže editovat**: `assertCan(guest, 'report.update')` → 403; `assertCan(guest, 'remark.create')` → ok.
+- **INSPECTOR přidá připomínku, ale nemůže editovat**: `assertCan(inspector, 'report.update')` → 403; `assertCan(inspector, 'remark.create')` → ok.
+- **INVESTOR bere na vědomí**: INVESTOR potvrdí den, vytvoří se záznam `acknowledgedAt`, přidá `INVESTOR_NOTE`, ale nemůže smazat historii.
 - **Podpis & lock**: BOSS podepíše den → `signedAt`, `lockedAt` se nastaví → pokus o `report.update` → 403 i pro BOSSa, lze jen `addendum.create`.
 - **PDF export**: vygeneruje PDF s českou diakritikou + tabulkou počasí + fotkami + hash chain footerem.
 - **Audit verify**: `pnpm run verify-audit` projde celou tabulku a vrátí `OK` na čerstvé DB; po umělé úpravě jednoho řádku přes superuser session detekuje break a vrátí ID problémového řádku.
@@ -425,44 +497,39 @@ Každá mutace v aplikaci prochází `withAudit` wrapperem, který vloží řád
 
 - Migrace `audit_log` tabulky + Postgres role `app` s `REVOKE UPDATE, DELETE ON audit_log`.
 - `src/server/audit.ts` — `withAudit()` v Prisma transakci, `canonicalJSON()` + `sha256Hex()`, `prevHash` ze `findFirst orderBy id desc`.
-- `src/server/rbac.ts` — `assertCan(user, action, resource)`, matice oprávnění pro BOSS/WORKER/GUEST.
+- `src/server/rbac.ts` — `assertCan(user, action, resource)`, matice oprávnění pro BOSS/WORKER/INSPECTOR/INVESTOR.
 - Zpětně zabalit user/session mutace ze Stage 2 do `withAudit`.
 - Stránka `/admin/audit` (BOSS-only): filtry (actor, entity, datum), detail řádku s diffem before/after.
 - Tlačítko + scripts/verify-audit.ts (`pnpm verify:audit`) — projde celou tabulku, vrátí `OK` nebo ID prvního porušeného řádku; výsledek jde i do souboru `/data/audit-verify.log`.
 - Cron job (`fly machine schedule` nebo GitHub Actions) spouští verifikaci 1× denně a posílá e-mail na BOSS při selhání.
 - Integration testy: simulovaná manipulace přes raw SQL → verifikace detekuje break.
 
-###   Step 4: Zakázky a identifikační údaje stavby
-BOSS umí založit zakázku se všemi povinnými identifikačními údaji a přiřadit členy; WORKER a GUEST vidí jen své zakázky.
+###   Step 4: Zakázky, pověřené osoby a předání staveniště
+BOSS umí založit zakázku s identifikačními údaji (vč. SoD a PD), spravovat pověřené osoby a zapsat předání staveniště.
+- Prisma modely `Project`, `ProjectMember`, `SiteHandover`, `AuthorizedPerson`.
+- Service metody pro zakázky, auto-sync pověřených osob, a handovery. Vše přes `withAudit`.
+- Validace přes zod (parcelní čísla, volitelná data, JSON pro měřidla).
+- Stránky `/projects` (scope filtr dle role), `/projects/new`, `/projects/[id]` se záložkami (Údaje, Pověřené osoby, Předání, Členové).
+- RBAC: BOSS = full, WORKER = read přiřazené + write reports, INSPECTOR = read přiřazené + write remarks, INVESTOR = read-only + acknowledge.
+- E2E test: BOSS založí zakázku, přiřadí WORKERa a INSPECTORa. Otestování neviditelnosti pro nepřiřazené.
 
-- Prisma modely `Project` a `ProjectMember`, migrace.
-- Service `projects.create/update/listForUser/addMember/removeMember`, vše přes `withAudit`.
-- Validace přes zod (parcelní čísla, GPS lat/lon volitelně přes mapový picker).
-- Stránky `/projects` (list se scope filtrem dle role), `/projects/new` (BOSS), `/projects/[id]` (detail + záložky Záznamy / Členové / Údaje stavby).
-- Soft delete (`deletedAt`), archiv-view pro BOSS.
-- RBAC: BOSS = full, WORKER = read přiřazené + write reports, GUEST = read přiřazené + write remarks.
-- E2E test: BOSS založí zakázku, přiřadí WORKERa, ten ji vidí; nepřiřazený WORKER ji nevidí.
-
-###   Step 5: Denní záznamy, fotky, počasí a checklist materiálu
-WORKER vytvoří denní záznam pro zakázku, nahraje fotky (server je zmenší), počasí se automaticky snapshotuje a lze přidat checklist materiálu na další dny.
-
-- Prisma modely `DailyReport`, `Photo`, `Remark`, `MaterialNeed`, `Addendum` + migrace. Unique `(projectId, date)`.
-- Formulář `/projects/[id]/reports/[date]` s react-hook-form + zod: pracovníci po profesích, popis prací, materiály, mechanizace, zkoušky, BOZP, závady, ostatní.
-- `src/server/weather.ts` — Open-Meteo klient s 5 s timeoutem, fallback `weather.error`; snapshot zapsán do `weather` JSONB při `report.create`.
-- `src/server/images.ts` — sharp pipeline: validace MIME, resize 1920 px (JPEG q=82) + 400 px thumbnail, EXIF strip (kromě DateTimeOriginal a GPS).
-- API `POST /api/photos/upload` (multipart), `GET /photos/[id]` (auth-gated stream ze `/data`).
-- UI sekce „Připomínky“ (GUEST/TDS může psát) a „Materiál na další dny“ (checklist se stavem resolved).
+###   Step 5: Denní záznamy, připomínky, fotky a počasí
+WORKER vytvoří denní záznam (se sekvenčním číslem), nahraje fotky, počasí se snapshotuje. Záznam může být "kontrolní den" nebo označit "přerušení stavby".
+- Prisma modely `DailyReport`, `Photo`, `Remark`, `MaterialNeed`, `Addendum` + migrace.
+- Vytváření `DailyReport` v transakci `SELECT MAX+1 FOR UPDATE` pro přidělení `sequenceNumber`.
+- Formulář s dynamickými poli (SO našeptávač, sekce pro kontrolní den / přerušení, checklist materiálu).
+- `src/server/weather.ts` a `src/server/images.ts` integrace.
+- UI sekce „Připomínky a poznámky" (INSPECTOR píše `INSPECTOR_REMARK`, INVESTOR píše `INVESTOR_NOTE` a může kliknout na Acknowledge).
 - Všechny mutace přes `withAudit`.
-- Integration testy: report create vytvoří weather snapshot z mockovaného Open-Meteo, photo upload vrátí zmenšenou verzi, RBAC blokuje editaci cizího reportu.
+- Integration testy: souběžné vytváření záznamů (ověření locku a sequenceNumber), RBAC pro připomínky vs. poznámky.
 
-###   Step 6: Podpisy, lock, PDF export a produkční hardening
-BOSS podepíše denní záznam a tím ho uzamkne; produkční instance je nasazena, zazálohována a má funkční PDF export celého deníku.
-
-- Workflow podpisu: `POST /api/reports/[id]/sign` (BOSS-only), nastaví `signedAt`, `signedById`, `lockedAt`; další `report.update` vrací 403, povolen jen `addendum.create`.
-- Podobně podpis TDS přidá záznam `remark` s flagem `isOfficial=true` a podepsaným `signedAt`.
-- Playwright PDF: route `/print/project/[id]?from=&to=`, `src/server/pdf.ts` spouští Chromium headless v containeru, výstup obsahuje hlavičku stavby, denní záznamy, fotky (thumb), počasí, podpisy a v patičce každého listu `audit row hash` posledního zahrnutého řádku.
-- Tlačítko „Stáhnout PDF za období“ na `/projects/[id]`.
-- Backup job (nightly): `pg_dump | gzip | restic` na Backblaze B2 nebo R2 (přes env credentials), spolu s `/data/photos`. Restore runbook v `README.md`.
-- Monitoring: Plain-text logs, `/healthz` probe, Fly alerty na CPU/RAM/disk.
-- Smoke E2E v CI proti dočasné staging instanci: login → vytvoř projekt → vytvoř report → upload fotky → podepiš → stáhni PDF.
-- README s deploy guide, seed scriptem (1× BOSS účet), návodem k obnově.
+###   Step 6: Podpisy, exporty (PDF/ZIP) a produkční hardening
+BOSS podepíše denní záznam a tím ho uzamkne. Generování PDF a offline ZIP archivů.
+- `POST /api/reports/[id]/sign` (BOSS-only), lock záznamu pro editaci.
+- Playwright PDF: server-rendered HTML (vč. úvodních listů a předání staveniště), patička s hash chainem.
+- ZIP archiv (`src/server/export.ts`): asynchronní generátor běžící na pozadí chráněný semaphorem (max 1 concurrency). Kontrola volného místa na disku. Zabalí PDF a složku s originálními fotkami.
+- Cron script (`cleanup-exports.ts`) pro smazání ZIP souborů po 48 hodinách.
+- Backup job (nightly): `pg_dump | gzip | restic` na B2/R2 vč. `/data/photos`.
+- Monitoring: health probe, Fly alerty.
+- Smoke E2E v CI: onboarding → projekt → report → upload fotky → podpis → PDF.
+- Aktualizace README.

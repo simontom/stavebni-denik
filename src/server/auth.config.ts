@@ -83,7 +83,7 @@ export const authConfig = {
     },
     session({ session, token }) {
       session.user.id = token.userId as string;
-      session.user.role = token.role as "BOSS" | "WORKER" | "GUEST";
+      session.user.role = token.role as "BOSS" | "WORKER" | "INSPECTOR";
       session.user.isAdmin = Boolean(token.isAdmin);
       session.user.mustChangePwd = Boolean(token.mustChangePwd);
       session.user.sessionId = token.sessionId as string;

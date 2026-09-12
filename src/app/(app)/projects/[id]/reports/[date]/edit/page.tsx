@@ -57,6 +57,8 @@ export default async function EditReportPage({ params }: PageProps) {
     safetyNotes: report.safetyNotes ?? "",
     defects: report.defects ?? "",
     otherNotes: report.otherNotes ?? "",
+    isControlDay: report.isControlDay,
+    constructionObj: report.constructionObj ?? "",
   };
 
   return (

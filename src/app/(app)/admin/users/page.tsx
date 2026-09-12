@@ -28,10 +28,11 @@ import { ToggleActiveButton } from "./ToggleActiveButton";
 export const metadata: Metadata = { title: "Uživatelé" };
 export const dynamic = "force-dynamic";
 
-const ROLE_LABEL: Record<"BOSS" | "WORKER" | "GUEST", string> = {
+const ROLE_LABEL: Record<"BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR", string> = {
   BOSS: "Stavbyvedoucí",
   WORKER: "Pracovník",
-  GUEST: "Dozor / TDS",
+  INSPECTOR: "Dozor / TDS",
+  INVESTOR: "Investor",
 };
 
 export default async function AdminUsersPage() {

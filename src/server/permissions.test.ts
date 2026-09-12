@@ -28,7 +28,8 @@ function user(
 
 const BOSS = user("BOSS", "boss1");
 const WORKER = user("WORKER", "worker1");
-const GUEST = user("GUEST", "guest1");
+const GUEST = user("INSPECTOR", "guest1");
+const INVESTOR = user("INVESTOR", "investor1");
 
 // Admin users — orthogonal to role. ADMIN_BOSS = majitel firmy
 // (typický seedovaný admin); ADMIN_WORKER = účetní/asistent co
@@ -105,13 +106,40 @@ describe("can — WORKER", () => {
   });
 });
 
-describe("can — GUEST", () => {
+describe("can — GUEST / INSPECTOR", () => {
   it("may add remarks on member projects but cannot edit reports", () => {
     expect(can(GUEST, "remark.create", { projectMember: true })).toBe(true);
     expect(can(GUEST, "remark.create", { projectMember: false })).toBe(false);
     expect(can(GUEST, "report.update", { projectMember: true })).toBe(false);
     expect(can(GUEST, "report.create", { projectMember: true })).toBe(false);
     expect(can(GUEST, "photo.upload", { projectMember: true })).toBe(false);
+  });
+
+  it("cannot acknowledge reports (investor only)", () => {
+    expect(can(GUEST, "report.acknowledge", { projectMember: true })).toBe(false);
+  });
+});
+
+describe("can — INVESTOR", () => {
+  it("can acknowledge reports on assigned projects", () => {
+    expect(can(INVESTOR, "report.acknowledge", { projectMember: true })).toBe(true);
+    expect(can(INVESTOR, "report.acknowledge", { projectMember: false })).toBe(false);
+  });
+
+  it("cannot edit, sign, or create reports", () => {
+    expect(can(INVESTOR, "report.create", { projectMember: true })).toBe(false);
+    expect(can(INVESTOR, "report.update", { projectMember: true })).toBe(false);
+    expect(can(INVESTOR, "report.sign")).toBe(false);
+  });
+
+  it("can add remarks on assigned projects", () => {
+    expect(can(INVESTOR, "remark.create", { projectMember: true })).toBe(true);
+  });
+
+  it("cannot upload photos or perform admin actions", () => {
+    expect(can(INVESTOR, "photo.upload", { projectMember: true })).toBe(false);
+    expect(can(INVESTOR, "user.create")).toBe(false);
+    expect(can(INVESTOR, "audit.read")).toBe(false);
   });
 });
 
@@ -127,11 +155,13 @@ describe("canAccessProject — visibility scope", () => {
     expect(canAccessProject("BOSS", false)).toBe(true);
   });
 
-  it("lets WORKER/GUEST see a project only when they are a member", () => {
+  it("lets WORKER/INSPECTOR/INVESTOR see a project only when they are a member", () => {
     expect(canAccessProject("WORKER", true)).toBe(true);
     expect(canAccessProject("WORKER", false)).toBe(false);
-    expect(canAccessProject("GUEST", true)).toBe(true);
-    expect(canAccessProject("GUEST", false)).toBe(false);
+    expect(canAccessProject("INSPECTOR", true)).toBe(true);
+    expect(canAccessProject("INSPECTOR", false)).toBe(false);
+    expect(canAccessProject("INVESTOR", true)).toBe(true);
+    expect(canAccessProject("INVESTOR", false)).toBe(false);
   });
 });
 

@@ -449,3 +449,21 @@ export async function deleteVisitAction(data: FormData): Promise<void> {
   }
   revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
 }
+
+export async function acknowledgeReportAction(data: FormData): Promise<void> {
+  const user = await requireUser();
+  const reportId = String(data.get("reportId") ?? "");
+  const projectId = String(data.get("projectId") ?? "");
+  const dateStr = String(data.get("date") ?? "");
+  if (!reportId) return;
+
+  try {
+    const ctx = await getAuditContext();
+    const { acknowledgeReport } = await import("@/server/services/reports");
+    await acknowledgeReport({ reportId, ctx, user });
+  } catch (err) {
+    console.error(err);
+    return;
+  }
+  revalidatePath(/projects/ + projectId + /reports/ + dateStr);
+}
