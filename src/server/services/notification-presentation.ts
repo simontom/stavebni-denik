@@ -15,16 +15,11 @@ export interface NotificationPresentation {
   body: string;
 }
 
-export function presentNotification(
-  n: NotificationView,
-): NotificationPresentation {
+export function presentNotification(n: NotificationView): NotificationPresentation {
   switch (n.kind) {
     case "audit.chain_broken": {
       const payload = n.payload as { rowId?: string | number } | null;
-      const rowSuffix =
-        payload && payload.rowId !== undefined
-          ? ` (řádek #${payload.rowId})`
-          : "";
+      const rowSuffix = payload && payload.rowId !== undefined ? ` (řádek #${payload.rowId})` : "";
       return {
         title: "Audit log narušen",
         body: `Hash chain auditu selhal při ověření${rowSuffix}. Zkontrolujte log a vyšetřete příčinu.`,

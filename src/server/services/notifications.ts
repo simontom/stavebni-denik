@@ -20,9 +20,7 @@ import { prisma } from "@/lib/db";
  * `src/app/(app)/notifications/notification-card.tsx`.
  */
 
-export type NotificationKind =
-  | "audit.chain_broken"
-  | "report.signed";
+export type NotificationKind = "audit.chain_broken" | "report.signed";
 
 export interface NotificationView {
   id: string;

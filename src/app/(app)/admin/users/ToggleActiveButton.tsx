@@ -34,11 +34,7 @@ export function ToggleActiveButton({ userId, isActive, displayName }: Props) {
       if (!result.ok) {
         toast.error(result.error);
       } else {
-        toast.success(
-          isActive
-            ? `${displayName} deaktivován.`
-            : `${displayName} aktivován.`,
-        );
+        toast.success(isActive ? `${displayName} deaktivován.` : `${displayName} aktivován.`);
       }
     });
   }

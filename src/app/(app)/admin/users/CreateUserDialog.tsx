@@ -41,8 +41,7 @@ export function CreateUserDialog() {
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   const created = state?.status === "ok" ? state.result : null;
-  const fieldErrors =
-    state?.status === "field-error" ? state.fieldErrors : undefined;
+  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -98,15 +97,14 @@ export function CreateUserDialog() {
             <DialogHeader>
               <DialogTitle>Uživatel vytvořen</DialogTitle>
               <DialogDescription>
-                Předejte tyto údaje uživateli {created.displayName} bezpečným
-                kanálem (osobně, šifrovaná zpráva). <strong>Heslo se nikdy nezobrazí
-                znovu.</strong>
+                Předejte tyto údaje uživateli {created.displayName} bezpečným kanálem (osobně,
+                šifrovaná zpráva). <strong>Heslo se nikdy nezobrazí znovu.</strong>
               </DialogDescription>
             </DialogHeader>
 
             <div className="flex flex-col gap-3">
               <div className="grid gap-1">
-                <Label className="text-xs uppercase text-muted-foreground">
+                <Label className="text-muted-foreground text-xs uppercase">
                   Přihlašovací jméno
                 </Label>
                 <Input
@@ -117,9 +115,7 @@ export function CreateUserDialog() {
                 />
               </div>
               <div className="grid gap-1">
-                <Label className="text-xs uppercase text-muted-foreground">
-                  Heslo
-                </Label>
+                <Label className="text-muted-foreground text-xs uppercase">Heslo</Label>
                 <div className="flex gap-2">
                   <Input
                     readOnly
@@ -143,8 +139,8 @@ export function CreateUserDialog() {
               </div>
               <Alert>
                 <AlertDescription className="text-xs">
-                  Uživatel bude při prvním přihlášení automaticky vyzván k
-                  nastavení vlastního hesla.
+                  Uživatel bude při prvním přihlášení automaticky vyzván k nastavení vlastního
+                  hesla.
                 </AlertDescription>
               </Alert>
             </div>
@@ -165,16 +161,12 @@ export function CreateUserDialog() {
             <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
               {state?.status === "nickname-in-use" && (
                 <Alert variant="destructive">
-                  <AlertDescription>
-                    Toto přihlašovací jméno je již obsazené.
-                  </AlertDescription>
+                  <AlertDescription>Toto přihlašovací jméno je již obsazené.</AlertDescription>
                 </Alert>
               )}
               {state?.status === "forbidden" && (
                 <Alert variant="destructive">
-                  <AlertDescription>
-                    Nemáte oprávnění vytvářet uživatele.
-                  </AlertDescription>
+                  <AlertDescription>Nemáte oprávnění vytvářet uživatele.</AlertDescription>
                 </Alert>
               )}
               {state?.status === "error" && (
@@ -199,7 +191,7 @@ export function CreateUserDialog() {
                   placeholder="napr. honza.novak"
                 />
                 {fieldErrors?.nickname && (
-                  <p className="text-sm text-destructive">{fieldErrors.nickname}</p>
+                  <p className="text-destructive text-sm">{fieldErrors.nickname}</p>
                 )}
               </div>
 
@@ -214,9 +206,7 @@ export function CreateUserDialog() {
                   placeholder="Jan Novák"
                 />
                 {fieldErrors?.displayName && (
-                  <p className="text-sm text-destructive">
-                    {fieldErrors.displayName}
-                  </p>
+                  <p className="text-destructive text-sm">{fieldErrors.displayName}</p>
                 )}
               </div>
 
@@ -224,16 +214,11 @@ export function CreateUserDialog() {
                 <Label htmlFor="role">Role</Label>
                 <Select
                   value={role}
-                  onValueChange={(v) =>
-                    setRole(v as "BOSS" | "WORKER" | "INSPECTOR")
-                  }
+                  onValueChange={(v) => setRole(v as "BOSS" | "WORKER" | "INSPECTOR")}
                 >
                   <SelectTrigger id="role">
                     <SelectValue>
-                      {(value) =>
-                        ROLE_OPTIONS.find((o) => o.value === value)?.label ??
-                        value
-                      }
+                      {(value) => ROLE_OPTIONS.find((o) => o.value === value)?.label ?? value}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -249,7 +234,7 @@ export function CreateUserDialog() {
                     sees it. */}
                 <input type="hidden" name="role" value={role} />
                 {fieldErrors?.role && (
-                  <p className="text-sm text-destructive">{fieldErrors.role}</p>
+                  <p className="text-destructive text-sm">{fieldErrors.role}</p>
                 )}
               </div>
 
@@ -273,35 +258,23 @@ export function CreateUserDialog() {
 
               <div className="grid gap-2">
                 <label className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    name="isAdmin"
-                    value="true"
-                    className="mt-1 size-4"
-                  />
+                  <input type="checkbox" name="isAdmin" value="true" className="mt-1 size-4" />
                   <span>
                     <span className="font-medium">Administrátor aplikace</span>
                     <br />
-                    <span className="text-xs text-muted-foreground">
-                      Spravuje uživatele a čte audit log. Není nutné, aby byl
-                      zároveň stavbyvedoucí.
+                    <span className="text-muted-foreground text-xs">
+                      Spravuje uživatele a čte audit log. Není nutné, aby byl zároveň stavbyvedoucí.
                     </span>
                   </span>
                 </label>
               </div>
 
               <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleOpenChange(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                   Zrušit
                 </Button>
                 <Button type="submit" disabled={isPending}>
-                  {isPending && (
-                    <Loader2 className="size-4 animate-spin" aria-hidden />
-                  )}
+                  {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
                   Vytvořit
                 </Button>
               </DialogFooter>

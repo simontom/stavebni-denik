@@ -30,13 +30,7 @@ const STATUS_OPTIONS: Array<{ value: Props["status"]; label: string }> = [
  * to share via URL) instead of a `<select>` so the active option is
  * visible at a glance on a phone screen.
  */
-export function ReportsFilterBar({
-  projectId,
-  query,
-  status,
-  totalCount,
-  filteredCount,
-}: Props) {
+export function ReportsFilterBar({ projectId, query, status, totalCount, filteredCount }: Props) {
   const isFiltered = query.length > 0 || status !== "all";
 
   return (
@@ -52,7 +46,7 @@ export function ReportsFilterBar({
           <Label htmlFor="reports-q">Hledat (datum, autor, počasí, popis)</Label>
           <div className="relative">
             <Search
-              className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+              className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2"
               aria-hidden
             />
             <Input
@@ -72,10 +66,7 @@ export function ReportsFilterBar({
               variant="outline"
               size="sm"
               render={
-                <Link
-                  href={`/projects/${projectId}?tab=reports`}
-                  aria-label="Vyčistit filtry"
-                />
+                <Link href={`/projects/${projectId}?tab=reports`} aria-label="Vyčistit filtry" />
               }
             >
               <X className="size-4" aria-hidden /> Vyčistit
@@ -84,10 +75,7 @@ export function ReportsFilterBar({
         </div>
       </form>
 
-      <nav
-        className="flex flex-wrap gap-1 text-sm"
-        aria-label="Filtr podle stavu"
-      >
+      <nav className="flex flex-wrap gap-1 text-sm" aria-label="Filtr podle stavu">
         {STATUS_OPTIONS.map((opt) => {
           const params = new URLSearchParams({ tab: "reports" });
           if (query.length > 0) params.set("q", query);
@@ -99,8 +87,8 @@ export function ReportsFilterBar({
               href={`/projects/${projectId}?${params.toString()}`}
               className={
                 active
-                  ? "rounded-full bg-primary px-3 py-1 text-primary-foreground"
-                  : "rounded-full border px-3 py-1 text-muted-foreground hover:text-foreground"
+                  ? "bg-primary text-primary-foreground rounded-full px-3 py-1"
+                  : "text-muted-foreground hover:text-foreground rounded-full border px-3 py-1"
               }
               aria-current={active ? "true" : undefined}
             >
@@ -108,10 +96,8 @@ export function ReportsFilterBar({
             </Link>
           );
         })}
-        <span className="ml-auto self-center text-xs text-muted-foreground">
-          {isFiltered
-            ? `${filteredCount} z ${totalCount} záznamů`
-            : `${totalCount} záznamů`}
+        <span className="text-muted-foreground ml-auto self-center text-xs">
+          {isFiltered ? `${filteredCount} z ${totalCount} záznamů` : `${totalCount} záznamů`}
         </span>
       </nav>
     </div>

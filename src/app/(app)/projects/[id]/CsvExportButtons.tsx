@@ -24,29 +24,17 @@ export function CsvExportButtons({ projectId }: Props) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          render={<a href={`${base}?type=reports`} download />}
-        >
+        <Button variant="outline" size="sm" render={<a href={`${base}?type=reports`} download />}>
           <FileSpreadsheet className="size-4" aria-hidden /> Záznamy (CSV)
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          render={<a href={`${base}?type=materials`} download />}
-        >
+        <Button variant="outline" size="sm" render={<a href={`${base}?type=materials`} download />}>
           <FileSpreadsheet className="size-4" aria-hidden /> Materiál (CSV)
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          render={<a href={`${base}?type=visits`} download />}
-        >
+        <Button variant="outline" size="sm" render={<a href={`${base}?type=visits`} download />}>
           <FileSpreadsheet className="size-4" aria-hidden /> Návštěvy (CSV)
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">
+      <p className="text-muted-foreground text-xs">
         UTF-8 s BOM (Excel / Google Sheets bez šifrovaných znaků).
       </p>
     </div>

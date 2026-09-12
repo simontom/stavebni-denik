@@ -13,7 +13,11 @@ export interface HandoverInput {
   notes?: string | null;
 }
 
-export async function createHandover(projectId: string, actorId: string, data: HandoverInput): Promise<SiteHandover> {
+export async function createHandover(
+  projectId: string,
+  actorId: string,
+  data: HandoverInput,
+): Promise<SiteHandover> {
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   return withAudit(
     {
@@ -23,24 +27,29 @@ export async function createHandover(projectId: string, actorId: string, data: H
       resolveEntityId: (h) => h.id,
       before: null,
     },
-    (tx) => tx.siteHandover.create({
-      data: {
-        projectId,
-        type: data.type,
-        date: data.date,
-        participants: data.participants,
-        meterStates: data.meterStates ?? [],
-        notes: data.notes,
-        createdById: actorId,
-      }
-    })
+    (tx) =>
+      tx.siteHandover.create({
+        data: {
+          projectId,
+          type: data.type,
+          date: data.date,
+          participants: data.participants,
+          meterStates: data.meterStates ?? [],
+          notes: data.notes,
+          createdById: actorId,
+        },
+      }),
   );
 }
 
-export async function updateHandover(id: string, actorId: string, data: Partial<HandoverInput>): Promise<SiteHandover> {
+export async function updateHandover(
+  id: string,
+  actorId: string,
+  data: Partial<HandoverInput>,
+): Promise<SiteHandover> {
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   const before = await prisma.siteHandover.findUnique({ where: { id } });
-  
+
   if (before?.signedAt) {
     throw new HandoverAlreadySignedError();
   }
@@ -53,23 +62,24 @@ export async function updateHandover(id: string, actorId: string, data: Partial<
       resolveEntityId: (h) => h.id,
       before,
     },
-    (tx) => tx.siteHandover.update({
-      where: { id },
-      data: {
-        ...(data.type && { type: data.type }),
-        ...(data.date && { date: data.date }),
-        ...(data.participants && { participants: data.participants }),
-        ...(data.meterStates && { meterStates: data.meterStates }),
-        ...(data.notes !== undefined && { notes: data.notes }),
-      }
-    })
+    (tx) =>
+      tx.siteHandover.update({
+        where: { id },
+        data: {
+          ...(data.type && { type: data.type }),
+          ...(data.date && { date: data.date }),
+          ...(data.participants && { participants: data.participants }),
+          ...(data.meterStates && { meterStates: data.meterStates }),
+          ...(data.notes !== undefined && { notes: data.notes }),
+        },
+      }),
   );
 }
 
 export async function deleteHandover(id: string, actorId: string): Promise<SiteHandover> {
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   const before = await prisma.siteHandover.findUnique({ where: { id } });
-  
+
   if (before?.signedAt) {
     throw new HandoverAlreadySignedError();
   }
@@ -82,12 +92,13 @@ export async function deleteHandover(id: string, actorId: string): Promise<SiteH
       resolveEntityId: (h) => h.id,
       before,
     },
-    (tx) => tx.siteHandover.update({
-      where: { id },
-      data: {
-        deletedAt: new Date()
-      }
-    })
+    (tx) =>
+      tx.siteHandover.update({
+        where: { id },
+        data: {
+          deletedAt: new Date(),
+        },
+      }),
   );
 }
 
@@ -115,18 +126,19 @@ export async function signHandover(id: string, actorId: string): Promise<SiteHan
       resolveEntityId: (h) => h.id,
       before,
     },
-    (tx) => tx.siteHandover.update({
-      where: { id },
-      data: {
-        signedAt: new Date(),
-        signedById: actorId,
-      }
-    })
+    (tx) =>
+      tx.siteHandover.update({
+        where: { id },
+        data: {
+          signedAt: new Date(),
+          signedById: actorId,
+        },
+      }),
   );
 }
 export async function listHandovers(projectId: string): Promise<SiteHandover[]> {
   return prisma.siteHandover.findMany({
     where: { projectId, deletedAt: null },
-    orderBy: { date: 'desc' }
+    orderBy: { date: "desc" },
   });
 }

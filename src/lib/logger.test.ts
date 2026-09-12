@@ -23,15 +23,13 @@ describe("logger", () => {
 
   it("formats info logs correctly with context", () => {
     logger.info("app.started", { env: "prod", port: 3000 });
-    expect(consoleInfoSpy).toHaveBeenCalledWith(
-      '[info]  app.started  env=prod port=3000'
-    );
+    expect(consoleInfoSpy).toHaveBeenCalledWith("[info]  app.started  env=prod port=3000");
   });
 
   it("formats warn logs correctly", () => {
     logger.warn("login.rate_limited", { ip: "127.0.0.1", limit: "ip" });
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      '[warn]  login.rate_limited  ip=127.0.0.1 limit=ip'
+      "[warn]  login.rate_limited  ip=127.0.0.1 limit=ip",
     );
   });
 
@@ -41,8 +39,8 @@ describe("logger", () => {
     logger.error("db.error", err, { attempt: 3 });
 
     const expectedLine1 = '[error] db.error  attempt=3  err="Connection failed"';
-    const expectedLine2 = '        Error: Connection failed';
-    const expectedLine3 = '        at Object.<anonymous> (/app/index.js:1:1)';
+    const expectedLine2 = "        Error: Connection failed";
+    const expectedLine3 = "        at Object.<anonymous> (/app/index.js:1:1)";
     const expected = expectedLine1 + "\n" + expectedLine2 + "\n" + expectedLine3;
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(expected);
@@ -51,7 +49,7 @@ describe("logger", () => {
   it("formats error logs with context only (no error instance)", () => {
     logger.error("audit.chain_broken", { brokenAtId: "42", reason: "hash mismatch" });
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      '[error] audit.chain_broken  brokenAtId=42 reason="hash mismatch"'
+      '[error] audit.chain_broken  brokenAtId=42 reason="hash mismatch"',
     );
   });
 
@@ -61,7 +59,7 @@ describe("logger", () => {
     logger.error("storage.full", err);
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      '[error] storage.full  err="Disk full"\n        Error: Disk full\n        at /app/disk.js:1:1'
+      '[error] storage.full  err="Disk full"\n        Error: Disk full\n        at /app/disk.js:1:1',
     );
   });
 
@@ -73,21 +71,19 @@ describe("logger", () => {
   it("logs undefined and null values explicitly", () => {
     logger.info("user.updated", { id: 42, name: null, role: undefined });
     expect(consoleInfoSpy).toHaveBeenCalledWith(
-      '[info]  user.updated  id=42 name=null role=undefined'
+      "[info]  user.updated  id=42 name=null role=undefined",
     );
   });
 
   it("handles complex objects in context", () => {
     logger.info("job.done", { stats: { ok: true, count: 5 } });
-    expect(consoleInfoSpy).toHaveBeenCalledWith(
-      '[info]  job.done  stats={"ok":true,"count":5}'
-    );
+    expect(consoleInfoSpy).toHaveBeenCalledWith('[info]  job.done  stats={"ok":true,"count":5}');
   });
-  
+
   it("quotes strings with spaces or equals signs", () => {
     logger.info("message.sent", { to: "user 1", subject: "hello=world" });
     expect(consoleInfoSpy).toHaveBeenCalledWith(
-      '[info]  message.sent  to="user 1" subject="hello=world"'
+      '[info]  message.sent  to="user 1" subject="hello=world"',
     );
   });
 });

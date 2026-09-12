@@ -17,20 +17,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MIN_PASSWORD_LENGTH } from "@/lib/password-gen";
 
-import {
-  changePasswordAction,
-  type ChangePasswordState,
-} from "./actions";
+import { changePasswordAction, type ChangePasswordState } from "./actions";
 
 interface Props {
   displayName: string;
 }
 
 export function ChangePasswordForm({ displayName }: Props) {
-  const [state, formAction, isPending] = useActionState<
-    ChangePasswordState | undefined,
-    FormData
-  >(changePasswordAction, undefined);
+  const [state, formAction, isPending] = useActionState<ChangePasswordState | undefined, FormData>(
+    changePasswordAction,
+    undefined,
+  );
   const [showNew, setShowNew] = useState(false);
 
   return (
@@ -38,8 +35,8 @@ export function ChangePasswordForm({ displayName }: Props) {
       <CardHeader>
         <CardTitle>Změna hesla</CardTitle>
         <CardDescription>
-          Vítejte, {displayName}. Před prvním použitím aplikace si prosím
-          změňte heslo, které vám předal stavbyvedoucí.
+          Vítejte, {displayName}. Před prvním použitím aplikace si prosím změňte heslo, které vám
+          předal stavbyvedoucí.
         </CardDescription>
       </CardHeader>
       <form action={formAction} noValidate>
@@ -72,9 +69,7 @@ export function ChangePasswordForm({ displayName }: Props) {
               aria-invalid={!!state?.fieldErrors?.currentPassword}
             />
             {state?.fieldErrors?.currentPassword && (
-              <p className="text-sm text-destructive">
-                {state.fieldErrors.currentPassword}
-              </p>
+              <p className="text-destructive text-sm">{state.fieldErrors.currentPassword}</p>
             )}
           </div>
 
@@ -95,20 +90,18 @@ export function ChangePasswordForm({ displayName }: Props) {
                 type="button"
                 onClick={() => setShowNew((v) => !v)}
                 aria-label={showNew ? "Skrýt heslo" : "Zobrazit heslo"}
-                className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center"
                 tabIndex={-1}
               >
                 {showNew ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Minimálně {MIN_PASSWORD_LENGTH} znaků, kombinace malých a
-              velkých písmen, číslic a alespoň jednoho speciálního znaku.
+            <p className="text-muted-foreground text-xs">
+              Minimálně {MIN_PASSWORD_LENGTH} znaků, kombinace malých a velkých písmen, číslic a
+              alespoň jednoho speciálního znaku.
             </p>
             {state?.fieldErrors?.newPassword && (
-              <p className="text-sm text-destructive">
-                {state.fieldErrors.newPassword}
-              </p>
+              <p className="text-destructive text-sm">{state.fieldErrors.newPassword}</p>
             )}
           </div>
 
@@ -123,9 +116,7 @@ export function ChangePasswordForm({ displayName }: Props) {
               aria-invalid={!!state?.fieldErrors?.confirmPassword}
             />
             {state?.fieldErrors?.confirmPassword && (
-              <p className="text-sm text-destructive">
-                {state.fieldErrors.confirmPassword}
-              </p>
+              <p className="text-destructive text-sm">{state.fieldErrors.confirmPassword}</p>
             )}
           </div>
         </CardContent>

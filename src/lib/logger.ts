@@ -9,11 +9,7 @@
 
 function logError(event: string, ctx?: Record<string, unknown>): void;
 function logError(event: string, err: unknown, ctx?: Record<string, unknown>): void;
-function logError(
-  event: string,
-  errOrCtx?: unknown,
-  maybeCtx?: Record<string, unknown>,
-): void {
+function logError(event: string, errOrCtx?: unknown, maybeCtx?: Record<string, unknown>): void {
   if (maybeCtx !== undefined) {
     console.error(formatLine("error", event, maybeCtx, errOrCtx));
     return;
@@ -90,12 +86,7 @@ function formatValue(v: unknown): string {
   }
 
   const str = String(v);
-  if (
-    str.includes(" ") ||
-    str.includes("=") ||
-    str.includes('"') ||
-    str.includes("\n")
-  ) {
+  if (str.includes(" ") || str.includes("=") || str.includes('"') || str.includes("\n")) {
     return JSON.stringify(str);
   }
   return str;

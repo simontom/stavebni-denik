@@ -9,15 +9,14 @@ import { THEME_INIT_SCRIPT } from "@/lib/theme-init";
 import { cn } from "@/lib/utils";
 
 // Latin Extended is required for full Czech diacritics (ě, š, č, ř, ž, ý, …).
-const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: {
     default: env.appName,
     template: `%s · ${env.appName}`,
   },
-  description:
-    "Elektronický stavební deník dle § 157 stavebního zákona a vyhlášky 499/2006 Sb.",
+  description: "Elektronický stavební deník dle § 157 stavebního zákona a vyhlášky 499/2006 Sb.",
   applicationName: env.appName,
   // Building-site app — no need to be crawled by search engines.
   robots: { index: false, follow: false },
@@ -58,11 +57,9 @@ export default function RootLayout({
          * unavoidable for this case; CSP `script-src 'unsafe-inline'`
          * already allows it (see next.config.ts comments).
          */}
-        <script
-          dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="bg-background text-foreground flex min-h-full flex-col">
         {children}
         <Toaster
           position="top-center"

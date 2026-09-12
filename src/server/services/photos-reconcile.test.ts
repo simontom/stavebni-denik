@@ -5,11 +5,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import {
-  PHOTOS_SUBDIR,
-  deleteOrphanFiles,
-  reconcilePhotos,
-} from "./photos-reconcile";
+import { PHOTOS_SUBDIR, deleteOrphanFiles, reconcilePhotos } from "./photos-reconcile";
 
 let tmp: string;
 const FIXED_NOW = new Date("2026-06-22T10:00:00.000Z");
@@ -22,10 +18,7 @@ afterEach(async () => {
   await rm(tmp, { recursive: true, force: true });
 });
 
-async function writePhoto(
-  rel: string,
-  ageMs = 60 * 60 * 1000,
-): Promise<void> {
+async function writePhoto(rel: string, ageMs = 60 * 60 * 1000): Promise<void> {
   const abs = path.join(tmp, rel);
   await fs.mkdir(path.dirname(abs), { recursive: true });
   await fs.writeFile(abs, Buffer.from("jpeg-bytes"));
@@ -55,10 +48,7 @@ describe("reconcilePhotos", () => {
 
     const report = await reconcilePhotos({
       dataDir: tmp,
-      expectedPaths: new Set([
-        "photos/proj1/rep1/a.jpg",
-        "photos/proj1/rep1/a.thumb.jpg",
-      ]),
+      expectedPaths: new Set(["photos/proj1/rep1/a.jpg", "photos/proj1/rep1/a.thumb.jpg"]),
       now: () => FIXED_NOW,
     });
     expect(report.foundFiles).toBe(4);
@@ -115,10 +105,7 @@ describe("reconcilePhotos", () => {
 
     const report = await reconcilePhotos({
       dataDir: tmp,
-      expectedPaths: new Set([
-        "photos/projA/rep1/a.jpg",
-        "photos/projA/rep2/b.jpg",
-      ]),
+      expectedPaths: new Set(["photos/projA/rep1/a.jpg", "photos/projA/rep2/b.jpg"]),
       now: () => FIXED_NOW,
     });
     expect(report.foundFiles).toBe(3);
@@ -147,10 +134,7 @@ describe("reconcilePhotos", () => {
 
     const report = await reconcilePhotos({
       dataDir: tmp,
-      expectedPaths: new Set([
-        "photos/proj1/rep1/a.jpg",
-        "photos/proj1/rep1/a.thumb.jpg",
-      ]),
+      expectedPaths: new Set(["photos/proj1/rep1/a.jpg", "photos/proj1/rep1/a.thumb.jpg"]),
       now: () => FIXED_NOW,
     });
     expect(report.orphanFiles).toEqual([]);
@@ -166,19 +150,12 @@ describe("deleteOrphanFiles", () => {
 
     const removed = await deleteOrphanFiles({
       dataDir: tmp,
-      orphanFiles: [
-        "photos/proj1/rep1/a.jpg",
-        "photos/proj1/rep1/missing.jpg",
-      ],
+      orphanFiles: ["photos/proj1/rep1/a.jpg", "photos/proj1/rep1/missing.jpg"],
     });
     expect(removed).toBe(1);
 
-    await expect(
-      fs.access(path.join(tmp, "photos/proj1/rep1/a.jpg")),
-    ).rejects.toThrow();
-    await expect(
-      fs.access(path.join(tmp, "photos/proj1/rep1/b.jpg")),
-    ).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmp, "photos/proj1/rep1/a.jpg"))).rejects.toThrow();
+    await expect(fs.access(path.join(tmp, "photos/proj1/rep1/b.jpg"))).resolves.toBeUndefined();
   });
 
   it("refuses paths that escape DATA_DIR", async () => {
@@ -188,9 +165,7 @@ describe("deleteOrphanFiles", () => {
       orphanFiles: ["../escape.jpg", "/etc/passwd"],
     });
     expect(removed).toBe(0);
-    await expect(
-      fs.access(path.join(tmp, "photos/proj1/rep1/a.jpg")),
-    ).resolves.toBeUndefined();
+    await expect(fs.access(path.join(tmp, "photos/proj1/rep1/a.jpg"))).resolves.toBeUndefined();
   });
 });
 

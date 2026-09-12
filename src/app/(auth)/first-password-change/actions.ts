@@ -24,9 +24,7 @@ const schema = z
   });
 
 export type ChangePasswordState = {
-  fieldErrors?: Partial<
-    Record<"currentPassword" | "newPassword" | "confirmPassword", string>
-  >;
+  fieldErrors?: Partial<Record<"currentPassword" | "newPassword" | "confirmPassword", string>>;
   formError?: string;
   policyIssues?: string[];
   success?: boolean;
@@ -49,9 +47,7 @@ export async function changePasswordAction(
   if (!parsed.success) {
     const fieldErrors: ChangePasswordState["fieldErrors"] = {};
     for (const issue of parsed.error.issues) {
-      const field = issue.path[0] as keyof NonNullable<
-        ChangePasswordState["fieldErrors"]
-      >;
+      const field = issue.path[0] as keyof NonNullable<ChangePasswordState["fieldErrors"]>;
       if (field && !fieldErrors[field]) fieldErrors[field] = issue.message;
     }
     return { fieldErrors };

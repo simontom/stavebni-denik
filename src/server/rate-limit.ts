@@ -33,9 +33,7 @@ export interface RateLimitResult {
   retryAfterMs: number;
 }
 
-export async function checkRateLimit(
-  cfg: RateLimitConfig,
-): Promise<RateLimitResult> {
+export async function checkRateLimit(cfg: RateLimitConfig): Promise<RateLimitResult> {
   const now = new Date();
   const since = new Date(now.getTime() - cfg.windowMs);
 
@@ -67,10 +65,7 @@ export async function checkRateLimit(
 
     // Oldest attempt in the window dictates when the limit resets.
     const oldest = rows[0]?.created_at ?? now;
-    const retryAfterMs = Math.max(
-      0,
-      oldest.getTime() + cfg.windowMs - now.getTime(),
-    );
+    const retryAfterMs = Math.max(0, oldest.getTime() + cfg.windowMs - now.getTime());
     return { allowed: false, remaining: 0, retryAfterMs };
   });
 }

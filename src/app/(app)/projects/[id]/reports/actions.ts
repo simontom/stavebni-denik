@@ -31,9 +31,7 @@ import { softDeletePhoto } from "@/server/services/photos";
 import type { ReportFormState } from "./report-form-types";
 
 /** Map a failed zod parse into field-level error messages. */
-function toFieldErrors(
-  issues: { path: PropertyKey[]; message: string }[],
-): ReportFormState {
+function toFieldErrors(issues: { path: PropertyKey[]; message: string }[]): ReportFormState {
   const fieldErrors: Record<string, string> = {};
   for (const issue of issues) {
     const field = issue.path[0];
@@ -170,9 +168,7 @@ export async function toggleMaterialAction(data: FormData): Promise<void> {
  * individually. Errors on individual ids are swallowed so a single
  * stale id does not undo the whole batch.
  */
-export async function bulkResolveMaterialsAction(
-  data: FormData,
-): Promise<void> {
+export async function bulkResolveMaterialsAction(data: FormData): Promise<void> {
   const user = await requireUser();
   const ids = data
     .getAll("materialId")
@@ -200,9 +196,7 @@ export async function bulkResolveMaterialsAction(
 }
 
 export type RolloverState =
-  | { status: "idle" }
-  | { status: "ok" }
-  | { status: "error"; message: string };
+  { status: "idle" } | { status: "ok" } | { status: "error"; message: string };
 
 /**
  * Roll a single open material need to a later day. Reads `materialId`
@@ -384,8 +378,7 @@ export async function addVisitAction(
   // visitedAt přichází ve formátu "YYYY-MM-DDTHH:MM" (datetime-local input).
   // Pokud chybí, vyrobíme z aktuálního času; pokud je validní, použij ho.
   const visitedAtRaw = String(data.get("visitedAt") ?? "").trim();
-  const visitedAt =
-    visitedAtRaw.length > 0 ? new Date(visitedAtRaw) : new Date();
+  const visitedAt = visitedAtRaw.length > 0 ? new Date(visitedAtRaw) : new Date();
 
   // Visitor role validation se delegateuje na Zod uvnitř createVisit
   // — proto typujeme jen jako string a service ho zkontroluje.
@@ -415,9 +408,10 @@ export async function addVisitAction(
     }
     if (err instanceof Error && err.name === "ZodError") {
       // Zod 4 ukládá issues v err.issues; pro jistotu fallback parse.
-      const issues = "issues" in err && Array.isArray((err as { issues: unknown }).issues)
-        ? ((err as { issues: { path: PropertyKey[]; message: string }[] }).issues)
-        : (JSON.parse(err.message) as { path: PropertyKey[]; message: string }[]);
+      const issues =
+        "issues" in err && Array.isArray((err as { issues: unknown }).issues)
+          ? (err as { issues: { path: PropertyKey[]; message: string }[] }).issues
+          : (JSON.parse(err.message) as { path: PropertyKey[]; message: string }[]);
       const fieldErrors: Record<string, string> = {};
       for (const issue of issues) {
         const field = issue.path[0];

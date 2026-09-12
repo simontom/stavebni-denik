@@ -1,14 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
-import {
-  ArrowRightCircle,
-  Check,
-  CheckCheck,
-  Loader2,
-  Plus,
-  RotateCcw,
-} from "lucide-react";
+import { ArrowRightCircle, Check, CheckCheck, Loader2, Plus, RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,12 +67,12 @@ export function RemarkForm({ showOfficialOption, ...refs }: RemarkFormProps) {
       />
       <div className="flex items-center justify-between gap-3">
         {showOfficialOption ? (
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+          <label className="text-muted-foreground inline-flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="checkbox"
               name="isOfficial"
               value="true"
-              className="size-4 cursor-pointer rounded border-input"
+              className="border-input size-4 cursor-pointer rounded"
             />
             Označit jako oficiální záznam (TDS / BOZP / projektant)
           </label>
@@ -129,9 +122,7 @@ export function MaterialsPanel({
   const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rolloverOpenFor, setRolloverOpenFor] = useState<string | null>(null);
-  const [rolloverDate, setRolloverDate] = useState<string>(
-    rolloverTargets[0]?.date ?? "",
-  );
+  const [rolloverDate, setRolloverDate] = useState<string>(rolloverTargets[0]?.date ?? "");
   const [rolloverError, setRolloverError] = useState<string | null>(null);
 
   function handleAdd(fd: FormData) {
@@ -217,26 +208,20 @@ export function MaterialsPanel({
 
   const unresolvedCount = items.filter((m) => !m.resolved).length;
   const allUnresolvedSelected =
-    unresolvedCount > 0 &&
-    items.filter((m) => !m.resolved).every((m) => selected.has(m.id));
+    unresolvedCount > 0 && items.filter((m) => !m.resolved).every((m) => selected.has(m.id));
   const canShowRollover = canRollover && rolloverTargets.length > 0;
 
   return (
     <div className="flex flex-col gap-3">
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Zatím žádné požadavky na materiál.
-        </p>
+        <p className="text-muted-foreground text-sm">Zatím žádné požadavky na materiál.</p>
       ) : (
         <ul className="flex flex-col divide-y">
           {items.map((m) => {
             const checked = selected.has(m.id);
             const isSelectable = canResolve && !m.resolved;
             return (
-              <li
-                key={m.id}
-                className="flex items-center gap-3 py-2"
-              >
+              <li key={m.id} className="flex items-center gap-3 py-2">
                 {isSelectable ? (
                   <input
                     type="checkbox"
@@ -244,7 +229,7 @@ export function MaterialsPanel({
                     checked={checked}
                     onChange={() => toggleSelected(m.id)}
                     disabled={pending}
-                    className="size-4 cursor-pointer rounded border-input"
+                    className="border-input size-4 cursor-pointer rounded"
                   />
                 ) : (
                   <span className="size-4" aria-hidden />
@@ -252,15 +237,13 @@ export function MaterialsPanel({
                 <div className="flex flex-1 flex-col">
                   <span
                     className={
-                      m.resolved
-                        ? "text-sm text-muted-foreground line-through"
-                        : "text-sm"
+                      m.resolved ? "text-muted-foreground text-sm line-through" : "text-sm"
                     }
                   >
                     {m.text}
                   </span>
                   {m.neededBy && (
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-muted-foreground text-xs">
                       Potřeba do: {formatDate(m.neededBy)}
                     </span>
                   )}
@@ -300,12 +283,9 @@ export function MaterialsPanel({
                       </Button>
                     </div>
                     {rolloverOpenFor === m.id && (
-                      <div className="flex flex-wrap items-end gap-2 rounded-md border bg-muted/40 p-2">
+                      <div className="bg-muted/40 flex flex-wrap items-end gap-2 rounded-md border p-2">
                         <div className="grid gap-1">
-                          <Label
-                            htmlFor={`rollover-target-${m.id}`}
-                            className="text-xs"
-                          >
+                          <Label htmlFor={`rollover-target-${m.id}`} className="text-xs">
                             Přesunout na
                           </Label>
                           <select
@@ -313,7 +293,7 @@ export function MaterialsPanel({
                             value={rolloverDate}
                             onChange={(e) => setRolloverDate(e.target.value)}
                             disabled={pending}
-                            className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
+                            className="border-input h-8 rounded-md border bg-transparent px-2 text-sm"
                           >
                             {rolloverTargets.map((t) => (
                               <option key={t.date} value={t.date}>
@@ -329,10 +309,7 @@ export function MaterialsPanel({
                           onClick={() => confirmRollover(m.id)}
                         >
                           {pending ? (
-                            <Loader2
-                              className="size-4 animate-spin"
-                              aria-hidden
-                            />
+                            <Loader2 className="size-4 animate-spin" aria-hidden />
                           ) : (
                             <ArrowRightCircle className="size-4" aria-hidden />
                           )}
@@ -348,10 +325,7 @@ export function MaterialsPanel({
                           Zrušit
                         </Button>
                         {rolloverError && (
-                          <p
-                            className="basis-full text-xs text-destructive"
-                            role="alert"
-                          >
+                          <p className="text-destructive basis-full text-xs" role="alert">
                             {rolloverError}
                           </p>
                         )}
@@ -366,20 +340,16 @@ export function MaterialsPanel({
       )}
 
       {canResolve && unresolvedCount > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/40 p-2 text-sm">
+        <div className="bg-muted/40 flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm">
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={
-                allUnresolvedSelected ? clearSelection : selectAllUnresolved
-              }
+              onClick={allUnresolvedSelected ? clearSelection : selectAllUnresolved}
               disabled={pending}
             >
-              {allUnresolvedSelected
-                ? "Zrušit výběr"
-                : `Vybrat všechny (${unresolvedCount})`}
+              {allUnresolvedSelected ? "Zrušit výběr" : `Vybrat všechny (${unresolvedCount})`}
             </Button>
             <span className="text-muted-foreground">
               {selected.size > 0
@@ -404,7 +374,11 @@ export function MaterialsPanel({
       )}
 
       {canAdd && (
-        <form ref={ref} action={handleAdd} className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+        <form
+          ref={ref}
+          action={handleAdd}
+          className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end"
+        >
           <HiddenRefs {...refs} />
           <div className="grid gap-1.5">
             <Label htmlFor="material-text" className="sr-only">
@@ -418,7 +392,7 @@ export function MaterialsPanel({
             />
           </div>
           <div className="grid gap-1.5">
-            <Label htmlFor="material-needed" className="text-xs text-muted-foreground">
+            <Label htmlFor="material-needed" className="text-muted-foreground text-xs">
               Potřeba do
             </Label>
             <Input id="material-needed" name="neededBy" type="date" />
@@ -442,10 +416,7 @@ interface ManualWeatherFormProps extends ReportRef {
 }
 
 /** Manual weather entry shown only when the auto fetch was unavailable. */
-export function ManualWeatherForm({
-  defaultSummary,
-  ...refs
-}: ManualWeatherFormProps) {
+export function ManualWeatherForm({ defaultSummary, ...refs }: ManualWeatherFormProps) {
   const [pending, startTransition] = useTransition();
 
   function handle(fd: FormData) {

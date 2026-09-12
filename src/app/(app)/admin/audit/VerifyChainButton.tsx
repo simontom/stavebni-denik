@@ -22,13 +22,9 @@ export function VerifyChainButton() {
         const result = await verifyAuditAction();
         setLast(result);
         if (result.ok) {
-          toast.success(
-            `Řetěz je neporušený — zkontrolováno ${result.totalRows} záznamů.`,
-          );
+          toast.success(`Řetěz je neporušený — zkontrolováno ${result.totalRows} záznamů.`);
         } else {
-          toast.error(
-            `Porušená integrita u záznamu #${result.brokenAtId ?? "?"}.`,
-          );
+          toast.error(`Porušená integrita u záznamu #${result.brokenAtId ?? "?"}.`);
         }
       } catch {
         toast.error("Ověření selhalo. Zkuste to prosím znovu.");
@@ -38,20 +34,13 @@ export function VerifyChainButton() {
 
   return (
     <div className="flex flex-col items-start gap-1 sm:items-end">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onVerify}
-        disabled={isPending}
-      >
+      <Button variant="outline" size="sm" onClick={onVerify} disabled={isPending}>
         {isPending ? "Ověřuji…" : "Ověřit integritu řetězu"}
       </Button>
       {last && (
         <span
           className={
-            last.ok
-              ? "text-xs text-muted-foreground"
-              : "text-xs font-medium text-destructive"
+            last.ok ? "text-muted-foreground text-xs" : "text-destructive text-xs font-medium"
           }
         >
           {last.ok

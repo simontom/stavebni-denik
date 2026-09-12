@@ -30,10 +30,10 @@ interface Props {
 }
 
 export function LoginForm({ callbackUrl }: Props) {
-  const [state, formAction, isPending] = useActionState<
-    LoginState | undefined,
-    FormData
-  >(loginAction, undefined);
+  const [state, formAction, isPending] = useActionState<LoginState | undefined, FormData>(
+    loginAction,
+    undefined,
+  );
   const [showPassword, setShowPassword] = useState(false);
 
   const errorMessage = state?.error ? LOGIN_ERROR_MESSAGES[state.error] : null;
@@ -43,8 +43,7 @@ export function LoginForm({ callbackUrl }: Props) {
       <CardHeader>
         <CardTitle>Přihlášení</CardTitle>
         <CardDescription>
-          Použijte přihlašovací jméno a heslo, které jste obdrželi od
-          stavbyvedoucího.
+          Použijte přihlašovací jméno a heslo, které jste obdrželi od stavbyvedoucího.
         </CardDescription>
       </CardHeader>
       <form action={formAction} noValidate>
@@ -87,7 +86,7 @@ export function LoginForm({ callbackUrl }: Props) {
                 type="button"
                 onClick={() => setShowPassword((v) => !v)}
                 aria-label={showPassword ? "Skrýt heslo" : "Zobrazit heslo"}
-                className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center"
                 tabIndex={-1}
               >
                 {showPassword ? (
@@ -99,9 +98,7 @@ export function LoginForm({ callbackUrl }: Props) {
             </div>
           </div>
 
-          {callbackUrl && (
-            <input type="hidden" name="callbackUrl" value={callbackUrl} />
-          )}
+          {callbackUrl && <input type="hidden" name="callbackUrl" value={callbackUrl} />}
         </CardContent>
         <CardFooter className="mt-2">
           <Button type="submit" className="w-full" disabled={isPending}>

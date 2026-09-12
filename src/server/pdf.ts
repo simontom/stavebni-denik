@@ -59,10 +59,7 @@ export interface RenderPdfOptions {
  *   — when the client disconnects, queued renders are evicted before
  *   Chromium is launched, saving CPU/RAM on the constrained machine.
  */
-export async function renderPdf(
-  opts: RenderPdfOptions,
-  signal?: AbortSignal,
-): Promise<Buffer> {
+export async function renderPdf(opts: RenderPdfOptions, signal?: AbortSignal): Promise<Buffer> {
   return acquirePdfSlot(() => renderPdfNow(opts), signal);
 }
 
@@ -74,17 +71,19 @@ async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
       // Match modern desktop viewport so server-rendered components
       // pick the same breakpoint they would in a regular browser.
       viewport: { width: 1280, height: 1696 },
-      extraHTTPHeaders: opts.cookieHeader
-        ? { cookie: opts.cookieHeader }
-        : undefined,
+      extraHTTPHeaders: opts.cookieHeader ? { cookie: opts.cookieHeader } : undefined,
     });
     const page = await context.newPage();
     await page.goto(opts.url, {
       waitUntil: "networkidle",
       timeout: NAV_TIMEOUT_MS,
     });
-    
-    logger.info("pdf.start", { url: opts.url, inFlight: getPdfInFlight(), queued: getPdfQueueDepth() });
+
+    logger.info("pdf.start", {
+      url: opts.url,
+      inFlight: getPdfInFlight(),
+      queued: getPdfQueueDepth(),
+    });
     const startedRender = Date.now();
 
     const buffer = await page.pdf({
@@ -99,7 +98,11 @@ async function renderPdfNow(opts: RenderPdfOptions): Promise<Buffer> {
           "</div>",
       margin: A4_MARGIN,
     });
-    logger.info("pdf.done", { url: opts.url, durationMs: Date.now() - startedRender, bytes: buffer.length });
+    logger.info("pdf.done", {
+      url: opts.url,
+      durationMs: Date.now() - startedRender,
+      bytes: buffer.length,
+    });
     return buffer;
   } catch (err) {
     logger.error("pdf.error", err, { url: opts.url });
@@ -151,10 +154,7 @@ const waiters: Waiter[] = [];
  * Exposed only so the unit test can drive it directly; production
  * callers go through `renderPdf`.
  */
-export async function acquirePdfSlot<T>(
-  task: () => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
+export async function acquirePdfSlot<T>(task: () => Promise<T>, signal?: AbortSignal): Promise<T> {
   if (inFlight >= PDF_CONCURRENCY) {
     await new Promise<void>((resolve, reject) => {
       const entry: Waiter = { resolve, reject };

@@ -28,7 +28,7 @@ export default function ErrorPage({
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col items-center gap-6 py-12 text-center">
-      <div className="grid size-16 place-items-center rounded-full bg-destructive/10 text-destructive">
+      <div className="bg-destructive/10 text-destructive grid size-16 place-items-center rounded-full">
         <AlertTriangle className="size-8" aria-hidden />
       </div>
       <div className="grid gap-2">
@@ -37,9 +37,7 @@ export default function ErrorPage({
           Při zpracování požadavku došlo k chybě. Zkuste to prosím znovu.
         </p>
         {error.digest && (
-          <p className="text-xs text-muted-foreground font-mono">
-            Kód: {error.digest}
-          </p>
+          <p className="text-muted-foreground font-mono text-xs">Kód: {error.digest}</p>
         )}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">

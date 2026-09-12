@@ -45,8 +45,7 @@ vi.mock("@/lib/db", () => {
   };
   return {
     prisma: {
-      $transaction: async (fn: (client: unknown) => Promise<unknown>) =>
-        fn(tx),
+      $transaction: async (fn: (client: unknown) => Promise<unknown>) => fn(tx),
     },
   };
 });

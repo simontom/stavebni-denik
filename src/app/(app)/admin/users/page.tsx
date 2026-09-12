@@ -1,12 +1,7 @@
 import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -46,9 +41,8 @@ export default async function AdminUsersPage() {
           <div>
             <CardTitle>Uživatelé</CardTitle>
             <CardDescription>
-              Přidávejte stavbyvedoucí, pracovníky a dozor. Heslo se vygeneruje
-              automaticky a zobrazí pouze jednou — předejte ho uživateli
-              bezpečným kanálem.
+              Přidávejte stavbyvedoucí, pracovníky a dozor. Heslo se vygeneruje automaticky a
+              zobrazí pouze jednou — předejte ho uživateli bezpečným kanálem.
             </CardDescription>
           </div>
           <CreateUserDialog />
@@ -72,10 +66,7 @@ export default async function AdminUsersPage() {
           <TableBody>
             {users.length === 0 && (
               <TableRow>
-                <TableCell
-                  colSpan={8}
-                  className="text-center text-muted-foreground"
-                >
+                <TableCell colSpan={8} className="text-muted-foreground text-center">
                   Žádní uživatelé. Přidejte prvního pracovníka.
                 </TableCell>
               </TableRow>
@@ -96,9 +87,7 @@ export default async function AdminUsersPage() {
                     <span className="text-muted-foreground">—</span>
                   )}
                 </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {u.ckaitNumber ?? "—"}
-                </TableCell>
+                <TableCell className="font-mono text-xs">{u.ckaitNumber ?? "—"}</TableCell>
                 <TableCell>
                   {u.isActive ? (
                     u.mustChangePwd ? (
@@ -110,7 +99,7 @@ export default async function AdminUsersPage() {
                     <Badge variant="destructive">Deaktivován</Badge>
                   )}
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="text-muted-foreground text-sm">
                   {formatDate(u.createdAt)}
                 </TableCell>
                 <TableCell className="text-right">
@@ -126,10 +115,7 @@ export default async function AdminUsersPage() {
                       }}
                     />
                     {u.id !== actor.id && (
-                      <ResetPasswordButton
-                        userId={u.id}
-                        displayName={u.displayName}
-                      />
+                      <ResetPasswordButton userId={u.id} displayName={u.displayName} />
                     )}
                     <ToggleActiveButton
                       userId={u.id}
@@ -137,10 +123,7 @@ export default async function AdminUsersPage() {
                       displayName={u.displayName}
                     />
                     {u.id !== actor.id && (
-                      <DeleteUserButton
-                        userId={u.id}
-                        displayName={u.displayName}
-                      />
+                      <DeleteUserButton userId={u.id} displayName={u.displayName} />
                     )}
                   </div>
                 </TableCell>

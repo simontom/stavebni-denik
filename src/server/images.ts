@@ -98,18 +98,18 @@ export function hasValidImageSignature(buf: Buffer): boolean {
   if (buf.length < MAGIC_HEADER_BYTES) return false;
 
   // JPEG: FF D8 FF
-  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return true;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return true;
 
   // PNG: 89 50 4E 47 0D 0A 1A 0A
   if (
     buf[0] === 0x89 &&
     buf[1] === 0x50 &&
-    buf[2] === 0x4E &&
+    buf[2] === 0x4e &&
     buf[3] === 0x47 &&
-    buf[4] === 0x0D &&
-    buf[5] === 0x0A &&
-    buf[6] === 0x1A &&
-    buf[7] === 0x0A
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
   ) {
     return true;
   }
@@ -123,7 +123,7 @@ export function hasValidImageSignature(buf: Buffer): boolean {
     buf[8] === 0x57 && // W
     buf[9] === 0x45 && // E
     buf[10] === 0x42 && // B
-    buf[11] === 0x50   // P
+    buf[11] === 0x50 // P
   ) {
     return true;
   }
@@ -135,7 +135,7 @@ export function hasValidImageSignature(buf: Buffer): boolean {
     buf[4] === 0x66 && // f
     buf[5] === 0x74 && // t
     buf[6] === 0x79 && // y
-    buf[7] === 0x70    // p
+    buf[7] === 0x70 // p
   ) {
     return true;
   }
@@ -201,13 +201,9 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
   if (!format || !ACCEPTED_SHARP_FORMATS.has(format)) {
     throw new InvalidImageError(`Nepodporovaný formát obrázku: ${format ?? "neznámý"}.`);
   }
-  if (
-    metaWidth !== undefined &&
-    metaHeight !== undefined &&
-    metaWidth * metaHeight > MAX_PIXELS
-  ) {
+  if (metaWidth !== undefined && metaHeight !== undefined && metaWidth * metaHeight > MAX_PIXELS) {
     throw new ImageTooLargeError(
-      `Obrázek má příliš velké rozlišení (${metaWidth}×${metaHeight} = ${(metaWidth * metaHeight / 1_000_000).toFixed(1)} MP). Maximum je ${MAX_PIXELS / 1_000_000} MP — upravte rozlišení v telefonu.`,
+      `Obrázek má příliš velké rozlišení (${metaWidth}×${metaHeight} = ${((metaWidth * metaHeight) / 1_000_000).toFixed(1)} MP). Maximum je ${MAX_PIXELS / 1_000_000} MP — upravte rozlišení v telefonu.`,
     );
   }
 

@@ -115,10 +115,8 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
           <DialogHeader>
             <DialogTitle>Heslo vygenerováno</DialogTitle>
             <DialogDescription>
-              Předejte tyto údaje uživateli{" "}
-              <strong>{generated?.displayName}</strong> bezpečným
-              kanálem (osobně, šifrovaná zpráva).{" "}
-              <strong>Heslo se nikdy znovu nezobrazí.</strong>
+              Předejte tyto údaje uživateli <strong>{generated?.displayName}</strong> bezpečným
+              kanálem (osobně, šifrovaná zpráva). <strong>Heslo se nikdy znovu nezobrazí.</strong>
             </DialogDescription>
           </DialogHeader>
           {generated && (
@@ -130,11 +128,7 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
               <div className="grid gap-2">
                 <Label>Nové heslo</Label>
                 <div className="flex gap-2">
-                  <Input
-                    value={generated.password}
-                    readOnly
-                    className="font-mono"
-                  />
+                  <Input value={generated.password} readOnly className="font-mono" />
                   <Button
                     type="button"
                     variant="outline"
@@ -148,9 +142,8 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
                     )}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Uživatel bude při dalším přihlášení vyzván ke změně
-                  hesla.
+                <p className="text-muted-foreground text-xs">
+                  Uživatel bude při dalším přihlášení vyzván ke změně hesla.
                 </p>
               </div>
             </div>

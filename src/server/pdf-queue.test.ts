@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  acquirePdfSlot,
-  getPdfInFlight,
-  getPdfQueueDepth,
-} from "./pdf";
+import { acquirePdfSlot, getPdfInFlight, getPdfQueueDepth } from "./pdf";
 
 /**
  * The PDF render queue is a process-wide semaphore — exercised here
@@ -78,17 +74,17 @@ describe("acquirePdfSlot", () => {
 
     // First slot occupies the only slot.
     const first = acquirePdfSlot<string>(
-      () => new Promise((resolve) => { release1 = () => resolve("first"); }),
+      () =>
+        new Promise((resolve) => {
+          release1 = () => resolve("first");
+        }),
     );
     await Promise.resolve();
     expect(getPdfInFlight()).toBe(1);
 
     // Second caller queues with an AbortController.
     const ac = new AbortController();
-    const second = acquirePdfSlot<string>(
-      () => Promise.resolve("second"),
-      ac.signal,
-    );
+    const second = acquirePdfSlot<string>(() => Promise.resolve("second"), ac.signal);
     await Promise.resolve();
     expect(getPdfQueueDepth()).toBe(1);
 
@@ -109,17 +105,17 @@ describe("acquirePdfSlot", () => {
     let release1: () => void = () => undefined;
 
     const first = acquirePdfSlot<string>(
-      () => new Promise((resolve) => { release1 = () => resolve("first"); }),
+      () =>
+        new Promise((resolve) => {
+          release1 = () => resolve("first");
+        }),
     );
     await Promise.resolve();
 
     const ac = new AbortController();
     ac.abort(); // already aborted before calling acquirePdfSlot
 
-    const second = acquirePdfSlot<string>(
-      () => Promise.resolve("second"),
-      ac.signal,
-    );
+    const second = acquirePdfSlot<string>(() => Promise.resolve("second"), ac.signal);
 
     await expect(second).rejects.toSatisfy(
       (e: unknown) => e instanceof DOMException && e.name === "AbortError",
@@ -138,16 +134,16 @@ describe("acquirePdfSlot", () => {
     let release1: () => void = () => undefined;
 
     const first = acquirePdfSlot<string>(
-      () => new Promise((resolve) => { release1 = () => resolve("first"); }),
+      () =>
+        new Promise((resolve) => {
+          release1 = () => resolve("first");
+        }),
     );
     await Promise.resolve();
 
     // B queues with a signal we will abort while it is waiting.
     const acB = new AbortController();
-    const second = acquirePdfSlot<string>(
-      () => Promise.resolve("second"),
-      acB.signal,
-    );
+    const second = acquirePdfSlot<string>(() => Promise.resolve("second"), acB.signal);
     await Promise.resolve();
     expect(getPdfQueueDepth()).toBe(1);
 

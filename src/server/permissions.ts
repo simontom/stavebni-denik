@@ -97,24 +97,24 @@ export interface Resource {
 const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean> = {
   // App-admin (správa uživatelů, audit log) — orthogonální k role.
   // Admin nemusí být stavbyvedoucí, stavbyvedoucí nemusí být admin.
-  "user.create":         (u) => u.isAdmin,
-  "user.update":         (u) => u.isAdmin,
-  "user.deactivate":     (u) => u.isAdmin,
-  "user.activate":       (u) => u.isAdmin,
-  "user.delete":         (u) => u.isAdmin,
+  "user.create": (u) => u.isAdmin,
+  "user.update": (u) => u.isAdmin,
+  "user.deactivate": (u) => u.isAdmin,
+  "user.activate": (u) => u.isAdmin,
+  "user.delete": (u) => u.isAdmin,
   "user.password-reset": (u) => u.isAdmin,
-  "audit.read":          (u) => u.isAdmin,
-  "audit.verify":        (u) => u.isAdmin,
+  "audit.read": (u) => u.isAdmin,
+  "audit.verify": (u) => u.isAdmin,
 
   // Stavbyvedoucí (role=BOSS) operations — zakázky, podpis deníku.
   // Tady BOSS znamená legal stavbyvedoucí dle § 153 stavebního zákona
   // (musí mít ČKAIT autorizaci — kontroluje listSiteManagerCandidates
   // při výběru pro Project.siteManagerId).
-  "project.create":         (u) => u.role === "BOSS",
-  "project.update":         (u) => u.role === "BOSS",
-  "project.delete":         (u) => u.role === "BOSS",
-  "project.member.manage":  (u) => u.role === "BOSS",
-  "project.list-all":       (u) => u.role === "BOSS",
+  "project.create": (u) => u.role === "BOSS",
+  "project.update": (u) => u.role === "BOSS",
+  "project.delete": (u) => u.role === "BOSS",
+  "project.member.manage": (u) => u.role === "BOSS",
+  "project.list-all": (u) => u.role === "BOSS",
 
   // Reports
   "report.create": (u, r) =>
@@ -122,9 +122,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
   "report.update": (u, r) =>
     !r?.reportLocked &&
     (u.role === "BOSS" ||
-      (u.role === "WORKER" &&
-        r?.projectMember === true &&
-        r?.authorId === u.id)),
+      (u.role === "WORKER" && r?.projectMember === true && r?.authorId === u.id)),
   "report.sign": (u) => u.role === "BOSS",
   "report.acknowledge": (u, r) => u.role === "INVESTOR" && r?.projectMember === true,
   "report.addendum.create": (u, r) =>
@@ -132,18 +130,13 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
 
   // Photos / remarks / materials
   "photo.upload": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER") &&
-    r?.projectMember === true &&
-    !r?.reportLocked,
-  "photo.delete": (u, r) =>
-    u.role === "BOSS" && r?.projectMember === true && !r?.reportLocked,
+    (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true && !r?.reportLocked,
+  "photo.delete": (u, r) => u.role === "BOSS" && r?.projectMember === true && !r?.reportLocked,
   "remark.create": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR" || u.role === "INVESTOR") &&
     r?.projectMember === true,
   "material.create": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER") &&
-    r?.projectMember === true &&
-    !r?.reportLocked,
+    (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true && !r?.reportLocked,
   "material.resolve": (u, r) =>
     (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
 
@@ -156,8 +149,7 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
     (u.role === "BOSS" || u.role === "WORKER" || u.role === "INSPECTOR") &&
     r?.projectMember === true,
   // Smazat smí BOSS nebo autor zápisu (check v service).
-  "visit.delete": (u, r) =>
-    (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
+  "visit.delete": (u, r) => (u.role === "BOSS" || u.role === "WORKER") && r?.projectMember === true,
 };
 
 /**
@@ -165,21 +157,13 @@ const MATRIX: Record<Action, (user: SessionUser, resource?: Resource) => boolean
  * given (optional) resource. Use `assertCan` for the throw-on-deny
  * variant from server actions / routes.
  */
-export function can(
-  user: SessionUser,
-  action: Action,
-  resource?: Resource,
-): boolean {
+export function can(user: SessionUser, action: Action, resource?: Resource): boolean {
   const rule = MATRIX[action];
   if (!rule) return false;
   return rule(user, resource);
 }
 
-export function assertCan(
-  user: SessionUser,
-  action: Action,
-  resource?: Resource,
-): void {
+export function assertCan(user: SessionUser, action: Action, resource?: Resource): void {
   if (!can(user, action, resource)) {
     throw new ForbiddenError(action);
   }

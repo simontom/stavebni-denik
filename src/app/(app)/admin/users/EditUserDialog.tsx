@@ -59,8 +59,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
   const [state, setState] = useState<UpdateUserState | undefined>(undefined);
   const [isPending, startTransition] = useTransition();
 
-  const fieldErrors =
-    state?.status === "field-error" ? state.fieldErrors : undefined;
+  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
 
   function handleOpenChange(next: boolean) {
     if (next) {
@@ -89,9 +88,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
         } else if (res.status === "not-found") {
           toast.error("Uživatel nebyl nalezen.");
         } else if (res.status === "last-admin") {
-          toast.error(
-            "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
-          );
+          toast.error("Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.");
         } else if (res.status === "error") {
           toast.error(res.message);
         }
@@ -118,8 +115,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
         <DialogHeader>
           <DialogTitle>Upravit uživatele</DialogTitle>
           <DialogDescription>
-            Změňte jméno, roli, ČKAIT nebo admin flag. Přihlašovací
-            jméno a heslo se zde nemění.
+            Změňte jméno, roli, ČKAIT nebo admin flag. Přihlašovací jméno a heslo se zde nemění.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
@@ -127,9 +123,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
 
           <div className="grid gap-2">
             <Label>Přihlašovací jméno</Label>
-            <p className="font-mono text-sm text-muted-foreground">
-              {initialValues.nickname}
-            </p>
+            <p className="text-muted-foreground font-mono text-sm">{initialValues.nickname}</p>
           </div>
 
           <div className="grid gap-2">
@@ -143,24 +137,16 @@ export function EditUserDialog({ userId, initialValues }: Props) {
               aria-invalid={!!fieldErrors?.displayName}
             />
             {fieldErrors?.displayName && (
-              <p className="text-sm text-destructive">
-                {fieldErrors.displayName}
-              </p>
+              <p className="text-destructive text-sm">{fieldErrors.displayName}</p>
             )}
           </div>
 
           <div className="grid gap-2">
             <Label htmlFor={`role-${userId}`}>Role</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as Role)}
-            >
+            <Select value={role} onValueChange={(v) => setRole(v as Role)}>
               <SelectTrigger id={`role-${userId}`}>
                 <SelectValue>
-                  {(value) =>
-                    ROLE_OPTIONS.find((o) => o.value === value)?.label ??
-                    value
-                  }
+                  {(value) => ROLE_OPTIONS.find((o) => o.value === value)?.label ?? value}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -206,26 +192,19 @@ export function EditUserDialog({ userId, initialValues }: Props) {
               <span>
                 <span className="font-medium">Administrátor aplikace</span>
                 <br />
-                <span className="text-xs text-muted-foreground">
-                  Spravuje uživatele a čte audit log. Není nutné, aby
-                  byl zároveň stavbyvedoucí.
+                <span className="text-muted-foreground text-xs">
+                  Spravuje uživatele a čte audit log. Není nutné, aby byl zároveň stavbyvedoucí.
                 </span>
               </span>
             </label>
           </div>
 
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-            >
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Zrušit
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending && (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              )}
+              {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
               Uložit změny
             </Button>
           </DialogFooter>

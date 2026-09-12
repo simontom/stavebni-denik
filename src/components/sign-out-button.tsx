@@ -10,12 +10,7 @@ import { signOutAction } from "@/server/actions/auth";
 export function SignOutButton() {
   return (
     <form action={signOutAction}>
-      <Button
-        type="submit"
-        variant="outline"
-        size="sm"
-        aria-label="Odhlásit se"
-      >
+      <Button type="submit" variant="outline" size="sm" aria-label="Odhlásit se">
         <LogOut className="size-4" aria-hidden />
         <span className="hidden sm:inline">Odhlásit</span>
       </Button>

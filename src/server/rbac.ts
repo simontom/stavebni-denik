@@ -3,11 +3,7 @@ import "server-only";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/server/auth";
-import {
-  ForbiddenError,
-  type Role,
-  type SessionUser,
-} from "@/server/permissions";
+import { ForbiddenError, type Role, type SessionUser } from "@/server/permissions";
 
 /**
  * Re-export the pure RBAC matrix (capability checks, types, errors) so

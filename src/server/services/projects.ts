@@ -20,16 +20,8 @@ import { canAccessProject, type SessionUser } from "@/server/permissions";
  * vytažení z `FormData` dělá server action.
  */
 export const createProjectSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Vyplňte název stavby.")
-    .max(255, "Maximálně 255 znaků."),
-  address: z
-    .string()
-    .trim()
-    .min(1, "Vyplňte místo stavby.")
-    .max(255, "Maximálně 255 znaků."),
+  name: z.string().trim().min(1, "Vyplňte název stavby.").max(255, "Maximálně 255 znaků."),
+  address: z.string().trim().min(1, "Vyplňte místo stavby.").max(255, "Maximálně 255 znaků."),
   cadastralArea: z
     .string()
     .trim()
@@ -40,16 +32,8 @@ export const createProjectSchema = z.object({
     .trim()
     .min(1, "Vyplňte parcelní čísla.")
     .max(255, "Maximálně 255 znaků."),
-  builder: z
-    .string()
-    .trim()
-    .min(1, "Vyplňte stavebníka.")
-    .max(255, "Maximálně 255 znaků."),
-  contractor: z
-    .string()
-    .trim()
-    .min(1, "Vyplňte zhotovitele.")
-    .max(255, "Maximálně 255 znaků."),
+  builder: z.string().trim().min(1, "Vyplňte stavebníka.").max(255, "Maximálně 255 znaků."),
+  contractor: z.string().trim().min(1, "Vyplňte zhotovitele.").max(255, "Maximálně 255 znaků."),
   siteManagerId: z.string().min(1, "Vyberte stavbyvedoucího."),
   permitNumber: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
   tdsName: z.string().trim().max(255, "Maximálně 255 znaků.").nullable(),
@@ -301,10 +285,7 @@ export async function updateProject(
  * intact; the project simply disappears from active lists and is only
  * visible in the BOSS archive view.
  */
-export async function archiveProject(
-  id: string,
-  ctx: AuditContext,
-): Promise<void> {
+export async function archiveProject(id: string, ctx: AuditContext): Promise<void> {
   const before = await prisma.project.findUnique({ where: { id } });
   if (!before) throw new ProjectNotFoundError();
   if (before.deletedAt) return; // already archived — keep the log clean
@@ -327,10 +308,7 @@ export async function archiveProject(
 }
 
 /** BOSS-only — restore a previously archived project. */
-export async function restoreProject(
-  id: string,
-  ctx: AuditContext,
-): Promise<void> {
+export async function restoreProject(id: string, ctx: AuditContext): Promise<void> {
   const before = await prisma.project.findUnique({ where: { id } });
   if (!before) throw new ProjectNotFoundError();
   if (!before.deletedAt) return; // not archived — nothing to do
@@ -477,9 +455,7 @@ function toListItem(p: {
  *  - BOSS sees every project.
  *  - WORKER / GUEST see only projects they are a member of.
  */
-export async function listProjectsForUser(
-  user: SessionUser,
-): Promise<ProjectListItem[]> {
+export async function listProjectsForUser(user: SessionUser): Promise<ProjectListItem[]> {
   const where: Prisma.ProjectWhereInput =
     user.role === "BOSS"
       ? { deletedAt: null }
@@ -629,9 +605,7 @@ export interface MaterialGanttItem {
  * Filtruje soft-delete: report.deletedAt = null AND material.deletedAt
  * = null.
  */
-export async function listMaterialsForProject(
-  projectId: string,
-): Promise<MaterialGanttItem[]> {
+export async function listMaterialsForProject(projectId: string): Promise<MaterialGanttItem[]> {
   const rows = await prisma.materialNeed.findMany({
     where: {
       deletedAt: null,

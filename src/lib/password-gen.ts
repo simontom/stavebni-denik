@@ -43,9 +43,7 @@ function shuffleChars(chars: string[]): string[] {
 
 export function generatePassword(length = DEFAULT_PASSWORD_LENGTH): string {
   if (length < MIN_PASSWORD_LENGTH) {
-    throw new Error(
-      `Password length must be at least ${MIN_PASSWORD_LENGTH} characters.`,
-    );
+    throw new Error(`Password length must be at least ${MIN_PASSWORD_LENGTH} characters.`);
   }
   // Guarantee at least one of each class.
   const required: string[] = [pick(LOWER), pick(UPPER), pick(DIGIT), pick(SYMBOL)];

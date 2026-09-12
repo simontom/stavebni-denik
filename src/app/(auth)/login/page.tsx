@@ -20,67 +20,49 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
   // Already logged in — bounce back to wherever they came from (or home).
   if (session?.user) {
-    redirect(
-      session.user.mustChangePwd
-        ? "/first-password-change"
-        : callbackUrl || "/",
-    );
+    redirect(session.user.mustChangePwd ? "/first-password-change" : callbackUrl || "/");
   }
 
   return (
-    <main className="grid min-h-svh place-items-center bg-gradient-to-br from-background via-background to-accent/30 px-4 py-8">
+    <main className="from-background via-background to-accent/30 grid min-h-svh place-items-center bg-gradient-to-br px-4 py-8">
       <div className="grid w-full max-w-5xl items-center gap-10 lg:grid-cols-[1fr_auto] lg:gap-16">
         {/* Hero — schované na malých displejích, ať se vejde formulář bez scrollu */}
         <section className="hidden flex-col gap-5 lg:flex">
           <div className="flex items-center gap-3">
-            <div className="grid size-12 place-items-center rounded-xl bg-brand text-brand-foreground shadow-lg shadow-brand/20">
+            <div className="bg-brand text-brand-foreground shadow-brand/20 grid size-12 place-items-center rounded-xl shadow-lg">
               <HardHat className="size-6" aria-hidden />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold leading-tight">
-                {env.appName}
-              </h1>
-              <p className="text-sm text-muted-foreground">
-                Elektronický stavební deník
-              </p>
+              <h1 className="text-2xl leading-tight font-semibold">{env.appName}</h1>
+              <p className="text-muted-foreground text-sm">Elektronický stavební deník</p>
             </div>
           </div>
 
-          <p className="max-w-md text-pretty text-base text-muted-foreground">
+          <p className="text-muted-foreground max-w-md text-base text-pretty">
             Vedení deníku dle <strong>§ 157 stavebního zákona</strong> a{" "}
-            <strong>vyhlášky 499/2006&nbsp;Sb.</strong> Denní záznamy z mobilu,
-            fotky s GPS a počasím, podpis stavbyvedoucího, archivace 10 let.
+            <strong>vyhlášky 499/2006&nbsp;Sb.</strong> Denní záznamy z mobilu, fotky s GPS a
+            počasím, podpis stavbyvedoucího, archivace 10 let.
           </p>
 
           <ul className="grid gap-3 text-sm">
             <li className="flex items-start gap-3">
-              <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-brand"
-                aria-hidden
-              />
+              <ShieldCheck className="text-brand mt-0.5 size-5 shrink-0" aria-hidden />
               <span>
-                <strong>Append-only audit log</strong> s hash-chainem —
-                změny v deníku jsou kryptograficky doložitelné.
+                <strong>Append-only audit log</strong> s hash-chainem — změny v deníku jsou
+                kryptograficky doložitelné.
               </span>
             </li>
             <li className="flex items-start gap-3">
-              <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-brand"
-                aria-hidden
-              />
+              <ShieldCheck className="text-brand mt-0.5 size-5 shrink-0" aria-hidden />
               <span>
-                <strong>Offline-friendly</strong> — fotky se zpracují
-                v telefonu, server zatíží jen finální upload.
+                <strong>Offline-friendly</strong> — fotky se zpracují v telefonu, server zatíží jen
+                finální upload.
               </span>
             </li>
             <li className="flex items-start gap-3">
-              <ShieldCheck
-                className="mt-0.5 size-5 shrink-0 text-brand"
-                aria-hidden
-              />
+              <ShieldCheck className="text-brand mt-0.5 size-5 shrink-0" aria-hidden />
               <span>
-                <strong>PDF export & tisk</strong> pro kontrolu úřadu
-                nebo investora.
+                <strong>PDF export & tisk</strong> pro kontrolu úřadu nebo investora.
               </span>
             </li>
           </ul>
@@ -88,16 +70,12 @@ export default async function LoginPage({ searchParams }: PageProps) {
 
         {/* Brand bar pro mobily (lg:hidden) — drží spirit hero stránky aniž by zabralo místo */}
         <div className="flex items-center gap-3 lg:hidden">
-          <div className="grid size-10 place-items-center rounded-lg bg-brand text-brand-foreground shadow shadow-brand/20">
+          <div className="bg-brand text-brand-foreground shadow-brand/20 grid size-10 place-items-center rounded-lg shadow">
             <HardHat className="size-5" aria-hidden />
           </div>
           <div>
-            <p className="text-base font-semibold leading-tight">
-              {env.appName}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Elektronický stavební deník
-            </p>
+            <p className="text-base leading-tight font-semibold">{env.appName}</p>
+            <p className="text-muted-foreground text-xs">Elektronický stavební deník</p>
           </div>
         </div>
 

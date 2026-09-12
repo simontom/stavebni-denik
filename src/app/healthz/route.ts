@@ -61,10 +61,7 @@ async function probeVolume(): Promise<ProbeResult> {
  * stop routing traffic to this instance.
  */
 export async function GET() {
-  const [database, volume] = await Promise.all([
-    probeDatabase(),
-    probeVolume(),
-  ]);
+  const [database, volume] = await Promise.all([probeDatabase(), probeVolume()]);
   const allOk = database.status === "ok" && volume.status === "ok";
   return NextResponse.json(
     {

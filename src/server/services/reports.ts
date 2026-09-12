@@ -3,10 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { prisma } from "@/lib/db";
-import type {
-  DailyReport,
-  Prisma,
-} from "@/generated/prisma/client";
+import type { DailyReport, Prisma } from "@/generated/prisma/client";
 
 import type { AuditContext } from "@/server/audit";
 import { withAudit } from "@/server/audit";
@@ -18,10 +15,7 @@ import {
   type SessionUser,
 } from "@/server/permissions";
 import { formatDateInput, pragueDayStart } from "@/lib/dates";
-import {
-  fetchWeatherSnapshot,
-  type WeatherSnapshot,
-} from "@/server/weather";
+import { fetchWeatherSnapshot, type WeatherSnapshot } from "@/server/weather";
 
 // ---------------------------------------------------------------------------
 // Validation
@@ -43,11 +37,7 @@ export type WorkerLine = z.infer<typeof workerLineSchema>;
  */
 export const reportFormSchema = z.object({
   workersByTrade: z.array(workerLineSchema).max(50),
-  workDescription: z
-    .string()
-    .trim()
-    .min(1, "Popište provedené práce.")
-    .max(LONG_TEXT_MAX),
+  workDescription: z.string().trim().min(1, "Popište provedené práce.").max(LONG_TEXT_MAX),
   materialsIn: z.string().trim().max(LONG_TEXT_MAX).nullable(),
   machinery: z.string().trim().max(LONG_TEXT_MAX).nullable(),
   testsAndChecks: z.string().trim().max(LONG_TEXT_MAX).nullable(),
@@ -317,43 +307,43 @@ export async function createReport(opts: {
   });
 
   try {
-      return await withAudit<DailyReport>(
-        {
-          ctx,
-          action: "report.create",
-          entityType: "report",
-          resolveEntityId: (r) => r.id,
-          before: null,
-          projectAfter: reportForAudit,
-        },
-        async (tx) => {
-          const res = await tx.$queryRaw<{max_seq: number}[]>`
+    return await withAudit<DailyReport>(
+      {
+        ctx,
+        action: "report.create",
+        entityType: "report",
+        resolveEntityId: (r) => r.id,
+        before: null,
+        projectAfter: reportForAudit,
+      },
+      async (tx) => {
+        const res = await tx.$queryRaw<{ max_seq: number }[]>`
             SELECT "sequenceNumber" as max_seq FROM daily_reports WHERE "projectId" = ${projectId} ORDER BY "sequenceNumber" DESC LIMIT 1 FOR UPDATE
           `;
-          const sequenceNumber = (res[0]?.max_seq || 0) + 1;
+        const sequenceNumber = (res[0]?.max_seq || 0) + 1;
 
-          return tx.dailyReport.create({
-            data: {
-              projectId,
-              sequenceNumber,
-              date,
-              authorId: user.id,
-              createdById: user.id,
-              workersByTrade: asJson(data.workersByTrade),
-              workDescription: data.workDescription,
-              materialsIn: data.materialsIn,
-              machinery: data.machinery,
-              testsAndChecks: data.testsAndChecks,
-              safetyNotes: data.safetyNotes,
-              defects: data.defects,
-              otherNotes: data.otherNotes,
-              isControlDay: data.isControlDay,
-              constructionObj: data.constructionObj,
-              weather: asJson(weather),
-            },
-          });
-        }
-      );
+        return tx.dailyReport.create({
+          data: {
+            projectId,
+            sequenceNumber,
+            date,
+            authorId: user.id,
+            createdById: user.id,
+            workersByTrade: asJson(data.workersByTrade),
+            workDescription: data.workDescription,
+            materialsIn: data.materialsIn,
+            machinery: data.machinery,
+            testsAndChecks: data.testsAndChecks,
+            safetyNotes: data.safetyNotes,
+            defects: data.defects,
+            otherNotes: data.otherNotes,
+            isControlDay: data.isControlDay,
+            constructionObj: data.constructionObj,
+            weather: asJson(weather),
+          },
+        });
+      },
+    );
   } catch (err) {
     // Unique constraint race — another writer created the day first.
     if (
@@ -453,7 +443,7 @@ export async function acknowledgeReport(opts: {
       members: { where: { userId: user.id } },
     },
   });
-  
+
   if (!project) throw new ProjectNotAccessibleError();
   const membership = project.members[0];
   if (!membership || membership.role !== "INVESTOR") {
@@ -995,26 +985,23 @@ export async function listReportsForProject(
     },
   });
 
-  const mapped: (ReportListItem & { workDescription: string })[] = rows.map(
-    (r) => {
-      const workers = parseWorkers(r.workersByTrade);
-      const weather = parseWeather(r.weather);
-      return {
-        id: r.id,
-        date: r.date,
-        authorName: r.author.displayName,
-        workersTotal: workers.reduce((sum, w) => sum + w.count, 0),
-        weatherSummary: weather.summary ?? "",
-        signed: r.signedAt !== null,
-        remarkCount: r._count.remarks,
-        photoCount: r._count.photos,
-        workDescription: r.workDescription,
-      };
-    },
-  );
+  const mapped: (ReportListItem & { workDescription: string })[] = rows.map((r) => {
+    const workers = parseWorkers(r.workersByTrade);
+    const weather = parseWeather(r.weather);
+    return {
+      id: r.id,
+      date: r.date,
+      authorName: r.author.displayName,
+      workersTotal: workers.reduce((sum, w) => sum + w.count, 0),
+      weatherSummary: weather.summary ?? "",
+      signed: r.signedAt !== null,
+      remarkCount: r._count.remarks,
+      photoCount: r._count.photos,
+      workDescription: r.workDescription,
+    };
+  });
 
-  const filtered =
-    q.length > 0 ? mapped.filter((r) => matchesQuery(r, q)) : mapped;
+  const filtered = q.length > 0 ? mapped.filter((r) => matchesQuery(r, q)) : mapped;
 
   // Strip the helper field before returning so the public shape stays
   // ReportListItem.
@@ -1031,10 +1018,7 @@ export async function listReportsForProject(
 }
 
 /** Does `r` match the free-text needle (case-insensitive)? */
-function matchesQuery(
-  r: ReportListItem & { workDescription: string },
-  q: string,
-): boolean {
+function matchesQuery(r: ReportListItem & { workDescription: string }, q: string): boolean {
   const needle = q.toLowerCase();
   const dateStr = r.date.toISOString().slice(0, 10); // YYYY-MM-DD
   return (
@@ -1159,16 +1143,8 @@ export async function getReportForUser(opts: {
     select: { id: true, date: true },
   });
 
-  const {
-    project,
-    author,
-    signedBy,
-    acknowledgedBy,
-    remarks,
-    materialNeeds,
-    addenda,
-    ...rest
-  } = report;
+  const { project, author, signedBy, acknowledgedBy, remarks, materialNeeds, addenda, ...rest } =
+    report;
   const locked = report.lockedAt !== null;
   const resource = {
     projectMember: isMember,
@@ -1218,23 +1194,18 @@ export async function getReportForUser(opts: {
     canEdit: can(user, "report.update", resource),
     canAddRemark: can(user, "remark.create", resource),
     canMarkRemarkOfficial:
-      can(user, "remark.create", resource) &&
-      (user.role === "BOSS" || user.role === "INSPECTOR"),
+      can(user, "remark.create", resource) && (user.role === "BOSS" || user.role === "INSPECTOR"),
     canAddMaterial: can(user, "material.create", resource),
     canResolveMaterial: can(user, "material.resolve", resource),
     canRolloverMaterial,
     canSign: !locked && can(user, "report.sign", resource),
     canAcknowledge: !report.acknowledgedAt && can(user, "report.acknowledge", resource),
-    canAddAddendum:
-      locked && can(user, "report.addendum.create", resource),
+    canAddAddendum: locked && can(user, "report.addendum.create", resource),
   };
 }
 
 /** True when the user may open the "new report" form for the project. */
-export async function canCreateReport(
-  projectId: string,
-  user: SessionUser,
-): Promise<boolean> {
+export async function canCreateReport(projectId: string, user: SessionUser): Promise<boolean> {
   try {
     const { isMember } = await loadProjectScope(projectId, user);
     return can(user, "report.create", { projectMember: isMember });
@@ -1299,9 +1270,7 @@ export async function getReportCoverageForProject(opts: {
 
   const todayMidnight = pragueDayStart(new Date());
   const defaultFrom =
-    opts.from ??
-    project.startedAt ??
-    new Date(todayMidnight.getTime() - 90 * 24 * 60 * 60 * 1000);
+    opts.from ?? project.startedAt ?? new Date(todayMidnight.getTime() - 90 * 24 * 60 * 60 * 1000);
   const defaultTo = opts.to ?? project.endedAt ?? todayMidnight;
 
   let from = pragueDayStart(defaultFrom);
@@ -1310,8 +1279,7 @@ export async function getReportCoverageForProject(opts: {
 
   // Clamp to at most ~1 year so the rendered grid stays manageable.
   const MAX_DAYS = 366;
-  const totalDays =
-    Math.floor((to.getTime() - from.getTime()) / DAY_MS) + 1;
+  const totalDays = Math.floor((to.getTime() - from.getTime()) / DAY_MS) + 1;
   if (totalDays > MAX_DAYS) {
     from = new Date(to.getTime() - (MAX_DAYS - 1) * DAY_MS);
   }
@@ -1329,19 +1297,12 @@ export async function getReportCoverageForProject(opts: {
   // unique constraint prevents this, but defensive) collapse onto one.
   const byDay = new Map<string, ReportCoverageState>();
   for (const r of reports) {
-    byDay.set(
-      isoPragueDay(r.date),
-      r.signedAt !== null ? "signed" : "draft",
-    );
+    byDay.set(isoPragueDay(r.date), r.signedAt !== null ? "signed" : "draft");
   }
 
   const days: ReportCoverageDay[] = [];
   const totals = { missing: 0, draft: 0, signed: 0 };
-  for (
-    let cursor = from.getTime();
-    cursor <= to.getTime();
-    cursor += DAY_MS
-  ) {
+  for (let cursor = from.getTime(); cursor <= to.getTime(); cursor += DAY_MS) {
     const d = new Date(cursor);
     const iso = isoPragueDay(d);
     const state = byDay.get(iso) ?? "missing";

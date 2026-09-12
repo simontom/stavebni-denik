@@ -55,9 +55,7 @@ export async function loginAction(
   // `x-forwarded-for` may carry multiple comma-separated entries — keep
   // only the originating client.
   const clientIp =
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    undefined;
+    h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? undefined;
   const userAgent = h.get("user-agent") ?? undefined;
 
   try {
@@ -89,4 +87,3 @@ export async function loginAction(
     return { error: "Unknown" };
   }
 }
-

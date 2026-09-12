@@ -14,9 +14,7 @@ describe("generatePassword", () => {
 
   it("honours a custom length at or above the minimum", () => {
     expect(generatePassword(20)).toHaveLength(20);
-    expect(generatePassword(MIN_PASSWORD_LENGTH)).toHaveLength(
-      MIN_PASSWORD_LENGTH,
-    );
+    expect(generatePassword(MIN_PASSWORD_LENGTH)).toHaveLength(MIN_PASSWORD_LENGTH);
   });
 
   it("throws below the minimum length", () => {

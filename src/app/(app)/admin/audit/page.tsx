@@ -74,28 +74,25 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
   const to = toRaw ? new Date(toRaw.getTime() + 24 * 60 * 60 * 1000 - 1) : undefined;
   const cursor = pickCursor(params.cursor);
 
-  const [{ rows, nextCursor }, allActions, allEntityTypes, allActors] =
-    await Promise.all([
-      listAuditEntries({
-        action,
-        entityType,
-        entityId,
-        actorId,
-        from,
-        to,
-        cursor,
-        limit: 100,
-      }),
-      listAuditActions(),
-      listAuditEntityTypes(),
-      listAuditActors(),
-    ]);
+  const [{ rows, nextCursor }, allActions, allEntityTypes, allActors] = await Promise.all([
+    listAuditEntries({
+      action,
+      entityType,
+      entityId,
+      actorId,
+      from,
+      to,
+      cursor,
+      limit: 100,
+    }),
+    listAuditActions(),
+    listAuditEntityTypes(),
+    listAuditActors(),
+  ]);
 
   const fromValue = pickString(params.from) ?? "";
   const toValue = pickString(params.to) ?? "";
-  const hasFilter = Boolean(
-    action || entityType || entityId || actorId || from || to,
-  );
+  const hasFilter = Boolean(action || entityType || entityId || actorId || from || to);
 
   // Forward-only pagination: keep current filters but bump the cursor.
   const nextHref = nextCursor
@@ -119,8 +116,8 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
           <div className="flex flex-col gap-1">
             <CardTitle>Audit log</CardTitle>
             <CardDescription>
-              Tamper-evidentní záznam všech mutací. Každý řádek nese hash
-              předchozího, takže jakákoli změna v minulosti naruší řetěz.
+              Tamper-evidentní záznam všech mutací. Každý řádek nese hash předchozího, takže
+              jakákoli změna v minulosti naruší řetěz.
             </CardDescription>
           </div>
           <VerifyChainButton />
@@ -132,17 +129,14 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
           <CardTitle className="text-base">Filtr</CardTitle>
         </CardHeader>
         <CardContent>
-          <form
-            method="get"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-          >
+          <form method="get" className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="flex flex-col gap-1">
               <Label htmlFor="action">Akce</Label>
               <select
                 id="action"
                 name="action"
                 defaultValue={action ?? ""}
-                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+                className="bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
               >
                 <option value="">— všechny —</option>
                 {allActions.map((a) => (
@@ -158,7 +152,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
                 id="entityType"
                 name="entityType"
                 defaultValue={entityType ?? ""}
-                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+                className="bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
               >
                 <option value="">— všechny —</option>
                 {allEntityTypes.map((t) => (
@@ -174,7 +168,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
                 id="actorId"
                 name="actorId"
                 defaultValue={actorId ?? ""}
-                className="h-9 rounded-md border bg-background px-3 text-sm shadow-xs"
+                className="bg-background h-9 rounded-md border px-3 text-sm shadow-xs"
               >
                 <option value="">— všichni —</option>
                 {allActors.map((a) => (
@@ -201,18 +195,15 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
               <Label htmlFor="to">Do (datum)</Label>
               <Input id="to" name="to" type="date" defaultValue={toValue} />
             </div>
-            <div className="sm:col-span-2 lg:col-span-3 flex items-center justify-end gap-2">
+            <div className="flex items-center justify-end gap-2 sm:col-span-2 lg:col-span-3">
               {hasFilter && (
-                <Link
-                  href="/admin/audit"
-                  className="text-sm text-muted-foreground hover:underline"
-                >
+                <Link href="/admin/audit" className="text-muted-foreground text-sm hover:underline">
                   Vymazat filtr
                 </Link>
               )}
               <button
                 type="submit"
-                className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-4 py-1.5 text-sm font-medium"
               >
                 Filtrovat
               </button>
@@ -237,7 +228,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={7} className="text-muted-foreground text-center">
                   Žádné záznamy odpovídající filtru.
                 </TableCell>
               </TableRow>
@@ -245,9 +236,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
             {rows.map((r) => (
               <TableRow key={r.id}>
                 <TableCell className="font-mono text-xs">{r.id}</TableCell>
-                <TableCell className="whitespace-nowrap text-sm">
-                  {formatDateTime(r.ts)}
-                </TableCell>
+                <TableCell className="text-sm whitespace-nowrap">{formatDateTime(r.ts)}</TableCell>
                 <TableCell className="text-sm">
                   {r.actorNickname ? (
                     <span className="font-mono">{r.actorNickname}</span>
@@ -263,7 +252,7 @@ export default async function AdminAuditPage({ searchParams }: PageProps) {
                 <TableCell className="font-mono text-xs">
                   {r.entityType}/{r.entityId}
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                <TableCell className="text-muted-foreground hidden text-xs md:table-cell">
                   {r.ip ?? "—"}
                 </TableCell>
                 <TableCell className="text-right">

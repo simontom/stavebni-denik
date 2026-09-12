@@ -18,7 +18,7 @@ export function AcknowledgeReportButton({ reportId, projectId, date }: Props) {
 
   function handle() {
     const ok = window.confirm(
-      "Opravdu potvrdit seznámení s tímto denním záznamem?\n\nToto je nevratná akce."
+      "Opravdu potvrdit seznámení s tímto denním záznamem?\n\nToto je nevratná akce.",
     );
     if (!ok) return;
     const fd = new FormData();
@@ -35,7 +35,7 @@ export function AcknowledgeReportButton({ reportId, projectId, date }: Props) {
       {pending ? (
         <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : (
-        <CheckCircle className="size-4 mr-2" aria-hidden />
+        <CheckCircle className="mr-2 size-4" aria-hidden />
       )}
       Potvrdit seznámení (Investor)
     </Button>

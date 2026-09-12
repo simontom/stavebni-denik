@@ -29,17 +29,12 @@ import "server-only";
 
 type RouteContext = { params: Promise<Record<string, string>> };
 
-type RouteHandler = (
-  request: Request,
-  context?: RouteContext,
-) => Response | Promise<Response>;
+type RouteHandler = (request: Request, context?: RouteContext) => Response | Promise<Response>;
 
 export class PayloadTooLargeError extends Error {
   code = "PayloadTooLarge" as const;
   constructor(maxBytes: number) {
-    super(
-      `Request body exceeds the ${(maxBytes / 1024 / 1024).toFixed(0)} MB limit.`,
-    );
+    super(`Request body exceeds the ${(maxBytes / 1024 / 1024).toFixed(0)} MB limit.`);
   }
 }
 
@@ -48,10 +43,7 @@ export class PayloadTooLargeError extends Error {
  * at the stream level — a spoofed `Content-Length` header cannot
  * bypass it.
  */
-export function withBodyLimit(
-  maxBytes: number,
-  handler: RouteHandler,
-): RouteHandler {
+export function withBodyLimit(maxBytes: number, handler: RouteHandler): RouteHandler {
   return async (request: Request, context?: RouteContext) => {
     // Nothing to limit for body-less methods.
     if (!request.body) {
@@ -60,9 +52,7 @@ export function withBodyLimit(
 
     // Fast-path: if Content-Length is honestly declared AND exceeds
     // the cap, reject immediately without consuming any bytes.
-    const declaredLength = Number(
-      request.headers.get("content-length") ?? 0,
-    );
+    const declaredLength = Number(request.headers.get("content-length") ?? 0);
     if (declaredLength > maxBytes) {
       return new Response(
         JSON.stringify({

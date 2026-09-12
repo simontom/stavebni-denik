@@ -22,12 +22,8 @@ export type { AuditAction, VerifyResult } from "@/server/audit-hash";
  * NULL (`Prisma.JsonNull`) from a literal JSON value for nullable JSON
  * columns, so we map null/undefined explicitly rather than passing `null`.
  */
-function toJsonInput(
-  value: unknown,
-): Prisma.InputJsonValue | typeof Prisma.JsonNull {
-  return value === null || value === undefined
-    ? Prisma.JsonNull
-    : (value as Prisma.InputJsonValue);
+function toJsonInput(value: unknown): Prisma.InputJsonValue | typeof Prisma.JsonNull {
+  return value === null || value === undefined ? Prisma.JsonNull : (value as Prisma.InputJsonValue);
 }
 
 /**
@@ -85,9 +81,7 @@ export async function withAudit<T>(
     `;
     const prevHash = tail[0]?.row_hash ?? GENESIS_HASH;
 
-    const after = options.projectAfter
-      ? options.projectAfter(result)
-      : result;
+    const after = options.projectAfter ? options.projectAfter(result) : result;
 
     // Hash the SAME timestamp we persist. `ts` is part of the hashed
     // payload, so the value written to the `ts` column must be byte-for-byte

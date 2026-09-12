@@ -6,16 +6,8 @@ import { type Photo } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
 import type { AuditContext } from "@/server/audit";
 import { withAudit } from "@/server/audit";
-import {
-  assertCan,
-  canAccessProject,
-  type SessionUser,
-} from "@/server/permissions";
-import {
-  InvalidImageError,
-  ImageTooLargeError,
-  processImage,
-} from "@/server/images";
+import { assertCan, canAccessProject, type SessionUser } from "@/server/permissions";
+import { InvalidImageError, ImageTooLargeError, processImage } from "@/server/images";
 import { parseExifSafely } from "@/server/exif";
 import {
   deletePhotoVariants,
@@ -76,10 +68,7 @@ interface ReportContext {
  * leaks: a non-member gets the same error as if the report did not
  * exist.
  */
-async function loadReportContext(
-  reportId: string,
-  user: SessionUser,
-): Promise<ReportContext> {
+async function loadReportContext(reportId: string, user: SessionUser): Promise<ReportContext> {
   const report = await prisma.dailyReport.findFirst({
     where: { id: reportId, deletedAt: null },
     select: {
@@ -157,14 +146,7 @@ export async function uploadPhoto(opts: {
   clientCapturedAt?: Date | null;
   clientGps?: { lat: number; lon: number } | null;
 }): Promise<UploadPhotoResult> {
-  const {
-    reportId,
-    buffer,
-    ctx,
-    user,
-    clientCapturedAt,
-    clientGps,
-  } = opts;
+  const { reportId, buffer, ctx, user, clientCapturedAt, clientGps } = opts;
 
   const reportCtx = await loadReportContext(reportId, user);
   if (reportCtx.reportLocked) throw new ReportLockedError();
@@ -185,7 +167,7 @@ export async function uploadPhoto(opts: {
     }
     throw err;
   }
-  
+
   // Prefer EXIF harvested by the browser BEFORE the resize stripped
   // it. If the client did not (or could not) send any, fall back to
   // server-side parsing — this still works for legacy clients or
@@ -232,7 +214,12 @@ export async function uploadPhoto(opts: {
           },
         }),
     );
-    logger.info("photo.upload.done", { userId: user.id, photoId: photo.id, bytes: stored.bytes, durationMs: Date.now() - startedRender });
+    logger.info("photo.upload.done", {
+      userId: user.id,
+      photoId: photo.id,
+      bytes: stored.bytes,
+      durationMs: Date.now() - startedRender,
+    });
     return {
       id: photo.id,
       width: photo.width,
@@ -429,10 +416,7 @@ export async function getPhotoFileForUser(opts: {
 // ---------------------------------------------------------------------------
 
 /** True if the user is a member of the report's project AND it's unlocked. */
-export async function canUploadToReport(
-  reportId: string,
-  user: SessionUser,
-): Promise<boolean> {
+export async function canUploadToReport(reportId: string, user: SessionUser): Promise<boolean> {
   try {
     const reportCtx = await loadReportContext(reportId, user);
     if (reportCtx.reportLocked) return false;
@@ -443,10 +427,7 @@ export async function canUploadToReport(
 }
 
 /** True if BOSS member can delete (used to render the bin button). */
-export async function canDeleteInReport(
-  reportId: string,
-  user: SessionUser,
-): Promise<boolean> {
+export async function canDeleteInReport(reportId: string, user: SessionUser): Promise<boolean> {
   try {
     const reportCtx = await loadReportContext(reportId, user);
     if (reportCtx.reportLocked) return false;

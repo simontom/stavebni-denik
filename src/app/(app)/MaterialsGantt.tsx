@@ -74,16 +74,11 @@ function groupByProject(items: MaterialTimelineEntry[]): ProjectGroup[] {
         items: [m],
       });
   }
-  return Array.from(map.values()).sort((a, b) =>
-    a.projectName.localeCompare(b.projectName, "cs"),
-  );
+  return Array.from(map.values()).sort((a, b) => a.projectName.localeCompare(b.projectName, "cs"));
 }
 
 /** Span (start..end) for one item — `today` covers ongoing items. */
-function spanOf(
-  m: MaterialTimelineEntry,
-  today: Date,
-): { start: Date; end: Date } {
+function spanOf(m: MaterialTimelineEntry, today: Date): { start: Date; end: Date } {
   const start = m.createdAt;
   if (m.resolvedAt) return { start, end: m.resolvedAt };
   if (m.neededBy && m.neededBy.getTime() > start.getTime())
@@ -107,7 +102,7 @@ function spanOf(
 export function MaterialsGantt({ items, today: todayProp }: Props) {
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-muted-foreground text-sm">
         Žádné materiálové požadavky s termínem nebo vyřízením v evidenci.
       </p>
     );
@@ -126,8 +121,7 @@ export function MaterialsGantt({ items, today: todayProp }: Props) {
   const axisSpan = axisEnd.getTime() - axisStart.getTime();
 
   const ticks = buildTicks(axisStart, axisEnd);
-  const todayOffsetPct =
-    ((today.getTime() - axisStart.getTime()) / axisSpan) * 100;
+  const todayOffsetPct = ((today.getTime() - axisStart.getTime()) / axisSpan) * 100;
 
   function barColor(m: MaterialTimelineEntry, end: Date): string {
     if (m.resolved) {
@@ -152,10 +146,8 @@ export function MaterialsGantt({ items, today: todayProp }: Props) {
             className="absolute top-0 flex h-full -translate-x-1/2 items-end gap-1 pb-px"
             style={{ left: `${t.offsetPct}%` }}
           >
-            <span className="size-px h-2 bg-border" aria-hidden />
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-              {t.label}
-            </span>
+            <span className="bg-border size-px h-2" aria-hidden />
+            <span className="text-muted-foreground text-[10px] whitespace-nowrap">{t.label}</span>
           </span>
         ))}
       </div>
@@ -165,27 +157,21 @@ export function MaterialsGantt({ items, today: todayProp }: Props) {
           <div key={g.projectId} className="flex flex-col gap-1">
             <Link
               href={`/projects/${g.projectId}?tab=reports`}
-              className="text-xs font-medium text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground text-xs font-medium"
             >
               {g.projectName}
             </Link>
             <ul className="flex flex-col gap-1">
               {g.items.map((m) => {
                 const { start, end } = spanOf(m, today);
-                const leftPct =
-                  ((start.getTime() - axisStart.getTime()) / axisSpan) * 100;
+                const leftPct = ((start.getTime() - axisStart.getTime()) / axisSpan) * 100;
                 const widthPct = Math.max(
                   0.5,
                   ((end.getTime() - start.getTime()) / axisSpan) * 100,
                 );
-                const tooltipParts = [
-                  m.text,
-                  `vytvořeno: ${formatDate(m.createdAt)}`,
-                ];
-                if (m.neededBy)
-                  tooltipParts.push(`potřeba do: ${formatDate(m.neededBy)}`);
-                if (m.resolvedAt)
-                  tooltipParts.push(`vyřízeno: ${formatDate(m.resolvedAt)}`);
+                const tooltipParts = [m.text, `vytvořeno: ${formatDate(m.createdAt)}`];
+                if (m.neededBy) tooltipParts.push(`potřeba do: ${formatDate(m.neededBy)}`);
+                if (m.resolvedAt) tooltipParts.push(`vyřízeno: ${formatDate(m.resolvedAt)}`);
                 const tooltip = tooltipParts.join(" · ");
 
                 return (
@@ -196,15 +182,13 @@ export function MaterialsGantt({ items, today: todayProp }: Props) {
                     <span
                       className={
                         "truncate text-xs " +
-                        (m.resolved
-                          ? "text-muted-foreground line-through"
-                          : "")
+                        (m.resolved ? "text-muted-foreground line-through" : "")
                       }
                       title={m.text}
                     >
                       {m.text}
                     </span>
-                    <div className="relative h-4 rounded bg-muted/60">
+                    <div className="bg-muted/60 relative h-4 rounded">
                       {todayOffsetPct >= 0 && todayOffsetPct <= 100 && (
                         <div
                           className="absolute top-0 bottom-0 w-px bg-amber-500/80"
@@ -230,9 +214,9 @@ export function MaterialsGantt({ items, today: todayProp }: Props) {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-[11px]">
         <span className="flex items-center gap-1">
-          <span className="size-3 rounded-sm bg-primary" aria-hidden />
+          <span className="bg-primary size-3 rounded-sm" aria-hidden />
           otevřené
         </span>
         <span className="flex items-center gap-1">

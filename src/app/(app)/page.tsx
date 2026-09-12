@@ -12,13 +12,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatDate, formatDateInput } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import { getBossDashboard } from "@/server/services/dashboard";
@@ -56,13 +50,13 @@ function StatCard({ label, value, hint, Icon, href, emphasise }: StatCardProps) 
       }
     >
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-muted-foreground flex items-center gap-2 text-sm font-medium">
           <Icon className="size-4" aria-hidden /> {label}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-semibold">{value}</div>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -83,9 +77,7 @@ export default async function DashboardPage() {
     return (
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
         <header>
-          <h1 className="text-2xl font-semibold">
-            Vítejte, {user.displayName}
-          </h1>
+          <h1 className="text-2xl font-semibold">Vítejte, {user.displayName}</h1>
           <p className="text-muted-foreground">
             Elektronický stavební deník dle § 157 stavebního zákona.
           </p>
@@ -93,16 +85,14 @@ export default async function DashboardPage() {
 
         <section className="grid gap-4 sm:grid-cols-2">
           <Link href="/projects" className="group">
-            <Card className="h-full transition-colors group-hover:border-primary">
+            <Card className="group-hover:border-primary h-full transition-colors">
               <CardHeader>
                 <CardTitle>Zakázky</CardTitle>
                 <CardDescription>
                   Přehled staveb, k nimž máte přístup, a denní záznamy.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Otevřít →
-              </CardContent>
+              <CardContent className="text-muted-foreground text-sm">Otevřít →</CardContent>
             </Card>
           </Link>
         </section>
@@ -115,23 +105,15 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold">
-          Vítejte, {user.displayName}
-        </h1>
-        <p className="text-muted-foreground">
-          Souhrn napříč všemi zakázkami za posledních 7 dní.
-        </p>
+        <h1 className="text-2xl font-semibold">Vítejte, {user.displayName}</h1>
+        <p className="text-muted-foreground">Souhrn napříč všemi zakázkami za posledních 7 dní.</p>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Aktivní zakázky"
           value={data.activeProjects}
-          hint={
-            data.archivedProjects > 0
-              ? `+ ${data.archivedProjects} archivovaných`
-              : undefined
-          }
+          hint={data.archivedProjects > 0 ? `+ ${data.archivedProjects} archivovaných` : undefined}
           Icon={Briefcase}
           href="/projects"
         />
@@ -166,9 +148,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             {data.unsignedByProject.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Vše podepsané. 👍
-              </p>
+              <p className="text-muted-foreground text-sm">Vše podepsané. 👍</p>
             ) : (
               <ul className="flex flex-col divide-y">
                 {data.unsignedByProject.map((p) => (
@@ -177,12 +157,8 @@ export default async function DashboardPage() {
                       href={`/projects/${p.projectId}?tab=reports&status=unsigned`}
                       className="flex items-center justify-between hover:underline"
                     >
-                      <span className="text-sm font-medium">
-                        {p.projectName}
-                      </span>
-                      <Badge variant="secondary">
-                        {p.unsignedCount} nepodepsaných
-                      </Badge>
+                      <span className="text-sm font-medium">{p.projectName}</span>
+                      <Badge variant="secondary">{p.unsignedCount} nepodepsaných</Badge>
                     </Link>
                   </li>
                 ))}
@@ -199,9 +175,7 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             {data.pendingMaterials.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Žádné otevřené požadavky.
-              </p>
+              <p className="text-muted-foreground text-sm">Žádné otevřené požadavky.</p>
             ) : (
               <ul className="flex flex-col divide-y">
                 {data.pendingMaterials.map((m) => {
@@ -213,15 +187,15 @@ export default async function DashboardPage() {
                   todayStart.setHours(0, 0, 0, 0);
                   const dayMs = 24 * 60 * 60 * 1000;
                   const dueDays = m.neededBy
-                    ? Math.floor(
-                        (m.neededBy.getTime() - todayStart.getTime()) / dayMs,
-                      )
+                    ? Math.floor((m.neededBy.getTime() - todayStart.getTime()) / dayMs)
                     : null;
                   const overdue = dueDays !== null && dueDays < 0;
-                  const dueSoon =
-                    dueDays !== null && dueDays >= 0 && dueDays <= 1;
-                  const badgeVariant: "destructive" | "secondary" | "outline" =
-                    overdue ? "destructive" : dueSoon ? "secondary" : "outline";
+                  const dueSoon = dueDays !== null && dueDays >= 0 && dueDays <= 1;
+                  const badgeVariant: "destructive" | "secondary" | "outline" = overdue
+                    ? "destructive"
+                    : dueSoon
+                      ? "secondary"
+                      : "outline";
                   const badgeLabel = m.neededBy
                     ? overdue
                       ? `po termínu (${formatDate(m.neededBy)})`
@@ -245,19 +219,14 @@ export default async function DashboardPage() {
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                           <span
-                            className={
-                              overdue ? "font-medium text-destructive" : "font-medium"
-                            }
+                            className={overdue ? "text-destructive font-medium" : "font-medium"}
                           >
                             {m.text}
                           </span>
-                          {badgeLabel && (
-                            <Badge variant={badgeVariant}>{badgeLabel}</Badge>
-                          )}
+                          {badgeLabel && <Badge variant={badgeVariant}>{badgeLabel}</Badge>}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {m.projectName} · {formatDate(m.reportDate)} ·{" "}
-                          {m.authorName}
+                        <div className="text-muted-foreground text-xs">
+                          {m.projectName} · {formatDate(m.reportDate)} · {m.authorName}
                         </div>
                       </Link>
                     </li>
@@ -275,8 +244,7 @@ export default async function DashboardPage() {
             <GanttChart className="size-4" aria-hidden /> Časový přehled zakázek
           </CardTitle>
           <CardDescription>
-            Zahájení až dokončení (nebo „probíhá“). Šířka osy se přizpůsobí
-            nejdelší zakázce.
+            Zahájení až dokončení (nebo „probíhá“). Šířka osy se přizpůsobí nejdelší zakázce.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -290,8 +258,8 @@ export default async function DashboardPage() {
             <GanttChart className="size-4" aria-hidden /> Materiálový Gantt
           </CardTitle>
           <CardDescription>
-            Pruh od založení po termín nebo vyřízení, seskupené po zakázkách.
-            Pomáhá vidět zpoždění dodávek.
+            Pruh od založení po termín nebo vyřízení, seskupené po zakázkách. Pomáhá vidět zpoždění
+            dodávek.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -307,7 +275,7 @@ export default async function DashboardPage() {
         </CardHeader>
         <CardContent>
           {data.recentReports.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Žádné záznamy.</p>
+            <p className="text-muted-foreground text-sm">Žádné záznamy.</p>
           ) : (
             <ul className="flex flex-col divide-y">
               {data.recentReports.map((r) => {
@@ -319,12 +287,8 @@ export default async function DashboardPage() {
                       className="grid gap-0.5 hover:underline sm:grid-cols-[1fr_auto] sm:items-center"
                     >
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">
-                          {formatDate(r.date)}
-                        </span>
-                        <span className="text-sm text-muted-foreground">
-                          {r.projectName}
-                        </span>
+                        <span className="text-sm font-medium">{formatDate(r.date)}</span>
+                        <span className="text-muted-foreground text-sm">{r.projectName}</span>
                         {r.signed ? (
                           <Badge variant="secondary">
                             <Lock className="size-3" aria-hidden /> Podepsáno
@@ -335,9 +299,7 @@ export default async function DashboardPage() {
                           </Badge>
                         )}
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        {r.authorName}
-                      </span>
+                      <span className="text-muted-foreground text-xs">{r.authorName}</span>
                     </Link>
                   </li>
                 );
@@ -349,7 +311,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-3 sm:grid-cols-3">
         <Link href="/projects" className="group">
-          <Card className="h-full transition-colors group-hover:border-primary">
+          <Card className="group-hover:border-primary h-full transition-colors">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Briefcase className="size-4" aria-hidden /> Zakázky
@@ -359,26 +321,22 @@ export default async function DashboardPage() {
           </Card>
         </Link>
         <Link href="/admin/users" className="group">
-          <Card className="h-full transition-colors group-hover:border-primary">
+          <Card className="group-hover:border-primary h-full transition-colors">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Users className="size-4" aria-hidden /> Uživatelé
               </CardTitle>
-              <CardDescription>
-                {data.membersTotal} členství v zakázkách.
-              </CardDescription>
+              <CardDescription>{data.membersTotal} členství v zakázkách.</CardDescription>
             </CardHeader>
           </Card>
         </Link>
         <Link href="/admin/audit" className="group">
-          <Card className="h-full transition-colors group-hover:border-primary">
+          <Card className="group-hover:border-primary h-full transition-colors">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Archive className="size-4" aria-hidden /> Audit log
               </CardTitle>
-              <CardDescription>
-                Záznamy všech změn a ověření integrity řetězu.
-              </CardDescription>
+              <CardDescription>Záznamy všech změn a ověření integrity řetězu.</CardDescription>
             </CardHeader>
           </Card>
         </Link>

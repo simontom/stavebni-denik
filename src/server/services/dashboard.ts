@@ -83,9 +83,7 @@ export interface BossDashboard {
  * Build the BOSS dashboard payload. Throws if the caller is not a
  * BOSS (defensive — the route also gates via `requireBoss`).
  */
-export async function getBossDashboard(
-  user: SessionUser,
-): Promise<BossDashboard> {
+export async function getBossDashboard(user: SessionUser): Promise<BossDashboard> {
   if (user.role !== "BOSS") {
     throw new Error("getBossDashboard: caller is not a BOSS");
   }
@@ -207,9 +205,7 @@ export async function getBossDashboard(
           where: { id: { in: projectIds } },
           select: { id: true, name: true },
         });
-  const nameByProjectId = new Map(
-    projectsForUnsigned.map((p) => [p.id, p.name] as const),
-  );
+  const nameByProjectId = new Map(projectsForUnsigned.map((p) => [p.id, p.name] as const));
 
   return {
     activeProjects,

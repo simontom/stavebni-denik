@@ -13,10 +13,7 @@ export default function AdminUsersLoading() {
       {/* Table rows skeleton */}
       <div className="rounded-md border">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-4 border-b p-3 last:border-b-0"
-          >
+          <div key={i} className="flex items-center gap-4 border-b p-3 last:border-b-0">
             <Skeleton className="h-5 w-32" />
             <Skeleton className="h-5 w-40" />
             <Skeleton className="h-5 w-20" />

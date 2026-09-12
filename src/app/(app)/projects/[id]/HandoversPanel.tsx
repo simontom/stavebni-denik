@@ -20,11 +20,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate } from "@/lib/dates";
 
-import {
-  createHandoverAction,
-  deleteHandoverAction,
-  signHandoverAction,
-} from "./actions";
+import { createHandoverAction, deleteHandoverAction, signHandoverAction } from "./actions";
 
 interface MeterState {
   name: string;
@@ -70,9 +66,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
   }
 
   function updateMeterRow(index: number, field: keyof MeterState, val: string) {
-    setMeters((prev) =>
-      prev.map((m, i) => (i === index ? { ...m, [field]: val } : m)),
-    );
+    setMeters((prev) => prev.map((m, i) => (i === index ? { ...m, [field]: val } : m)));
   }
 
   function removeMeterRow(index: number) {
@@ -106,7 +100,9 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
   }
 
   function handleSign(handoverId: string) {
-    if (!window.confirm("Opravdu chcete podepsat tento předávací protokol? Tato akce je nevratná.")) {
+    if (
+      !window.confirm("Opravdu chcete podepsat tento předávací protokol? Tato akce je nevratná.")
+    ) {
       return;
     }
     startTransition(() => {
@@ -129,8 +125,14 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
         <CardTitle className="text-base">Záznamy o předání staveniště</CardTitle>
         {canManage && (
           <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger render={<Button size="sm"><Plus className="size-4 mr-1" aria-hidden /> Přidat předání</Button>} />
-            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogTrigger
+              render={
+                <Button size="sm">
+                  <Plus className="mr-1 size-4" aria-hidden /> Přidat předání
+                </Button>
+              }
+            />
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
               <form onSubmit={handleCreate} className="space-y-4">
                 <DialogHeader>
                   <DialogTitle>Nový zápis o předání staveniště</DialogTitle>
@@ -140,7 +142,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                 </DialogHeader>
 
                 {error && (
-                  <div className="text-sm font-medium text-destructive bg-destructive/10 p-2 rounded">
+                  <div className="text-destructive bg-destructive/10 rounded p-2 text-sm font-medium">
                     {error}
                   </div>
                 )}
@@ -190,18 +192,13 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label>Stavy měřidel a odběrných míst</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={addMeterRow}
-                    >
-                      <Plus className="size-3 mr-1" aria-hidden /> Přidat měřidlo
+                    <Button type="button" variant="outline" size="sm" onClick={addMeterRow}>
+                      <Plus className="mr-1 size-3" aria-hidden /> Přidat měřidlo
                     </Button>
                   </div>
 
                   {meters.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">
+                    <p className="text-muted-foreground text-xs italic">
                       Zatím nebyla přidána žádná měřidla.
                     </p>
                   ) : (
@@ -211,26 +208,20 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                           <Input
                             placeholder="Médium (např. Voda)"
                             value={meter.name}
-                            onChange={(e) =>
-                              updateMeterRow(idx, "name", e.target.value)
-                            }
+                            onChange={(e) => updateMeterRow(idx, "name", e.target.value)}
                             className="flex-1"
                             required
                           />
                           <Input
                             placeholder="Výrobní číslo"
                             value={meter.number}
-                            onChange={(e) =>
-                              updateMeterRow(idx, "number", e.target.value)
-                            }
+                            onChange={(e) => updateMeterRow(idx, "number", e.target.value)}
                             className="w-32"
                           />
                           <Input
                             placeholder="Stav (např. 150 m³)"
                             value={meter.value}
-                            onChange={(e) =>
-                              updateMeterRow(idx, "value", e.target.value)
-                            }
+                            onChange={(e) => updateMeterRow(idx, "value", e.target.value)}
                             className="w-28"
                             required
                           />
@@ -241,7 +232,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                             onClick={() => removeMeterRow(idx)}
                             aria-label="Odebrat měřidlo"
                           >
-                            <Trash2 className="size-4 text-destructive" />
+                            <Trash2 className="text-destructive size-4" />
                           </Button>
                         </div>
                       ))}
@@ -261,17 +252,11 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                 </div>
 
                 <DialogFooter className="pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setOpen(false)}
-                  >
+                  <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
                     Zrušit
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending && (
-                      <Loader2 className="size-4 mr-2 animate-spin" aria-hidden />
-                    )}
+                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                     Uložit předání
                   </Button>
                 </DialogFooter>
@@ -282,27 +267,23 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
       </CardHeader>
       <CardContent>
         {handovers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Žádné záznamy o předání.</p>
+          <p className="text-muted-foreground text-sm">Žádné záznamy o předání.</p>
         ) : (
           <div className="grid gap-4">
             {handovers.map((h) => {
-              const metersList: MeterState[] = Array.isArray(h.meterStates)
-                ? h.meterStates
-                : [];
+              const metersList: MeterState[] = Array.isArray(h.meterStates) ? h.meterStates : [];
               return (
-                <Card key={h.id} className="p-4 flex flex-col gap-3">
-                  <div className="flex flex-wrap justify-between items-start gap-2">
+                <Card key={h.id} className="flex flex-col gap-3 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <h4 className="font-semibold text-base">{h.type}</h4>
-                      <p className="text-xs text-muted-foreground">
-                        Datum: {formatDate(h.date)}
-                      </p>
+                      <h4 className="text-base font-semibold">{h.type}</h4>
+                      <p className="text-muted-foreground text-xs">Datum: {formatDate(h.date)}</p>
                     </div>
                     <div>
                       {h.signedAt ? (
                         <Badge
                           variant="outline"
-                          className="text-green-600 border-green-300 flex items-center gap-1"
+                          className="flex items-center gap-1 border-green-300 text-green-600"
                         >
                           <CheckCircle2 className="size-3" aria-hidden />
                           Podepsáno dne {formatDate(h.signedAt)}
@@ -314,28 +295,22 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                   </div>
 
                   <div className="text-sm">
-                    <span className="text-muted-foreground font-medium">
-                      Účastníci:{" "}
-                    </span>
+                    <span className="text-muted-foreground font-medium">Účastníci: </span>
                     <span>{h.participants}</span>
                   </div>
 
                   {metersList.length > 0 && (
-                    <div className="text-xs bg-muted/40 p-2 rounded border">
-                      <div className="font-medium text-muted-foreground mb-1">
-                        Stavy měřidel:
-                      </div>
+                    <div className="bg-muted/40 rounded border p-2 text-xs">
+                      <div className="text-muted-foreground mb-1 font-medium">Stavy měřidel:</div>
                       <div className="grid gap-1">
                         {metersList.map((m, mi) => (
                           <div
                             key={mi}
-                            className="flex justify-between border-b last:border-0 py-0.5"
+                            className="flex justify-between border-b py-0.5 last:border-0"
                           >
                             <span className="font-medium">{m.name}</span>
                             {m.number && (
-                              <span className="text-muted-foreground">
-                                č. {m.number}
-                              </span>
+                              <span className="text-muted-foreground">č. {m.number}</span>
                             )}
                             <span className="font-mono">{m.value}</span>
                           </div>
@@ -345,13 +320,13 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                   )}
 
                   {h.notes && (
-                    <div className="text-sm text-muted-foreground bg-accent/20 p-2 rounded">
+                    <div className="text-muted-foreground bg-accent/20 rounded p-2 text-sm">
                       {h.notes}
                     </div>
                   )}
 
                   {canManage && (
-                    <div className="flex justify-end items-center gap-2 border-t pt-2 mt-1">
+                    <div className="mt-1 flex items-center justify-end gap-2 border-t pt-2">
                       {!h.signedAt && (
                         <Button
                           size="sm"
@@ -359,7 +334,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                           disabled={isPending}
                           onClick={() => handleSign(h.id)}
                         >
-                          <FileSignature className="size-4 mr-1" aria-hidden />
+                          <FileSignature className="mr-1 size-4" aria-hidden />
                           Podepsat předání
                         </Button>
                       )}
@@ -370,7 +345,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
                         onClick={() => handleDelete(h.id)}
                         aria-label="Smazat předání"
                       >
-                        <Trash2 className="size-4 text-destructive" aria-hidden />
+                        <Trash2 className="text-destructive size-4" aria-hidden />
                       </Button>
                     </div>
                   )}

@@ -13,10 +13,7 @@ import { env } from "@/lib/env";
  * tests can inject `https://example.test/v1` or `http://localhost:1`
  * (deliberate fetch failure → fallback path).
  */
-const ALLOWED_WEATHER_HOSTS = new Set([
-  "api.open-meteo.com",
-  "archive-api.open-meteo.com",
-]);
+const ALLOWED_WEATHER_HOSTS = new Set(["api.open-meteo.com", "archive-api.open-meteo.com"]);
 
 function isAllowedWeatherUrl(rawUrl: string): boolean {
   if (process.env.NODE_ENV === "test") return true;
@@ -152,10 +149,7 @@ interface OpenMeteoDailyResponse {
  * index 0. Throws when the day is missing from the payload so the caller
  * can fall back to an `unavailable` snapshot.
  */
-export function parseOpenMeteoDaily(
-  json: OpenMeteoDailyResponse,
-  date: string,
-): WeatherSnapshot {
+export function parseOpenMeteoDaily(json: OpenMeteoDailyResponse, date: string): WeatherSnapshot {
   const d = json.daily;
   if (!d || !Array.isArray(d.time) || d.time.length === 0) {
     throw new Error("Open-Meteo: prázdná odpověď (žádná data pro den).");
@@ -228,10 +222,7 @@ export async function fetchWeatherSnapshot(opts: {
   const url = `${env.openMeteoBase}/forecast?${params.toString()}`;
 
   if (!isAllowedWeatherUrl(url)) {
-    return unavailableWeather(
-      date,
-      "Open-Meteo: nepovolený cíl (zkontrolujte OPEN_METEO_BASE).",
-    );
+    return unavailableWeather(date, "Open-Meteo: nepovolený cíl (zkontrolujte OPEN_METEO_BASE).");
   }
 
   const controller = new AbortController();

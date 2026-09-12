@@ -19,9 +19,7 @@ interface PageProps {
   params: Promise<{ id: string; date: string }>;
 }
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { date } = await params;
   return { title: `Úprava denního záznamu ${date}` };
 }
@@ -65,14 +63,14 @@ export default async function EditReportPage({ params }: PageProps) {
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <Link
         href={`/projects/${id}/reports/${dateStr}`}
-        className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm"
       >
         <ChevronLeft className="size-4" aria-hidden /> Zpět na záznam
       </Link>
 
       <div>
         <h1 className="text-xl font-semibold">Úprava denního záznamu</h1>
-        <p className="text-sm text-muted-foreground">{weekdayLabel(date)}</p>
+        <p className="text-muted-foreground text-sm">{weekdayLabel(date)}</p>
       </div>
 
       <ReportForm

@@ -4,10 +4,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/crypto";
-import {
-  generatePassword,
-  validatePasswordPolicy,
-} from "@/lib/password-gen";
+import { generatePassword, validatePasswordPolicy } from "@/lib/password-gen";
 import type { Role, User } from "@/generated/prisma/client";
 
 import type { AuditContext } from "@/server/audit";
@@ -54,16 +51,9 @@ function projectUserForAudit(u: {
  * stará hodnota.
  */
 export const updateUserSchema = z.object({
-  displayName: z
-    .string()
-    .min(1, "Vyplňte jméno a příjmení.")
-    .max(128, "Maximálně 128 znaků."),
+  displayName: z.string().min(1, "Vyplňte jméno a příjmení.").max(128, "Maximálně 128 znaků."),
   role: z.enum(["BOSS", "WORKER", "INSPECTOR", "INVESTOR"]),
-  ckaitNumber: z
-    .string()
-    .max(32, "Maximálně 32 znaků.")
-    .optional()
-    .nullable(),
+  ckaitNumber: z.string().max(32, "Maximálně 32 znaků.").optional().nullable(),
   isAdmin: z.boolean().optional().default(false),
 });
 
@@ -79,20 +69,10 @@ export const createUserSchema = z.object({
     .string()
     .min(3, "Přihlašovací jméno musí mít alespoň 3 znaky.")
     .max(64, "Maximálně 64 znaků.")
-    .regex(
-      /^[a-z0-9._-]+$/,
-      "Povolená jsou malá písmena bez diakritiky, číslice a znaky . _ -",
-    ),
-  displayName: z
-    .string()
-    .min(1, "Vyplňte jméno a příjmení.")
-    .max(128, "Maximálně 128 znaků."),
+    .regex(/^[a-z0-9._-]+$/, "Povolená jsou malá písmena bez diakritiky, číslice a znaky . _ -"),
+  displayName: z.string().min(1, "Vyplňte jméno a příjmení.").max(128, "Maximálně 128 znaků."),
   role: z.enum(["BOSS", "WORKER", "INSPECTOR", "INVESTOR"]),
-  ckaitNumber: z
-    .string()
-    .max(32, "Maximálně 32 znaků.")
-    .optional()
-    .nullable(),
+  ckaitNumber: z.string().max(32, "Maximálně 32 znaků.").optional().nullable(),
   // App-admin flag — orthogonální k role. Default false, formulář
   // pošle "true" jen když je checkbox zaškrtnutý.
   isAdmin: z.boolean().optional().default(false),
@@ -193,9 +173,7 @@ export class UserNotFoundError extends Error {
 export class CannotRemoveLastAdminError extends Error {
   code = "CannotRemoveLastAdmin" as const;
   constructor() {
-    super(
-      "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
-    );
+    super("Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.");
   }
 }
 
@@ -292,9 +270,7 @@ export async function resetUserPasswordByAdmin(
   actorId: string,
 ): Promise<{ generatedPassword: string }> {
   if (userId === actorId) {
-    throw new Error(
-      "Reset vlastního hesla přes admin flow není povolen — použij self-service.",
-    );
+    throw new Error("Reset vlastního hesla přes admin flow není povolen — použij self-service.");
   }
 
   const before = await prisma.user.findUnique({ where: { id: userId } });

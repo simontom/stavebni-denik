@@ -77,9 +77,9 @@ function isOverdue(item: MaterialGanttItem, now: Date): boolean {
 export function MaterialGantt({ projectId, items }: Props) {
   if (items.length === 0) {
     return (
-      <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-        Žádné materiálové položky. Přidávají se v denních záznamech v
-        sekci „Materiál na další dny&ldquo;.
+      <div className="text-muted-foreground rounded-md border border-dashed p-6 text-center text-sm">
+        Žádné materiálové položky. Přidávají se v denních záznamech v sekci „Materiál na další
+        dny&ldquo;.
       </div>
     );
   }
@@ -91,7 +91,7 @@ export function MaterialGantt({ projectId, items }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-sm">
         <Badge variant="secondary" className="gap-1.5">
           <Package className="size-3" aria-hidden />
           {items.length} celkem
@@ -111,14 +111,11 @@ export function MaterialGantt({ projectId, items }: Props) {
 
       <ul className="flex flex-col gap-3">
         {groups.map((group) => (
-          <li
-            key={group.key ?? "no-due-date"}
-            className="rounded-md border bg-card"
-          >
-            <div className="flex items-center gap-2 border-b bg-muted/50 px-3 py-2 text-sm font-medium">
-              <Calendar className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <li key={group.key ?? "no-due-date"} className="bg-card rounded-md border">
+            <div className="bg-muted/50 flex items-center gap-2 border-b px-3 py-2 text-sm font-medium">
+              <Calendar className="text-muted-foreground size-4 shrink-0" aria-hidden />
               <span>{group.label}</span>
-              <span className="ml-auto text-xs text-muted-foreground">
+              <span className="text-muted-foreground ml-auto text-xs">
                 {group.items.length}{" "}
                 {group.items.length === 1
                   ? "položka"
@@ -149,26 +146,14 @@ export function MaterialGantt({ projectId, items }: Props) {
                           aria-hidden
                         />
                       ) : overdueRow ? (
-                        <AlertTriangle
-                          className="size-4 text-destructive"
-                          aria-hidden
-                        />
+                        <AlertTriangle className="text-destructive size-4" aria-hidden />
                       ) : (
-                        <Package
-                          className="size-4 text-muted-foreground"
-                          aria-hidden
-                        />
+                        <Package className="text-muted-foreground size-4" aria-hidden />
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p
-                        className={
-                          item.resolved ? "line-through" : "font-medium"
-                        }
-                      >
-                        {item.text}
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
+                    <div className="min-w-0 flex-1">
+                      <p className={item.resolved ? "line-through" : "font-medium"}>{item.text}</p>
+                      <p className="text-muted-foreground mt-0.5 text-xs">
                         Zdroj:{" "}
                         <Link
                           href={`/projects/${projectId}/reports/${formatDateInput(item.reportDate)}`}

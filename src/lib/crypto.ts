@@ -34,10 +34,7 @@ export async function hashPassword(plain: string): Promise<string> {
  * malformed hash so login responses don't leak structural information
  * about stored hashes.
  */
-export async function verifyPassword(
-  plain: string,
-  stored: string,
-): Promise<boolean> {
+export async function verifyPassword(plain: string, stored: string): Promise<boolean> {
   try {
     return await verify(stored, plain);
   } catch {

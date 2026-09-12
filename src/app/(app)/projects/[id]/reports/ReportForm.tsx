@@ -6,21 +6,12 @@ import { Loader2, Plus, Trash2 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 
-import type {
-  ReportFormState,
-  ReportFormValues,
-  WorkerLineValue,
-} from "./report-form-types";
+import type { ReportFormState, ReportFormValues, WorkerLineValue } from "./report-form-types";
 
 interface Props {
   action: (
@@ -54,10 +45,7 @@ function AreaField({
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={name}>
-        {label}{" "}
-        {!required && (
-          <span className="text-muted-foreground">(volitelné)</span>
-        )}
+        {label} {!required && <span className="text-muted-foreground">(volitelné)</span>}
       </Label>
       <Textarea
         id={name}
@@ -68,21 +56,16 @@ function AreaField({
         placeholder={placeholder}
         aria-invalid={!!error}
       />
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-destructive text-sm">{error}</p>}
     </div>
   );
 }
 
-export function ReportForm({
-  action,
-  defaultValues,
-  submitLabel,
-  cancelHref,
-}: Props) {
-  const [state, formAction, isPending] = useActionState<
-    ReportFormState | undefined,
-    FormData
-  >(action, undefined);
+export function ReportForm({ action, defaultValues, submitLabel, cancelHref }: Props) {
+  const [state, formAction, isPending] = useActionState<ReportFormState | undefined, FormData>(
+    action,
+    undefined,
+  );
 
   const [workers, setWorkers] = useState<WorkerLineValue[]>(
     defaultValues.workersByTrade.length > 0
@@ -90,13 +73,10 @@ export function ReportForm({
       : [{ trade: "", count: "" }],
   );
 
-  const fieldErrors =
-    state?.status === "field-error" ? state.fieldErrors : undefined;
+  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
 
   function updateWorker(index: number, patch: Partial<WorkerLineValue>) {
-    setWorkers((prev) =>
-      prev.map((w, i) => (i === index ? { ...w, ...patch } : w)),
-    );
+    setWorkers((prev) => prev.map((w, i) => (i === index ? { ...w, ...patch } : w)));
   }
 
   function addWorker() {
@@ -104,18 +84,14 @@ export function ReportForm({
   }
 
   function removeWorker(index: number) {
-    setWorkers((prev) =>
-      prev.length <= 1 ? prev : prev.filter((_, i) => i !== index),
-    );
+    setWorkers((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
   }
 
   return (
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       {state?.status === "exists" && (
         <Alert variant="destructive">
-          <AlertDescription>
-            Pro tento den už denní záznam existuje.
-          </AlertDescription>
+          <AlertDescription>Pro tento den už denní záznam existuje.</AlertDescription>
         </Alert>
       )}
       {state?.status === "not-found" && (
@@ -125,9 +101,7 @@ export function ReportForm({
       )}
       {state?.status === "forbidden" && (
         <Alert variant="destructive">
-          <AlertDescription>
-            Nemáte oprávnění tento záznam vytvořit nebo upravit.
-          </AlertDescription>
+          <AlertDescription>Nemáte oprávnění tento záznam vytvořit nebo upravit.</AlertDescription>
         </Alert>
       )}
       {state?.status === "locked" && (
@@ -184,12 +158,7 @@ export function ReportForm({
             </div>
           ))}
           <div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addWorker}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={addWorker}>
               <Plus className="size-4" aria-hidden /> Přidat profesi
             </Button>
           </div>
@@ -201,7 +170,7 @@ export function ReportForm({
           <CardTitle className="text-base">Průběh prací</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="mb-2 flex items-center gap-2">
             <input
               type="checkbox"
               id="isControlDay"
@@ -212,15 +181,19 @@ export function ReportForm({
             />
             <Label htmlFor="isControlDay">Kontrolní den</Label>
           </div>
-          
-          <div className="grid gap-1.5 mb-2">
-            <Label htmlFor="constructionObj">Stavební objekt (SO / IO) <span className="text-muted-foreground">(volitelné)</span></Label>
+
+          <div className="mb-2 grid gap-1.5">
+            <Label htmlFor="constructionObj">
+              Stavební objekt (SO / IO) <span className="text-muted-foreground">(volitelné)</span>
+            </Label>
             <Input
               id="constructionObj"
               name="constructionObj"
               defaultValue={defaultValues.constructionObj}
             />
-            {fieldErrors?.constructionObj && <p className="text-sm text-destructive">{fieldErrors.constructionObj}</p>}
+            {fieldErrors?.constructionObj && (
+              <p className="text-destructive text-sm">{fieldErrors.constructionObj}</p>
+            )}
           </div>
 
           <AreaField

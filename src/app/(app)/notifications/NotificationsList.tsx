@@ -9,10 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/dates";
 
-import {
-  deleteNotificationAction,
-  markNotificationReadAction,
-} from "./actions";
+import { deleteNotificationAction, markNotificationReadAction } from "./actions";
 
 export interface NotificationListItem {
   id: string;
@@ -38,11 +35,7 @@ export function NotificationsList({ items }: Props) {
   const [pending, startTransition] = useTransition();
 
   if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Žádné notifikace.
-      </p>
-    );
+    return <p className="text-muted-foreground text-sm">Žádné notifikace.</p>;
   }
 
   function activate(item: NotificationListItem) {
@@ -64,10 +57,7 @@ export function NotificationsList({ items }: Props) {
   return (
     <ul className="flex flex-col divide-y">
       {items.map((n) => (
-        <li
-          key={n.id}
-          className={n.readAt ? "py-3" : "bg-muted/40 py-3"}
-        >
+        <li key={n.id} className={n.readAt ? "py-3" : "bg-muted/40 py-3"}>
           <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <button
               type="button"
@@ -76,13 +66,7 @@ export function NotificationsList({ items }: Props) {
               className="flex flex-1 flex-col gap-0.5 text-left disabled:opacity-50"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={
-                    n.readAt
-                      ? "text-sm"
-                      : "text-sm font-medium text-foreground"
-                  }
-                >
+                <span className={n.readAt ? "text-sm" : "text-foreground text-sm font-medium"}>
                   {n.title}
                 </span>
                 {!n.readAt && (
@@ -96,12 +80,8 @@ export function NotificationsList({ items }: Props) {
                   </Badge>
                 )}
               </div>
-              {n.body && (
-                <p className="text-sm text-muted-foreground">{n.body}</p>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {formatDateTime(n.createdAt)}
-              </span>
+              {n.body && <p className="text-muted-foreground text-sm">{n.body}</p>}
+              <span className="text-muted-foreground text-xs">{formatDateTime(n.createdAt)}</span>
             </button>
             <div className="flex items-center gap-1 self-end sm:self-start">
               {!n.readAt && (
@@ -133,7 +113,7 @@ export function NotificationsList({ items }: Props) {
           </div>
         </li>
       ))}
-      <li className="pt-3 text-xs text-muted-foreground">
+      <li className="text-muted-foreground pt-3 text-xs">
         <Link href="/" className="hover:underline">
           Zpět na úvod
         </Link>

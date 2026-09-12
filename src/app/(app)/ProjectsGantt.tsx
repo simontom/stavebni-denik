@@ -72,19 +72,16 @@ function buildTicks(start: Date, end: Date): Tick[] {
 export function ProjectsGantt({ items, today: todayProp }: Props) {
   if (items.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Žádná zakázka nemá vyplněné datum zahájení — Gantt se zobrazí, jakmile
-        vyplníte „Zahájení stavby“ alespoň u jedné zakázky.
+      <p className="text-muted-foreground text-sm">
+        Žádná zakázka nemá vyplněné datum zahájení — Gantt se zobrazí, jakmile vyplníte „Zahájení
+        stavby“ alespoň u jedné zakázky.
       </p>
     );
   }
 
   const today = todayProp ?? new Date();
   const startMs = Math.min(...items.map((p) => p.startedAt.getTime()));
-  const endMs = Math.max(
-    today.getTime(),
-    ...items.map((p) => (p.endedAt ?? today).getTime()),
-  );
+  const endMs = Math.max(today.getTime(), ...items.map((p) => (p.endedAt ?? today).getTime()));
   // Add 2% padding on each side so bars at the very edge are visible.
   const span = Math.max(DAY_MS, endMs - startMs);
   const pad = span * 0.02;
@@ -93,8 +90,7 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
   const axisSpan = axisEnd.getTime() - axisStart.getTime();
 
   const ticks = buildTicks(axisStart, axisEnd);
-  const todayOffsetPct =
-    ((today.getTime() - axisStart.getTime()) / axisSpan) * 100;
+  const todayOffsetPct = ((today.getTime() - axisStart.getTime()) / axisSpan) * 100;
   const showTodayMarker = todayOffsetPct >= 0 && todayOffsetPct <= 100;
 
   return (
@@ -107,10 +103,8 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
             className="absolute top-0 flex h-full -translate-x-1/2 items-end gap-1 pb-px"
             style={{ left: `${t.offsetPct}%` }}
           >
-            <span className="size-px h-2 bg-border" aria-hidden />
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-              {t.label}
-            </span>
+            <span className="bg-border size-px h-2" aria-hidden />
+            <span className="text-muted-foreground text-[10px] whitespace-nowrap">{t.label}</span>
           </span>
         ))}
       </div>
@@ -119,22 +113,15 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
       <ul className="flex flex-col gap-1.5">
         {items.map((p) => {
           const endTime = (p.endedAt ?? today).getTime();
-          const leftPct =
-            ((p.startedAt.getTime() - axisStart.getTime()) / axisSpan) * 100;
-          const widthPct = Math.max(
-            0.5,
-            ((endTime - p.startedAt.getTime()) / axisSpan) * 100,
-          );
+          const leftPct = ((p.startedAt.getTime() - axisStart.getTime()) / axisSpan) * 100;
+          const widthPct = Math.max(0.5, ((endTime - p.startedAt.getTime()) / axisSpan) * 100);
           const ongoing = p.endedAt === null || endTime >= today.getTime();
           const dateLabel = p.endedAt
             ? `${formatDate(p.startedAt)} – ${formatDate(p.endedAt)}`
             : `${formatDate(p.startedAt)} – probíhá`;
 
           return (
-            <li
-              key={p.id}
-              className="grid grid-cols-[minmax(7rem,12rem)_1fr] items-center gap-2"
-            >
+            <li key={p.id} className="grid grid-cols-[minmax(7rem,12rem)_1fr] items-center gap-2">
               <Link
                 href={`/projects/${p.id}`}
                 className="truncate text-sm hover:underline"
@@ -142,7 +129,7 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
               >
                 {p.name}
               </Link>
-              <div className="relative h-5 rounded bg-muted/60">
+              <div className="bg-muted/60 relative h-5 rounded">
                 {showTodayMarker && (
                   <div
                     className="absolute top-0 bottom-0 w-px bg-amber-500/80"
@@ -156,9 +143,7 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
                   aria-label={`${p.name}: ${dateLabel}`}
                   className={
                     "absolute top-0 h-5 rounded transition hover:opacity-90 " +
-                    (ongoing
-                      ? "bg-primary"
-                      : "bg-muted-foreground/40")
+                    (ongoing ? "bg-primary" : "bg-muted-foreground/40")
                   }
                   style={{ left: `${leftPct}%`, width: `${widthPct}%` }}
                 />
@@ -169,12 +154,12 @@ export function ProjectsGantt({ items, today: todayProp }: Props) {
       </ul>
 
       {showTodayMarker && (
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-muted-foreground text-[10px]">
           <span className="mr-1 inline-block h-2 w-px bg-amber-500 align-middle" />
           dnes
-          <span className="mx-3 inline-block h-2 w-2 rounded-sm bg-primary align-middle" />
+          <span className="bg-primary mx-3 inline-block h-2 w-2 rounded-sm align-middle" />
           probíhá
-          <span className="mx-1 inline-block h-2 w-2 rounded-sm bg-muted-foreground/40 align-middle" />
+          <span className="bg-muted-foreground/40 mx-1 inline-block h-2 w-2 rounded-sm align-middle" />
           dokončeno
         </p>
       )}

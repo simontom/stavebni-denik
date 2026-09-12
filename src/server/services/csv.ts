@@ -88,13 +88,7 @@ export async function buildProjectCsv({
   }
 
   if (type === "materials") {
-    body += csvRow([
-      "Datum reportu",
-      "Položka",
-      "Potřeba do",
-      "Stav",
-      "Vyřízeno v",
-    ]);
+    body += csvRow(["Datum reportu", "Položka", "Potřeba do", "Stav", "Vyřízeno v"]);
     const rows = await prisma.materialNeed.findMany({
       where: {
         report: {

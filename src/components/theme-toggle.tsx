@@ -80,7 +80,7 @@ export function ThemeToggle() {
       <button
         type="button"
         aria-label="Přepnout motiv"
-        className="inline-flex size-9 items-center justify-center rounded-md text-foreground"
+        className="text-foreground inline-flex size-9 items-center justify-center rounded-md"
       >
         <Monitor className="size-4" aria-hidden />
       </button>
@@ -96,7 +96,7 @@ export function ThemeToggle() {
           <button
             type="button"
             aria-label="Přepnout motiv"
-            className="inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent hover:text-accent-foreground"
+            className="text-foreground hover:bg-accent hover:text-accent-foreground inline-flex size-9 items-center justify-center rounded-md"
           >
             <Icon className="size-4" aria-hidden />
           </button>

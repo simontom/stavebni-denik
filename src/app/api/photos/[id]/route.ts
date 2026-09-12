@@ -4,10 +4,7 @@ import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 
 import { auth } from "@/server/auth";
 import type { SessionUser } from "@/server/permissions";
-import {
-  getPhotoFileForUser,
-  type PhotoVariant,
-} from "@/server/services/photos";
+import { getPhotoFileForUser, type PhotoVariant } from "@/server/services/photos";
 
 /**
  * Auth-gated photo serving endpoint.
