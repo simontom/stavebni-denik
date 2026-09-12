@@ -82,20 +82,15 @@ function groupIntoWeeks(days: ReportCoverageDay[]): Week[] {
  */
 export function ReportCoverageHeatmap({ projectId, coverage }: Props) {
   if (coverage.days.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        Žádné dny v rozsahu zakázky.
-      </p>
-    );
+    return <p className="text-muted-foreground text-sm">Žádné dny v rozsahu zakázky.</p>;
   }
 
   const weeks = groupIntoWeeks(coverage.days);
-  const pct = (n: number) =>
-    Math.round((n / coverage.days.length) * 100);
+  const pct = (n: number) => Math.round((n / coverage.days.length) * 100);
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <div className="text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 text-xs">
         <span>
           Období {formatDate(coverage.from)} – {formatDate(coverage.to)}
         </span>
@@ -115,14 +110,11 @@ export function ReportCoverageHeatmap({ projectId, coverage }: Props) {
         <div className="flex gap-1.5">
           {/* Weekday axis */}
           <div
-            className="grid grid-rows-7 gap-[3px] pr-1 text-[10px] text-muted-foreground"
+            className="text-muted-foreground grid grid-rows-7 gap-[3px] pr-1 text-[10px]"
             aria-hidden
           >
             {WEEKDAY_LABELS.map((l, i) => (
-              <span
-                key={i}
-                className="flex h-3 items-center leading-none"
-              >
+              <span key={i} className="flex h-3 items-center leading-none">
                 {/* Show every other label so the column stays tight. */}
                 {i % 2 === 0 ? l : ""}
               </span>
@@ -132,24 +124,15 @@ export function ReportCoverageHeatmap({ projectId, coverage }: Props) {
           {/* Week columns */}
           <div className="flex gap-[3px]">
             {weeks.map((week, wi) => (
-              <div
-                key={wi}
-                className="grid grid-rows-7 gap-[3px]"
-              >
+              <div key={wi} className="grid grid-rows-7 gap-[3px]">
                 {week.days.map((day, di) => {
                   if (!day) {
                     return (
-                      <span
-                        key={di}
-                        className="size-3 rounded-sm bg-transparent"
-                        aria-hidden
-                      />
+                      <span key={di} className="size-3 rounded-sm bg-transparent" aria-hidden />
                     );
                   }
                   const dateStr = formatDateInput(day.date);
-                  const tooltip = `${formatDate(day.date)} — ${
-                    STATE_LABEL[day.state]
-                  }`;
+                  const tooltip = `${formatDate(day.date)} — ${STATE_LABEL[day.state]}`;
                   return (
                     <Link
                       key={di}
@@ -157,7 +140,7 @@ export function ReportCoverageHeatmap({ projectId, coverage }: Props) {
                       title={tooltip}
                       aria-label={tooltip}
                       className={
-                        "block size-3 rounded-sm transition hover:ring-2 hover:ring-primary " +
+                        "hover:ring-primary block size-3 rounded-sm transition hover:ring-2 " +
                         STATE_CLASS[day.state]
                       }
                     />
@@ -169,26 +152,17 @@ export function ReportCoverageHeatmap({ projectId, coverage }: Props) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-[11px]">
         <span className="flex items-center gap-1">
-          <span
-            className={"size-3 rounded-sm " + STATE_CLASS.missing}
-            aria-hidden
-          />
+          <span className={"size-3 rounded-sm " + STATE_CLASS.missing} aria-hidden />
           bez záznamu
         </span>
         <span className="flex items-center gap-1">
-          <span
-            className={"size-3 rounded-sm " + STATE_CLASS.draft}
-            aria-hidden
-          />
+          <span className={"size-3 rounded-sm " + STATE_CLASS.draft} aria-hidden />
           nepodepsaný
         </span>
         <span className="flex items-center gap-1">
-          <span
-            className={"size-3 rounded-sm " + STATE_CLASS.signed}
-            aria-hidden
-          />
+          <span className={"size-3 rounded-sm " + STATE_CLASS.signed} aria-hidden />
           podepsáno
         </span>
       </div>

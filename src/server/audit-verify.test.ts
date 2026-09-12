@@ -4,11 +4,7 @@ import { logger } from "@/lib/logger";
 import { GENESIS_HASH, type AuditRow, recomputeRowHash } from "./audit-hash";
 import { verifyAuditChainWithClient } from "./audit-verify";
 
-function makeRow(
-  id: number,
-  prevHash: string,
-  overrides: Partial<AuditRow> = {},
-): AuditRow {
+function makeRow(id: number, prevHash: string, overrides: Partial<AuditRow> = {}): AuditRow {
   const row: AuditRow = {
     id: BigInt(id),
     ts: new Date("2026-01-01T10:00:00.000Z"),

@@ -157,9 +157,7 @@ function normaliseFilename(input: string): string {
  * guard the server enforces — we surface it client-side so the
  * user sees the error before the upload).
  */
-export async function preparePhotoForUpload(
-  file: File,
-): Promise<PreparedPhoto> {
+export async function preparePhotoForUpload(file: File): Promise<PreparedPhoto> {
   if (file.size === 0) {
     throw new PhotoClientPrepareError("Soubor je prázdný.");
   }
@@ -170,9 +168,7 @@ export async function preparePhotoForUpload(
   try {
     bitmap = await loadImageBitmap(file);
   } catch {
-    throw new PhotoClientPrepareError(
-      "Obrázek se nepodařilo načíst (nepodporovaný formát?).",
-    );
+    throw new PhotoClientPrepareError("Obrázek se nepodařilo načíst (nepodporovaný formát?).");
   }
 
   const srcW = bitmap.width;
@@ -180,15 +176,14 @@ export async function preparePhotoForUpload(
   if (srcW * srcH > CLIENT_DECODE_MAX_PIXELS) {
     bitmap.close();
     throw new PhotoClientPrepareError(
-      `Obrázek je příliš velký (${srcW}×${srcH} = ${(srcW * srcH / 1_000_000).toFixed(1)} MP). Maximum je ${CLIENT_DECODE_MAX_PIXELS / 1_000_000} MP — v telefonu vypněte režim plného rozlišení.`,
+      `Obrázek je příliš velký (${srcW}×${srcH} = ${((srcW * srcH) / 1_000_000).toFixed(1)} MP). Maximum je ${CLIENT_DECODE_MAX_PIXELS / 1_000_000} MP — v telefonu vypněte režim plného rozlišení.`,
     );
   }
 
   // Compute the target size, respecting the long-edge cap WITHOUT
   // ever upscaling — small inputs stay at their original size.
   const longest = Math.max(srcW, srcH);
-  const scale =
-    longest > CLIENT_RESIZE_MAX_PX ? CLIENT_RESIZE_MAX_PX / longest : 1;
+  const scale = longest > CLIENT_RESIZE_MAX_PX ? CLIENT_RESIZE_MAX_PX / longest : 1;
   const targetW = Math.round(srcW * scale);
   const targetH = Math.round(srcH * scale);
 
@@ -204,16 +199,10 @@ export async function preparePhotoForUpload(
   bitmap.close();
 
   const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(
-      (b) => resolve(b),
-      "image/jpeg",
-      CLIENT_RESIZE_JPEG_QUALITY,
-    );
+    canvas.toBlob((b) => resolve(b), "image/jpeg", CLIENT_RESIZE_JPEG_QUALITY);
   });
   if (!blob) {
-    throw new PhotoClientPrepareError(
-      "Encoding obrázku do JPEG selhal.",
-    );
+    throw new PhotoClientPrepareError("Encoding obrázku do JPEG selhal.");
   }
 
   return {

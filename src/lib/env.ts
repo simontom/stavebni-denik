@@ -18,8 +18,7 @@ function required(name: string): string {
     // exist at runtime in production.
     if (isBuildPhase) return "";
     throw new Error(
-      `Missing required environment variable: ${name}. ` +
-        `See .env.example for the full list.`,
+      `Missing required environment variable: ${name}. ` + `See .env.example for the full list.`,
     );
   }
   return value;

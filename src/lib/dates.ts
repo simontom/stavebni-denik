@@ -65,17 +65,12 @@ export function pragueDayStart(date: Date | string): Date {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(d);
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? "00";
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "00";
   // Build an ISO string like "2026-05-30T00:00:00+02:00". The offset is
   // resolved by the runtime when the resulting Date is constructed.
   const iso = `${get("year")}-${get("month")}-${get("day")}T00:00:00`;
   // Re-interpret in Prague time by parsing as if local, then adjusting.
   const local = new Date(iso);
-  const utcMs = Date.UTC(
-    local.getFullYear(),
-    local.getMonth(),
-    local.getDate(),
-  );
+  const utcMs = Date.UTC(local.getFullYear(), local.getMonth(), local.getDate());
   return new Date(utcMs);
 }

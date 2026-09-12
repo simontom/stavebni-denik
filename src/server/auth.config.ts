@@ -44,16 +44,12 @@ export const authConfig = {
       // Force first-time password change before anything else.
       if (isLoggedIn && auth?.user?.mustChangePwd) {
         if (pathname.startsWith("/first-password-change")) return true;
-        return Response.redirect(
-          new URL("/first-password-change", request.nextUrl),
-        );
+        return Response.redirect(new URL("/first-password-change", request.nextUrl));
       }
 
       if (!isLoggedIn) {
         const callback = encodeURIComponent(pathname + request.nextUrl.search);
-        return Response.redirect(
-          new URL(`/login?callbackUrl=${callback}`, request.nextUrl),
-        );
+        return Response.redirect(new URL(`/login?callbackUrl=${callback}`, request.nextUrl));
       }
       return true;
     },

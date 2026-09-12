@@ -183,10 +183,7 @@ export function hashesEqual(a: string, b: string): boolean {
  * Shared by both the in-memory verifier (`verifyAuditRows`) and the
  * streaming DB verifier so there is a single source of truth.
  */
-export function checkChainRow(
-  expectedPrevHash: string,
-  r: AuditRow,
-): string | null {
+export function checkChainRow(expectedPrevHash: string, r: AuditRow): string | null {
   if (!hashesEqual(r.prev_hash, expectedPrevHash)) {
     return `prev_hash mismatch on id=${r.id}: expected ${expectedPrevHash}, got ${r.prev_hash}`;
   }

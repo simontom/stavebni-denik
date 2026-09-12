@@ -23,11 +23,7 @@ import {
   createHandoverSchema,
   projectMemberRoleSchema,
 } from "@/server/services/legislative-validation";
-import {
-  createHandover,
-  deleteHandover,
-  signHandover,
-} from "@/server/services/site-handovers";
+import { createHandover, deleteHandover, signHandover } from "@/server/services/site-handovers";
 import {
   addExternalPerson,
   revokePerson,
@@ -163,19 +159,13 @@ export async function createHandoverAction(
   return {};
 }
 
-export async function signHandoverAction(
-  handoverId: string,
-  projectId: string,
-): Promise<void> {
+export async function signHandoverAction(handoverId: string, projectId: string): Promise<void> {
   const actor = await requireBoss();
   await signHandover(handoverId, actor.id);
   revalidatePath(`/projects/${projectId}`);
 }
 
-export async function deleteHandoverAction(
-  handoverId: string,
-  projectId: string,
-): Promise<void> {
+export async function deleteHandoverAction(handoverId: string, projectId: string): Promise<void> {
   const actor = await requireBoss();
   await deleteHandover(handoverId, actor.id);
   revalidatePath(`/projects/${projectId}`);

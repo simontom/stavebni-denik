@@ -6,10 +6,7 @@ import { ChevronLeft } from "lucide-react";
 import { formatDateInput } from "@/lib/dates";
 import { ForbiddenError } from "@/server/permissions";
 import { requireBoss } from "@/server/rbac";
-import {
-  getProjectForUser,
-  listSiteManagerCandidates,
-} from "@/server/services/projects";
+import { getProjectForUser, listSiteManagerCandidates } from "@/server/services/projects";
 
 import { ProjectForm } from "../../ProjectForm";
 import type { ProjectFormValues } from "../../form-types";
@@ -66,7 +63,7 @@ export default async function EditProjectPage({ params }: PageProps) {
       <div className="flex flex-col gap-2">
         <Link
           href={`/projects/${id}`}
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm"
         >
           <ChevronLeft className="size-4" aria-hidden /> Zpět na zakázku
         </Link>

@@ -1,13 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import {
-  Loader2,
-  Pencil,
-  Plus,
-  UserCheck,
-  XCircle,
-} from "lucide-react";
+import { Loader2, Pencil, Plus, UserCheck, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,15 +41,9 @@ interface Props {
   canManage: boolean;
 }
 
-export function AuthorizedPersonsPanel({
-  projectId,
-  persons,
-  canManage,
-}: Props) {
+export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props) {
   const [addOpen, setAddOpen] = useState(false);
-  const [editingPerson, setEditingPerson] = useState<AuthorizedPersonItem | null>(
-    null,
-  );
+  const [editingPerson, setEditingPerson] = useState<AuthorizedPersonItem | null>(null);
 
   const [name, setName] = useState("");
   const [company, setCompany] = useState("");
@@ -108,11 +96,7 @@ export function AuthorizedPersonsPanel({
     fd.append("authorization", authorization);
 
     startTransition(async () => {
-      const res = await updateAuthorizedPersonAction(
-        editingPerson.id,
-        projectId,
-        fd,
-      );
+      const res = await updateAuthorizedPersonAction(editingPerson.id, projectId, fd);
       if (res.error) {
         setError(res.error);
       } else {
@@ -139,7 +123,7 @@ export function AuthorizedPersonsPanel({
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="text-base">Seznam pověřených osob</CardTitle>
-          <p className="text-xs text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-xs">
             Osoby oprávněné provádět záznamy v deníku dle § 157 stavebního zákona
           </p>
         </div>
@@ -148,7 +132,7 @@ export function AuthorizedPersonsPanel({
             <DialogTrigger
               render={
                 <Button size="sm" onClick={handleOpenAdd}>
-                  <Plus className="size-4 mr-1" aria-hidden /> Přidat osobu
+                  <Plus className="mr-1 size-4" aria-hidden /> Přidat osobu
                 </Button>
               }
             />
@@ -157,13 +141,12 @@ export function AuthorizedPersonsPanel({
                 <DialogHeader>
                   <DialogTitle>Přidat pověřenou osobu</DialogTitle>
                   <DialogDescription>
-                    Zadejte údaje externí pověřené osoby (např. TDI, autorský
-                    dozor, geodet).
+                    Zadejte údaje externí pověřené osoby (např. TDI, autorský dozor, geodet).
                   </DialogDescription>
                 </DialogHeader>
 
                 {error && (
-                  <div className="text-sm font-medium text-destructive bg-destructive/10 p-2 rounded">
+                  <div className="text-destructive bg-destructive/10 rounded p-2 text-sm font-medium">
                     {error}
                   </div>
                 )}
@@ -203,17 +186,11 @@ export function AuthorizedPersonsPanel({
                 </div>
 
                 <DialogFooter className="pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setAddOpen(false)}
-                  >
+                  <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
                     Zrušit
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending && (
-                      <Loader2 className="size-4 mr-2 animate-spin" aria-hidden />
-                    )}
+                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                     Uložit
                   </Button>
                 </DialogFooter>
@@ -224,7 +201,7 @@ export function AuthorizedPersonsPanel({
       </CardHeader>
       <CardContent>
         {persons.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Žádné pověřené osoby.</p>
+          <p className="text-muted-foreground text-sm">Žádné pověřené osoby.</p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {persons.map((p) => {
@@ -234,15 +211,15 @@ export function AuthorizedPersonsPanel({
               return (
                 <Card
                   key={p.id}
-                  className={`p-4 flex flex-col justify-between gap-3 ${
-                    isRevoked ? "opacity-60 bg-muted/30" : ""
+                  className={`flex flex-col justify-between gap-3 p-4 ${
+                    isRevoked ? "bg-muted/30 opacity-60" : ""
                   }`}
                 >
                   <div className="space-y-2">
-                    <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-start justify-between gap-2">
                       <div
-                        className={`font-semibold text-base ${
-                          isRevoked ? "line-through text-muted-foreground" : ""
+                        className={`text-base font-semibold ${
+                          isRevoked ? "text-muted-foreground line-through" : ""
                         }`}
                       >
                         {p.name}
@@ -253,17 +230,14 @@ export function AuthorizedPersonsPanel({
                             Zrušeno
                           </Badge>
                         ) : isSystemUser ? (
-                          <Badge
-                            variant="secondary"
-                            className="text-xs flex items-center gap-1"
-                          >
+                          <Badge variant="secondary" className="flex items-center gap-1 text-xs">
                             <UserCheck className="size-3" aria-hidden />
                             Uživatel
                           </Badge>
                         ) : (
                           <Badge
                             variant="outline"
-                            className="text-xs text-green-700 border-green-300"
+                            className="border-green-300 text-xs text-green-700"
                           >
                             Aktivní
                           </Badge>
@@ -272,19 +246,17 @@ export function AuthorizedPersonsPanel({
                     </div>
 
                     {p.authorization && (
-                      <div className="text-sm text-muted-foreground font-medium">
+                      <div className="text-muted-foreground text-sm font-medium">
                         {p.authorization}
                       </div>
                     )}
 
                     {p.company && (
-                      <div className="text-xs text-muted-foreground">
-                        Organizace: {p.company}
-                      </div>
+                      <div className="text-muted-foreground text-xs">Organizace: {p.company}</div>
                     )}
                   </div>
 
-                  <div className="border-t pt-2 mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <div className="text-muted-foreground mt-2 flex items-center justify-between border-t pt-2 text-xs">
                     <div>
                       {isRevoked ? (
                         <span className="text-destructive font-medium">
@@ -332,10 +304,7 @@ export function AuthorizedPersonsPanel({
 
         {/* Edit Dialog */}
         {editingPerson && (
-          <Dialog
-            open={Boolean(editingPerson)}
-            onOpenChange={(v) => !v && setEditingPerson(null)}
-          >
+          <Dialog open={Boolean(editingPerson)} onOpenChange={(v) => !v && setEditingPerson(null)}>
             <DialogContent className="sm:max-w-md">
               <form onSubmit={handleUpdate} className="space-y-4">
                 <DialogHeader>
@@ -343,7 +312,7 @@ export function AuthorizedPersonsPanel({
                 </DialogHeader>
 
                 {error && (
-                  <div className="text-sm font-medium text-destructive bg-destructive/10 p-2 rounded">
+                  <div className="text-destructive bg-destructive/10 rounded p-2 text-sm font-medium">
                     {error}
                   </div>
                 )}
@@ -377,17 +346,11 @@ export function AuthorizedPersonsPanel({
                 </div>
 
                 <DialogFooter className="pt-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setEditingPerson(null)}
-                  >
+                  <Button type="button" variant="ghost" onClick={() => setEditingPerson(null)}>
                     Zrušit
                   </Button>
                   <Button type="submit" disabled={isPending}>
-                    {isPending && (
-                      <Loader2 className="size-4 mr-2 animate-spin" aria-hidden />
-                    )}
+                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                     Uložit změny
                   </Button>
                 </DialogFooter>

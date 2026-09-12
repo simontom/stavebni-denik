@@ -151,13 +151,9 @@ const setActiveSchema = z.object({
   isActive: z.enum(["1", "0"]),
 });
 
-export type SetUserActiveResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type SetUserActiveResult = { ok: true } | { ok: false; error: string };
 
-export async function setUserActiveAction(
-  data: FormData,
-): Promise<SetUserActiveResult> {
+export async function setUserActiveAction(data: FormData): Promise<SetUserActiveResult> {
   try {
     await requireAdmin();
   } catch {
@@ -172,11 +168,7 @@ export async function setUserActiveAction(
   }
   try {
     const ctx = await getAuditContext();
-    await setUserActive(
-      parsed.data.userId,
-      parsed.data.isActive === "1",
-      ctx,
-    );
+    await setUserActive(parsed.data.userId, parsed.data.isActive === "1", ctx);
   } catch (err) {
     console.error("[setUserActiveAction]", err);
     return {
@@ -188,13 +180,9 @@ export async function setUserActiveAction(
   return { ok: true };
 }
 
-export type DeleteUserResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type DeleteUserResult = { ok: true } | { ok: false; error: string };
 
-export async function deleteUserAction(
-  data: FormData,
-): Promise<DeleteUserResult> {
+export async function deleteUserAction(data: FormData): Promise<DeleteUserResult> {
   let actor;
   try {
     actor = await requireAdmin();
@@ -229,9 +217,7 @@ export type ResetPasswordResult =
   | { ok: true; generatedPassword: string; nickname: string; displayName: string }
   | { ok: false; error: string };
 
-export async function resetUserPasswordAction(
-  data: FormData,
-): Promise<ResetPasswordResult> {
+export async function resetUserPasswordAction(data: FormData): Promise<ResetPasswordResult> {
   let actor;
   try {
     actor = await requireAdmin();
@@ -275,11 +261,7 @@ export async function resetUserPasswordAction(
 
   try {
     const ctx = await getAuditContext();
-    const { generatedPassword } = await resetUserPasswordByAdmin(
-      userId,
-      ctx,
-      actor.id,
-    );
+    const { generatedPassword } = await resetUserPasswordByAdmin(userId, ctx, actor.id);
     revalidatePath("/admin/users");
     return {
       ok: true,

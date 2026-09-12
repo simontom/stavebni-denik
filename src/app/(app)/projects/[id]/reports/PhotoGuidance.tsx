@@ -119,11 +119,7 @@ function setLs(value: string): void {
 }
 
 export function PhotoGuidance() {
-  const collapsed = useSyncExternalStore(
-    subscribe,
-    getCollapsed,
-    () => true,
-  );
+  const collapsed = useSyncExternalStore(subscribe, getCollapsed, () => true);
 
   const toggle = useCallback(() => {
     setLs(collapsed ? "0" : "1");
@@ -149,14 +145,13 @@ export function PhotoGuidance() {
       {!collapsed && (
         <div className="mt-3 space-y-3 text-amber-950 dark:text-amber-100">
           <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
-            Co je <strong>zakryté</strong>, už nikdo nevyfotí. Vyhláška
-            499/2006 (příloha 16) vyžaduje doložit klíčové fáze stavby
-            — fotka před zakrytím je často jediný důkaz.
+            Co je <strong>zakryté</strong>, už nikdo nevyfotí. Vyhláška 499/2006 (příloha 16)
+            vyžaduje doložit klíčové fáze stavby — fotka před zakrytím je často jediný důkaz.
           </p>
           {CHECKLIST.map((group) => (
             <div key={group.title}>
               <p className="font-medium">{group.title}</p>
-              <ul className="ml-4 mt-1 list-disc space-y-0.5 text-xs">
+              <ul className="mt-1 ml-4 list-disc space-y-0.5 text-xs">
                 {group.items.map((item) => (
                   <li key={item}>{item}</li>
                 ))}
@@ -168,4 +163,3 @@ export function PhotoGuidance() {
     </aside>
   );
 }
-

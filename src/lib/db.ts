@@ -22,15 +22,11 @@ function createPrismaClient(): PrismaClient {
   const adapter = new PrismaPg({ connectionString: env.databaseUrl });
   return new PrismaClient({
     adapter,
-    log:
-      process.env.NODE_ENV === "development"
-        ? ["error", "warn"]
-        : ["error", "warn"],
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error", "warn"],
   });
 }
 
-export const prisma: PrismaClient =
-  globalForPrisma.prisma ?? createPrismaClient();
+export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

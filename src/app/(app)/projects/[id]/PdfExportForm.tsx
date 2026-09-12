@@ -41,21 +41,14 @@ export function PdfExportForm({ projectId }: Props) {
           type="button"
           variant="outline"
           size="sm"
-          render={
-            <Link
-              href={`/print/project/${projectId}`}
-              target="_blank"
-              rel="noreferrer"
-            />
-          }
+          render={<Link href={`/print/project/${projectId}`} target="_blank" rel="noreferrer" />}
         >
           Náhled k tisku
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground sm:col-span-3">
-        Patička každé strany obsahuje krátký otisk posledního řádku auditního
-        logu — výstup je tak dohledatelný v hash-řetězci a doložitelný oproti
-        manipulaci.
+      <p className="text-muted-foreground text-xs sm:col-span-3">
+        Patička každé strany obsahuje krátký otisk posledního řádku auditního logu — výstup je tak
+        dohledatelný v hash-řetězci a doložitelný oproti manipulaci.
       </p>
     </form>
   );

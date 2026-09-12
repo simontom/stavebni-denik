@@ -12,11 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/dates";
 import { VISITOR_ROLES } from "@/lib/visits-types";
 
-import {
-  addVisitAction,
-  deleteVisitAction,
-  type VisitFormState,
-} from "./actions";
+import { addVisitAction, deleteVisitAction, type VisitFormState } from "./actions";
 
 export interface VisitItem {
   id: string;
@@ -55,18 +51,12 @@ interface Props {
  * formRef.reset() instead of `setOpen` state — no setState in
  * useActionState consumer, so we don't trip the lint rule.
  */
-export function VisitsPanel({
-  projectId,
-  dateStr,
-  reportId,
-  items,
-  disabled,
-}: Props) {
+export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: Props) {
   const action = addVisitAction.bind(null, projectId, dateStr);
-  const [state, formAction, isPending] = useActionState<
-    VisitFormState | undefined,
-    FormData
-  >(action, undefined);
+  const [state, formAction, isPending] = useActionState<VisitFormState | undefined, FormData>(
+    action,
+    undefined,
+  );
   const formRef = useRef<HTMLFormElement>(null);
   const lastHandledRef = useRef<VisitFormState | undefined>(undefined);
 
@@ -86,7 +76,7 @@ export function VisitsPanel({
     <div className="grid gap-4">
       {/* Seznam existujících návštěv */}
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Žádné návštěvy ani kontroly nejsou pro tento den zaznamenané.
         </p>
       ) : (
@@ -98,37 +88,26 @@ export function VisitsPanel({
                   <span className="font-medium">{v.visitorName}</span>
                   <Badge variant="secondary">{v.visitorRole}</Badge>
                   {v.organization && (
-                    <span className="text-xs text-muted-foreground">
-                      {v.organization}
-                    </span>
+                    <span className="text-muted-foreground text-xs">{v.organization}</span>
                   )}
                 </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="text-muted-foreground flex items-center gap-2 text-xs">
                   <CalendarClock className="size-3.5" aria-hidden />
                   {formatDateTime(v.visitedAt)}
                 </div>
               </div>
               <p className="text-sm whitespace-pre-wrap">{v.purpose}</p>
               {v.notes && (
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                  {v.notes}
-                </p>
+                <p className="text-muted-foreground text-sm whitespace-pre-wrap">{v.notes}</p>
               )}
               <div className="flex items-center justify-between gap-2 pt-1">
-                <span className="text-xs text-muted-foreground">
-                  Zapsal {v.authorName}
-                </span>
+                <span className="text-muted-foreground text-xs">Zapsal {v.authorName}</span>
                 {!disabled && v.canDelete && (
                   <form action={deleteVisitAction}>
                     <input type="hidden" name="id" value={v.id} />
                     <input type="hidden" name="projectId" value={projectId} />
                     <input type="hidden" name="date" value={dateStr} />
-                    <Button
-                      type="submit"
-                      variant="ghost"
-                      size="sm"
-                      aria-label="Smazat návštěvu"
-                    >
+                    <Button type="submit" variant="ghost" size="sm" aria-label="Smazat návštěvu">
                       <Trash2 className="size-4" aria-hidden />
                     </Button>
                   </form>
@@ -144,7 +123,7 @@ export function VisitsPanel({
         <form
           ref={formRef}
           action={formAction}
-          className="grid gap-3 rounded-md border bg-muted/30 p-3"
+          className="bg-muted/30 grid gap-3 rounded-md border p-3"
         >
           <input type="hidden" name="reportId" value={reportId} />
 
@@ -159,9 +138,7 @@ export function VisitsPanel({
                 aria-invalid={state?.fieldErrors?.visitorName ? true : undefined}
               />
               {state?.fieldErrors?.visitorName && (
-                <p className="text-xs text-destructive">
-                  {state.fieldErrors.visitorName}
-                </p>
+                <p className="text-destructive text-xs">{state.fieldErrors.visitorName}</p>
               )}
             </div>
 
@@ -174,7 +151,7 @@ export function VisitsPanel({
                 name="visitorRole"
                 required
                 defaultValue="TDS"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-ring"
+                className="border-input bg-background focus:ring-ring flex h-10 w-full rounded-md border px-3 text-sm shadow-xs focus:ring-2 focus:outline-none"
               >
                 {VISITOR_ROLES.map((r) => (
                   <option key={r} value={r}>
@@ -204,9 +181,7 @@ export function VisitsPanel({
                 aria-invalid={state?.fieldErrors?.visitedAt ? true : undefined}
               />
               {state?.fieldErrors?.visitedAt && (
-                <p className="text-xs text-destructive">
-                  {state.fieldErrors.visitedAt}
-                </p>
+                <p className="text-destructive text-xs">{state.fieldErrors.visitedAt}</p>
               )}
             </div>
           </div>
@@ -223,9 +198,7 @@ export function VisitsPanel({
               aria-invalid={state?.fieldErrors?.purpose ? true : undefined}
             />
             {state?.fieldErrors?.purpose && (
-              <p className="text-xs text-destructive">
-                {state.fieldErrors.purpose}
-              </p>
+              <p className="text-destructive text-xs">{state.fieldErrors.purpose}</p>
             )}
           </div>
 
@@ -240,16 +213,12 @@ export function VisitsPanel({
             />
           </div>
 
-          {state?.status === "error" && (
-            <p className="text-sm text-destructive">{state.message}</p>
-          )}
+          {state?.status === "error" && <p className="text-destructive text-sm">{state.message}</p>}
           {state?.status === "forbidden" && (
-            <p className="text-sm text-destructive">
-              Nemáte oprávnění zapsat návštěvu.
-            </p>
+            <p className="text-destructive text-sm">Nemáte oprávnění zapsat návštěvu.</p>
           )}
           {state?.status === "locked" && (
-            <p className="text-sm text-destructive">
+            <p className="text-destructive text-sm">
               Záznam je podepsaný a uzamčený — návštěva musí jít přes dodatek.
             </p>
           )}
@@ -264,7 +233,7 @@ export function VisitsPanel({
       )}
 
       {disabled && items.length === 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-xs">
           Záznam je podepsaný — další návštěvy lze přidat jen jako dodatek.
         </p>
       )}

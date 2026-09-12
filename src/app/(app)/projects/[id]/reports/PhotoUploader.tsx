@@ -105,18 +105,9 @@ export function PhotoUploader({ reportId }: Props) {
           );
           // Per-file metadata sidecar: index-aligned with the
           // `files[]` entries so the server can match them up.
-          form.append(
-            "filenames",
-            prepared.filename,
-          );
-          form.append(
-            "capturedAt",
-            prepared.capturedAt ? prepared.capturedAt.toISOString() : "",
-          );
-          form.append(
-            "gps",
-            prepared.gps ? JSON.stringify(prepared.gps) : "",
-          );
+          form.append("filenames", prepared.filename);
+          form.append("capturedAt", prepared.capturedAt ? prepared.capturedAt.toISOString() : "");
+          form.append("gps", prepared.gps ? JSON.stringify(prepared.gps) : "");
         } catch (err) {
           clientFailures.push({
             filename: file.name,
@@ -154,9 +145,7 @@ export function PhotoUploader({ reportId }: Props) {
           body: form,
         });
       } catch (err) {
-        setServerError(
-          err instanceof Error ? err.message : "Nahrání selhalo.",
-        );
+        setServerError(err instanceof Error ? err.message : "Nahrání selhalo.");
         setFailures(clientFailures);
         return;
       }
@@ -221,7 +210,7 @@ export function PhotoUploader({ reportId }: Props) {
           accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
           multiple
           onChange={onPick}
-          className="block w-full cursor-pointer rounded-lg border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-colors file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+          className="border-input file:text-foreground focus-visible:border-ring focus-visible:ring-ring/50 dark:bg-input/30 block w-full cursor-pointer rounded-lg border bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:mr-3 file:inline-flex file:h-6 file:cursor-pointer file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-3 md:text-sm"
         />
         {/* Phone-only camera capture: `<label>` triggers a hidden
             input natively, no JS .click() needed (which fails on
@@ -237,29 +226,29 @@ export function PhotoUploader({ reportId }: Props) {
         />
         <label
           htmlFor="photo-camera-capture"
-          className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 self-start rounded-lg border border-border bg-background px-2.5 text-sm font-medium transition-colors hover:bg-muted active:translate-y-px sm:hidden dark:border-input dark:bg-input/30 dark:hover:bg-input/50"
+          className="border-border bg-background hover:bg-muted dark:border-input dark:bg-input/30 dark:hover:bg-input/50 inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 self-start rounded-lg border px-2.5 text-sm font-medium transition-colors active:translate-y-px sm:hidden"
         >
           <Camera className="size-4" aria-hidden /> Pořídit foto
         </label>
       </div>
 
       {files.length > 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-xs">
           Připraveno k nahrání: {files.length}{" "}
-          {files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"}
-          {" "}(max. {MAX_BATCH_BYTES / 1024 / 1024} MB celkem).
+          {files.length === 1 ? "soubor" : files.length < 5 ? "soubory" : "souborů"} (max.{" "}
+          {MAX_BATCH_BYTES / 1024 / 1024} MB celkem).
         </p>
       )}
 
       {serverError && (
-        <p className="text-sm text-destructive" role="alert">
+        <p className="text-destructive text-sm" role="alert">
           {serverError}
         </p>
       )}
 
       {failures.length > 0 && (
-        <ul className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-          <li className="font-medium text-destructive">Některé fotky se nepodařilo nahrát:</li>
+        <ul className="border-destructive/40 bg-destructive/5 rounded-md border p-3 text-sm">
+          <li className="text-destructive font-medium">Některé fotky se nepodařilo nahrát:</li>
           {failures.map((f, i) => (
             <li key={i} className="text-destructive/90">
               · {f.filename}: {f.reason}
@@ -269,11 +258,7 @@ export function PhotoUploader({ reportId }: Props) {
       )}
 
       <div className="flex gap-2">
-        <Button
-          type="button"
-          disabled={pending || files.length === 0}
-          onClick={upload}
-        >
+        <Button type="button" disabled={pending || files.length === 0} onClick={upload}>
           {pending ? (
             <Loader2 className="size-4 animate-spin" aria-hidden />
           ) : (

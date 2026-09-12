@@ -3,10 +3,7 @@ import { notFound } from "next/navigation";
 import { formatDate, formatDateTime, pragueDayStart } from "@/lib/dates";
 import { requireUser } from "@/server/rbac";
 import { getProjectForUser } from "@/server/services/projects";
-import {
-  getProjectExportForUser,
-  type ProjectExportDay,
-} from "@/server/services/reports";
+import { getProjectExportForUser, type ProjectExportDay } from "@/server/services/reports";
 
 /**
  * Print-friendly server-rendered view of a project's daily diary, used
@@ -54,30 +51,36 @@ function DaySection({ day, index }: { day: ProjectExportDay; index: number }) {
   return (
     <section className={index === 0 ? "day" : "day day-break"}>
       <header className="day-header">
-        <h2>Záznam č. {day.sequenceNumber} ze dne {formatDate(day.date)}</h2>
-        {day.isControlDay && <span className="official" style={{marginLeft: "8px", verticalAlign: "middle"}}>Kontrolní den</span>}
+        <h2>
+          Záznam č. {day.sequenceNumber} ze dne {formatDate(day.date)}
+        </h2>
+        {day.isControlDay && (
+          <span className="official" style={{ marginLeft: "8px", verticalAlign: "middle" }}>
+            Kontrolní den
+          </span>
+        )}
         <div className="day-meta">
           Zapsal: {day.authorName}
           {day.signedByName && day.signedAt && (
-            <> · Podepsal: {day.signedByName} ({formatDateTime(day.signedAt)})</>
+            <>
+              {" "}
+              · Podepsal: {day.signedByName} ({formatDateTime(day.signedAt)})
+            </>
           )}
-          {day.acknowledgedByName && (
-            <> · Potvrdil investor: {day.acknowledgedByName}</>
-          )}
+          {day.acknowledgedByName && <> · Potvrdil investor: {day.acknowledgedByName}</>}
         </div>
       </header>
 
       <div className="weather">
         <strong>Počasí:</strong> {day.weather.summary}
         {day.weather.tempMinC !== null && day.weather.tempMaxC !== null && (
-          <> · {day.weather.tempMinC}–{day.weather.tempMaxC} °C</>
+          <>
+            {" "}
+            · {day.weather.tempMinC}–{day.weather.tempMaxC} °C
+          </>
         )}
-        {day.weather.precipitationMm !== null && (
-          <> · srážky {day.weather.precipitationMm} mm</>
-        )}
-        {day.weather.windMaxKmh !== null && (
-          <> · vítr {day.weather.windMaxKmh} km/h</>
-        )}
+        {day.weather.precipitationMm !== null && <> · srážky {day.weather.precipitationMm} mm</>}
+        {day.weather.windMaxKmh !== null && <> · vítr {day.weather.windMaxKmh} km/h</>}
       </div>
 
       <div className="workers">
@@ -164,10 +167,7 @@ function DaySection({ day, index }: { day: ProjectExportDay; index: number }) {
   );
 }
 
-export default async function PrintProjectPage({
-  params,
-  searchParams,
-}: PageProps) {
+export default async function PrintProjectPage({ params, searchParams }: PageProps) {
   const user = await requireUser();
   const { id } = await params;
   const sp = await searchParams;

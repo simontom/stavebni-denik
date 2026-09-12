@@ -4,12 +4,7 @@ import { Archive, FolderOpen, Plus } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -65,11 +60,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
                   <FolderOpen className="size-4" aria-hidden /> Aktivní
                 </Button>
               ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  render={<Link href="/projects?archived=1" />}
-                >
+                <Button variant="outline" size="sm" render={<Link href="/projects?archived=1" />}>
                   <Archive className="size-4" aria-hidden /> Archiv
                 </Button>
               )}
@@ -95,7 +86,7 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
           <TableBody>
             {projects.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell colSpan={5} className="text-muted-foreground text-center">
                   {showArchived
                     ? "Archiv je prázdný."
                     : isBoss
@@ -109,21 +100,19 @@ export default async function ProjectsPage({ searchParams }: PageProps) {
                 <TableCell>
                   <Link
                     href={`/projects/${p.id}`}
-                    className="font-medium hover:text-primary hover:underline"
+                    className="hover:text-primary font-medium hover:underline"
                   >
                     {p.name}
                   </Link>
                 </TableCell>
-                <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">
                   {p.address}
                 </TableCell>
-                <TableCell className="hidden md:table-cell text-sm">
-                  {p.siteManagerName}
-                </TableCell>
+                <TableCell className="hidden text-sm md:table-cell">{p.siteManagerName}</TableCell>
                 <TableCell className="hidden lg:table-cell">
                   <Badge variant="secondary">{p.memberCount}</Badge>
                 </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
+                <TableCell className="text-muted-foreground text-sm">
                   {showArchived
                     ? p.deletedAt
                       ? formatDate(p.deletedAt)

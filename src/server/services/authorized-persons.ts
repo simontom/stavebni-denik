@@ -19,10 +19,7 @@ export interface UpdatePersonInput {
   authorization?: string;
 }
 
-export async function addExternalPerson(
-  input: AddPersonInput,
-  ctx: AuditContext,
-) {
+export async function addExternalPerson(input: AddPersonInput, ctx: AuditContext) {
   return withAudit<AuthorizedPerson>(
     {
       ctx,
@@ -43,11 +40,7 @@ export async function addExternalPerson(
   );
 }
 
-export async function updatePerson(
-  id: string,
-  input: UpdatePersonInput,
-  ctx: AuditContext,
-) {
+export async function updatePerson(id: string, input: UpdatePersonInput, ctx: AuditContext) {
   return withAudit<AuthorizedPerson>(
     {
       ctx,
@@ -121,6 +114,6 @@ export async function syncSystemMember(
 export async function listAuthorizedPersons(projectId: string) {
   return prisma.authorizedPerson.findMany({
     where: { projectId },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: "desc" },
   });
 }

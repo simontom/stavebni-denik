@@ -94,18 +94,13 @@ function RemoveMemberButton({
       {pending ? (
         <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : (
-        <Trash2 className="size-4 text-destructive" aria-hidden />
+        <Trash2 className="text-destructive size-4" aria-hidden />
       )}
     </Button>
   );
 }
 
-export function MembersPanel({
-  projectId,
-  members,
-  addableUsers,
-  canManage,
-}: Props) {
+export function MembersPanel({ projectId, members, addableUsers, canManage }: Props) {
   const [userId, setUserId] = useState("");
   const [role, setRole] = useState<Role>("WORKER");
   const [pending, startTransition] = useTransition();
@@ -134,9 +129,7 @@ export function MembersPanel({
                 <SelectValue placeholder="Vyberte uživatele">
                   {(value) => {
                     const found = addableUsers.find((u) => u.id === value);
-                    return found
-                      ? `${found.displayName} (${found.nickname})`
-                      : "Vyberte uživatele";
+                    return found ? `${found.displayName} (${found.nickname})` : "Vyberte uživatele";
                   }}
                 </SelectValue>
               </SelectTrigger>
@@ -153,9 +146,7 @@ export function MembersPanel({
             <span className="text-sm font-medium">Role v zakázce</span>
             <Select value={role} onValueChange={(v) => setRole(v as Role)}>
               <SelectTrigger className="w-full sm:w-44">
-                <SelectValue>
-                  {(value) => ROLE_LABEL[value as Role] ?? value}
-                </SelectValue>
+                <SelectValue>{(value) => ROLE_LABEL[value as Role] ?? value}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="WORKER">Pracovník</SelectItem>
@@ -180,7 +171,7 @@ export function MembersPanel({
         </div>
       )}
       {canManage && addableUsers.length === 0 && (
-        <p className="-mt-3 text-xs text-muted-foreground">
+        <p className="text-muted-foreground -mt-3 text-xs">
           Všichni aktivní uživatelé už jsou členy této zakázky.
         </p>
       )}
@@ -197,10 +188,7 @@ export function MembersPanel({
         <TableBody>
           {members.length === 0 && (
             <TableRow>
-              <TableCell
-                colSpan={canManage ? 4 : 3}
-                className="text-center text-muted-foreground"
-              >
+              <TableCell colSpan={canManage ? 4 : 3} className="text-muted-foreground text-center">
                 Zatím žádní členové.
               </TableCell>
             </TableRow>
@@ -209,16 +197,14 @@ export function MembersPanel({
             <TableRow key={m.userId}>
               <TableCell>
                 <span className="font-medium">{m.displayName}</span>{" "}
-                <span className="font-mono text-xs text-muted-foreground">
-                  {m.nickname}
-                </span>
+                <span className="text-muted-foreground font-mono text-xs">{m.nickname}</span>
               </TableCell>
               <TableCell>
                 <Badge variant={m.projectRole === "BOSS" ? "default" : "secondary"}>
                   {ROLE_LABEL[m.projectRole]}
                 </Badge>
               </TableCell>
-              <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+              <TableCell className="text-muted-foreground hidden text-sm sm:table-cell">
                 {formatDate(m.addedAt)}
               </TableCell>
               {canManage && (

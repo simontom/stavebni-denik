@@ -15,10 +15,7 @@ const LIMIT = 100; // tiny limit makes tests fast
  * Build a minimal Request with the given body bytes and an optional
  * spoofed Content-Length header.
  */
-function makeRequest(
-  body: Uint8Array | null,
-  options: { contentLength?: number } = {},
-): Request {
+function makeRequest(body: Uint8Array | null, options: { contentLength?: number } = {}): Request {
   const headers = new Headers({ "content-type": "application/octet-stream" });
   if (options.contentLength !== undefined) {
     headers.set("content-length", String(options.contentLength));
@@ -53,7 +50,7 @@ describe("withBodyLimit", () => {
     const body = new Uint8Array(5);
     const res = await handler(makeRequest(body, { contentLength: LIMIT + 1 }));
     expect(res.status).toBe(413);
-    const json = await res.json() as { error: string };
+    const json = (await res.json()) as { error: string };
     expect(json.error).toContain("MB");
   });
 
@@ -66,9 +63,7 @@ describe("withBodyLimit", () => {
   });
 
   it("passes through requests with no body (GET)", async () => {
-    const handler = withBodyLimit(LIMIT, async () =>
-      new Response("ok", { status: 200 }),
-    );
+    const handler = withBodyLimit(LIMIT, async () => new Response("ok", { status: 200 }));
     const req = makeRequest(null);
     const res = await handler(req);
     expect(res.status).toBe(200);

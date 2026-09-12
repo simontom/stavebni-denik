@@ -7,10 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Badge } from "@/components/ui/badge";
 import { env } from "@/lib/env";
 import type { SessionUser } from "@/server/rbac";
-import {
-  countUnreadForUser,
-  listNotificationsForUser,
-} from "@/server/services/notifications";
+import { countUnreadForUser, listNotificationsForUser } from "@/server/services/notifications";
 import { presentNotification } from "@/server/services/notification-presentation";
 
 const ROLE_LABEL: Record<SessionUser["role"], string> = {
@@ -50,21 +47,18 @@ export async function AppHeader({ user }: Props) {
   });
 
   return (
-    <header className="border-b bg-card/50 backdrop-blur sticky top-0 z-30">
+    <header className="bg-card/50 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-3 py-3 sm:gap-3 sm:px-6 lg:px-8">
         <MobileNavMenu isAdmin={isAdmin} />
 
-        <Link
-          href="/"
-          className="text-base font-semibold hover:text-primary"
-        >
+        <Link href="/" className="hover:text-primary text-base font-semibold">
           {env.appName}
         </Link>
 
         <nav className="ml-2 hidden gap-1 text-sm sm:flex" aria-label="Hlavní">
           <Link
             href="/projects"
-            className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="text-muted-foreground hover:bg-accent hover:text-foreground rounded-md px-3 py-1.5"
           >
             Zakázky
           </Link>
@@ -72,13 +66,13 @@ export async function AppHeader({ user }: Props) {
             <>
               <Link
                 href="/admin/users"
-                className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="text-muted-foreground hover:bg-accent hover:text-foreground rounded-md px-3 py-1.5"
               >
                 Uživatelé
               </Link>
               <Link
                 href="/admin/audit"
-                className="rounded-md px-3 py-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="text-muted-foreground hover:bg-accent hover:text-foreground rounded-md px-3 py-1.5"
               >
                 Audit log
               </Link>

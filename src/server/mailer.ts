@@ -52,10 +52,7 @@ export function readSmtpConfig(
 }
 
 /** Send a plain-text e-mail over SMTP. Throws on transport failure. */
-export async function sendMail(
-  cfg: SmtpConfig,
-  msg: MailMessage,
-): Promise<void> {
+export async function sendMail(cfg: SmtpConfig, msg: MailMessage): Promise<void> {
   const { default: nodemailer } = await import("nodemailer");
   const transporter = nodemailer.createTransport({
     host: cfg.host,

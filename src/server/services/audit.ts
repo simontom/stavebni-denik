@@ -50,8 +50,7 @@ export async function listAuditEntries(
         ...(filters.to && { lte: filters.to }),
       },
     }),
-    ...(filters.cursor !== undefined &&
-      filters.cursor !== null && { id: { lt: filters.cursor } }),
+    ...(filters.cursor !== undefined && filters.cursor !== null && { id: { lt: filters.cursor } }),
   };
 
   const rows = await prisma.auditLog.findMany({
@@ -80,7 +79,7 @@ export async function listAuditEntries(
       id: r.id.toString(),
       ts: r.ts,
       actorId: r.actorId,
-      actorNickname: r.actorId ? nicknameById.get(r.actorId) ?? null : null,
+      actorNickname: r.actorId ? (nicknameById.get(r.actorId) ?? null) : null,
       action: r.action,
       entityType: r.entityType,
       entityId: r.entityId,
@@ -91,9 +90,7 @@ export async function listAuditEntries(
       prevHash: r.prevHash,
       rowHash: r.rowHash,
     })),
-    nextCursor: hasMore
-      ? trimmed[trimmed.length - 1]!.id.toString()
-      : null,
+    nextCursor: hasMore ? trimmed[trimmed.length - 1]!.id.toString() : null,
   };
 }
 
@@ -126,9 +123,7 @@ export async function listAuditEntityTypes(): Promise<string[]> {
 export async function listAuditActors(): Promise<
   { id: string; nickname: string; displayName: string }[]
 > {
-  const rows = await prisma.$queryRaw<
-    Array<{ id: string; nickname: string; displayName: string }>
-  >`
+  const rows = await prisma.$queryRaw<Array<{ id: string; nickname: string; displayName: string }>>`
     SELECT u.id, u.nickname, u."displayName"
     FROM users u
     WHERE EXISTS (SELECT 1 FROM audit_log a WHERE a.actor_id = u.id)

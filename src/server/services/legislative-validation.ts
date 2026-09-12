@@ -1,11 +1,6 @@
 import { z } from "zod";
 
-export const projectMemberRoleSchema = z.enum([
-  "BOSS",
-  "WORKER",
-  "INSPECTOR",
-  "INVESTOR",
-]);
+export const projectMemberRoleSchema = z.enum(["BOSS", "WORKER", "INSPECTOR", "INVESTOR"]);
 
 export const meterStateItemSchema = z.object({
   name: z.string().trim().min(1, "Název média je povinný"),
@@ -19,18 +14,17 @@ export const createHandoverSchema = z.object({
   type: z.string().trim().min(1, "Typ předání je povinný"),
   date: z.coerce.date(),
   participants: z.string().trim().min(1, "Účastníci předání jsou povinní"),
-  meterStates: z
-    .preprocess((val) => {
-      if (!val || val === "" || val === "null") return null;
-      if (typeof val === "string") {
-        try {
-          return JSON.parse(val);
-        } catch {
-          return null;
-        }
+  meterStates: z.preprocess((val) => {
+    if (!val || val === "" || val === "null") return null;
+    if (typeof val === "string") {
+      try {
+        return JSON.parse(val);
+      } catch {
+        return null;
       }
-      return val;
-    }, z.array(meterStateItemSchema).nullable().default(null)),
+    }
+    return val;
+  }, z.array(meterStateItemSchema).nullable().default(null)),
   notes: z
     .string()
     .trim()

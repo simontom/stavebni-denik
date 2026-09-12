@@ -32,7 +32,6 @@ interface Props {
  * Note: @base-ui (shadcn primitive) uses `render` prop, not Radix `asChild`.
  */
 export function MobileNavMenu({ isAdmin }: Props) {
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -40,7 +39,7 @@ export function MobileNavMenu({ isAdmin }: Props) {
           <button
             type="button"
             aria-label="Otevřít menu"
-            className="inline-flex size-9 items-center justify-center rounded-md text-foreground hover:bg-accent hover:text-accent-foreground sm:hidden"
+            className="text-foreground hover:bg-accent hover:text-accent-foreground inline-flex size-9 items-center justify-center rounded-md sm:hidden"
           >
             <Menu className="size-5" aria-hidden />
           </button>

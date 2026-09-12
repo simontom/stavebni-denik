@@ -101,9 +101,7 @@ describe("parseOpenMeteoDaily", () => {
   });
 
   it("throws on an empty payload so the caller can mark it unavailable", () => {
-    expect(() =>
-      parseOpenMeteoDaily({ daily: { time: [] } }, "2026-06-16"),
-    ).toThrow();
+    expect(() => parseOpenMeteoDaily({ daily: { time: [] } }, "2026-06-16")).toThrow();
     expect(() => parseOpenMeteoDaily({}, "2026-06-16")).toThrow();
   });
 
@@ -193,9 +191,7 @@ describe("fetchWeatherSnapshot", () => {
   });
 
   it("returns unavailable on a non-2xx response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response("nope", { status: 503 }),
-    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("nope", { status: 503 }));
 
     const snap = await fetchWeatherSnapshot({
       lat: 50.0,

@@ -1,9 +1,4 @@
-import {
-  GENESIS_HASH,
-  checkChainRow,
-  type AuditRow,
-  type VerifyResult,
-} from "./audit-hash";
+import { GENESIS_HASH, checkChainRow, type AuditRow, type VerifyResult } from "./audit-hash";
 
 // Type-only import — erased at runtime, so this module stays free of
 // `server-only` / Next.js side effects and can be used from the verify

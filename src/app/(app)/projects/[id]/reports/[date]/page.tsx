@@ -31,9 +31,7 @@ interface PageProps {
   params: Promise<{ id: string; date: string }>;
 }
 
-export async function generateMetadata({
-  params,
-}: PageProps): Promise<Metadata> {
+export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { date } = await params;
   return { title: `Denní záznam ${date}` };
 }
@@ -52,7 +50,7 @@ function Section({ title, value }: { title: string; value: string | null }) {
   return (
     <div className="grid gap-1 border-b py-3 last:border-b-0">
       <h3 className="text-sm font-medium">{title}</h3>
-      <p className="text-sm whitespace-pre-wrap text-muted-foreground">{value}</p>
+      <p className="text-muted-foreground text-sm whitespace-pre-wrap">{value}</p>
     </div>
   );
 }
@@ -68,7 +66,7 @@ export default async function ReportPage({ params }: PageProps) {
   const backLink = (
     <Link
       href={`/projects/${id}?tab=reports`}
-      className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+      className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm"
     >
       <ChevronLeft className="size-4" aria-hidden /> Zpět na záznamy
     </Link>
@@ -84,7 +82,7 @@ export default async function ReportPage({ params }: PageProps) {
         {backLink}
         <div>
           <h1 className="text-xl font-semibold">Nový denní záznam</h1>
-          <p className="text-sm text-muted-foreground">{weekdayLabel(date)}</p>
+          <p className="text-muted-foreground text-sm">{weekdayLabel(date)}</p>
         </div>
         <ReportForm
           action={createReportAction.bind(null, id, dateStr)}
@@ -96,14 +94,11 @@ export default async function ReportPage({ params }: PageProps) {
     );
   }
 
-  const { report, weather, workers, remarks, materials, addenda, locked } =
-    detail;
+  const { report, weather, workers, remarks, materials, addenda, locked } = detail;
   const photos = await listPhotosForReport({ reportId: report.id, user });
   const visits = await listVisitsForReport(report.id);
   const canUploadPhotos =
-    (user.role === "BOSS" || user.role === "WORKER") &&
-    detail.isMember &&
-    !locked;
+    (user.role === "BOSS" || user.role === "WORKER") && detail.isMember && !locked;
   const canDeletePhotos = user.role === "BOSS" && detail.isMember && !locked;
 
   // Návštěvy: smazat smí BOSS (vždy, pokud member) nebo autor (pokud member).
@@ -142,9 +137,7 @@ export default async function ReportPage({ params }: PageProps) {
               </Badge>
             )}
             {report.constructionObj && (
-              <Badge variant="outline">
-                SO: {report.constructionObj}
-              </Badge>
+              <Badge variant="outline">SO: {report.constructionObj}</Badge>
             )}
             {locked && (
               <Badge variant="secondary">
@@ -152,20 +145,19 @@ export default async function ReportPage({ params }: PageProps) {
               </Badge>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-muted-foreground text-sm">
             {detail.projectName} · zapsal {detail.authorName}
             {locked && detail.signedByName && report.signedAt && (
               <>
                 {" · podepsal "}
-                {detail.signedByName}
-                {" "}
-                ({formatDateTime(report.signedAt)})
+                {detail.signedByName} ({formatDateTime(report.signedAt)})
               </>
             )}
             {report.acknowledgedAt && detail.acknowledgedByName && (
               <>
                 <br />
-                Potvrzeno investorem ({detail.acknowledgedByName}): {formatDateTime(report.acknowledgedAt)}
+                Potvrzeno investorem ({detail.acknowledgedByName}):{" "}
+                {formatDateTime(report.acknowledgedAt)}
               </>
             )}
           </p>
@@ -181,18 +173,10 @@ export default async function ReportPage({ params }: PageProps) {
             </Button>
           )}
           {detail.canSign && (
-            <SignReportButton
-              reportId={report.id}
-              projectId={id}
-              date={dateStr}
-            />
+            <SignReportButton reportId={report.id} projectId={id} date={dateStr} />
           )}
           {detail.canAcknowledge && (
-            <AcknowledgeReportButton
-              reportId={report.id}
-              projectId={id}
-              date={dateStr}
-            />
+            <AcknowledgeReportButton reportId={report.id} projectId={id} date={dateStr} />
           )}
         </div>
       </div>
@@ -205,30 +189,26 @@ export default async function ReportPage({ params }: PageProps) {
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <p className="text-sm">{weather.summary}</p>
-          <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex flex-wrap gap-x-6 gap-y-1 text-sm">
             {weather.tempMinC !== null && weather.tempMaxC !== null && (
               <span>
                 Teplota: {weather.tempMinC}–{weather.tempMaxC} °C
               </span>
             )}
-            {weather.precipitationMm !== null && (
-              <span>Srážky: {weather.precipitationMm} mm</span>
-            )}
-            {weather.windMaxKmh !== null && (
-              <span>Vítr: {weather.windMaxKmh} km/h</span>
-            )}
+            {weather.precipitationMm !== null && <span>Srážky: {weather.precipitationMm} mm</span>}
+            {weather.windMaxKmh !== null && <span>Vítr: {weather.windMaxKmh} km/h</span>}
           </div>
           {weather.source === "open-meteo" && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               Zdroj: Open-Meteo, {formatDateTime(weather.fetchedAt)}
             </p>
           )}
           {weather.source === "manual" && (
-            <p className="text-xs text-muted-foreground">Zadáno ručně.</p>
+            <p className="text-muted-foreground text-xs">Zadáno ručně.</p>
           )}
           {weather.source === "unavailable" && (
             <div className="flex flex-col gap-3">
-              <p className="text-xs text-destructive">
+              <p className="text-destructive text-xs">
                 {weather.error ?? "Počasí se nepodařilo načíst."}
               </p>
               {detail.canEdit && !locked && (
@@ -250,7 +230,7 @@ export default async function ReportPage({ params }: PageProps) {
         </CardHeader>
         <CardContent>
           {workers.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Neuvedeno.</p>
+            <p className="text-muted-foreground text-sm">Neuvedeno.</p>
           ) : (
             <ul className="flex flex-col gap-1 text-sm">
               {workers.map((w, i) => (
@@ -285,13 +265,11 @@ export default async function ReportPage({ params }: PageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Připomínky ({remarks.length})
-          </CardTitle>
+          <CardTitle className="text-base">Připomínky ({remarks.length})</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {remarks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Žádné připomínky.</p>
+            <p className="text-muted-foreground text-sm">Žádné připomínky.</p>
           ) : (
             <ul className="flex flex-col gap-3">
               {remarks.map((r) => (
@@ -299,7 +277,7 @@ export default async function ReportPage({ params }: PageProps) {
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">{r.authorName}</span>
                     {r.isOfficial && <Badge variant="secondary">Oficiální</Badge>}
-                    <span className="text-xs text-muted-foreground">
+                    <span className="text-muted-foreground text-xs">
                       {formatDateTime(r.createdAt)}
                     </span>
                   </div>
@@ -321,9 +299,7 @@ export default async function ReportPage({ params }: PageProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Návštěvy a kontroly ({visits.length})
-          </CardTitle>
+          <CardTitle className="text-base">Návštěvy a kontroly ({visits.length})</CardTitle>
         </CardHeader>
         <CardContent>
           <VisitsPanel
@@ -370,7 +346,7 @@ export default async function ReportPage({ params }: PageProps) {
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {photos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Žádné fotografie.</p>
+            <p className="text-muted-foreground text-sm">Žádné fotografie.</p>
           ) : (
             <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {photos.map((p, i) => {
@@ -428,9 +404,9 @@ export default async function ReportPage({ params }: PageProps) {
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             {addenda.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Záznam je podepsaný a uzamčený. Případné opravy přidejte jako
-                dodatek — původní obsah dne se tím nepřepíše.
+              <p className="text-muted-foreground text-sm">
+                Záznam je podepsaný a uzamčený. Případné opravy přidejte jako dodatek — původní
+                obsah dne se tím nepřepíše.
               </p>
             ) : (
               <ul className="flex flex-col gap-3">
@@ -438,7 +414,7 @@ export default async function ReportPage({ params }: PageProps) {
                   <li key={a.id} className="grid gap-0.5 border-b pb-3 last:border-b-0">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="font-medium">{a.authorName}</span>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-muted-foreground text-xs">
                         {formatDateTime(a.createdAt)}
                       </span>
                     </div>
@@ -448,11 +424,7 @@ export default async function ReportPage({ params }: PageProps) {
               </ul>
             )}
             {detail.canAddAddendum && (
-              <AddendumForm
-                reportId={report.id}
-                projectId={id}
-                date={dateStr}
-              />
+              <AddendumForm reportId={report.id} projectId={id} date={dateStr} />
             )}
           </CardContent>
         </Card>

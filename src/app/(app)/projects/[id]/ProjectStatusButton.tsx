@@ -13,11 +13,7 @@ interface Props {
   archived: boolean;
 }
 
-export function ProjectStatusButton({
-  projectId,
-  projectName,
-  archived,
-}: Props) {
+export function ProjectStatusButton({ projectId, projectName, archived }: Props) {
   const [pending, startTransition] = useTransition();
 
   function handleClick() {

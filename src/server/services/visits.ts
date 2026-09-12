@@ -45,11 +45,7 @@ const LONG_MAX = 5000;
 
 export const visitCreateSchema = z.object({
   reportId: z.string().min(1),
-  visitorName: z
-    .string()
-    .trim()
-    .min(1, "Vyplňte jméno návštěvníka.")
-    .max(SHORT_MAX),
+  visitorName: z.string().trim().min(1, "Vyplňte jméno návštěvníka.").max(SHORT_MAX),
   visitorRole: z.enum(VISITOR_ROLES),
   organization: z
     .string()
@@ -101,11 +97,7 @@ interface CreateArgs {
   ctx: AuditContext;
 }
 
-export async function createVisit({
-  input,
-  user,
-  ctx,
-}: CreateArgs): Promise<Visit> {
+export async function createVisit({ input, user, ctx }: CreateArgs): Promise<Visit> {
   const data = visitCreateSchema.parse(input);
 
   // Pre-flight: report existuje, user má přístup, není locked.
@@ -185,8 +177,7 @@ export async function deleteVisit({ id, user, ctx }: DeleteArgs): Promise<void> 
   const isMember = member !== null;
 
   // BOSS vždy pokud member; jinak jen autor zápisu (pokud member).
-  const allowed =
-    isMember && (user.role === "BOSS" || visit.authorId === user.id);
+  const allowed = isMember && (user.role === "BOSS" || visit.authorId === user.id);
   if (!allowed) throw new ForbiddenError("visit.delete");
 
   await withAudit(
@@ -219,9 +210,7 @@ export interface VisitListItem {
   createdAt: Date;
 }
 
-export async function listVisitsForReport(
-  reportId: string,
-): Promise<VisitListItem[]> {
+export async function listVisitsForReport(reportId: string): Promise<VisitListItem[]> {
   const rows = await prisma.visit.findMany({
     where: { reportId, deletedAt: null },
     orderBy: [{ visitedAt: "asc" }, { createdAt: "asc" }],

@@ -74,9 +74,7 @@ export interface ReconcileOptions {
  * of expected relative paths. Returns a structured report; no
  * deletions, no DB writes.
  */
-export async function reconcilePhotos(
-  opts: ReconcileOptions,
-): Promise<ReconcileReport> {
+export async function reconcilePhotos(opts: ReconcileOptions): Promise<ReconcileReport> {
   const { dataDir, expectedPaths } = opts;
   const graceMs = opts.graceMs ?? DEFAULT_GRACE_MS;
   const now = opts.now ?? (() => new Date());

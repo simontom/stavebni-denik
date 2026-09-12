@@ -173,7 +173,7 @@
     @apply font-sans;
   }
   body {
-    @apply antialiased bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
     /*
      * Použijeme JEN Geist (přes Next /font, viz layout.tsx → --font-sans).
      * Předtím tu byl explicit "Inter, system-ui, ..." override, ale Inter
@@ -181,8 +181,14 @@
      * pure --font-sans aby se Geist (s latin-ext = ě, š, č, ř, ž, ý, …)
      * konzistentně používal všude.
      */
-    font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI",
-      Roboto, "Liberation Sans", sans-serif;
+    font-family:
+      var(--font-sans),
+      system-ui,
+      -apple-system,
+      "Segoe UI",
+      Roboto,
+      "Liberation Sans",
+      sans-serif;
   }
 
   /*

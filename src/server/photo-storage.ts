@@ -81,9 +81,7 @@ export function resolvePhotoAbsolutePath(relativePath: string): string | null {
  * actually deleted; missing files are tolerated (we may have crashed
  * mid-upload). Never throws — the DB row is the source of truth.
  */
-export async function deletePhotoVariants(
-  paths: PhotoStoragePaths,
-): Promise<number> {
+export async function deletePhotoVariants(paths: PhotoStoragePaths): Promise<number> {
   let removed = 0;
   for (const rel of [paths.pathOriginal, paths.pathThumb]) {
     const abs = resolvePhotoAbsolutePath(rel);

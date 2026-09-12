@@ -10,9 +10,7 @@ import {
 } from "@/server/services/notifications";
 
 /** Mark a single notification read. Idempotent. */
-export async function markNotificationReadAction(
-  notificationId: string,
-): Promise<void> {
+export async function markNotificationReadAction(notificationId: string): Promise<void> {
   const user = await requireUser();
   await markNotificationRead({ notificationId, userId: user.id });
   // Bell is in the layout; refreshing the layout requires the leaf
@@ -29,9 +27,7 @@ export async function markAllNotificationsReadAction(): Promise<void> {
 }
 
 /** Hard-delete a notification owned by the caller. */
-export async function deleteNotificationAction(
-  notificationId: string,
-): Promise<void> {
+export async function deleteNotificationAction(notificationId: string): Promise<void> {
   const user = await requireUser();
   await deleteNotification({ notificationId, userId: user.id });
   revalidatePath("/", "layout");

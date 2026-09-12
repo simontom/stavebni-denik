@@ -4,10 +4,7 @@ import { getAuditContext } from "@/server/audit-context";
 import { auth } from "@/server/auth";
 import { MAX_BATCH_BYTES } from "@/lib/photo-client";
 import { ForbiddenError, type SessionUser } from "@/server/permissions";
-import {
-  PHOTO_UPLOAD_USER_LIMIT,
-  checkRateLimit,
-} from "@/server/rate-limit";
+import { PHOTO_UPLOAD_USER_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import { withBodyLimit } from "@/server/with-body-limit";
 import {
   ImageTooLargeError,
@@ -60,11 +57,9 @@ function describeFailure(err: unknown): string {
   if (err instanceof InvalidImageError) return err.message;
   if (err instanceof ImageTooLargeError) return err.message;
   if (err instanceof ReportLockedError) return "Záznam je uzamčen.";
-  if (err instanceof ForbiddenError)
-    return "Nemáte oprávnění nahrávat fotky k tomuto záznamu.";
+  if (err instanceof ForbiddenError) return "Nemáte oprávnění nahrávat fotky k tomuto záznamu.";
   if (err instanceof ReportNotFoundError) return "Záznam nebyl nalezen.";
-  if (err instanceof ProjectNotAccessibleError)
-    return "Záznam nebyl nalezen.";
+  if (err instanceof ProjectNotAccessibleError) return "Záznam nebyl nalezen.";
   return "Nahrání selhalo.";
 }
 
@@ -106,27 +101,19 @@ export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
     // If withBodyLimit interrupted the stream, it will be wrapped in a generic error.
     // We must re-throw it so the wrapper can catch it and return 413, or return 400 if it's a regular malformed body.
     if (err instanceof Error && err.message.includes("terminated")) {
-        throw err; // Let withBodyLimit catch it
+      throw err; // Let withBodyLimit catch it
     }
     throw err; // Actually, if we just throw `err`, withBodyLimit catches PayloadTooLargeError. But undici wraps it. Wait.
   }
 
   const reportId = String(form.get("reportId") ?? "").trim();
   if (reportId.length === 0) {
-    return NextResponse.json(
-      { error: "Chybí ID záznamu." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Chybí ID záznamu." }, { status: 400 });
   }
 
-  const files = form
-    .getAll("files")
-    .filter((v): v is File => v instanceof File && v.size > 0);
+  const files = form.getAll("files").filter((v): v is File => v instanceof File && v.size > 0);
   if (files.length === 0) {
-    return NextResponse.json(
-      { error: "Nebyl vybrán žádný soubor." },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: "Nebyl vybrán žádný soubor." }, { status: 400 });
   }
 
   // Per-file metadata, index-aligned with `files`. The client sends
@@ -135,8 +122,7 @@ export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
   // omits these fields entirely (legacy clients / integration
   // tests), we leave the per-file values `undefined` so the service
   // falls back to parsing EXIF off the buffer.
-  const hasClientMeta =
-    form.getAll("capturedAt").length > 0 || form.getAll("gps").length > 0;
+  const hasClientMeta = form.getAll("capturedAt").length > 0 || form.getAll("gps").length > 0;
   const capturedAtParts = form.getAll("capturedAt").map((v) => String(v));
   const gpsParts = form.getAll("gps").map((v) => String(v));
 
@@ -148,9 +134,7 @@ export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
   // out the others on a small machine. (sharp is heavy.)
   for (let i = 0; i < files.length; i++) {
     const file = files[i]!;
-    const clientCapturedAt = hasClientMeta
-      ? parseIsoDate(capturedAtParts[i])
-      : undefined;
+    const clientCapturedAt = hasClientMeta ? parseIsoDate(capturedAtParts[i]) : undefined;
     const clientGps = hasClientMeta ? parseGps(gpsParts[i]) : undefined;
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
@@ -182,11 +166,7 @@ export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
           { error: describeFailure(err) },
           {
             status:
-              err instanceof ForbiddenError
-                ? 403
-                : err instanceof ReportLockedError
-                  ? 409
-                  : 404,
+              err instanceof ForbiddenError ? 403 : err instanceof ReportLockedError ? 409 : 404,
           },
         );
       }
@@ -194,10 +174,7 @@ export const POST = withBodyLimit(MAX_BATCH_BYTES, async (request: Request) => {
     }
   }
 
-  return NextResponse.json(
-    { uploaded, failed },
-    { status: uploaded.length > 0 ? 200 : 422 },
-  );
+  return NextResponse.json({ uploaded, failed }, { status: uploaded.length > 0 ? 200 : 422 });
 });
 
 function parseIsoDate(value: string | undefined): Date | null {

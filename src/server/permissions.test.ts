@@ -10,11 +10,7 @@ import {
   canAccessProject,
 } from "./permissions";
 
-function user(
-  role: Role,
-  id = "u1",
-  opts: { isAdmin?: boolean } = {},
-): SessionUser {
+function user(role: Role, id = "u1", opts: { isAdmin?: boolean } = {}): SessionUser {
   return {
     id,
     nickname: role.toLowerCase(),

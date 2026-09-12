@@ -45,20 +45,11 @@ export function NewReportDayPicker({ projectId, todayDateStr }: Props) {
             className="sm:w-44"
           />
         </div>
-        <Button
-          type="button"
-          disabled={pending || value.length === 0}
-          onClick={() => open(value)}
-        >
+        <Button type="button" disabled={pending || value.length === 0} onClick={() => open(value)}>
           Otevřít den
         </Button>
       </div>
-      <Button
-        type="button"
-        variant="outline"
-        disabled={pending}
-        onClick={() => open(todayDateStr)}
-      >
+      <Button type="button" variant="outline" disabled={pending} onClick={() => open(todayDateStr)}>
         Nový pro dnešek
       </Button>
     </div>

@@ -29,15 +29,15 @@ export default async function NewProjectPage() {
       <div className="flex flex-col gap-2">
         <Link
           href="/projects"
-          className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-sm"
         >
           <ChevronLeft className="size-4" aria-hidden /> Zpět na zakázky
         </Link>
         <div>
           <h1 className="text-xl font-semibold">Nová zakázka</h1>
-          <p className="text-sm text-muted-foreground">
-            Vyplňte identifikační údaje stavby. Doplňující údaje a členy týmu
-            lze upravit kdykoli později.
+          <p className="text-muted-foreground text-sm">
+            Vyplňte identifikační údaje stavby. Doplňující údaje a členy týmu lze upravit kdykoli
+            později.
           </p>
         </div>
       </div>

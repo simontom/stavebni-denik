@@ -41,10 +41,8 @@ export async function GET(request: Request, context: RouteContext) {
 
   const fromRaw = url.searchParams.get("from");
   const toRaw = url.searchParams.get("to");
-  const from =
-    fromRaw && DATE_RE.test(fromRaw) ? new Date(`${fromRaw}T00:00:00Z`) : null;
-  const to =
-    toRaw && DATE_RE.test(toRaw) ? new Date(`${toRaw}T23:59:59Z`) : null;
+  const from = fromRaw && DATE_RE.test(fromRaw) ? new Date(`${fromRaw}T00:00:00Z`) : null;
+  const to = toRaw && DATE_RE.test(toRaw) ? new Date(`${toRaw}T23:59:59Z`) : null;
 
   const body = await buildProjectCsv({
     projectId: id,
@@ -53,9 +51,9 @@ export async function GET(request: Request, context: RouteContext) {
     to,
   });
 
-  const filename = `${project.project.name.replace(/[^a-zA-Z0-9-_]/g, "_")}_${typeRaw}_${
-    new Date().toISOString().slice(0, 10)
-  }.csv`;
+  const filename = `${project.project.name.replace(/[^a-zA-Z0-9-_]/g, "_")}_${typeRaw}_${new Date()
+    .toISOString()
+    .slice(0, 10)}.csv`;
 
   return new NextResponse(body, {
     headers: {

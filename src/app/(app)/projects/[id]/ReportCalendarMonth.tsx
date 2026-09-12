@@ -3,10 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatDate, formatDateInput } from "@/lib/dates";
-import type {
-  ReportCoverage,
-  ReportCoverageState,
-} from "@/server/services/reports";
+import type { ReportCoverage, ReportCoverageState } from "@/server/services/reports";
 
 interface Props {
   projectId: string;
@@ -141,12 +138,9 @@ export function ReportCalendarMonth({
         </Button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+      <div className="text-muted-foreground grid grid-cols-7 gap-1 text-center text-[10px]">
         {WEEKDAY_LABELS.map((l, i) => (
-          <span
-            key={i}
-            className={i >= 5 ? "py-1 font-medium text-foreground/60" : "py-1"}
-          >
+          <span key={i} className={i >= 5 ? "text-foreground/60 py-1 font-medium" : "py-1"}>
             {l}
           </span>
         ))}
@@ -156,14 +150,12 @@ export function ReportCalendarMonth({
         {cells.map((c, i) => {
           const iso = formatDateInput(c.date);
           const state: ReportCoverageState | undefined = c.inMonth
-            ? byDay.get(iso) ?? "missing"
+            ? (byDay.get(iso) ?? "missing")
             : undefined;
           const isToday = iso === todayIso;
           const weekend = mondayBasedDow(c.date) >= 5;
 
-          const baseClass = state
-            ? STATE_CLASS[state]
-            : "bg-transparent text-muted-foreground/40";
+          const baseClass = state ? STATE_CLASS[state] : "bg-transparent text-muted-foreground/40";
 
           const cellClass =
             "relative flex aspect-square min-h-12 flex-col items-center justify-start rounded-md border p-1 text-xs transition " +
@@ -173,11 +165,7 @@ export function ReportCalendarMonth({
 
           if (!c.inMonth) {
             return (
-              <span
-                key={i}
-                className={cellClass + " opacity-40 pointer-events-none"}
-                aria-hidden
-              >
+              <span key={i} className={cellClass + " pointer-events-none opacity-40"} aria-hidden>
                 {c.date.getUTCDate()}
               </span>
             );
@@ -190,7 +178,7 @@ export function ReportCalendarMonth({
               href={`/projects/${projectId}/reports/${iso}`}
               title={tooltip}
               aria-label={tooltip}
-              className={cellClass + " hover:ring-2 hover:ring-primary"}
+              className={cellClass + " hover:ring-primary hover:ring-2"}
             >
               <span className="self-end">{c.date.getUTCDate()}</span>
               <span
@@ -202,30 +190,21 @@ export function ReportCalendarMonth({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+      <div className="text-muted-foreground flex flex-wrap items-center gap-3 text-[11px]">
         <span className="flex items-center gap-1">
-          <span className="size-3 rounded-sm bg-muted/40" aria-hidden />
+          <span className="bg-muted/40 size-3 rounded-sm" aria-hidden />
           bez záznamu
         </span>
         <span className="flex items-center gap-1">
-          <span
-            className="size-3 rounded-sm bg-amber-100 dark:bg-amber-900/40"
-            aria-hidden
-          />
+          <span className="size-3 rounded-sm bg-amber-100 dark:bg-amber-900/40" aria-hidden />
           nepodepsaný
         </span>
         <span className="flex items-center gap-1">
-          <span
-            className="size-3 rounded-sm bg-emerald-100 dark:bg-emerald-900/40"
-            aria-hidden
-          />
+          <span className="size-3 rounded-sm bg-emerald-100 dark:bg-emerald-900/40" aria-hidden />
           podepsáno
         </span>
         <span className="flex items-center gap-1">
-          <span
-            className="size-3 rounded-sm ring-2 ring-primary ring-offset-1"
-            aria-hidden
-          />
+          <span className="ring-primary size-3 rounded-sm ring-2 ring-offset-1" aria-hidden />
           dnes
         </span>
       </div>

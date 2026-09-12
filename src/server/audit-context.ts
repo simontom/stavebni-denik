@@ -21,10 +21,7 @@ import type { AuditContext } from "./audit";
  */
 export async function getAuditContext(): Promise<AuditContext> {
   const [session, h] = await Promise.all([auth(), headers()]);
-  const ip =
-    h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    h.get("x-real-ip") ??
-    null;
+  const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? h.get("x-real-ip") ?? null;
   return {
     actor: session?.user ? { id: session.user.id } : null,
     ip,

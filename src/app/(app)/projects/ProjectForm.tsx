@@ -6,12 +6,7 @@ import { Loader2 } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -22,11 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import type {
-  ProjectFormState,
-  ProjectFormValues,
-  SiteManagerOption,
-} from "./form-types";
+import type { ProjectFormState, ProjectFormValues, SiteManagerOption } from "./form-types";
 
 interface Props {
   action: (
@@ -65,8 +56,7 @@ function Field({
   return (
     <div className="grid gap-1.5">
       <Label htmlFor={name}>
-        {label}{" "}
-        {!required && <span className="text-muted-foreground">(volitelné)</span>}
+        {label} {!required && <span className="text-muted-foreground">(volitelné)</span>}
       </Label>
       <Input
         id={name}
@@ -78,8 +68,8 @@ function Field({
         inputMode={inputMode}
         aria-invalid={!!error}
       />
-      {hint && !error && <p className="text-xs text-muted-foreground">{hint}</p>}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {hint && !error && <p className="text-muted-foreground text-xs">{hint}</p>}
+      {error && <p className="text-destructive text-sm">{error}</p>}
     </div>
   );
 }
@@ -91,24 +81,20 @@ export function ProjectForm({
   submitLabel,
   cancelHref,
 }: Props) {
-  const [state, formAction, isPending] = useActionState<
-    ProjectFormState | undefined,
-    FormData
-  >(action, undefined);
-  const [siteManagerId, setSiteManagerId] = useState(
-    defaultValues.siteManagerId,
+  const [state, formAction, isPending] = useActionState<ProjectFormState | undefined, FormData>(
+    action,
+    undefined,
   );
+  const [siteManagerId, setSiteManagerId] = useState(defaultValues.siteManagerId);
 
-  const fieldErrors =
-    state?.status === "field-error" ? state.fieldErrors : undefined;
+  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
 
   return (
     <form action={formAction} className="flex flex-col gap-6" noValidate>
       {state?.status === "site-manager-invalid" && (
         <Alert variant="destructive">
           <AlertDescription>
-            Vybraný stavbyvedoucí není platný. Vyberte aktivního uživatele s
-            rolí stavbyvedoucí.
+            Vybraný stavbyvedoucí není platný. Vyberte aktivního uživatele s rolí stavbyvedoucí.
           </AlertDescription>
         </Alert>
       )}
@@ -119,9 +105,7 @@ export function ProjectForm({
       )}
       {state?.status === "forbidden" && (
         <Alert variant="destructive">
-          <AlertDescription>
-            Nemáte oprávnění ke správě zakázek.
-          </AlertDescription>
+          <AlertDescription>Nemáte oprávnění ke správě zakázek.</AlertDescription>
         </Alert>
       )}
       {state?.status === "error" && (
@@ -200,10 +184,7 @@ export function ProjectForm({
 
           <div className="grid gap-1.5">
             <Label htmlFor="siteManagerId">Stavbyvedoucí</Label>
-            <Select
-              value={siteManagerId}
-              onValueChange={(v) => setSiteManagerId(v as string)}
-            >
+            <Select value={siteManagerId} onValueChange={(v) => setSiteManagerId(v as string)}>
               <SelectTrigger id="siteManagerId" aria-invalid={!!fieldErrors?.siteManagerId}>
                 <SelectValue placeholder="Vyberte stavbyvedoucího">
                   {(value) => {
@@ -224,15 +205,12 @@ export function ProjectForm({
             </Select>
             <input type="hidden" name="siteManagerId" value={siteManagerId} />
             {siteManagers.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Žádný stavbyvedoucí. Nejdřív vytvořte uživatele s rolí
-                stavbyvedoucí.
+              <p className="text-muted-foreground text-xs">
+                Žádný stavbyvedoucí. Nejdřív vytvořte uživatele s rolí stavbyvedoucí.
               </p>
             )}
             {fieldErrors?.siteManagerId && (
-              <p className="text-sm text-destructive">
-                {fieldErrors.siteManagerId}
-              </p>
+              <p className="text-destructive text-sm">{fieldErrors.siteManagerId}</p>
             )}
           </div>
 
