@@ -1,8 +1,9 @@
-import "server-only";
+﻿import "server-only";
 
 import { prisma } from "@/lib/db";
 import type { SiteHandover, Prisma } from "@/generated/prisma/client";
 import { withAudit, type AuditContext } from "@/server/audit";
+import { ForbiddenError } from "@/server/permissions";
 
 export interface HandoverInput {
   type: string;
@@ -30,7 +31,7 @@ export async function createHandover(projectId: string, actorId: string, data: H
         participants: data.participants,
         meterStates: data.meterStates ?? [],
         notes: data.notes,
-        createdById: actorId,
+        
       }
     })
   );
@@ -92,7 +93,7 @@ export async function deleteHandover(id: string, actorId: string): Promise<SiteH
 
 export class HandoverAlreadySignedError extends Error {
   constructor() {
-    super("Cannot modify a signed handover");
+    super("Předávací protokol je již podepsán a nelze jej upravovat ani smazat.");
     this.name = "HandoverAlreadySignedError";
   }
 }
@@ -101,9 +102,10 @@ export async function signHandover(id: string, actorId: string): Promise<SiteHan
   const ctx: AuditContext = { actor: { id: actorId }, ip: null, userAgent: null };
   const before = await prisma.siteHandover.findUnique({ where: { id } });
 
-  // Add permission check to ensure actorId is BOSS on the project
-  // In a real implementation this would check the ProjectMember table
-  // omitted here for brevity, assuming RBAC is enforced at the API layer
+  const actor = await prisma.user.findUnique({ where: { id: actorId } });
+  if (actor?.role !== "BOSS") {
+    throw new ForbiddenError("report.sign");
+  }
 
   return withAudit(
     {
