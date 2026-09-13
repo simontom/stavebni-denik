@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Check, Copy, KeyRound, Loader2 } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-import { resetUserPasswordAction } from "./actions";
+import { resetPasswordAction } from "./actions";
 
 interface Props {
   userId: string;
@@ -37,7 +38,6 @@ interface Props {
  *   - Audit log `user.password-reset` (actor=admin, target=user).
  */
 export function ResetPasswordButton({ userId, displayName }: Props) {
-  const [pending, startTransition] = useTransition();
   // Stav modalu se zobrazeným heslem. Když je null, modal je zavřený.
   const [generated, setGenerated] = useState<{
     password: string;
@@ -45,6 +45,21 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
     displayName: string;
   } | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const { execute, isExecuting } = useAction(resetPasswordAction, {
+    onSuccess: ({ data }) => {
+      if (!data) return;
+      setGenerated({
+        password: data.generatedPassword,
+        nickname: data.nickname,
+        displayName: data.displayName,
+      });
+      setCopied(false);
+    },
+    onError: ({ error }) => {
+      if (error.serverError) toast.error(error.serverError);
+    },
+  });
 
   function handleClick() {
     const confirmMsg =
@@ -54,21 +69,7 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
       `ho uživateli bezpečně.`;
     if (!window.confirm(confirmMsg)) return;
 
-    const fd = new FormData();
-    fd.append("userId", userId);
-    startTransition(async () => {
-      const result = await resetUserPasswordAction(fd);
-      if (!result.ok) {
-        toast.error(result.error);
-        return;
-      }
-      setGenerated({
-        password: result.generatedPassword,
-        nickname: result.nickname,
-        displayName: result.displayName,
-      });
-      setCopied(false);
-    });
+    execute({ userId });
   }
 
   function handleCopy() {
@@ -99,10 +100,10 @@ export function ResetPasswordButton({ userId, displayName }: Props) {
         variant="outline"
         size="sm"
         onClick={handleClick}
-        disabled={pending}
+        disabled={isExecuting}
         aria-label={`Reset hesla ${displayName}`}
       >
-        {pending ? (
+        {isExecuting ? (
           <Loader2 className="size-4 animate-spin" aria-hidden />
         ) : (
           <KeyRound className="size-4" aria-hidden />

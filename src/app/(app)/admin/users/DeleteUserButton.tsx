@@ -1,7 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
 import { Loader2, Trash2 } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,14 @@ interface Props {
  *     — operátor musí nejdřív přepnout siteManagerId na jiného BOSS).
  */
 export function DeleteUserButton({ userId, displayName }: Props) {
-  const [pending, startTransition] = useTransition();
+  const { execute, isExecuting } = useAction(deleteUserAction, {
+    onSuccess: () => {
+      toast.success(`${displayName} archivován.`);
+    },
+    onError: ({ error }) => {
+      if (error.serverError) toast.error(error.serverError);
+    },
+  });
 
   function handleClick() {
     const confirmMsg =
@@ -34,16 +41,7 @@ export function DeleteUserButton({ userId, displayName }: Props) {
       `(zápisy v denících, fotky, audit log) zůstávají zachována.`;
     if (!window.confirm(confirmMsg)) return;
 
-    const fd = new FormData();
-    fd.append("userId", userId);
-    startTransition(async () => {
-      const result = await deleteUserAction(fd);
-      if (!result.ok) {
-        toast.error(result.error);
-      } else {
-        toast.success(`${displayName} archivován.`);
-      }
-    });
+    execute({ userId });
   }
 
   return (
@@ -52,10 +50,10 @@ export function DeleteUserButton({ userId, displayName }: Props) {
       variant="destructive"
       size="sm"
       onClick={handleClick}
-      disabled={pending}
+      disabled={isExecuting}
       aria-label={`Smazat účet ${displayName}`}
     >
-      {pending ? (
+      {isExecuting ? (
         <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : (
         <Trash2 className="size-4" aria-hidden />

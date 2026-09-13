@@ -1,13 +1,58 @@
 import { execSync } from "node:child_process";
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaClient } from "@/generated/prisma/client";
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("@/server/rbac", async () => {
+  const permissions =
+    await vi.importActual<typeof import("@/server/permissions")>("@/server/permissions");
+  return {
+    ...permissions,
+    requireUser: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireAdmin: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireBoss: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireRole: vi.fn(),
+  };
+});
+
+vi.mock("@/server/audit-context", () => ({
+  getAuditContext: vi.fn().mockResolvedValue({
+    actor: { id: "tester" },
+    ip: null,
+    userAgent: "vitest",
+  }),
+}));
 
 /**
  * Integration test for `resetUserPasswordByAdmin` proti reálnému
@@ -24,6 +69,7 @@ let db: PrismaClient;
 let resetUserPasswordByAdmin: typeof import("@/server/services/users").resetUserPasswordByAdmin;
 let UserNotFoundError: typeof import("@/server/services/users").UserNotFoundError;
 let verifyPassword: typeof import("@/lib/crypto").verifyPassword;
+let resetPasswordAction: typeof import("@/app/(app)/admin/users/actions").resetPasswordAction;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();
@@ -36,11 +82,9 @@ beforeAll(async () => {
   });
 
   db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
-  ({
-    resetUserPasswordByAdmin,
-    UserNotFoundError,
-  } = await import("@/server/services/users"));
+  ({ resetUserPasswordByAdmin, UserNotFoundError } = await import("@/server/services/users"));
   ({ verifyPassword } = await import("@/lib/crypto"));
+  ({ resetPasswordAction } = await import("@/app/(app)/admin/users/actions"));
 });
 
 afterAll(async () => {
@@ -80,11 +124,7 @@ describe("resetUserPasswordByAdmin", () => {
       },
     });
 
-    const { generatedPassword } = await resetUserPasswordByAdmin(
-      target.id,
-      ctx,
-      admin.id,
-    );
+    const { generatedPassword } = await resetUserPasswordByAdmin(target.id, ctx, admin.id);
 
     expect(generatedPassword.length).toBeGreaterThanOrEqual(12);
 
@@ -108,25 +148,73 @@ describe("resetUserPasswordByAdmin", () => {
   it("refuses to reset own password (actor === target)", async () => {
     const admin = await createUserRow("self-reset");
 
-    await expect(
-      resetUserPasswordByAdmin(admin.id, ctx, admin.id),
-    ).rejects.toThrow(/vlastního hesla/);
+    await expect(resetUserPasswordByAdmin(admin.id, ctx, admin.id)).rejects.toThrow(
+      /vlastního hesla/,
+    );
   });
 
   it("throws UserNotFoundError for missing or soft-deleted user", async () => {
     const admin = await createUserRow("admin-not-found");
 
-    await expect(
-      resetUserPasswordByAdmin("nonexistent-id", ctx, admin.id),
-    ).rejects.toBeInstanceOf(UserNotFoundError);
+    await expect(resetUserPasswordByAdmin("nonexistent-id", ctx, admin.id)).rejects.toBeInstanceOf(
+      UserNotFoundError,
+    );
 
     const deleted = await createUserRow("deleted-rp");
     await db.user.update({
       where: { id: deleted.id },
       data: { deletedAt: new Date() },
     });
-    await expect(
-      resetUserPasswordByAdmin(deleted.id, ctx, admin.id),
-    ).rejects.toBeInstanceOf(UserNotFoundError);
+    await expect(resetUserPasswordByAdmin(deleted.id, ctx, admin.id)).rejects.toBeInstanceOf(
+      UserNotFoundError,
+    );
+  });
+});
+
+describe("resetPasswordAction", () => {
+  it("resets user password via safe action object input", async () => {
+    const target = await createUserRow("target-action-rp");
+    const session = await db.session.create({
+      data: {
+        userId: target.id,
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const result = await resetPasswordAction({ userId: target.id });
+
+    expect(result?.data?.generatedPassword).toBeDefined();
+    expect(result?.data?.generatedPassword.length).toBeGreaterThanOrEqual(12);
+
+    const after = await db.user.findUniqueOrThrow({
+      where: { id: target.id },
+    });
+    expect(await verifyPassword(result!.data!.generatedPassword, after.passwordHash)).toBe(true);
+    expect(after.mustChangePwd).toBe(true);
+
+    const sess = await db.session.findUniqueOrThrow({
+      where: { id: session.id },
+    });
+    expect(sess.revokedAt).not.toBeNull();
+
+    const audit = await db.auditLog.findFirstOrThrow({
+      where: { action: "user.password-reset", entityId: target.id },
+    });
+    expect(audit.actorId).toBe("tester");
+  });
+
+  it("returns validation error on invalid input", async () => {
+    // @ts-expect-error - invalid input schema test
+    const result = await resetPasswordAction({ userId: 123 });
+
+    expect(result?.validationErrors).toBeDefined();
+    expect(result?.data).toBeUndefined();
+  });
+
+  it("returns serverError for non-existent user", async () => {
+    const result = await resetPasswordAction({ userId: "nonexistent-user-id" });
+
+    expect(result?.serverError).toBeDefined();
+    expect(result?.data).toBeUndefined();
   });
 });

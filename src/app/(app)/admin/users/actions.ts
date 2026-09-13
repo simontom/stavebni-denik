@@ -7,11 +7,8 @@ import { prisma } from "@/lib/db";
 import { getAuditContext } from "@/server/audit-context";
 import { ADMIN_PASSWORD_RESET_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import {
-  CannotDeleteSelfError,
-  CannotDeleteSiteManagerError,
   CannotRemoveLastAdminError,
   NicknameInUseError,
-  UserNotFoundError,
   createUser,
   createUserSchema,
   deleteUser,
@@ -155,106 +152,42 @@ export const setUserActiveAction = adminActionClient
     return { ok: true };
   });
 
-export type DeleteUserResult = { ok: true } | { ok: false; error: string };
+export const deleteUserAction = adminActionClient
+  .schema(z.object({ userId: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await deleteUser(parsedInput.userId, ctx.auditContext, ctx.user.id);
+    revalidatePath("/admin/users");
+    return { ok: true };
+  });
 
-export async function deleteUserAction(data: FormData): Promise<DeleteUserResult> {
-  let actor;
-  try {
-    actor = await requireAdmin();
-  } catch {
-    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
-  }
-  const userId = String(data.get("userId") ?? "").trim();
-  if (userId.length === 0) {
-    return { ok: false, error: "Chybí ID uživatele." };
-  }
-  try {
-    const ctx = await getAuditContext();
-    await deleteUser(userId, ctx, actor.id);
-  } catch (err) {
-    if (err instanceof CannotDeleteSelfError) {
-      return { ok: false, error: err.message };
-    }
-    if (err instanceof CannotDeleteSiteManagerError) {
-      return { ok: false, error: err.message };
-    }
-    console.error("[deleteUserAction]", err);
-    return {
-      ok: false,
-      error: "Smazání se nezdařilo. Zkuste to znovu.",
-    };
-  }
-  revalidatePath("/admin/users");
-  return { ok: true };
-}
-
-export type ResetPasswordResult =
-  | { ok: true; generatedPassword: string; nickname: string; displayName: string }
-  | { ok: false; error: string };
-
-export async function resetUserPasswordAction(data: FormData): Promise<ResetPasswordResult> {
-  let actor;
-  try {
-    actor = await requireAdmin();
-  } catch {
-    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
-  }
-  const userId = String(data.get("userId") ?? "").trim();
-  if (userId.length === 0) {
-    return { ok: false, error: "Chybí ID uživatele." };
-  }
-
-  // Validate the target BEFORE consuming a rate-limit token: a bogus /
-  // non-existent user id (mistyped, deleted in the meantime, …) must not
-  // burn the admin's reset budget. The limiter (see ADMIN_PASSWORD_RESET_LIMIT)
-  // is meant to throttle *real* resets — each of which generates a new
-  // password and revokes all of the target's sessions — not failed lookups.
-  let target;
-  try {
-    target = await prisma.user.findUniqueOrThrow({
-      where: { id: userId },
+export const resetPasswordAction = adminActionClient
+  .schema(z.object({ userId: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    const target = await prisma.user.findUniqueOrThrow({
+      where: { id: parsedInput.userId },
       select: { nickname: true, displayName: true },
     });
-  } catch {
-    return { ok: false, error: "Uživatel nebyl nalezen." };
-  }
 
-  // Rate limit per actor — viz ADMIN_PASSWORD_RESET_LIMIT v rate-limit.ts.
-  // Bez tohohle by admin mohl náhodným klikáním resetnout hesla a revokovat
-  // sessions desítkám uživatelů během minuty.
-  const rl = await checkRateLimit({
-    ...ADMIN_PASSWORD_RESET_LIMIT,
-    key: actor.id,
-  });
-  if (!rl.allowed) {
-    const minutes = Math.ceil(rl.retryAfterMs / 60_000);
-    return {
-      ok: false,
-      error: `Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`,
-    };
-  }
+    const rl = await checkRateLimit({
+      ...ADMIN_PASSWORD_RESET_LIMIT,
+      key: ctx.user.id,
+    });
+    if (!rl.allowed) {
+      const minutes = Math.ceil(rl.retryAfterMs / 60_000);
+      throw new Error(`Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`);
+    }
 
-  try {
-    const ctx = await getAuditContext();
-    const { generatedPassword } = await resetUserPasswordByAdmin(userId, ctx, actor.id);
+    const { generatedPassword } = await resetUserPasswordByAdmin(
+      parsedInput.userId,
+      ctx.auditContext,
+      ctx.user.id,
+    );
     revalidatePath("/admin/users");
     return {
-      ok: true,
       generatedPassword,
       nickname: target.nickname,
       displayName: target.displayName,
     };
-  } catch (err) {
-    if (err instanceof UserNotFoundError) {
-      return { ok: false, error: "Uživatel nebyl nalezen." };
-    }
-    if (err instanceof Error && err.message.includes("vlastního hesla")) {
-      return { ok: false, error: err.message };
-    }
-    console.error("[resetUserPasswordAction]", err);
-    return {
-      ok: false,
-      error: "Reset hesla se nezdařil. Zkuste to znovu.",
-    };
-  }
-}
+  });
+
+export const resetUserPasswordAction = resetPasswordAction;

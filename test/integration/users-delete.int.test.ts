@@ -1,13 +1,58 @@
 import { execSync } from "node:child_process";
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaClient } from "@/generated/prisma/client";
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("@/server/rbac", async () => {
+  const permissions =
+    await vi.importActual<typeof import("@/server/permissions")>("@/server/permissions");
+  return {
+    ...permissions,
+    requireUser: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireAdmin: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireBoss: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireRole: vi.fn(),
+  };
+});
+
+vi.mock("@/server/audit-context", () => ({
+  getAuditContext: vi.fn().mockResolvedValue({
+    actor: { id: "tester" },
+    ip: null,
+    userAgent: "vitest",
+  }),
+}));
 
 /**
  * Integration test for `deleteUser` soft-delete service. Exercises
@@ -25,6 +70,7 @@ let db: PrismaClient;
 let deleteUser: typeof import("@/server/services/users").deleteUser;
 let CannotDeleteSelfError: typeof import("@/server/services/users").CannotDeleteSelfError;
 let CannotDeleteSiteManagerError: typeof import("@/server/services/users").CannotDeleteSiteManagerError;
+let deleteUserAction: typeof import("@/app/(app)/admin/users/actions").deleteUserAction;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();
@@ -37,11 +83,9 @@ beforeAll(async () => {
   });
 
   db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
-  ({
-    deleteUser,
-    CannotDeleteSelfError,
-    CannotDeleteSiteManagerError,
-  } = await import("@/server/services/users"));
+  ({ deleteUser, CannotDeleteSelfError, CannotDeleteSiteManagerError } =
+    await import("@/server/services/users"));
+  ({ deleteUserAction } = await import("@/app/(app)/admin/users/actions"));
 });
 
 afterAll(async () => {
@@ -82,11 +126,15 @@ describe("deleteUser — soft delete with guards", () => {
       data: { userId: victim.id, expiresAt: new Date(Date.now() + 60_000) },
     });
 
-    await deleteUser(victim.id, {
-      actor: { id: actor.id },
-      ip: null,
-      userAgent: "vitest",
-    }, actor.id);
+    await deleteUser(
+      victim.id,
+      {
+        actor: { id: actor.id },
+        ip: null,
+        userAgent: "vitest",
+      },
+      actor.id,
+    );
 
     const after = await db.user.findUniqueOrThrow({ where: { id: victim.id } });
     expect(after.deletedAt).not.toBeNull();
@@ -119,11 +167,15 @@ describe("deleteUser — soft delete with guards", () => {
     const actor = await createUserRow("self-deleter");
 
     await expect(
-      deleteUser(actor.id, {
-        actor: { id: actor.id },
-        ip: null,
-        userAgent: "vitest",
-      }, actor.id),
+      deleteUser(
+        actor.id,
+        {
+          actor: { id: actor.id },
+          ip: null,
+          userAgent: "vitest",
+        },
+        actor.id,
+      ),
     ).rejects.toBeInstanceOf(CannotDeleteSelfError);
 
     const stillThere = await db.user.findUniqueOrThrow({
@@ -150,11 +202,15 @@ describe("deleteUser — soft delete with guards", () => {
     });
 
     await expect(
-      deleteUser(sm.id, {
-        actor: { id: actor.id },
-        ip: null,
-        userAgent: "vitest",
-      }, actor.id),
+      deleteUser(
+        sm.id,
+        {
+          actor: { id: actor.id },
+          ip: null,
+          userAgent: "vitest",
+        },
+        actor.id,
+      ),
     ).rejects.toBeInstanceOf(CannotDeleteSiteManagerError);
 
     // user stále existuje, není soft-deletovaný
@@ -180,13 +236,60 @@ describe("deleteUser — soft delete with guards", () => {
       },
     });
 
-    await deleteUser(sm.id, {
-      actor: { id: actor.id },
-      ip: null,
-      userAgent: "vitest",
-    }, actor.id);
+    await deleteUser(
+      sm.id,
+      {
+        actor: { id: actor.id },
+        ip: null,
+        userAgent: "vitest",
+      },
+      actor.id,
+    );
 
     const after = await db.user.findUniqueOrThrow({ where: { id: sm.id } });
     expect(after.deletedAt).not.toBeNull();
+  });
+});
+
+describe("deleteUserAction", () => {
+  it("soft-deletes user via safe action object input", async () => {
+    const victim = await createUserRow("victim-action");
+    const session = await db.session.create({
+      data: { userId: victim.id, expiresAt: new Date(Date.now() + 60_000) },
+    });
+
+    const result = await deleteUserAction({ userId: victim.id });
+    expect(result?.data?.ok).toBe(true);
+
+    const after = await db.user.findUniqueOrThrow({ where: { id: victim.id } });
+    expect(after.deletedAt).not.toBeNull();
+    expect(after.isActive).toBe(false);
+
+    const sess = await db.session.findUniqueOrThrow({ where: { id: session.id } });
+    expect(sess.revokedAt).not.toBeNull();
+
+    const audit = await db.auditLog.findFirstOrThrow({
+      where: { action: "user.delete", entityId: victim.id },
+    });
+    expect(audit.actorId).toBe("tester");
+  });
+
+  it("returns validation error on invalid input", async () => {
+    // @ts-expect-error - invalid input schema test
+    const result = await deleteUserAction({ userId: 123 });
+    expect(result?.validationErrors).toBeDefined();
+    expect(result?.data).toBeUndefined();
+  });
+
+  it("returns serverError when deleting self", async () => {
+    const tester = await createUserRow("tester");
+    await db.user.update({
+      where: { id: tester.id },
+      data: { id: "tester" },
+    });
+
+    const result = await deleteUserAction({ userId: "tester" });
+    expect(result?.serverError).toBeDefined();
+    expect(result?.data).toBeUndefined();
   });
 });
