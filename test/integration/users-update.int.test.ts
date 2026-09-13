@@ -1,13 +1,58 @@
 import { execSync } from "node:child_process";
 
 import { PrismaPg } from "@prisma/adapter-pg";
-import {
-  PostgreSqlContainer,
-  type StartedPostgreSqlContainer,
-} from "@testcontainers/postgresql";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PrismaClient } from "@/generated/prisma/client";
+
+vi.mock("next/cache", () => ({
+  revalidatePath: vi.fn(),
+}));
+
+vi.mock("@/server/rbac", async () => {
+  const permissions =
+    await vi.importActual<typeof import("@/server/permissions")>("@/server/permissions");
+  return {
+    ...permissions,
+    requireUser: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireAdmin: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireBoss: vi.fn().mockResolvedValue({
+      id: "tester",
+      nickname: "admin",
+      displayName: "Admin Tester",
+      role: "BOSS",
+      isAdmin: true,
+      mustChangePwd: false,
+      sessionId: "sess-test",
+    }),
+    requireRole: vi.fn(),
+  };
+});
+
+vi.mock("@/server/audit-context", () => ({
+  getAuditContext: vi.fn().mockResolvedValue({
+    actor: { id: "tester" },
+    ip: null,
+    userAgent: "vitest",
+  }),
+}));
 
 /**
  * Integration test for `updateUser` against a real Postgres + audit
@@ -24,6 +69,7 @@ let db: PrismaClient;
 let updateUser: typeof import("@/server/services/users").updateUser;
 let CannotRemoveLastAdminError: typeof import("@/server/services/users").CannotRemoveLastAdminError;
 let UserNotFoundError: typeof import("@/server/services/users").UserNotFoundError;
+let setUserActiveAction: typeof import("@/app/(app)/admin/users/actions").setUserActiveAction;
 
 beforeAll(async () => {
   container = await new PostgreSqlContainer("postgres:16-alpine").start();
@@ -36,11 +82,9 @@ beforeAll(async () => {
   });
 
   db = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
-  ({
-    updateUser,
-    CannotRemoveLastAdminError,
-    UserNotFoundError,
-  } = await import("@/server/services/users"));
+  ({ updateUser, CannotRemoveLastAdminError, UserNotFoundError } =
+    await import("@/server/services/users"));
+  ({ setUserActiveAction } = await import("@/app/(app)/admin/users/actions"));
 });
 
 afterAll(async () => {
@@ -204,5 +248,46 @@ describe("updateUser", () => {
         ctx,
       ),
     ).rejects.toBeInstanceOf(UserNotFoundError);
+  });
+});
+
+describe("setUserActiveAction", () => {
+  it("toggles active status via safe action object input", async () => {
+    const u = await createUserRow({ nickname: "u-active-toggle" });
+    expect(u.isActive).toBe(true);
+
+    // Call safe action with object instead of FormData: deactivate
+    const resultDeactivate = await setUserActiveAction({ userId: u.id, isActive: false });
+
+    expect(resultDeactivate?.data?.ok).toBe(true);
+
+    const afterDeactivate = await db.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(afterDeactivate.isActive).toBe(false);
+
+    const auditDeactivate = await db.auditLog.findFirstOrThrow({
+      where: { action: "user.deactivate", entityId: u.id },
+    });
+    expect(auditDeactivate.actorId).toBe("tester");
+
+    // Call safe action: reactivate
+    const resultActivate = await setUserActiveAction({ userId: u.id, isActive: true });
+
+    expect(resultActivate?.data?.ok).toBe(true);
+
+    const afterActivate = await db.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(afterActivate.isActive).toBe(true);
+
+    const auditActivate = await db.auditLog.findFirstOrThrow({
+      where: { action: "user.activate", entityId: u.id },
+    });
+    expect(auditActivate.actorId).toBe("tester");
+  });
+
+  it("returns validation error on invalid input", async () => {
+    // @ts-expect-error - invalid input schema test
+    const result = await setUserActiveAction({ userId: 123, isActive: "invalid" });
+
+    expect(result?.validationErrors).toBeDefined();
+    expect(result?.data).toBeUndefined();
   });
 });

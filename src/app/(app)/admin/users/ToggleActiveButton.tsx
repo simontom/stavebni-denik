@@ -1,7 +1,7 @@
 "use client";
 
-import { useTransition } from "react";
 import { Loader2, Power, PowerOff } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,14 @@ interface Props {
 }
 
 export function ToggleActiveButton({ userId, isActive, displayName }: Props) {
-  const [pending, startTransition] = useTransition();
+  const { execute, isExecuting } = useAction(setUserActiveAction, {
+    onSuccess: () => {
+      toast.success(isActive ? `${displayName} deaktivován.` : `${displayName} aktivován.`);
+    },
+    onError: ({ error }) => {
+      if (error.serverError) toast.error(error.serverError);
+    },
+  });
 
   function handleClick() {
     const confirmMsg = isActive
@@ -23,20 +30,7 @@ export function ToggleActiveButton({ userId, isActive, displayName }: Props) {
       : `Znovu aktivovat účet ${displayName}?`;
     if (!window.confirm(confirmMsg)) return;
 
-    const fd = new FormData();
-    fd.append("userId", userId);
-    fd.append("isActive", isActive ? "0" : "1");
-    // Use async callback so React 19 tracks the Promise — without
-    // `await` inside startTransition the call would fire-and-forget
-    // and revalidatePath could land after the transition ended.
-    startTransition(async () => {
-      const result = await setUserActiveAction(fd);
-      if (!result.ok) {
-        toast.error(result.error);
-      } else {
-        toast.success(isActive ? `${displayName} deaktivován.` : `${displayName} aktivován.`);
-      }
-    });
+    execute({ userId, isActive: !isActive });
   }
 
   return (
@@ -45,10 +39,10 @@ export function ToggleActiveButton({ userId, isActive, displayName }: Props) {
       variant={isActive ? "outline" : "default"}
       size="sm"
       onClick={handleClick}
-      disabled={pending}
+      disabled={isExecuting}
       aria-label={isActive ? "Deaktivovat účet" : "Aktivovat účet"}
     >
-      {pending ? (
+      {isExecuting ? (
         <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : isActive ? (
         <PowerOff className="size-4" aria-hidden />

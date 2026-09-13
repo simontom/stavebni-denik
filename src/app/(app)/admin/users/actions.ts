@@ -22,6 +22,7 @@ import {
   type CreateUserResult,
 } from "@/server/services/users";
 import { requireAdmin } from "@/server/rbac";
+import { adminActionClient } from "@/server/safe-action";
 
 export type CreateUserState =
   | { status: "idle" }
@@ -146,39 +147,13 @@ export async function updateUserAction(
   return { status: "ok" };
 }
 
-const setActiveSchema = z.object({
-  userId: z.string().min(1),
-  isActive: z.enum(["1", "0"]),
-});
-
-export type SetUserActiveResult = { ok: true } | { ok: false; error: string };
-
-export async function setUserActiveAction(data: FormData): Promise<SetUserActiveResult> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { ok: false, error: "Nemáte oprávnění (přihlaste se znovu jako admin)." };
-  }
-  const parsed = setActiveSchema.safeParse({
-    userId: data.get("userId"),
-    isActive: data.get("isActive"),
+export const setUserActiveAction = adminActionClient
+  .schema(z.object({ userId: z.string(), isActive: z.boolean() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await setUserActive(parsedInput.userId, parsedInput.isActive, ctx.auditContext);
+    revalidatePath("/admin/users");
+    return { ok: true };
   });
-  if (!parsed.success) {
-    return { ok: false, error: "Neplatný požadavek." };
-  }
-  try {
-    const ctx = await getAuditContext();
-    await setUserActive(parsed.data.userId, parsed.data.isActive === "1", ctx);
-  } catch (err) {
-    console.error("[setUserActiveAction]", err);
-    return {
-      ok: false,
-      error: "Změna stavu se nezdařila. Zkuste to znovu.",
-    };
-  }
-  revalidatePath("/admin/users");
-  return { ok: true };
-}
 
 export type DeleteUserResult = { ok: true } | { ok: false; error: string };
 
