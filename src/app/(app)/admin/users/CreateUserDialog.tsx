@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Check, Copy, Loader2, UserPlus } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -25,7 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { createUserAction, type CreateUserState } from "./actions";
+import { createUserAction } from "./actions";
 
 const ROLE_OPTIONS: Array<{ value: "BOSS" | "WORKER" | "INSPECTOR"; label: string }> = [
   { value: "WORKER", label: "Pracovník" },
@@ -36,19 +37,41 @@ const ROLE_OPTIONS: Array<{ value: "BOSS" | "WORKER" | "INSPECTOR"; label: strin
 export function CreateUserDialog() {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<"BOSS" | "WORKER" | "INSPECTOR">("WORKER");
-  const [state, setState] = useState<CreateUserState | undefined>(undefined);
-  const [isPending, startTransition] = useTransition();
   const [passwordCopied, setPasswordCopied] = useState(false);
 
-  const created = state?.status === "ok" ? state.result : null;
-  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
+  const { execute, isExecuting, result, reset } = useAction(createUserAction, {
+    onSuccess: () => {
+      toast.success("Uživatel byl úspěšně vytvořen.");
+    },
+    onError: ({ error }) => {
+      if (error.serverError) {
+        toast.error(error.serverError);
+      }
+    },
+  });
+
+  const created = result.data;
+  const fieldErrors = result.validationErrors;
+  const nicknameError = fieldErrors?.nickname?._errors?.[0];
+  const displayNameError = fieldErrors?.displayName?._errors?.[0];
+  const roleError = fieldErrors?.role?._errors?.[0];
+  const ckaitNumberError = fieldErrors?.ckaitNumber?._errors?.[0];
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const res = await createUserAction(undefined, formData);
-      setState(res);
+    const nickname = String(formData.get("nickname") ?? "").trim();
+    const displayName = String(formData.get("displayName") ?? "").trim();
+    const ckaitRaw = formData.get("ckaitNumber");
+    const ckaitNumber = ckaitRaw ? String(ckaitRaw).trim() || null : null;
+    const isAdmin = formData.get("isAdmin") === "true";
+
+    execute({
+      nickname,
+      displayName,
+      role,
+      ckaitNumber,
+      isAdmin,
     });
   }
 
@@ -74,10 +97,10 @@ export function CreateUserDialog() {
     // Reset transient UI state whenever the dialog opens or closes.
     if (next) {
       setPasswordCopied(false);
-      setState(undefined);
+      reset();
       setRole("WORKER");
     } else {
-      setState(undefined);
+      reset();
     }
     setOpen(next);
   }
@@ -159,19 +182,9 @@ export function CreateUserDialog() {
             </DialogHeader>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
-              {state?.status === "nickname-in-use" && (
+              {result.serverError && (
                 <Alert variant="destructive">
-                  <AlertDescription>Toto přihlašovací jméno je již obsazené.</AlertDescription>
-                </Alert>
-              )}
-              {state?.status === "forbidden" && (
-                <Alert variant="destructive">
-                  <AlertDescription>Nemáte oprávnění vytvářet uživatele.</AlertDescription>
-                </Alert>
-              )}
-              {state?.status === "error" && (
-                <Alert variant="destructive">
-                  <AlertDescription>{state.message}</AlertDescription>
+                  <AlertDescription>{result.serverError}</AlertDescription>
                 </Alert>
               )}
 
@@ -187,12 +200,10 @@ export function CreateUserDialog() {
                   autoComplete="off"
                   spellCheck={false}
                   pattern="[a-z0-9._\-]+"
-                  aria-invalid={!!fieldErrors?.nickname}
+                  aria-invalid={!!nicknameError}
                   placeholder="napr. honza.novak"
                 />
-                {fieldErrors?.nickname && (
-                  <p className="text-destructive text-sm">{fieldErrors.nickname}</p>
-                )}
+                {nicknameError && <p className="text-destructive text-sm">{nicknameError}</p>}
               </div>
 
               <div className="grid gap-2">
@@ -202,12 +213,10 @@ export function CreateUserDialog() {
                   name="displayName"
                   required
                   maxLength={128}
-                  aria-invalid={!!fieldErrors?.displayName}
+                  aria-invalid={!!displayNameError}
                   placeholder="Jan Novák"
                 />
-                {fieldErrors?.displayName && (
-                  <p className="text-destructive text-sm">{fieldErrors.displayName}</p>
-                )}
+                {displayNameError && <p className="text-destructive text-sm">{displayNameError}</p>}
               </div>
 
               <div className="grid gap-2">
@@ -233,9 +242,7 @@ export function CreateUserDialog() {
                     current value via a hidden input so the server action
                     sees it. */}
                 <input type="hidden" name="role" value={role} />
-                {fieldErrors?.role && (
-                  <p className="text-destructive text-sm">{fieldErrors.role}</p>
-                )}
+                {roleError && <p className="text-destructive text-sm">{roleError}</p>}
               </div>
 
               {role === "BOSS" && (
@@ -251,8 +258,12 @@ export function CreateUserDialog() {
                     name="ckaitNumber"
                     maxLength={32}
                     autoComplete="off"
+                    aria-invalid={!!ckaitNumberError}
                     placeholder="napr. 0123456"
                   />
+                  {ckaitNumberError && (
+                    <p className="text-destructive text-sm">{ckaitNumberError}</p>
+                  )}
                 </div>
               )}
 
@@ -273,8 +284,8 @@ export function CreateUserDialog() {
                 <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                   Zrušit
                 </Button>
-                <Button type="submit" disabled={isPending}>
-                  {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+                <Button type="submit" disabled={isExecuting}>
+                  {isExecuting && <Loader2 className="size-4 animate-spin" aria-hidden />}
                   Vytvořit
                 </Button>
               </DialogFooter>

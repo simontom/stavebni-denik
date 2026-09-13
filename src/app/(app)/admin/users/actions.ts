@@ -17,69 +17,26 @@ import {
   setUserActive,
   updateUser,
   updateUserSchema,
-  type CreateUserResult,
 } from "@/server/services/users";
 import { requireAdmin } from "@/server/rbac";
 import { adminActionClient } from "@/server/safe-action";
 
-export type CreateUserState =
-  | { status: "idle" }
-  | { status: "ok"; result: CreateUserResult }
-  | { status: "field-error"; fieldErrors: Record<string, string> }
-  | { status: "nickname-in-use" }
-  | { status: "forbidden" }
-  | { status: "error"; message: string };
+import { returnServerError } from "next-safe-action";
 
-export async function createUserAction(
-  _prev: CreateUserState | undefined,
-  data: FormData,
-): Promise<CreateUserState> {
-  let actor;
-  try {
-    actor = await requireAdmin();
-  } catch {
-    return { status: "forbidden" };
-  }
-
-  const parsed = createUserSchema.safeParse({
-    nickname: String(data.get("nickname") ?? ""),
-    displayName: String(data.get("displayName") ?? ""),
-    role: String(data.get("role") ?? ""),
-    ckaitNumber: ((): string | null => {
-      const raw = data.get("ckaitNumber");
-      if (raw === null) return null;
-      const trimmed = String(raw).trim();
-      return trimmed.length === 0 ? null : trimmed;
-    })(),
-    // HTML checkbox: when checked, value is "true"; when unchecked,
-    // the field is absent (data.get returns null) → false.
-    isAdmin: data.get("isAdmin") === "true",
+export const createUserAction = adminActionClient
+  .schema(createUserSchema)
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      const result = await createUser(parsedInput, ctx.auditContext, ctx.user.id);
+      revalidatePath("/admin/users");
+      return result;
+    } catch (err) {
+      if (err instanceof NicknameInUseError) {
+        returnServerError("Toto přihlašovací jméno je již obsazené.");
+      }
+      throw err;
+    }
   });
-
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path[0] as string | undefined;
-      if (field && !fieldErrors[field]) fieldErrors[field] = issue.message;
-    }
-    return { status: "field-error", fieldErrors };
-  }
-
-  try {
-    const ctx = await getAuditContext();
-    const result = await createUser(parsed.data, ctx, actor.id);
-    revalidatePath("/admin/users");
-    return { status: "ok", result };
-  } catch (err) {
-    if (err instanceof NicknameInUseError) {
-      return { status: "nickname-in-use" };
-    }
-    return {
-      status: "error",
-      message: "Vytvoření uživatele se nezdařilo.",
-    };
-  }
-}
 
 export type UpdateUserState =
   | { status: "idle" }
