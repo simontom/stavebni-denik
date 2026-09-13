@@ -9,6 +9,7 @@ import { ADMIN_PASSWORD_RESET_LIMIT, checkRateLimit } from "@/server/rate-limit"
 import {
   CannotRemoveLastAdminError,
   NicknameInUseError,
+  UserNotFoundError,
   createUser,
   createUserSchema,
   deleteUser,
