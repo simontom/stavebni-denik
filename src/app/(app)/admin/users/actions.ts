@@ -52,10 +52,10 @@ export const updateUserAction = adminActionClient
       return { ok: true };
     } catch (err) {
       if (err instanceof UserNotFoundError) {
-        return returnServerError("Uživatel nebyl nalezen.");
+        returnServerError("Uživatel nebyl nalezen.");
       }
       if (err instanceof CannotRemoveLastAdminError) {
-        return returnServerError(
+        returnServerError(
           "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
         );
       }
@@ -80,7 +80,7 @@ export const deleteUserAction = adminActionClient
       return { ok: true };
     } catch (err) {
       if (err instanceof CannotDeleteSelfError || err instanceof CannotDeleteSiteManagerError) {
-        return returnServerError(err.message);
+        returnServerError(err.message);
       }
       throw err; // Let handleServerError catch unknown errors
     }
@@ -100,7 +100,7 @@ export const resetPasswordAction = adminActionClient
     });
     if (!rl.allowed) {
       const minutes = Math.ceil(rl.retryAfterMs / 60_000);
-      return returnServerError(`Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`);
+      returnServerError(`Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`);
     }
 
     const { generatedPassword } = await resetUserPasswordByAdmin(

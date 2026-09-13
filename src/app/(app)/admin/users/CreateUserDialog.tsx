@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Check, Copy, Loader2, UserPlus } from "lucide-react";
+import { flattenValidationErrors } from "next-safe-action";
 import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
@@ -51,11 +52,13 @@ export function CreateUserDialog() {
   });
 
   const created = result.data;
-  const fieldErrors = result.validationErrors;
-  const nicknameError = fieldErrors?.nickname?._errors?.[0];
-  const displayNameError = fieldErrors?.displayName?._errors?.[0];
-  const roleError = fieldErrors?.role?._errors?.[0];
-  const ckaitNumberError = fieldErrors?.ckaitNumber?._errors?.[0];
+  const fieldErrors = result.validationErrors
+    ? flattenValidationErrors(result.validationErrors).fieldErrors
+    : {};
+  const nicknameError = fieldErrors.nickname?.[0];
+  const displayNameError = fieldErrors.displayName?.[0];
+  const roleError = fieldErrors.role?.[0];
+  const ckaitNumberError = fieldErrors.ckaitNumber?.[0];
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

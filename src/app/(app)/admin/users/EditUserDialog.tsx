@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { flattenValidationErrors } from "next-safe-action";
 import { useAction } from "next-safe-action/hooks";
 
 import { updateUserAction } from "./actions";
@@ -76,7 +77,9 @@ export function EditUserDialog({ userId, initialValues }: Props) {
     },
   });
 
-  const fieldErrors = result.validationErrors;
+  const fieldErrors = result.validationErrors
+    ? flattenValidationErrors(result.validationErrors).fieldErrors
+    : {};
 
   function handleOpenChange(next: boolean) {
     if (next) {
@@ -95,7 +98,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
     execute({
       userId: String(formData.get("userId")),
       displayName: String(formData.get("displayName") ?? ""),
-      role: String(formData.get("role") ?? ""),
+      role: String(formData.get("role") ?? "") as "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR",
       ckaitNumber: ((): string | null => {
         const raw = formData.get("ckaitNumber");
         if (raw === null || raw === undefined) return null;
@@ -147,11 +150,7 @@ export function EditUserDialog({ userId, initialValues }: Props) {
               aria-invalid={!!fieldErrors?.displayName}
             />
             {fieldErrors?.displayName && (
-              <p className="text-destructive text-sm">
-                {Array.isArray(fieldErrors.displayName)
-                  ? fieldErrors.displayName[0]
-                  : (fieldErrors.displayName as { _errors?: string[] })?._errors?.[0]}
-              </p>
+              <p className="text-destructive text-sm">{fieldErrors.displayName[0]}</p>
             )}
           </div>
 
