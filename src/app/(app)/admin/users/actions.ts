@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { prisma } from "@/lib/db";
-import { getAuditContext } from "@/server/audit-context";
 import { ADMIN_PASSWORD_RESET_LIMIT, checkRateLimit } from "@/server/rate-limit";
 import {
+  CannotDeleteSelfError,
+  CannotDeleteSiteManagerError,
   CannotRemoveLastAdminError,
   NicknameInUseError,
   UserNotFoundError,
@@ -18,7 +19,6 @@ import {
   updateUser,
   updateUserSchema,
 } from "@/server/services/users";
-import { requireAdmin } from "@/server/rbac";
 import { adminActionClient } from "@/server/safe-action";
 
 import { returnServerError } from "next-safe-action";
@@ -38,69 +38,30 @@ export const createUserAction = adminActionClient
     }
   });
 
-export type UpdateUserState =
-  | { status: "idle" }
-  | { status: "ok" }
-  | { status: "field-error"; fieldErrors: Record<string, string> }
-  | { status: "forbidden" }
-  | { status: "not-found" }
-  | { status: "last-admin" }
-  | { status: "error"; message: string };
-
-export async function updateUserAction(
-  _prev: UpdateUserState | undefined,
-  data: FormData,
-): Promise<UpdateUserState> {
-  try {
-    await requireAdmin();
-  } catch {
-    return { status: "forbidden" };
-  }
-
-  const userId = String(data.get("userId") ?? "").trim();
-  if (userId.length === 0) {
-    return { status: "error", message: "Chybí ID uživatele." };
-  }
-
-  const parsed = updateUserSchema.safeParse({
-    displayName: String(data.get("displayName") ?? ""),
-    role: String(data.get("role") ?? ""),
-    ckaitNumber: ((): string | null => {
-      const raw = data.get("ckaitNumber");
-      if (raw === null) return null;
-      const trimmed = String(raw).trim();
-      return trimmed.length === 0 ? null : trimmed;
-    })(),
-    isAdmin: data.get("isAdmin") === "true",
+export const updateUserAction = adminActionClient
+  .schema(
+    updateUserSchema.extend({
+      userId: z.string(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      const { userId, ...data } = parsedInput;
+      await updateUser(userId, data, ctx.auditContext);
+      revalidatePath("/admin/users");
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof UserNotFoundError) {
+        return returnServerError("Uživatel nebyl nalezen.");
+      }
+      if (err instanceof CannotRemoveLastAdminError) {
+        return returnServerError(
+          "Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.",
+        );
+      }
+      throw err;
+    }
   });
-  if (!parsed.success) {
-    const fieldErrors: Record<string, string> = {};
-    for (const issue of parsed.error.issues) {
-      const field = issue.path[0] as string | undefined;
-      if (field && !fieldErrors[field]) fieldErrors[field] = issue.message;
-    }
-    return { status: "field-error", fieldErrors };
-  }
-
-  try {
-    const ctx = await getAuditContext();
-    await updateUser(userId, parsed.data, ctx);
-  } catch (err) {
-    if (err instanceof UserNotFoundError) {
-      return { status: "not-found" };
-    }
-    if (err instanceof CannotRemoveLastAdminError) {
-      return { status: "last-admin" };
-    }
-    console.error("[updateUserAction]", err);
-    return {
-      status: "error",
-      message: "Uložení se nezdařilo. Zkuste to znovu.",
-    };
-  }
-  revalidatePath("/admin/users");
-  return { status: "ok" };
-}
 
 export const setUserActiveAction = adminActionClient
   .schema(z.object({ userId: z.string(), isActive: z.boolean() }))
@@ -113,9 +74,16 @@ export const setUserActiveAction = adminActionClient
 export const deleteUserAction = adminActionClient
   .schema(z.object({ userId: z.string() }))
   .action(async ({ parsedInput, ctx }) => {
-    await deleteUser(parsedInput.userId, ctx.auditContext, ctx.user.id);
-    revalidatePath("/admin/users");
-    return { ok: true };
+    try {
+      await deleteUser(parsedInput.userId, ctx.auditContext, ctx.user.id);
+      revalidatePath("/admin/users");
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof CannotDeleteSelfError || err instanceof CannotDeleteSiteManagerError) {
+        return returnServerError(err.message);
+      }
+      throw err; // Let handleServerError catch unknown errors
+    }
   });
 
 export const resetPasswordAction = adminActionClient
@@ -132,7 +100,7 @@ export const resetPasswordAction = adminActionClient
     });
     if (!rl.allowed) {
       const minutes = Math.ceil(rl.retryAfterMs / 60_000);
-      throw new Error(`Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`);
+      return returnServerError(`Příliš mnoho resetů hesla. Zkuste to znovu za ${minutes} min.`);
     }
 
     const { generatedPassword } = await resetUserPasswordByAdmin(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -24,7 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { updateUserAction, type UpdateUserState } from "./actions";
+import { useAction } from "next-safe-action/hooks";
+
+import { updateUserAction } from "./actions";
 
 type Role = "BOSS" | "WORKER" | "INSPECTOR" | "INVESTOR";
 
@@ -56,18 +58,33 @@ export function EditUserDialog({ userId, initialValues }: Props) {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState<Role>(initialValues.role);
   const [isAdmin, setIsAdmin] = useState<boolean>(initialValues.isAdmin);
-  const [state, setState] = useState<UpdateUserState | undefined>(undefined);
-  const [isPending, startTransition] = useTransition();
 
-  const fieldErrors = state?.status === "field-error" ? state.fieldErrors : undefined;
+  const { execute, isExecuting, result, reset } = useAction(updateUserAction, {
+    onSuccess: ({ data }) => {
+      if (data?.ok) {
+        toast.success(`${initialValues.displayName} aktualizován.`);
+        setOpen(false);
+        reset();
+      }
+    },
+    onError: ({ error }) => {
+      if (error.serverError) {
+        toast.error(error.serverError);
+      } else if (!error.validationErrors) {
+        toast.error("Uložení se nezdařilo. Zkuste to znovu.");
+      }
+    },
+  });
+
+  const fieldErrors = result.validationErrors;
 
   function handleOpenChange(next: boolean) {
     if (next) {
       setRole(initialValues.role);
       setIsAdmin(initialValues.isAdmin);
-      setState(undefined);
+      reset();
     } else {
-      setState(undefined);
+      reset();
     }
     setOpen(next);
   }
@@ -75,24 +92,17 @@ export function EditUserDialog({ userId, initialValues }: Props) {
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    startTransition(async () => {
-      const res = await updateUserAction(undefined, formData);
-      if (res.status === "ok") {
-        toast.success(`${initialValues.displayName} aktualizován.`);
-        setOpen(false);
-        setState(undefined);
-      } else {
-        setState(res);
-        if (res.status === "forbidden") {
-          toast.error("Nemáte oprávnění (přihlaste se znovu jako admin).");
-        } else if (res.status === "not-found") {
-          toast.error("Uživatel nebyl nalezen.");
-        } else if (res.status === "last-admin") {
-          toast.error("Nelze odebrat poslednímu adminovi flag — aplikace by zůstala bez správce.");
-        } else if (res.status === "error") {
-          toast.error(res.message);
-        }
-      }
+    execute({
+      userId: String(formData.get("userId")),
+      displayName: String(formData.get("displayName") ?? ""),
+      role: String(formData.get("role") ?? ""),
+      ckaitNumber: ((): string | null => {
+        const raw = formData.get("ckaitNumber");
+        if (raw === null || raw === undefined) return null;
+        const trimmed = String(raw).trim();
+        return trimmed.length === 0 ? null : trimmed;
+      })(),
+      isAdmin: formData.get("isAdmin") === "true",
     });
   }
 
@@ -137,7 +147,11 @@ export function EditUserDialog({ userId, initialValues }: Props) {
               aria-invalid={!!fieldErrors?.displayName}
             />
             {fieldErrors?.displayName && (
-              <p className="text-destructive text-sm">{fieldErrors.displayName}</p>
+              <p className="text-destructive text-sm">
+                {Array.isArray(fieldErrors.displayName)
+                  ? fieldErrors.displayName[0]
+                  : (fieldErrors.displayName as { _errors?: string[] })?._errors?.[0]}
+              </p>
             )}
           </div>
 
@@ -203,8 +217,8 @@ export function EditUserDialog({ userId, initialValues }: Props) {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Zrušit
             </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+            <Button type="submit" disabled={isExecuting}>
+              {isExecuting && <Loader2 className="size-4 animate-spin" aria-hidden />}
               Uložit změny
             </Button>
           </DialogFooter>

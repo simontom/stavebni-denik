@@ -251,6 +251,44 @@ describe("updateUser", () => {
   });
 });
 
+describe("updateUserAction", () => {
+  let updateUserAction: typeof import("@/app/(app)/admin/users/actions").updateUserAction;
+
+  beforeAll(async () => {
+    ({ updateUserAction } = await import("@/app/(app)/admin/users/actions"));
+  });
+
+  it("updates user via safe action", async () => {
+    const u = await createUserRow({ nickname: "u-action-edit" });
+
+    const result = await updateUserAction({
+      userId: u.id,
+      displayName: "Nový Přes Akci",
+      role: "INSPECTOR",
+      ckaitNumber: null,
+      isAdmin: false,
+    });
+
+    expect(result?.data?.ok).toBe(true);
+
+    const after = await db.user.findUniqueOrThrow({ where: { id: u.id } });
+    expect(after.displayName).toBe("Nový Přes Akci");
+    expect(after.role).toBe("INSPECTOR");
+  });
+
+  it("returns server error for user not found", async () => {
+    const result = await updateUserAction({
+      userId: "nonexistent",
+      displayName: "x",
+      role: "WORKER",
+      ckaitNumber: null,
+      isAdmin: false,
+    });
+
+    expect(result?.serverError).toBe("Uživatel nebyl nalezen.");
+  });
+});
+
 describe("setUserActiveAction", () => {
   it("toggles active status via safe action object input", async () => {
     const u = await createUserRow({ nickname: "u-active-toggle" });
