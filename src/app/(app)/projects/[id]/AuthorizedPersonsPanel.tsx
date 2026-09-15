@@ -38,7 +38,7 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
       return;
     }
     startTransition(() => {
-      void revokeAuthorizedPersonAction(personId, projectId);
+      void revokeAuthorizedPersonAction({ personId, projectId });
     });
   }
 

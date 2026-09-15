@@ -52,15 +52,18 @@ export function AddAuthorizedPersonDialog({
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const fd = new FormData();
-    fd.append("name", name);
-    fd.append("company", company);
-    fd.append("authorization", authorization);
 
     startTransition(async () => {
-      const res = await addAuthorizedPersonAction(projectId, fd);
-      if (res.error) {
-        setError(res.error);
+      const res = await addAuthorizedPersonAction({
+        projectId,
+        name,
+        company: company || undefined,
+        authorization: authorization || undefined,
+      });
+      if (res?.serverError) {
+        setError(res.serverError);
+      } else if (res?.validationErrors) {
+        setError("Zkontrolujte prosím zadané údaje.");
       } else {
         handleOpenChange(false);
       }

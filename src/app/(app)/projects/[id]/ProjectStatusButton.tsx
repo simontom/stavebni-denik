@@ -22,10 +22,8 @@ export function ProjectStatusButton({ projectId, projectName, archived }: Props)
       : `Archivovat zakázku „${projectName}“? Zmizí z aktivního seznamu, deník ale zůstává zachován a lze ji kdykoli obnovit.`;
     if (!window.confirm(msg)) return;
 
-    const fd = new FormData();
-    fd.append("projectId", projectId);
     startTransition(() => {
-      void (archived ? restoreProjectAction(fd) : archiveProjectAction(fd));
+      void (archived ? restoreProjectAction({ projectId }) : archiveProjectAction({ projectId }));
     });
   }
 

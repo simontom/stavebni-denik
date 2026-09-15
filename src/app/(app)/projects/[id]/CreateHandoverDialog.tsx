@@ -80,17 +80,19 @@ export function CreateHandoverDialog({ projectId, open, onOpenChange }: CreateHa
 
     const validMeters = meters.filter((m) => m.name.trim() && m.value.trim());
 
-    const fd = new FormData();
-    fd.append("type", type);
-    fd.append("date", date);
-    fd.append("participants", participants);
-    fd.append("notes", notes);
-    fd.append("meterStates", JSON.stringify(validMeters));
-
     startTransition(async () => {
-      const res = await createHandoverAction(projectId, fd);
-      if (res.error) {
-        setError(res.error);
+      const res = await createHandoverAction({
+        projectId,
+        type,
+        date: new Date(date),
+        participants,
+        notes: notes || undefined,
+        meterStates: validMeters,
+      });
+      if (res?.serverError) {
+        setError(res.serverError);
+      } else if (res?.validationErrors) {
+        setError("Zkontrolujte prosím zadané údaje.");
       } else {
         handleOpenChange(false);
       }

@@ -38,7 +38,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
       return;
     }
     startTransition(() => {
-      void signHandoverAction(handoverId, projectId);
+      void signHandoverAction({ handoverId, projectId });
     });
   }
 
@@ -47,7 +47,7 @@ export function HandoversPanel({ projectId, handovers, canManage }: Props) {
       return;
     }
     startTransition(() => {
-      void deleteHandoverAction(handoverId, projectId);
+      void deleteHandoverAction({ handoverId, projectId });
     });
   }
 
