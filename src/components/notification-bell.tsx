@@ -51,7 +51,7 @@ export function NotificationBell({ items, unreadCount }: Props) {
   function handleClick(item: NotificationItem) {
     startTransition(async () => {
       if (!item.readAt) {
-        await markNotificationReadAction(item.id);
+        await markNotificationReadAction({ notificationId: item.id });
       }
       if (item.href) {
         setOpen(false);
@@ -72,7 +72,7 @@ export function NotificationBell({ items, unreadCount }: Props) {
     e.preventDefault();
     e.stopPropagation();
     startTransition(async () => {
-      await deleteNotificationAction(id);
+      await deleteNotificationAction({ notificationId: id });
     });
   }
 

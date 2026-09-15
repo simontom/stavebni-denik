@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,29 +14,27 @@ import { verifyAuditAction, type VerifyResultJson } from "./actions";
  * both as a toast and inline beneath the button.
  */
 export function VerifyChainButton() {
-  const [isPending, startTransition] = useTransition();
   const [last, setLast] = useState<VerifyResultJson | null>(null);
 
-  function onVerify() {
-    startTransition(async () => {
-      try {
-        const result = await verifyAuditAction();
-        setLast(result);
-        if (result.ok) {
-          toast.success(`Řetěz je neporušený — zkontrolováno ${result.totalRows} záznamů.`);
-        } else {
-          toast.error(`Porušená integrita u záznamu #${result.brokenAtId ?? "?"}.`);
-        }
-      } catch {
-        toast.error("Ověření selhalo. Zkuste to prosím znovu.");
+  const { execute, isExecuting } = useAction(verifyAuditAction, {
+    onSuccess: ({ data }) => {
+      if (!data) return;
+      setLast(data);
+      if (data.ok) {
+        toast.success(`Řetěz je neporušený — zkontrolováno ${data.totalRows} záznamů.`);
+      } else {
+        toast.error(`Porušená integrita u záznamu #${data.brokenAtId ?? "?"}.`);
       }
-    });
-  }
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Ověření selhalo. Zkuste to prosím znovu.");
+    },
+  });
 
   return (
     <div className="flex flex-col items-start gap-1 sm:items-end">
-      <Button variant="outline" size="sm" onClick={onVerify} disabled={isPending}>
-        {isPending ? "Ověřuji…" : "Ověřit integritu řetězu"}
+      <Button variant="outline" size="sm" onClick={() => execute()} disabled={isExecuting}>
+        {isExecuting ? "Ověřuji…" : "Ověřit integritu řetězu"}
       </Button>
       {last && (
         <span

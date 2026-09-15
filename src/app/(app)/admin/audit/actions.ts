@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 
 import { env } from "@/lib/env";
 import { verifyAuditChain, type VerifyResult } from "@/server/audit";
-import { assertCan, requireUser } from "@/server/rbac";
+import { bossActionClient } from "@/server/safe-action";
 
 export type VerifyResultJson = Omit<VerifyResult, "brokenAtId"> & {
   brokenAtId: string | null;
@@ -18,28 +18,27 @@ export type VerifyResultJson = Omit<VerifyResult, "brokenAtId"> & {
  * the result to `${DATA_DIR}/audit-verify.log`, and returns it for the
  * UI to render. Cheap enough to run synchronously while the BOSS waits.
  */
-export async function verifyAuditAction(): Promise<VerifyResultJson> {
-  const user = await requireUser();
-  assertCan(user, "audit.verify");
+export const verifyAuditAction = bossActionClient.action(
+  async ({ ctx }): Promise<VerifyResultJson> => {
+    const result = await verifyAuditChain();
 
-  const result = await verifyAuditChain();
+    await fs.mkdir(env.dataDir, { recursive: true });
+    const logPath = path.join(env.dataDir, "audit-verify.log");
+    const line =
+      JSON.stringify({
+        checkedAt: result.checkedAt,
+        ok: result.ok,
+        totalRows: result.totalRows,
+        brokenAtId: result.brokenAtId ? result.brokenAtId.toString() : null,
+        reason: result.reason,
+        triggeredBy: ctx.user.nickname,
+      }) + "\n";
+    await fs.appendFile(logPath, line, "utf8");
 
-  await fs.mkdir(env.dataDir, { recursive: true });
-  const logPath = path.join(env.dataDir, "audit-verify.log");
-  const line =
-    JSON.stringify({
-      checkedAt: result.checkedAt,
-      ok: result.ok,
-      totalRows: result.totalRows,
+    revalidatePath("/admin/audit");
+    return {
+      ...result,
       brokenAtId: result.brokenAtId ? result.brokenAtId.toString() : null,
-      reason: result.reason,
-      triggeredBy: user.nickname,
-    }) + "\n";
-  await fs.appendFile(logPath, line, "utf8");
-
-  revalidatePath("/admin/audit");
-  return {
-    ...result,
-    brokenAtId: result.brokenAtId ? result.brokenAtId.toString() : null,
-  };
-}
+    };
+  },
+);
