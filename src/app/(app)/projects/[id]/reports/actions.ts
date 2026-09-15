@@ -2,11 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
+import { returnServerError } from "next-safe-action";
 
 import { pragueDayStart } from "@/lib/dates";
 import { getAuditContext } from "@/server/audit-context";
 import { ForbiddenError } from "@/server/permissions";
 import { requireUser } from "@/server/rbac";
+import { authActionClient, bossActionClient } from "@/server/safe-action";
 import {
   InvalidRolloverTargetError,
   MaterialAlreadyResolvedError,
@@ -27,6 +30,14 @@ import {
   updateReport,
 } from "@/server/services/reports";
 import { softDeletePhoto } from "@/server/services/photos";
+import {
+  ProjectAccessDeniedError as VisitProjectAccessError,
+  ReportLockedError as VisitReportLockedError,
+  VisitNotFoundError,
+  createVisit,
+  deleteVisit,
+  visitCreateSchema,
+} from "@/server/services/visits";
 
 import type { ReportFormState } from "./report-form-types";
 
@@ -105,359 +116,387 @@ export async function updateReportAction(
 }
 
 /** Append a remark (allowed for GUEST/TDS members). */
-export async function addRemarkAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const text = String(data.get("text") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  const isOfficial = String(data.get("isOfficial") ?? "") === "true";
-  if (!reportId || text.trim().length === 0) return;
-
-  try {
-    const ctx = await getAuditContext();
-    await addRemark({ reportId, text, isOfficial, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+export const addRemarkAction = authActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      text: z.string().trim().min(1, "Text připomínky je povinný."),
+      isOfficial: z.boolean().default(false),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await addRemark({
+        reportId: parsedInput.reportId,
+        text: parsedInput.text,
+        isOfficial: parsedInput.isOfficial,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění přidat připomínku.");
+      }
+      if (err instanceof ReportLockedError) {
+        returnServerError("Záznam je uzamčen.");
+      }
+      throw err;
+    }
+  });
 
 /** Add a "material needed" checklist item. */
-export async function addMaterialAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const text = String(data.get("text") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  const neededByRaw = String(data.get("neededBy") ?? "").trim();
-  const neededBy = neededByRaw.length > 0 ? new Date(`${neededByRaw}T00:00:00`) : null;
-  if (!reportId || text.trim().length === 0) return;
+export const addMaterialAction = authActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      text: z.string().trim().min(1, "Text materiálu je povinný."),
+      neededBy: z.string().optional().nullable(),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const neededBy =
+      parsedInput.neededBy && parsedInput.neededBy.trim().length > 0
+        ? new Date(`${parsedInput.neededBy.trim()}T00:00:00`)
+        : null;
 
-  try {
-    const ctx = await getAuditContext();
-    await addMaterialNeed({ reportId, text, neededBy, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+    try {
+      await addMaterialNeed({
+        reportId: parsedInput.reportId,
+        text: parsedInput.text,
+        neededBy,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění přidat materiál.");
+      }
+      if (err instanceof ReportLockedError) {
+        returnServerError("Záznam je uzamčen.");
+      }
+      throw err;
+    }
+  });
 
 /** Toggle the resolved state of a material checklist item. */
-export async function toggleMaterialAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const materialId = String(data.get("materialId") ?? "");
-  const resolved = String(data.get("resolved") ?? "") === "true";
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!materialId) return;
-
-  try {
-    const ctx = await getAuditContext();
-    await setMaterialResolved({ materialId, resolved, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
-
-/**
- * Bulk-resolve a set of material checklist items. Each id is funnelled
- * through the audited `setMaterialResolved` so the audit log keeps
- * one row per item — the same as if the user clicked through them
- * individually. Errors on individual ids are swallowed so a single
- * stale id does not undo the whole batch.
- */
-export async function bulkResolveMaterialsAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const ids = data
-    .getAll("materialId")
-    .map((v) => String(v))
-    .filter((s) => s.length > 0);
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (ids.length === 0) return;
-
-  const ctx = await getAuditContext();
-  for (const materialId of ids) {
+export const toggleMaterialAction = authActionClient
+  .schema(
+    z.object({
+      materialId: z.string().min(1),
+      resolved: z.boolean(),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
     try {
       await setMaterialResolved({
-        materialId,
-        resolved: true,
-        ctx,
-        user,
+        materialId: parsedInput.materialId,
+        resolved: parsedInput.resolved,
+        ctx: ctx.auditContext,
+        user: ctx.user,
       });
-    } catch {
-      // Swallow per-item errors (already-resolved, missing id) so a
-      // single bad apple doesn't drop the rest of the batch.
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění měnit stav položky.");
+      }
+      if (err instanceof ReportLockedError) {
+        returnServerError("Záznam je uzamčen.");
+      }
+      throw err;
     }
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
-
-export type RolloverState =
-  { status: "idle" } | { status: "ok" } | { status: "error"; message: string };
+  });
 
 /**
- * Roll a single open material need to a later day. Reads `materialId`
- * + `targetDate` (YYYY-MM-DD) + `projectId` + `date` from the form.
- * Returns a discriminated state so the calling component can surface
- * the precise reason (locked target, invalid date, already resolved)
- * rather than silently no-op'ing like the other panel actions.
+ * Bulk-resolve a set of material checklist items.
  */
-export async function rolloverMaterialAction(
-  _prev: RolloverState | undefined,
-  data: FormData,
-): Promise<RolloverState> {
-  const user = await requireUser();
-  const materialId = String(data.get("materialId") ?? "");
-  const targetDateStr = String(data.get("targetDate") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
+export const bulkResolveMaterialsAction = authActionClient
+  .schema(
+    z.object({
+      materialIds: z.array(z.string()),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    for (const materialId of parsedInput.materialIds) {
+      try {
+        await setMaterialResolved({
+          materialId,
+          resolved: true,
+          ctx: ctx.auditContext,
+          user: ctx.user,
+        });
+      } catch {
+        // Swallow per-item errors so a single invalid item doesn't stop the rest.
+      }
+    }
+    revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+    return { ok: true };
+  });
 
-  if (!materialId || !/^\d{4}-\d{2}-\d{2}$/.test(targetDateStr)) {
-    return { status: "error", message: "Vyberte cílový den." };
-  }
-
-  try {
-    const ctx = await getAuditContext();
-    await rolloverMaterial({
-      materialId,
-      targetDate: pragueDayStart(targetDateStr),
-      ctx,
-      user,
-    });
-  } catch (err) {
-    if (err instanceof ForbiddenError) {
-      return { status: "error", message: "Nemáte oprávnění přesunout položku." };
+/**
+ * Roll a single open material need to a later day.
+ */
+export const rolloverMaterialAction = authActionClient
+  .schema(
+    z.object({
+      materialId: z.string().min(1),
+      targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Vyberte cílový den."),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await rolloverMaterial({
+        materialId: parsedInput.materialId,
+        targetDate: pragueDayStart(parsedInput.targetDate),
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění přesunout položku.");
+      }
+      if (err instanceof MaterialNotFoundError) {
+        returnServerError(err.message);
+      }
+      if (err instanceof MaterialAlreadyResolvedError) {
+        returnServerError(err.message);
+      }
+      if (err instanceof InvalidRolloverTargetError) {
+        returnServerError(err.message);
+      }
+      if (err instanceof TargetReportMissingError) {
+        returnServerError(err.message);
+      }
+      if (err instanceof ReportLockedError) {
+        returnServerError(err.message);
+      }
+      returnServerError("Přesunutí se nezdařilo.");
     }
-    if (err instanceof MaterialNotFoundError) {
-      return { status: "error", message: err.message };
-    }
-    if (err instanceof MaterialAlreadyResolvedError) {
-      return { status: "error", message: err.message };
-    }
-    if (err instanceof InvalidRolloverTargetError) {
-      return { status: "error", message: err.message };
-    }
-    if (err instanceof TargetReportMissingError) {
-      return { status: "error", message: err.message };
-    }
-    if (err instanceof ReportLockedError) {
-      return { status: "error", message: err.message };
-    }
-    return { status: "error", message: "Přesunutí se nezdařilo." };
-  }
-
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-  return { status: "ok" };
-}
+  });
 
 /** Fill in the weather by hand when the automatic fetch failed. */
-export async function setManualWeatherAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!reportId) return;
-
-  const num = (key: string): number | null => {
-    const v = String(data.get(key) ?? "").trim();
-    if (v.length === 0) return null;
-    const n = Number(v.replace(",", "."));
-    return Number.isNaN(n) ? null : n;
-  };
-  const summaryRaw = String(data.get("summary") ?? "").trim();
-
-  try {
-    const ctx = await getAuditContext();
-    await setManualWeather({
-      reportId,
-      input: {
-        tempMinC: num("tempMinC"),
-        tempMaxC: num("tempMaxC"),
-        precipitationMm: num("precipitationMm"),
-        windMaxKmh: num("windMaxKmh"),
-        summary: summaryRaw.length > 0 ? summaryRaw : null,
-      },
-      ctx,
-      user,
-    });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+export const setManualWeatherAction = authActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+      tempMinC: z.number().nullable().optional(),
+      tempMaxC: z.number().nullable().optional(),
+      precipitationMm: z.number().nullable().optional(),
+      windMaxKmh: z.number().nullable().optional(),
+      summary: z.string().nullable().optional(),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await setManualWeather({
+        reportId: parsedInput.reportId,
+        input: {
+          tempMinC: parsedInput.tempMinC ?? null,
+          tempMaxC: parsedInput.tempMaxC ?? null,
+          precipitationMm: parsedInput.precipitationMm ?? null,
+          windMaxKmh: parsedInput.windMaxKmh ?? null,
+          summary: parsedInput.summary ?? null,
+        },
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění nastavit počasí.");
+      }
+      if (err instanceof ReportLockedError) {
+        returnServerError("Záznam je uzamčen.");
+      }
+      throw err;
+    }
+  });
 
 /** Soft-delete a photo (BOSS-only on unlocked reports). */
-export async function deletePhotoAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const photoId = String(data.get("photoId") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!photoId) return;
-
-  try {
-    const ctx = await getAuditContext();
-    await softDeletePhoto({ photoId, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+export const deletePhotoAction = bossActionClient
+  .schema(
+    z.object({
+      photoId: z.string().min(1),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await softDeletePhoto({
+        photoId: parsedInput.photoId,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění odstranit fotku.");
+      }
+      throw err;
+    }
+  });
 
 /** Sign + lock a daily report (BOSS only). Idempotent at the service level. */
-export async function signReportAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!reportId) return;
-
-  try {
-    const ctx = await getAuditContext();
-    await signReport({ reportId, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+export const signReportAction = bossActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await signReport({
+        reportId: parsedInput.reportId,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění podepsat záznam.");
+      }
+      throw err;
+    }
+  });
 
 /** Append an addendum to a signed report (BOSS / WORKER members). */
-export async function addAddendumAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const text = String(data.get("text") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!reportId || text.trim().length === 0) return;
+export const addAddendumAction = authActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      text: z.string().trim().min(1, "Text dodatku je povinný."),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await addAddendum({
+        reportId: parsedInput.reportId,
+        text: parsedInput.text,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění přidat dodatek.");
+      }
+      throw err;
+    }
+  });
 
-  try {
-    const ctx = await getAuditContext();
-    await addAddendum({ reportId, text, ctx, user });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
+/** Delete (soft-delete) a visit. */
+export const deleteVisitAction = authActionClient
+  .schema(
+    z.object({
+      id: z.string().min(1),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await deleteVisit({ id: parsedInput.id, user: ctx.user, ctx: ctx.auditContext });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění smazat návštěvu.");
+      }
+      throw err;
+    }
+  });
 
-// ---------------------------------------------------------------------------
-// Visits / inspections (§ 6 vyhlášky 499/2006)
-// ---------------------------------------------------------------------------
-
-import {
-  ProjectAccessDeniedError as VisitProjectAccessError,
-  ReportLockedError as VisitReportLockedError,
-  VisitNotFoundError,
-  createVisit,
-  deleteVisit,
-} from "@/server/services/visits";
-
-export interface VisitFormState {
-  status: "ok" | "field-error" | "forbidden" | "locked" | "error";
-  fieldErrors?: Record<string, string>;
-  message?: string;
-}
+/** Investor confirmation of report. */
+export const acknowledgeReportAction = authActionClient
+  .schema(
+    z.object({
+      reportId: z.string().min(1),
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      const { acknowledgeReport } = await import("@/server/services/reports");
+      await acknowledgeReport({
+        reportId: parsedInput.reportId,
+        ctx: ctx.auditContext,
+        user: ctx.user,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError) {
+        returnServerError("Nemáte oprávnění potvrdit seznámení.");
+      }
+      throw err;
+    }
+  });
 
 /**
  * Add a visit/inspection entry to a daily report.
- *
- * Signature returns state (used by useActionState in VisitsPanel) instead
- * of just void — visits have non-trivial validation (datetime parse,
- * enum check) where we want field-level feedback.
  */
-export async function addVisitAction(
-  projectId: string,
-  dateStr: string,
-  _prev: VisitFormState | undefined,
-  data: FormData,
-): Promise<VisitFormState> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-
-  // visitedAt přichází ve formátu "YYYY-MM-DDTHH:MM" (datetime-local input).
-  // Pokud chybí, vyrobíme z aktuálního času; pokud je validní, použij ho.
-  const visitedAtRaw = String(data.get("visitedAt") ?? "").trim();
-  const visitedAt = visitedAtRaw.length > 0 ? new Date(visitedAtRaw) : new Date();
-
-  // Visitor role validation se delegateuje na Zod uvnitř createVisit
-  // — proto typujeme jen jako string a service ho zkontroluje.
-  const payload: Record<string, unknown> = {
-    reportId,
-    visitorName: String(data.get("visitorName") ?? ""),
-    visitorRole: String(data.get("visitorRole") ?? ""),
-    organization: String(data.get("organization") ?? ""),
-    visitedAt,
-    purpose: String(data.get("purpose") ?? ""),
-    notes: String(data.get("notes") ?? ""),
-  };
-
-  try {
-    const ctx = await getAuditContext();
-    await createVisit({
-      input: payload as Parameters<typeof createVisit>[0]["input"],
-      user,
-      ctx,
-    });
-  } catch (err) {
-    if (err instanceof ForbiddenError) return { status: "forbidden" };
-    if (err instanceof VisitReportLockedError) return { status: "locked" };
-    if (err instanceof VisitProjectAccessError) return { status: "forbidden" };
-    if (err instanceof VisitNotFoundError) {
-      return { status: "error", message: "Záznam neexistuje." };
-    }
-    if (err instanceof Error && err.name === "ZodError") {
-      // Zod 4 ukládá issues v err.issues; pro jistotu fallback parse.
-      const issues =
-        "issues" in err && Array.isArray((err as { issues: unknown }).issues)
-          ? (err as { issues: { path: PropertyKey[]; message: string }[] }).issues
-          : (JSON.parse(err.message) as { path: PropertyKey[]; message: string }[]);
-      const fieldErrors: Record<string, string> = {};
-      for (const issue of issues) {
-        const field = issue.path[0];
-        const key = typeof field === "string" ? field : "visitorName";
-        if (!fieldErrors[key]) fieldErrors[key] = issue.message;
+export const addVisitAction = authActionClient
+  .schema(
+    visitCreateSchema.extend({
+      projectId: z.string().min(1),
+      date: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await createVisit({
+        input: {
+          reportId: parsedInput.reportId,
+          visitorName: parsedInput.visitorName,
+          visitorRole: parsedInput.visitorRole,
+          organization: parsedInput.organization,
+          visitedAt: parsedInput.visitedAt,
+          purpose: parsedInput.purpose,
+          notes: parsedInput.notes,
+        },
+        user: ctx.user,
+        ctx: ctx.auditContext,
+      });
+      revalidatePath(`/projects/${parsedInput.projectId}/reports/${parsedInput.date}`);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ForbiddenError || err instanceof VisitProjectAccessError) {
+        returnServerError("Nemáte oprávnění zapsat návštěvu.");
       }
-      return { status: "field-error", fieldErrors };
+      if (err instanceof VisitReportLockedError) {
+        returnServerError("Záznam je podepsaný a uzamčený — návštěva musí jít přes dodatek.");
+      }
+      if (err instanceof VisitNotFoundError) {
+        returnServerError("Záznam neexistuje.");
+      }
+      returnServerError("Uložení návštěvy se nezdařilo.");
     }
-    return { status: "error", message: "Uložení návštěvy se nezdařilo." };
-  }
-
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-  return { status: "ok" };
-}
-
-/** Delete (soft-delete) a visit. */
-export async function deleteVisitAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const id = String(data.get("id") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!id) return;
-
-  try {
-    const ctx = await getAuditContext();
-    await deleteVisit({ id, user, ctx });
-  } catch {
-    return;
-  }
-  revalidatePath(`/projects/${projectId}/reports/${dateStr}`);
-}
-
-export async function acknowledgeReportAction(data: FormData): Promise<void> {
-  const user = await requireUser();
-  const reportId = String(data.get("reportId") ?? "");
-  const projectId = String(data.get("projectId") ?? "");
-  const dateStr = String(data.get("date") ?? "");
-  if (!reportId) return;
-
-  try {
-    const ctx = await getAuditContext();
-    const { acknowledgeReport } = await import("@/server/services/reports");
-    await acknowledgeReport({ reportId, ctx, user });
-  } catch (err) {
-    console.error(err);
-    return;
-  }
-  revalidatePath(/projects/ + projectId + /reports/ + dateStr);
-}
+  });

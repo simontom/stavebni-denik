@@ -101,4 +101,15 @@ describe("Safe Action Clients", () => {
     const res = await action({});
     expect(res?.serverError).toBe("Při zpracování požadavku došlo k chybě.");
   });
+
+  it("handles schema validation errors gracefully", async () => {
+    const action = actionClient
+      .schema(z.object({ email: z.string().email(), age: z.number().min(18) }))
+      .action(async ({ parsedInput }) => parsedInput);
+
+    const res = await action({ email: "invalid", age: 10 });
+    expect(res?.validationErrors).toBeDefined();
+    expect(res?.validationErrors?.email).toBeDefined();
+    expect(res?.validationErrors?.age).toBeDefined();
+  });
 });
