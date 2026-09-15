@@ -4,17 +4,17 @@ Tento dokument slouží jako backlog technického dluhu, nápadů na refactoring
 
 ## 💡 1. Refactoring (Codebase)
 
-- [ ] **Rozbití monolitických UI panelů**
+- [x] **Rozbití monolitických UI panelů**
   - _Kde:_ `HandoversPanel.tsx`, `AuthorizedPersonsPanel.tsx`
   - _Problém:_ Soubory začínají příliš bobtnat (přes 300 řádků). Spojují zobrazení tabulky, state management a modální okna.
   - _Řešení:_ Vyčlenit formulářové modaly (např. `<CreateHandoverModal />`, `<AddAuthorizedPersonModal />`) do samostatných souborů pro lepší čitelnost a znovupoužitelnost.
 
-- [ ] **Dekompozice PDF šablony**
+- [x] **Dekompozice PDF šablony**
   - _Kde:_ `print/project/[id]/page.tsx`
   - _Problém:_ Generování PDF sestává z obrovského JSX bloku, který míchá logiku deníku i hlaviček.
   - _Řešení:_ Rozdělit do menších, čistě prezentačních tiskových komponent (např. `<PrintCoverPage />`, `<PrintDailyRecord />`, `<PrintFooter />`), což usnadní přidávání případných dalších legislativních dokumentů v budoucnu.
 
-- [ ] **Striktní Error Handling & Types (Server Actions pomocí `next-safe-action`)**
+- [x] **Striktní Error Handling & Types (Server Actions pomocí `next-safe-action`)**
   - _Kde:_ Globálně v Server Actions a chytání chyb v UI komponentách.
   - _Problém:_ Nativní Server Actions postrádají type-safety pro návratové hodnoty, vyžadují manuální Zod validaci a `try/catch` bloky v každé akci. Vzniká tak redundantní boilerplate, zvláště pro ověřování přihlášeného uživatele.
   - _Řešení:_ Implementovat knihovnu `next-safe-action` v7+. Vytvořit globální `authActionClient` s middlewarem pro verifikaci uživatele, což zaručí konzistentní a plně typované API pro validace i ošetření chyb. Na frontendu pak pro volání akcí využít hook `useAction`.
