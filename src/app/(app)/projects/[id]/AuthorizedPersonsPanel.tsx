@@ -1,39 +1,21 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Loader2, Pencil, Plus, UserCheck, XCircle } from "lucide-react";
+import { Pencil, Plus, UserCheck, XCircle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/dates";
 
+import { revokeAuthorizedPersonAction } from "./actions";
+import { AddAuthorizedPersonDialog } from "./AddAuthorizedPersonDialog";
 import {
-  addAuthorizedPersonAction,
-  revokeAuthorizedPersonAction,
-  updateAuthorizedPersonAction,
-} from "./actions";
+  EditAuthorizedPersonDialog,
+  type AuthorizedPersonItem,
+} from "./EditAuthorizedPersonDialog";
 
-export interface AuthorizedPersonItem {
-  id: string;
-  name: string;
-  company?: string | null;
-  authorization?: string | null;
-  linkedUserId?: string | null;
-  revokedAt?: Date | string | null;
-  createdAt: Date | string;
-}
+export type { AuthorizedPersonItem };
 
 interface Props {
   projectId: string;
@@ -45,65 +27,7 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
   const [addOpen, setAddOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<AuthorizedPersonItem | null>(null);
 
-  const [name, setName] = useState("");
-  const [company, setCompany] = useState("");
-  const [authorization, setAuthorization] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
   const [isPending, startTransition] = useTransition();
-
-  function handleOpenAdd() {
-    setName("");
-    setCompany("");
-    setAuthorization("");
-    setError(null);
-    setAddOpen(true);
-  }
-
-  function handleOpenEdit(p: AuthorizedPersonItem) {
-    setEditingPerson(p);
-    setName(p.name);
-    setCompany(p.company ?? "");
-    setAuthorization(p.authorization ?? "");
-    setError(null);
-  }
-
-  function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const fd = new FormData();
-    fd.append("name", name);
-    fd.append("company", company);
-    fd.append("authorization", authorization);
-
-    startTransition(async () => {
-      const res = await addAuthorizedPersonAction(projectId, fd);
-      if (res.error) {
-        setError(res.error);
-      } else {
-        setAddOpen(false);
-      }
-    });
-  }
-
-  function handleUpdate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingPerson) return;
-    setError(null);
-    const fd = new FormData();
-    fd.append("name", name);
-    fd.append("company", company);
-    fd.append("authorization", authorization);
-
-    startTransition(async () => {
-      const res = await updateAuthorizedPersonAction(editingPerson.id, projectId, fd);
-      if (res.error) {
-        setError(res.error);
-      } else {
-        setEditingPerson(null);
-      }
-    });
-  }
 
   function handleRevoke(personId: string, personName: string) {
     if (
@@ -114,7 +38,7 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
       return;
     }
     startTransition(() => {
-      void revokeAuthorizedPersonAction(personId, projectId);
+      void revokeAuthorizedPersonAction({ personId, projectId });
     });
   }
 
@@ -128,75 +52,16 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
           </p>
         </div>
         {canManage && (
-          <Dialog open={addOpen} onOpenChange={setAddOpen}>
-            <DialogTrigger
-              render={
-                <Button size="sm" onClick={handleOpenAdd}>
-                  <Plus className="mr-1 size-4" aria-hidden /> Přidat osobu
-                </Button>
-              }
+          <>
+            <Button size="sm" onClick={() => setAddOpen(true)}>
+              <Plus className="mr-1 size-4" aria-hidden /> Přidat osobu
+            </Button>
+            <AddAuthorizedPersonDialog
+              projectId={projectId}
+              open={addOpen}
+              onOpenChange={setAddOpen}
             />
-            <DialogContent className="sm:max-w-md">
-              <form onSubmit={handleCreate} className="space-y-4">
-                <DialogHeader>
-                  <DialogTitle>Přidat pověřenou osobu</DialogTitle>
-                  <DialogDescription>
-                    Zadejte údaje externí pověřené osoby (např. TDI, autorský dozor, geodet).
-                  </DialogDescription>
-                </DialogHeader>
-
-                {error && (
-                  <div className="text-destructive bg-destructive/10 rounded p-2 text-sm font-medium">
-                    {error}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="person-name">Jméno a příjmení</Label>
-                  <Input
-                    id="person-name"
-                    name="name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="např. Ing. Arch. Petr Černý"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="person-company">Firma / Organizace</Label>
-                  <Input
-                    id="person-company"
-                    name="company"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="např. Architekti s.r.o."
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="person-auth">Rozsah oprávnění</Label>
-                  <Input
-                    id="person-auth"
-                    name="authorization"
-                    value={authorization}
-                    onChange={(e) => setAuthorization(e.target.value)}
-                    placeholder="např. Autorský dozor projektanta"
-                  />
-                </div>
-
-                <DialogFooter className="pt-2">
-                  <Button type="button" variant="ghost" onClick={() => setAddOpen(false)}>
-                    Zrušit
-                  </Button>
-                  <Button type="submit" disabled={isPending}>
-                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-                    Uložit
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+          </>
         )}
       </CardHeader>
       <CardContent>
@@ -274,7 +139,7 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
                             type="button"
                             variant="ghost"
                             size="icon-sm"
-                            onClick={() => handleOpenEdit(p)}
+                            onClick={() => setEditingPerson(p)}
                             aria-label={`Upravit ${p.name}`}
                           >
                             <Pencil className="size-3.5" aria-hidden />
@@ -303,60 +168,12 @@ export function AuthorizedPersonsPanel({ projectId, persons, canManage }: Props)
         )}
 
         {/* Edit Dialog */}
-        {editingPerson && (
-          <Dialog open={Boolean(editingPerson)} onOpenChange={(v) => !v && setEditingPerson(null)}>
-            <DialogContent className="sm:max-w-md">
-              <form onSubmit={handleUpdate} className="space-y-4">
-                <DialogHeader>
-                  <DialogTitle>Upravit pověřenou osobu</DialogTitle>
-                </DialogHeader>
-
-                {error && (
-                  <div className="text-destructive bg-destructive/10 rounded p-2 text-sm font-medium">
-                    {error}
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-person-name">Jméno a příjmení</Label>
-                  <Input
-                    id="edit-person-name"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-person-company">Firma / Organizace</Label>
-                  <Input
-                    id="edit-person-company"
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-person-auth">Rozsah oprávnění</Label>
-                  <Input
-                    id="edit-person-auth"
-                    value={authorization}
-                    onChange={(e) => setAuthorization(e.target.value)}
-                  />
-                </div>
-
-                <DialogFooter className="pt-2">
-                  <Button type="button" variant="ghost" onClick={() => setEditingPerson(null)}>
-                    Zrušit
-                  </Button>
-                  <Button type="submit" disabled={isPending}>
-                    {isPending && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-                    Uložit změny
-                  </Button>
-                </DialogFooter>
-              </form>
-            </DialogContent>
-          </Dialog>
+        {canManage && (
+          <EditAuthorizedPersonDialog
+            projectId={projectId}
+            person={editingPerson}
+            onClose={() => setEditingPerson(null)}
+          />
         )}
       </CardContent>
     </Card>

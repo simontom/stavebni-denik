@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { ArrowRightCircle, Check, CheckCheck, Loader2, Plus, RotateCcw } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,17 +26,6 @@ interface ReportRef {
   date: string;
 }
 
-/** Hidden inputs identifying the report + revalidation target. */
-function HiddenRefs({ reportId, projectId, date }: ReportRef) {
-  return (
-    <>
-      <input type="hidden" name="reportId" value={reportId} />
-      <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="date" value={date} />
-    </>
-  );
-}
-
 interface RemarkFormProps extends ReportRef {
   /** True when the current user role may sign an "official" record. */
   showOfficialOption: boolean;
@@ -43,18 +34,33 @@ interface RemarkFormProps extends ReportRef {
 /** Add-a-remark form (members incl. GUEST/TDS). */
 export function RemarkForm({ showOfficialOption, ...refs }: RemarkFormProps) {
   const ref = useRef<HTMLFormElement>(null);
-  const [pending, startTransition] = useTransition();
-
-  function handle(fd: FormData) {
-    startTransition(async () => {
-      await addRemarkAction(fd);
+  const { execute, isPending } = useAction(addRemarkAction, {
+    onSuccess: () => {
       ref.current?.reset();
+      toast.success("Připomínka byla přidána.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Přidání připomínky se nezdařilo.");
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const text = String(fd.get("text") ?? "").trim();
+    const isOfficial = fd.get("isOfficial") === "true";
+    if (!text) return;
+    execute({
+      reportId: refs.reportId,
+      projectId: refs.projectId,
+      date: refs.date,
+      text,
+      isOfficial,
     });
   }
 
   return (
-    <form ref={ref} action={handle} className="grid gap-2">
-      <HiddenRefs {...refs} />
+    <form ref={ref} onSubmit={handleSubmit} className="grid gap-2">
       <Label htmlFor="remark-text" className="sr-only">
         Připomínka
       </Label>
@@ -79,8 +85,8 @@ export function RemarkForm({ showOfficialOption, ...refs }: RemarkFormProps) {
         ) : (
           <span />
         )}
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+        <Button type="submit" size="sm" disabled={isPending}>
+          {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
           Přidat připomínku
         </Button>
       </div>
@@ -119,27 +125,77 @@ export function MaterialsPanel({
   ...refs
 }: MaterialsPanelProps) {
   const ref = useRef<HTMLFormElement>(null);
-  const [pending, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [rolloverOpenFor, setRolloverOpenFor] = useState<string | null>(null);
   const [rolloverDate, setRolloverDate] = useState<string>(rolloverTargets[0]?.date ?? "");
   const [rolloverError, setRolloverError] = useState<string | null>(null);
 
-  function handleAdd(fd: FormData) {
-    startTransition(async () => {
-      await addMaterialAction(fd);
+  const { execute: executeAddMaterial, isPending: isAdding } = useAction(addMaterialAction, {
+    onSuccess: () => {
       ref.current?.reset();
+      toast.success("Požadavek na materiál byl přidán.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Přidání materiálu se nezdařilo.");
+    },
+  });
+
+  const { execute: executeToggleMaterial, isPending: isToggling } = useAction(
+    toggleMaterialAction,
+    {
+      onError: ({ error }) => {
+        toast.error(error.serverError ?? "Změna stavu položky se nezdařila.");
+      },
+    },
+  );
+
+  const { execute: executeBulkResolve, isPending: isBulkResolving } = useAction(
+    bulkResolveMaterialsAction,
+    {
+      onSuccess: () => {
+        clearSelection();
+        toast.success("Vybrané položky byly vyřízeny.");
+      },
+      onError: ({ error }) => {
+        toast.error(error.serverError ?? "Hromadné vyřízení se nezdařilo.");
+      },
+    },
+  );
+
+  const { execute: executeRollover, isPending: isRollingOver } = useAction(rolloverMaterialAction, {
+    onSuccess: () => {
+      setRolloverOpenFor(null);
+      setRolloverError(null);
+      toast.success("Položka byla přesunuta.");
+    },
+    onError: ({ error }) => {
+      setRolloverError(error.serverError ?? "Přesunutí se nezdařilo.");
+    },
+  });
+
+  const pending = isAdding || isToggling || isBulkResolving || isRollingOver;
+
+  function handleAdd(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const text = String(fd.get("text") ?? "").trim();
+    const neededBy = String(fd.get("neededBy") ?? "").trim() || undefined;
+    if (!text) return;
+    executeAddMaterial({
+      reportId: refs.reportId,
+      projectId: refs.projectId,
+      date: refs.date,
+      text,
+      neededBy,
     });
   }
 
   function toggle(id: string, resolved: boolean) {
-    const fd = new FormData();
-    fd.append("materialId", id);
-    fd.append("resolved", String(resolved));
-    fd.append("projectId", refs.projectId);
-    fd.append("date", refs.date);
-    startTransition(async () => {
-      await toggleMaterialAction(fd);
+    executeToggleMaterial({
+      materialId: id,
+      resolved,
+      projectId: refs.projectId,
+      date: refs.date,
     });
   }
 
@@ -162,13 +218,10 @@ export function MaterialsPanel({
 
   function bulkResolve() {
     if (selected.size === 0) return;
-    const fd = new FormData();
-    fd.append("projectId", refs.projectId);
-    fd.append("date", refs.date);
-    for (const id of selected) fd.append("materialId", id);
-    startTransition(async () => {
-      await bulkResolveMaterialsAction(fd);
-      clearSelection();
+    executeBulkResolve({
+      materialIds: Array.from(selected),
+      projectId: refs.projectId,
+      date: refs.date,
     });
   }
 
@@ -190,19 +243,11 @@ export function MaterialsPanel({
       setRolloverError("Vyberte cílový den.");
       return;
     }
-    const fd = new FormData();
-    fd.append("materialId", id);
-    fd.append("targetDate", rolloverDate);
-    fd.append("projectId", refs.projectId);
-    fd.append("date", refs.date);
-    startTransition(async () => {
-      const result = await rolloverMaterialAction(undefined, fd);
-      if (result.status === "ok") {
-        setRolloverOpenFor(null);
-        setRolloverError(null);
-      } else if (result.status === "error") {
-        setRolloverError(result.message);
-      }
+    executeRollover({
+      materialId: id,
+      targetDate: rolloverDate,
+      projectId: refs.projectId,
+      date: refs.date,
     });
   }
 
@@ -376,10 +421,9 @@ export function MaterialsPanel({
       {canAdd && (
         <form
           ref={ref}
-          action={handleAdd}
+          onSubmit={handleAdd}
           className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-end"
         >
-          <HiddenRefs {...refs} />
           <div className="grid gap-1.5">
             <Label htmlFor="material-text" className="sr-only">
               Materiál
@@ -417,17 +461,39 @@ interface ManualWeatherFormProps extends ReportRef {
 
 /** Manual weather entry shown only when the auto fetch was unavailable. */
 export function ManualWeatherForm({ defaultSummary, ...refs }: ManualWeatherFormProps) {
-  const [pending, startTransition] = useTransition();
+  const { execute, isPending } = useAction(setManualWeatherAction, {
+    onSuccess: () => {
+      toast.success("Počasí bylo uloženo.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Uložení počasí se nezdařilo.");
+    },
+  });
 
-  function handle(fd: FormData) {
-    startTransition(async () => {
-      await setManualWeatherAction(fd);
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const num = (key: string): number | null => {
+      const v = String(fd.get(key) ?? "").trim();
+      if (v.length === 0) return null;
+      const n = Number(v.replace(",", "."));
+      return Number.isNaN(n) ? null : n;
+    };
+    const summaryRaw = String(fd.get("summary") ?? "").trim();
+    execute({
+      reportId: refs.reportId,
+      projectId: refs.projectId,
+      date: refs.date,
+      tempMinC: num("tempMinC"),
+      tempMaxC: num("tempMaxC"),
+      precipitationMm: num("precipitationMm"),
+      windMaxKmh: num("windMaxKmh"),
+      summary: summaryRaw.length > 0 ? summaryRaw : null,
     });
   }
 
   return (
-    <form action={handle} className="grid gap-3">
-      <HiddenRefs {...refs} />
+    <form onSubmit={handleSubmit} className="grid gap-3">
       <div className="grid gap-3 sm:grid-cols-4">
         <div className="grid gap-1.5">
           <Label htmlFor="tempMinC">Teplota min (°C)</Label>
@@ -456,8 +522,8 @@ export function ManualWeatherForm({ defaultSummary, ...refs }: ManualWeatherForm
         />
       </div>
       <div className="flex justify-end">
-        <Button type="submit" size="sm" variant="outline" disabled={pending}>
-          {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+        <Button type="submit" size="sm" variant="outline" disabled={isPending}>
+          {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
           Uložit počasí ručně
         </Button>
       </div>

@@ -74,11 +74,8 @@ function RemoveMemberButton({
     ) {
       return;
     }
-    const fd = new FormData();
-    fd.append("projectId", projectId);
-    fd.append("userId", userId);
     startTransition(() => {
-      void removeMemberAction(fd);
+      void removeMemberAction({ projectId, userId });
     });
   }
 
@@ -107,12 +104,8 @@ export function MembersPanel({ projectId, members, addableUsers, canManage }: Pr
 
   function handleAdd() {
     if (!userId) return;
-    const fd = new FormData();
-    fd.append("projectId", projectId);
-    fd.append("userId", userId);
-    fd.append("role", role);
     startTransition(() => {
-      void addMemberAction(fd);
+      void addMemberAction({ projectId, userId, role });
       setUserId("");
       setRole("WORKER");
     });

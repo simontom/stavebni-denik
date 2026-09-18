@@ -2,9 +2,21 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { getAuditContext } from "@/server/audit-context";
 import { requireBoss } from "@/server/rbac";
+import { bossActionClient } from "@/server/safe-action";
+import {
+  addExternalPerson,
+  revokePerson,
+  updatePerson,
+} from "@/server/services/authorized-persons";
+import {
+  authorizedPersonSchema,
+  createHandoverSchema,
+  projectMemberRoleSchema,
+} from "@/server/services/legislative-validation";
 import {
   ProjectNotFoundError,
   SiteManagerInvalidError,
@@ -16,19 +28,9 @@ import {
   restoreProject,
   updateProject,
 } from "@/server/services/projects";
+import { createHandover, deleteHandover, signHandover } from "@/server/services/site-handovers";
 
 import type { ProjectFormState } from "../form-types";
-import {
-  authorizedPersonSchema,
-  createHandoverSchema,
-  projectMemberRoleSchema,
-} from "@/server/services/legislative-validation";
-import { createHandover, deleteHandover, signHandover } from "@/server/services/site-handovers";
-import {
-  addExternalPerson,
-  revokePerson,
-  updatePerson,
-} from "@/server/services/authorized-persons";
 
 const roleSchema = projectMemberRoleSchema;
 
@@ -76,152 +78,136 @@ export async function updateProjectAction(
   redirect(`/projects/${projectId}`);
 }
 
-export async function addMemberAction(data: FormData): Promise<void> {
-  const actor = await requireBoss();
-  const projectId = String(data.get("projectId") ?? "");
-  const userId = String(data.get("userId") ?? "");
-  const role = roleSchema.safeParse(data.get("role"));
-  if (!projectId || !userId || !role.success) return;
+export const addMemberAction = bossActionClient
+  .schema(
+    z.object({
+      projectId: z.string().min(1),
+      userId: z.string().min(1),
+      role: roleSchema,
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    try {
+      await addProjectMember(
+        parsedInput.projectId,
+        parsedInput.userId,
+        parsedInput.role,
+        ctx.auditContext,
+        ctx.user.id,
+      );
+    } catch {
+      // Invalid/inactive user or archived project — silently ignore
+    }
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { ok: true };
+  });
 
-  const ctx = await getAuditContext();
-  try {
-    await addProjectMember(projectId, userId, role.data, ctx, actor.id);
-  } catch {
-    // Invalid/inactive user or archived project — silently ignore; the
-    // candidate list only ever offers valid users so this is defensive.
-  }
-  revalidatePath(`/projects/${projectId}`);
-}
+export const removeMemberAction = bossActionClient
+  .schema(
+    z.object({
+      projectId: z.string().min(1),
+      userId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await removeProjectMember(parsedInput.projectId, parsedInput.userId, ctx.auditContext);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { ok: true };
+  });
 
-export async function removeMemberAction(data: FormData): Promise<void> {
-  await requireBoss();
-  const projectId = String(data.get("projectId") ?? "");
-  const userId = String(data.get("userId") ?? "");
-  if (!projectId || !userId) return;
+export const archiveProjectAction = bossActionClient
+  .schema(z.object({ projectId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await archiveProject(parsedInput.projectId, ctx.auditContext);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    redirect("/projects");
+  });
 
-  const ctx = await getAuditContext();
-  await removeProjectMember(projectId, userId, ctx);
-  revalidatePath(`/projects/${projectId}`);
-}
+export const restoreProjectAction = bossActionClient
+  .schema(z.object({ projectId: z.string().min(1) }))
+  .action(async ({ parsedInput, ctx }) => {
+    await restoreProject(parsedInput.projectId, ctx.auditContext);
+    revalidatePath("/projects");
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    redirect(`/projects/${parsedInput.projectId}`);
+  });
 
-export async function archiveProjectAction(data: FormData): Promise<void> {
-  await requireBoss();
-  const projectId = String(data.get("projectId") ?? "");
-  if (!projectId) return;
+export const createHandoverAction = bossActionClient
+  .schema(
+    createHandoverSchema.extend({
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { projectId, ...handoverData } = parsedInput;
+    const result = await createHandover(projectId, ctx.user.id, handoverData);
+    revalidatePath(`/projects/${projectId}`);
+    return result;
+  });
 
-  const ctx = await getAuditContext();
-  try {
-    await archiveProject(projectId, ctx);
-  } catch {
-    return;
-  }
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${projectId}`);
-  redirect("/projects");
-}
+export const signHandoverAction = bossActionClient
+  .schema(
+    z.object({
+      handoverId: z.string().min(1),
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await signHandover(parsedInput.handoverId, ctx.user.id);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { ok: true };
+  });
 
-export async function restoreProjectAction(data: FormData): Promise<void> {
-  await requireBoss();
-  const projectId = String(data.get("projectId") ?? "");
-  if (!projectId) return;
+export const deleteHandoverAction = bossActionClient
+  .schema(
+    z.object({
+      handoverId: z.string().min(1),
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await deleteHandover(parsedInput.handoverId, ctx.user.id);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { ok: true };
+  });
 
-  const ctx = await getAuditContext();
-  try {
-    await restoreProject(projectId, ctx);
-  } catch {
-    return;
-  }
-  revalidatePath("/projects");
-  revalidatePath(`/projects/${projectId}`);
-  redirect(`/projects/${projectId}`);
-}
+export const addAuthorizedPersonAction = bossActionClient
+  .schema(
+    authorizedPersonSchema.extend({
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { projectId, ...personData } = parsedInput;
+    const result = await addExternalPerson({ projectId, ...personData }, ctx.auditContext);
+    revalidatePath(`/projects/${projectId}`);
+    return result;
+  });
 
-export async function createHandoverAction(
-  projectId: string,
-  data: FormData,
-): Promise<{ error?: string }> {
-  const actor = await requireBoss();
-  const raw = {
-    type: String(data.get("type") ?? ""),
-    date: String(data.get("date") ?? ""),
-    participants: String(data.get("participants") ?? ""),
-    meterStates: String(data.get("meterStates") ?? ""),
-    notes: String(data.get("notes") ?? ""),
-  };
+export const updateAuthorizedPersonAction = bossActionClient
+  .schema(
+    authorizedPersonSchema.extend({
+      personId: z.string().min(1),
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    const { personId, projectId, ...personData } = parsedInput;
+    const result = await updatePerson(personId, personData, ctx.auditContext);
+    revalidatePath(`/projects/${projectId}`);
+    return result;
+  });
 
-  const parsed = createHandoverSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
-  }
-
-  await createHandover(projectId, actor.id, parsed.data);
-  revalidatePath(`/projects/${projectId}`);
-  return {};
-}
-
-export async function signHandoverAction(handoverId: string, projectId: string): Promise<void> {
-  const actor = await requireBoss();
-  await signHandover(handoverId, actor.id);
-  revalidatePath(`/projects/${projectId}`);
-}
-
-export async function deleteHandoverAction(handoverId: string, projectId: string): Promise<void> {
-  const actor = await requireBoss();
-  await deleteHandover(handoverId, actor.id);
-  revalidatePath(`/projects/${projectId}`);
-}
-
-export async function addAuthorizedPersonAction(
-  projectId: string,
-  data: FormData,
-): Promise<{ error?: string }> {
-  await requireBoss();
-  const raw = {
-    name: String(data.get("name") ?? ""),
-    company: String(data.get("company") ?? ""),
-    authorization: String(data.get("authorization") ?? ""),
-  };
-
-  const parsed = authorizedPersonSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
-  }
-
-  const ctx = await getAuditContext();
-  await addExternalPerson({ projectId, ...parsed.data }, ctx);
-  revalidatePath(`/projects/${projectId}`);
-  return {};
-}
-
-export async function updateAuthorizedPersonAction(
-  personId: string,
-  projectId: string,
-  data: FormData,
-): Promise<{ error?: string }> {
-  await requireBoss();
-  const raw = {
-    name: String(data.get("name") ?? ""),
-    company: String(data.get("company") ?? ""),
-    authorization: String(data.get("authorization") ?? ""),
-  };
-
-  const parsed = authorizedPersonSchema.safeParse(raw);
-  if (!parsed.success) {
-    return { error: parsed.error.issues[0]?.message ?? "Neplatná data" };
-  }
-
-  const ctx = await getAuditContext();
-  await updatePerson(personId, parsed.data, ctx);
-  revalidatePath(`/projects/${projectId}`);
-  return {};
-}
-
-export async function revokeAuthorizedPersonAction(
-  personId: string,
-  projectId: string,
-): Promise<void> {
-  await requireBoss();
-  const ctx = await getAuditContext();
-  await revokePerson(personId, ctx);
-  revalidatePath(`/projects/${projectId}`);
-}
+export const revokeAuthorizedPersonAction = bossActionClient
+  .schema(
+    z.object({
+      personId: z.string().min(1),
+      projectId: z.string().min(1),
+    }),
+  )
+  .action(async ({ parsedInput, ctx }) => {
+    await revokePerson(parsedInput.personId, ctx.auditContext);
+    revalidatePath(`/projects/${parsedInput.projectId}`);
+    return { ok: true };
+  });

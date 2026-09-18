@@ -59,7 +59,12 @@ export default async function NotificationsPage({ searchParams }: PageProps) {
               {unreadOnly ? "Zobrazit vše" : "Pouze nepřečtené"}
             </a>
             {unreadCount > 0 && (
-              <form action={markAllNotificationsReadAction}>
+              <form
+                action={async () => {
+                  "use server";
+                  await markAllNotificationsReadAction();
+                }}
+              >
                 <Button type="submit" variant="outline" size="sm">
                   <CheckCheck className="size-4" aria-hidden /> Přečíst vše ({unreadCount})
                 </Button>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
 import { Loader2, Trash2 } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 
@@ -22,18 +23,19 @@ interface Props {
  * `services/photos.ts`).
  */
 export function DeletePhotoButton({ photoId, projectId, date, caption }: Props) {
-  const [pending, startTransition] = useTransition();
+  const { execute, isPending } = useAction(deletePhotoAction, {
+    onSuccess: () => {
+      toast.success("Fotka byla odstraněna.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Odstranění fotky se nezdařilo.");
+    },
+  });
 
   function handle() {
     const ok = window.confirm(`Opravdu odstranit fotku ${caption}?`);
     if (!ok) return;
-    const fd = new FormData();
-    fd.append("photoId", photoId);
-    fd.append("projectId", projectId);
-    fd.append("date", date);
-    startTransition(async () => {
-      await deletePhotoAction(fd);
-    });
+    execute({ photoId, projectId, date });
   }
 
   return (
@@ -41,11 +43,11 @@ export function DeletePhotoButton({ photoId, projectId, date, caption }: Props) 
       type="button"
       variant="destructive"
       size="icon"
-      disabled={pending}
+      disabled={isPending}
       onClick={handle}
       aria-label="Odstranit fotku"
     >
-      {pending ? (
+      {isPending ? (
         <Loader2 className="size-4 animate-spin" aria-hidden />
       ) : (
         <Trash2 className="size-4" aria-hidden />

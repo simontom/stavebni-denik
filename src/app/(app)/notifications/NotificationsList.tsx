@@ -40,7 +40,7 @@ export function NotificationsList({ items }: Props) {
 
   function activate(item: NotificationListItem) {
     startTransition(async () => {
-      if (!item.readAt) await markNotificationReadAction(item.id);
+      if (!item.readAt) await markNotificationReadAction({ notificationId: item.id });
       if (item.href) router.push(item.href);
       else router.refresh();
     });
@@ -50,7 +50,7 @@ export function NotificationsList({ items }: Props) {
     e.preventDefault();
     e.stopPropagation();
     startTransition(async () => {
-      await deleteNotificationAction(id);
+      await deleteNotificationAction({ notificationId: id });
     });
   }
 
@@ -91,7 +91,7 @@ export function NotificationsList({ items }: Props) {
                   size="sm"
                   onClick={() =>
                     startTransition(async () => {
-                      await markNotificationReadAction(n.id);
+                      await markNotificationReadAction({ notificationId: n.id });
                     })
                   }
                   disabled={pending}

@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
-import { requireUser } from "@/server/rbac";
+import { authActionClient } from "@/server/safe-action";
 import {
   deleteNotification,
   markAllNotificationsRead,
@@ -10,25 +11,32 @@ import {
 } from "@/server/services/notifications";
 
 /** Mark a single notification read. Idempotent. */
-export async function markNotificationReadAction(notificationId: string): Promise<void> {
-  const user = await requireUser();
-  await markNotificationRead({ notificationId, userId: user.id });
-  // Bell is in the layout; refreshing the layout requires the leaf
-  // path. Use a wildcard so any caller (dashboard, bell dropdown,
-  // /notifications page) sees the new count.
-  revalidatePath("/", "layout");
-}
+export const markNotificationReadAction = authActionClient
+  .schema(z.object({ notificationId: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await markNotificationRead({
+      notificationId: parsedInput.notificationId,
+      userId: ctx.user.id,
+    });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  });
 
 /** Mark every unread for the current user as read. */
-export async function markAllNotificationsReadAction(): Promise<void> {
-  const user = await requireUser();
-  await markAllNotificationsRead(user.id);
+export const markAllNotificationsReadAction = authActionClient.action(async ({ ctx }) => {
+  await markAllNotificationsRead(ctx.user.id);
   revalidatePath("/", "layout");
-}
+  return { ok: true };
+});
 
 /** Hard-delete a notification owned by the caller. */
-export async function deleteNotificationAction(notificationId: string): Promise<void> {
-  const user = await requireUser();
-  await deleteNotification({ notificationId, userId: user.id });
-  revalidatePath("/", "layout");
-}
+export const deleteNotificationAction = authActionClient
+  .schema(z.object({ notificationId: z.string() }))
+  .action(async ({ parsedInput, ctx }) => {
+    await deleteNotification({
+      notificationId: parsedInput.notificationId,
+      userId: ctx.user.id,
+    });
+    revalidatePath("/", "layout");
+    return { ok: true };
+  });

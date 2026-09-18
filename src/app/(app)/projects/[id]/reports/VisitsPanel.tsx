@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useRef } from "react";
 import { CalendarClock, Trash2, UserCheck } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/dates";
 import { VISITOR_ROLES } from "@/lib/visits-types";
 
-import { addVisitAction, deleteVisitAction, type VisitFormState } from "./actions";
+import { addVisitAction, deleteVisitAction } from "./actions";
 
 export interface VisitItem {
   id: string;
@@ -46,31 +47,63 @@ interface Props {
  *
  * Justification: vyhláška 499/2006 § 6 vyžaduje záznam návštěv a
  * kontrol (TDS, autorský dozor, investor, BOZP, stavební úřad).
- *
- * Note about useEffect + setState lint rule: handled via toast +
- * formRef.reset() instead of `setOpen` state — no setState in
- * useActionState consumer, so we don't trip the lint rule.
  */
 export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: Props) {
-  const action = addVisitAction.bind(null, projectId, dateStr);
-  const [state, formAction, isPending] = useActionState<VisitFormState | undefined, FormData>(
-    action,
-    undefined,
-  );
   const formRef = useRef<HTMLFormElement>(null);
-  const lastHandledRef = useRef<VisitFormState | undefined>(undefined);
 
-  // Po úspěšném submitu vyresetuj form + toast. Ref je čten v useEffect
-  // (po commitu DOM), takže react-hooks/refs neprohraje.
-  useEffect(() => {
-    if (state && state !== lastHandledRef.current) {
-      lastHandledRef.current = state;
-      if (state.status === "ok") {
-        formRef.current?.reset();
-        toast.success("Návštěva zaznamenána");
-      }
-    }
-  }, [state]);
+  const {
+    execute: executeAddVisit,
+    isPending: isAddingVisit,
+    result,
+  } = useAction(addVisitAction, {
+    onSuccess: () => {
+      formRef.current?.reset();
+      toast.success("Návštěva zaznamenána");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Uložení návštěvy se nezdařilo.");
+    },
+  });
+
+  const { execute: executeDeleteVisit, isPending: isDeletingVisit } = useAction(deleteVisitAction, {
+    onSuccess: () => {
+      toast.success("Návštěva byla odstraněna.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Smazání návštěvy se nezdařilo.");
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const visitorName = String(fd.get("visitorName") ?? "").trim();
+    const visitorRole = String(fd.get("visitorRole") ?? "") as (typeof VISITOR_ROLES)[number];
+    const organization = String(fd.get("organization") ?? "").trim() || undefined;
+    const visitedAt = String(fd.get("visitedAt") ?? "").trim() || undefined;
+    const purpose = String(fd.get("purpose") ?? "").trim();
+    const notes = String(fd.get("notes") ?? "").trim() || undefined;
+
+    executeAddVisit({
+      reportId,
+      projectId,
+      date: dateStr,
+      visitorName,
+      visitorRole,
+      organization,
+      visitedAt,
+      purpose,
+      notes,
+    });
+  }
+
+  function handleDelete(id: string) {
+    const ok = window.confirm("Opravdu smazat tuto návštěvu?");
+    if (!ok) return;
+    executeDeleteVisit({ id, projectId, date: dateStr });
+  }
+
+  const fieldErrors = result.validationErrors;
 
   return (
     <div className="grid gap-4">
@@ -103,14 +136,16 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
               <div className="flex items-center justify-between gap-2 pt-1">
                 <span className="text-muted-foreground text-xs">Zapsal {v.authorName}</span>
                 {!disabled && v.canDelete && (
-                  <form action={deleteVisitAction}>
-                    <input type="hidden" name="id" value={v.id} />
-                    <input type="hidden" name="projectId" value={projectId} />
-                    <input type="hidden" name="date" value={dateStr} />
-                    <Button type="submit" variant="ghost" size="sm" aria-label="Smazat návštěvu">
-                      <Trash2 className="size-4" aria-hidden />
-                    </Button>
-                  </form>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Smazat návštěvu"
+                    disabled={isDeletingVisit}
+                    onClick={() => handleDelete(v.id)}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </Button>
                 )}
               </div>
             </li>
@@ -122,11 +157,9 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
       {!disabled && (
         <form
           ref={formRef}
-          action={formAction}
+          onSubmit={handleSubmit}
           className="bg-muted/30 grid gap-3 rounded-md border p-3"
         >
-          <input type="hidden" name="reportId" value={reportId} />
-
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="grid gap-1">
               <Label htmlFor="visitorName">Jméno návštěvníka *</Label>
@@ -135,17 +168,15 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
                 name="visitorName"
                 required
                 maxLength={200}
-                aria-invalid={state?.fieldErrors?.visitorName ? true : undefined}
+                aria-invalid={!!fieldErrors?.visitorName?._errors?.[0]}
               />
-              {state?.fieldErrors?.visitorName && (
-                <p className="text-destructive text-xs">{state.fieldErrors.visitorName}</p>
+              {fieldErrors?.visitorName?._errors?.[0] && (
+                <p className="text-destructive text-xs">{fieldErrors.visitorName._errors[0]}</p>
               )}
             </div>
 
             <div className="grid gap-1">
               <Label htmlFor="visitorRole">Role *</Label>
-              {/* Native <select> — shadcn Select je overkill pro 8 položek
-                  a obchází nám problémy s base-ui na mobilech. */}
               <select
                 id="visitorRole"
                 name="visitorRole"
@@ -178,10 +209,10 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
                 name="visitedAt"
                 type="datetime-local"
                 required
-                aria-invalid={state?.fieldErrors?.visitedAt ? true : undefined}
+                aria-invalid={!!fieldErrors?.visitedAt?._errors?.[0]}
               />
-              {state?.fieldErrors?.visitedAt && (
-                <p className="text-destructive text-xs">{state.fieldErrors.visitedAt}</p>
+              {fieldErrors?.visitedAt?._errors?.[0] && (
+                <p className="text-destructive text-xs">{fieldErrors.visitedAt._errors[0]}</p>
               )}
             </div>
           </div>
@@ -195,10 +226,10 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
               maxLength={5000}
               rows={2}
               placeholder="např. Kontrola provedení izolace spodní stavby."
-              aria-invalid={state?.fieldErrors?.purpose ? true : undefined}
+              aria-invalid={!!fieldErrors?.purpose?._errors?.[0]}
             />
-            {state?.fieldErrors?.purpose && (
-              <p className="text-destructive text-xs">{state.fieldErrors.purpose}</p>
+            {fieldErrors?.purpose?._errors?.[0] && (
+              <p className="text-destructive text-xs">{fieldErrors.purpose._errors[0]}</p>
             )}
           </div>
 
@@ -213,20 +244,12 @@ export function VisitsPanel({ projectId, dateStr, reportId, items, disabled }: P
             />
           </div>
 
-          {state?.status === "error" && <p className="text-destructive text-sm">{state.message}</p>}
-          {state?.status === "forbidden" && (
-            <p className="text-destructive text-sm">Nemáte oprávnění zapsat návštěvu.</p>
-          )}
-          {state?.status === "locked" && (
-            <p className="text-destructive text-sm">
-              Záznam je podepsaný a uzamčený — návštěva musí jít přes dodatek.
-            </p>
-          )}
+          {result.serverError && <p className="text-destructive text-sm">{result.serverError}</p>}
 
           <div className="flex items-center justify-end">
-            <Button type="submit" disabled={isPending}>
+            <Button type="submit" disabled={isAddingVisit}>
               <UserCheck className="size-4" aria-hidden />
-              {isPending ? "Ukládám..." : "Přidat návštěvu"}
+              {isAddingVisit ? "Ukládám..." : "Přidat návštěvu"}
             </Button>
           </div>
         </form>

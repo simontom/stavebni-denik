@@ -1,7 +1,9 @@
 "use client";
 
-import { useRef, useTransition } from "react";
+import { useRef } from "react";
 import { Loader2 } from "lucide-react";
+import { useAction } from "next-safe-action/hooks";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -22,20 +24,26 @@ interface Props {
  */
 export function AddendumForm({ reportId, projectId, date }: Props) {
   const ref = useRef<HTMLFormElement>(null);
-  const [pending, startTransition] = useTransition();
-
-  function handle(fd: FormData) {
-    startTransition(async () => {
-      await addAddendumAction(fd);
+  const { execute, isPending } = useAction(addAddendumAction, {
+    onSuccess: () => {
       ref.current?.reset();
-    });
+      toast.success("Dodatek byl přidán.");
+    },
+    onError: ({ error }) => {
+      toast.error(error.serverError ?? "Přidání dodatku se nezdařilo.");
+    },
+  });
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const text = String(fd.get("text") ?? "").trim();
+    if (!text) return;
+    execute({ reportId, projectId, date, text });
   }
 
   return (
-    <form ref={ref} action={handle} className="grid gap-2">
-      <input type="hidden" name="reportId" value={reportId} />
-      <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="date" value={date} />
+    <form ref={ref} onSubmit={handleSubmit} className="grid gap-2">
       <Label htmlFor="addendum-text">Text dodatku</Label>
       <Textarea
         id="addendum-text"
@@ -45,8 +53,8 @@ export function AddendumForm({ reportId, projectId, date }: Props) {
         placeholder="Doplnění / oprava k podepsanému dni…"
       />
       <div className="flex justify-end">
-        <Button type="submit" size="sm" disabled={pending}>
-          {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+        <Button type="submit" size="sm" disabled={isPending}>
+          {isPending && <Loader2 className="size-4 animate-spin" aria-hidden />}
           Přidat dodatek
         </Button>
       </div>
