@@ -10,20 +10,20 @@ Pro deploy viz [`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ## Prerekvizity (oba OS)
 
-| Tool | Verze | Co dělá |
-|---|---|---|
-| **Node.js** | 24+ (LTS) | Next 16 runtime, sharp prebuilt binaries |
-| **pnpm** | 9+ | Package manager (lockfile commited) |
-| **Docker** (Compose) | 24+ | Lokální Postgres |
-| **Git** | 2.40+ | (s LF line endings — viz Windows sekce) |
+| Tool                 | Verze     | Co dělá                                  |
+| -------------------- | --------- | ---------------------------------------- |
+| **Node.js**          | 24+ (LTS) | Next 16 runtime, sharp prebuilt binaries |
+| **pnpm**             | 9+        | Package manager (lockfile commited)      |
+| **Docker** (Compose) | 24+       | Lokální Postgres                         |
+| **Git**              | 2.40+     | (s LF line endings — viz Windows sekce)  |
 
 Volitelně pro full testing:
 
-| Tool | Účel |
-|---|---|
-| Chromium / `pnpm exec playwright install chromium` | PDF render + E2E smoke |
-| `restic` (homebrew / scoop) | Manuální backup test |
-| `colima` (jen macOS, alternativa Docker Desktop) | Lehčí náhrada Docker Desktopu |
+| Tool                                               | Účel                          |
+| -------------------------------------------------- | ----------------------------- |
+| Chromium / `pnpm exec playwright install chromium` | PDF render + E2E smoke        |
+| `restic` (homebrew / scoop)                        | Manuální backup test          |
+| `colima` (jen macOS, alternativa Docker Desktop)   | Lehčí náhrada Docker Desktopu |
 
 ---
 
@@ -178,22 +178,22 @@ jediným příkazem — viz § 5.
 
 ## 4. Běžné dev tasks
 
-| Co potřebuju | Příkaz |
-|---|---|
-| Spustit dev server | `pnpm dev` |
-| **Mobile testing** (Turbopack dev na mobile nehydratuje) | `pnpm build && pnpm start` |
-| Postgres up / down | `docker compose up -d` / `docker compose down` |
-| Resetovat DB do prázdna | `pnpm exec prisma migrate reset` (drop + migrate + seed) |
-| Nová migrace | `pnpm exec prisma migrate dev --name xxx` |
-| Typecheck | `pnpm typecheck` |
-| Lint | `pnpm lint` |
-| Unit testy | `pnpm test` |
-| Integration testy (potřebují Docker) | `pnpm test:integration` |
-| E2E testy (Playwright) | `pnpm test:e2e` |
-| Production build (test reálné CSP) | `pnpm build` |
-| Production server (po build) | `pnpm start` |
-| Ověření audit chainu | `pnpm verify:audit` |
-| Disk ↔ DB reconcile fotek | `pnpm reconcile:photos` |
+| Co potřebuju                                             | Příkaz                                                   |
+| -------------------------------------------------------- | -------------------------------------------------------- |
+| Spustit dev server                                       | `pnpm dev`                                               |
+| **Mobile testing** (Turbopack dev na mobile nehydratuje) | `pnpm build && pnpm start`                               |
+| Postgres up / down                                       | `docker compose up -d` / `docker compose down`           |
+| Resetovat DB do prázdna                                  | `pnpm exec prisma migrate reset` (drop + migrate + seed) |
+| Nová migrace                                             | `pnpm exec prisma migrate dev --name xxx`                |
+| Typecheck                                                | `pnpm typecheck`                                         |
+| Lint                                                     | `pnpm lint`                                              |
+| Unit testy                                               | `pnpm test`                                              |
+| Integration testy (potřebují Docker)                     | `pnpm test:integration`                                  |
+| E2E testy (Playwright)                                   | `pnpm test:e2e`                                          |
+| Production build (test reálné CSP)                       | `pnpm build`                                             |
+| Production server (po build)                             | `pnpm start`                                             |
+| Ověření audit chainu                                     | `pnpm verify:audit`                                      |
+| Disk ↔ DB reconcile fotek                                | `pnpm reconcile:photos`                                  |
 
 ### Integration testy (Postgres přes Testcontainers)
 
@@ -219,14 +219,14 @@ pnpm test:integration
 Pro pohodlí jsou v repu skripty co automatizují běžné cesty. Mají
 verzi pro **shell (`.sh`)** i **PowerShell (`.ps1`)**.
 
-| Skript | Co dělá |
-|---|---|
-| `setup` | Fresh setup: nainstaluje deps, vytvoří `.env` z template, spustí Postgres, migrace, seed. Idempotentní (přeskakuje hotové kroky). |
-| `reset-db` | Stop Postgres → drop volume → restart → migrate → seed (= čistý stav). |
-| `up` | Postgres up (compose) + Prisma generate + ověření env. |
-| `down` | Postgres down + cleanup hanging Node procesů. |
+| Skript       | Co dělá                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `setup`      | Fresh setup: nainstaluje deps, vytvoří `.env` z template, spustí Postgres, migrace, seed. Idempotentní (přeskakuje hotové kroky).                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `reset-db`   | Stop Postgres → drop volume → restart → migrate → seed (= čistý stav).                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `up`         | Postgres up (compose) + Prisma generate + ověření env.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `down`       | Postgres down + cleanup hanging Node procesů.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `prod-start` | Spustí production server na pozadí jako **OS-managed service** (= přežije všechno: zavření terminálu, agent restart, sleep/wake, crash → auto-restart). Pod kapotou: **macOS** = launchd LaunchAgent (`~/Library/LaunchAgents/`), **Linux** = systemd user unit (`~/.config/systemd/user/`, s nohup fallbackem pokud user-systemd chybí), **Windows** = Scheduled Task (alt. `-NoTask` = Start-Process Hidden). Build pokud chybí (nebo `--build` / `-Build`). Volitelně `--restart` / `-Restart` jen restartuje bez kopírování staticu. |
-| `prod-stop` | Zastaví service podle OS detekce. `--purge` / `-Purge` smaže i plist/unit/Task definici. |
+| `prod-stop`  | Zastaví service podle OS detekce. `--purge` / `-Purge` smaže i plist/unit/Task definici.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ### macOS / Linux / WSL:
 
@@ -258,15 +258,16 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ### Detail: jak prod-start na různých OS funguje
 
-| OS | Manager | Kde žije konfig | Auto-restart při crashi | Přežije logout | Status |
-|---|---|---|---|---|---|
-| **macOS** | launchd LaunchAgent | `~/Library/LaunchAgents/com.stavebnidenik.prod.plist` | ✅ (KeepAlive on Crashed) | ✅ | `launchctl print gui/$(id -u)/com.stavebnidenik.prod` |
-| **Linux (systemd)** | systemd user unit | `~/.config/systemd/user/stavebni-denik-prod.service` | ✅ (Restart=on-failure) | ⚠️ Vyžaduje `sudo loginctl enable-linger $USER` | `systemctl --user status stavebni-denik-prod` nebo `journalctl --user -u stavebni-denik-prod -f` |
-| **Linux (bez user-systemd)** | `nohup` fallback | `/tmp/stavebni-prod.pid` | ❌ | ❌ | `ps -p $(cat /tmp/stavebni-prod.pid)` |
-| **Windows** | Scheduled Task | `Get-ScheduledTask -TaskName StavebniDenikProd` | ✅ (RestartCount=3) | ⚠️ Spuštění jen at-logon | `Get-ScheduledTask -TaskName StavebniDenikProd | Get-ScheduledTaskInfo` |
-| **Windows (-NoTask)** | `Start-Process` Hidden | `$env:TEMP\stavebni-prod.pid` | ❌ | ❌ | `Get-Process -Id (Get-Content $env:TEMP\stavebni-prod.pid)` |
+| OS                           | Manager                | Kde žije konfig                                       | Auto-restart při crashi   | Přežije logout                                  | Status                                                                                           |
+| ---------------------------- | ---------------------- | ----------------------------------------------------- | ------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **macOS**                    | launchd LaunchAgent    | `~/Library/LaunchAgents/com.stavebnidenik.prod.plist` | ✅ (KeepAlive on Crashed) | ✅                                              | `launchctl print gui/$(id -u)/com.stavebnidenik.prod`                                            |
+| **Linux (systemd)**          | systemd user unit      | `~/.config/systemd/user/stavebni-denik-prod.service`  | ✅ (Restart=on-failure)   | ⚠️ Vyžaduje `sudo loginctl enable-linger $USER` | `systemctl --user status stavebni-denik-prod` nebo `journalctl --user -u stavebni-denik-prod -f` |
+| **Linux (bez user-systemd)** | `nohup` fallback       | `/tmp/stavebni-prod.pid`                              | ❌                        | ❌                                              | `ps -p $(cat /tmp/stavebni-prod.pid)`                                                            |
+| **Windows**                  | Scheduled Task         | `Get-ScheduledTask -TaskName StavebniDenikProd`       | ✅ (RestartCount=3)       | ⚠️ Spuštění jen at-logon                        | `Get-ScheduledTask -TaskName StavebniDenikProd                                                   | Get-ScheduledTaskInfo` |
+| **Windows (-NoTask)**        | `Start-Process` Hidden | `$env:TEMP\stavebni-prod.pid`                         | ❌                        | ❌                                              | `Get-Process -Id (Get-Content $env:TEMP\stavebni-prod.pid)`                                      |
 
 **Proč to není jednoduché `nohup pnpm start &` všude:**
+
 - **macOS** po cca 15 min likviduje "unmanaged" procesy přes App Nap /
   runningboardd (viděno v `log show`: _"removing inactive unmanaged
   service: nohup.<pid>"_). Jediné spolehlivé řešení = launchd registrace.
@@ -277,6 +278,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
   auto-restart vyžaduje Scheduled Task nebo Service.
 
 **`pnpm start` (= `next start`) místo `node .next/standalone/server.js`:**
+
 - next.config.ts má `output: "standalone"` (kvůli Docker imageu pro Fly).
 - V tomto módu `next start` vrací `_next/static/*` jako `text/plain`
   místo `application/javascript` → browser je odmítá s
@@ -326,8 +328,8 @@ má `output: "standalone"`, což znamená že `pnpm start` (= `next start`)
 sice nastartuje, ale **nedokáže správně servovat `_next/static/*`**
 (vrací `text/plain` místo `application/javascript`). Browser pak chunky
 odmítne kvůli `X-Content-Type-Options: nosniff`. V logu vedle toho
-najdeš warning *"next start does not work with output: standalone
-configuration"*.
+najdeš warning _"next start does not work with output: standalone
+configuration"_.
 
 **Řešení:** používej **`./scripts/dev/prod-start.sh`** (resp.
 `prod-start.ps1`) — ten spouští `node .next/standalone/server.js`,
@@ -361,7 +363,7 @@ pnpm start &` v terminálu:
 
 - **macOS** ho po cca 15 min zabije ("unmanaged service" cleanup —
   vidět v `log show --predicate 'eventMessage CONTAINS "removing
-  inactive unmanaged"'`).
+inactive unmanaged"'`).
 - **Linux** ho zabije až při sleep/shutdown, ale neumí auto-restart.
 - **Windows** ho zabije při zavření PowerShellu (Stop-Process všeho
   v session).
@@ -372,6 +374,7 @@ OS-managed service (launchd / systemd / Scheduled Task) — viz tabulka
 v § 5 výše.
 
 Status:
+
 - macOS: `launchctl print gui/$(id -u)/com.stavebnidenik.prod`
 - Linux: `systemctl --user status stavebni-denik-prod`
 - Windows: `Get-ScheduledTask -TaskName StavebniDenikProd`
@@ -404,6 +407,12 @@ Typy: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `perf`,
 `build`.
 
 Scope (volitelný): typicky modul (`audit`, `photos`, `auth`, …).
+
+### Git workflow — striktně přes Pull / Merge Requesty
+
+- **Nikdy necommitovat a nepushovat přímo do `main`**: veškerý vývoj, opravy, aktualizace závislostí i dokumentace musí probíhat ve vlastní feature větvi (`feat/...`, `fix/...`, `chore/...`).
+- Změny se integrují do `main` výhradně přes **GitHub Pull Request / Merge Request**.
+- Před mergem musí projít veškeré CI testy (`typecheck`, `lint`, `test`, `build`).
 
 ---
 

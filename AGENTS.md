@@ -9,9 +9,17 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 <!-- END:nextjs-agent-rules -->
 
 # Security Invariants
+
 See [`docs/SECURITY.md`](docs/SECURITY.md) for details on image upload airlock validations (magic byte signatures, sharp re-encoding, 8MP/5MB caps).
 
+# Git Workflow & Pull Requests (Strict)
+
+- **Always use Pull Requests / Merge Requests**: NEVER commit or push directly to `main`.
+- All work (features, fixes, dependency updates, documentation) must be done on a dedicated branch (e.g. `feat/...`, `fix/...`, `chore/...`) and merged via a Pull Request against `main`.
+- Ensure all CI gates (`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`) pass before requesting review / merging.
+
 <!-- graft:start -->
+
 ## Graft — repo context graph
 
 This repo is indexed in `graft/`: small linked markdown nodes that explain each
