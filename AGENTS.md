@@ -18,14 +18,6 @@ See [`docs/SECURITY.md`](docs/SECURITY.md) for details on image upload airlock v
 - All work (features, fixes, dependency updates, documentation) must be done on a dedicated branch (e.g. `feat/...`, `fix/...`, `chore/...`) and merged via a Pull Request against `main`.
 - Ensure all CI gates (`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`) pass before requesting review / merging.
 
-# Dependency Invariants
-
-- **Playwright version in Dockerfile**: Whenever `playwright` or `@playwright/test` is updated in `package.json`, you **MUST** update the pinned Chromium installer in [`Dockerfile`](Dockerfile):
-  ```dockerfile
-  RUN ... npx -y playwright@<version> install chromium
-  ```
-  Playwright requires exact version parity between the npm library and the browser binary. A version discrepancy causes `playwright` to crash at runtime when generating PDFs (`/api/projects/[id]/pdf`) inside the production container.
-
 <!-- graft:start -->
 
 ## Graft — repo context graph

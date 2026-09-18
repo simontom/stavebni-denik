@@ -414,19 +414,6 @@ Scope (volitelný): typicky modul (`audit`, `photos`, `auth`, …).
 - Změny se integrují do `main` výhradně přes **GitHub Pull Request / Merge Request**.
 - Před mergem musí projít veškeré CI testy (`typecheck`, `lint`, `test`, `build`).
 
-### Aktualizace závislostí — Playwright invariant v Dockerfile
-
-Při povýšení knihovny `playwright` nebo `@playwright/test` v `package.json` je **nutné zároveň aktualizovat** i verzi Playwright CLI v produkčním [`Dockerfile`](../Dockerfile):
-
-```dockerfile
-# Dockerfile:
-RUN mkdir -p $PLAYWRIGHT_BROWSERS_PATH \
- && chmod -R a+rX $PLAYWRIGHT_BROWSERS_PATH \
- && npx -y playwright@<NOVA_VERZE> install chromium
-```
-
-Playwright striktně vyžaduje shodnou verzi npm balíčku a staženého browseru Chromium. Při neshodě verzí selže generování PDF (`/api/projects/[id]/pdf`) v produkčním kontejneru na runtime chybě browser launcheru.
-
 ---
 
 ## 8. Příště na Windows — co zkontrolovat
