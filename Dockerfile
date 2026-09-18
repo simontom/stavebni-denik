@@ -87,7 +87,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 RUN mkdir -p $PLAYWRIGHT_BROWSERS_PATH \
  && chmod -R a+rX $PLAYWRIGHT_BROWSERS_PATH \
- && npx -y playwright@1.61.1 install chromium
+ && npx -y playwright@1.63.0 install chromium
 
 # Run as non-root.
 RUN groupadd --system --gid 1001 nodejs \
