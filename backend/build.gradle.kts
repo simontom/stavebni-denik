@@ -1,7 +1,15 @@
+buildscript {
+    dependencies {
+        classpath("org.postgresql:postgresql:42.7.4")
+    }
+}
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     application
+    id("org.flywaydb.flyway") version "10.22.0"
+    id("nu.studer.jooq") version "9.0"
 }
 
 application {
@@ -60,4 +68,52 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:$testcontainersVersion")
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
     testImplementation("org.testcontainers:junit-jupiter:$testcontainersVersion")
+    
+    jooqGenerator("org.postgresql:postgresql:42.7.4")
+}
+
+flyway {
+    url = "jdbc:postgresql://localhost:5432/stavebni_denik"
+    user = "denik"
+    password = "denik_dev"
+    locations = arrayOf("filesystem:src/main/resources/db/migration")
+}
+
+jooq {
+    version.set(jooqVersion)
+    editions {
+        local.set(nu.studer.gradle.jooq.JooqEdition.OSS)
+    }
+    configurations {
+        create("main") {
+            jooqConfiguration.apply {
+                jdbc.apply {
+                    driver = "org.postgresql.Driver"
+                    url = "jdbc:postgresql://localhost:5432/stavebni_denik"
+                    user = "denik"
+                    password = "denik_dev"
+                }
+                generator.apply {
+                    name = "org.jooq.codegen.KotlinGenerator"
+                    database.apply {
+                        name = "org.jooq.meta.postgres.PostgresDatabase"
+                        inputSchema = "public"
+                    }
+                    generate.apply {
+                        isKotlinSetterJvmNameAnnotationsOnIsPrefix = true
+                        isPojosAsKotlinDataClasses = true
+                    }
+                    target.apply {
+                        packageName = "cz.stavebni.denik.jooq"
+                        directory = "build/generated-sources/jooq"
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Ensure flyway runs before jooq
+tasks.named("generateJooq") {
+    dependsOn("flywayMigrate")
 }
