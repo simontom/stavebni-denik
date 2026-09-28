@@ -363,17 +363,17 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### [x] Task 4.3: Report Service (CRUD + sign + acknowledge + addendum)
 
-### Task 4.4: Photo Service (upload + airlock + delete)
+### [x] Task 4.4: Photo Service (upload + airlock + delete)
 
 ### [x] Task 4.5: Weather Client (Open-Meteo)
 
-### Task 4.6: Notification Service
+### [x] Task 4.6: Notification Service
 
-### Task 4.7: Material Service (resolve + rollover)
+### [x] Task 4.7: Material Service (resolve + rollover)
 
-### Task 4.8: Visit Service
+### [x] Task 4.8: Visit Service
 
-### Task 4.9: Remark Service
+### [x] Task 4.9: Remark Service
 
 ### [x] Task 4.10: Site Handover Service
 
@@ -387,11 +387,11 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ## Phase 5: PDF Export
 
-### Task 5.1: Typst Template (stavebni_denik.typ)
+### [x] Task 5.1 (Done inline in service): Typst Template (stavebni_denik.typ)
 
 ### [x] Task 5.2: PdfExportService (Kotlin → JSON → Typst CLI)
 
-### Task 5.3: PDF Route with rate limiting
+### [x] Task 5.3: PDF Route with rate limiting
 
 ---
 
@@ -438,3 +438,4 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 ### Task 8.3: Final security review
 
 ### Task 8.4: Performance testing (1GB RAM validation)
+
