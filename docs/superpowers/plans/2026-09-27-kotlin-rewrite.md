@@ -357,15 +357,15 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ## Phase 4: Core Services
 
-### Task 4.1: User Service (CRUD + admin operations)
+### [x] Task 4.1: User Service (CRUD + admin operations)
 
-### Task 4.2: Project Service (CRUD + members + authorized persons)
+### [x] Task 4.2: Project Service (CRUD + members + authorized persons)
 
-### Task 4.3: Report Service (CRUD + sign + acknowledge + addendum)
+### [x] Task 4.3: Report Service (CRUD + sign + acknowledge + addendum)
 
 ### Task 4.4: Photo Service (upload + airlock + delete)
 
-### Task 4.5: Weather Client (Open-Meteo)
+### [x] Task 4.5: Weather Client (Open-Meteo)
 
 ### Task 4.6: Notification Service
 
@@ -375,13 +375,13 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### Task 4.9: Remark Service
 
-### Task 4.10: Site Handover Service
+### [x] Task 4.10: Site Handover Service
 
-### Task 4.11: Dashboard & Statistics Service
+### [x] Task 4.11: Dashboard & Statistics Service
 
-### Task 4.12: CSV Export Service
+### [x] Task 4.12: CSV Export Service
 
-### Task 4.13: Legislative Validation Service
+### [x] Task 4.13: Legislative Validation Service
 
 ---
 
@@ -389,7 +389,7 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### Task 5.1: Typst Template (stavebni_denik.typ)
 
-### Task 5.2: PdfExportService (Kotlin → JSON → Typst CLI)
+### [x] Task 5.2: PdfExportService (Kotlin → JSON → Typst CLI)
 
 ### Task 5.3: PDF Route with rate limiting
 
@@ -397,13 +397,13 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ## Phase 6: Frontend (React 19 + Vite)
 
-### Task 6.1: Vite + React project scaffolding
+### [x] Task 6.1: Vite + React project scaffolding
 
-### Task 6.2: Auth pages (login, change password)
+### [x] Task 6.2: Auth pages (login, change password)
 
 ### Task 6.3: Dashboard page
 
-### Task 6.4: Projects list + create/edit
+### [x] Task 6.4 (Started list): Projects list + create/edit
 
 ### Task 6.5: Project detail (reports calendar, members, authorized persons)
 
@@ -415,13 +415,13 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### Task 6.9: Admin: audit log viewer
 
-### Task 6.10: Notifications dropdown
+### [x] Task 6.10: Notifications dropdown
 
 ---
 
 ## Phase 7: Infrastructure
 
-### Task 7.1: Dockerfile (multi-stage build)
+### [x] Task 7.1: Dockerfile (multi-stage build)
 
 ### Task 7.2: fly.toml configuration
 

@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:18-alpine
+    image: postgres:17-alpine
     environment:
       POSTGRES_DB: stavebni_denik
       POSTGRES_USER: denik
@@ -12,3 +12,4 @@ services:
 
 volumes:
   pgdata:
+

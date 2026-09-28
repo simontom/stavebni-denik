@@ -1,6 +1,8 @@
 buildscript {
+    repositories { mavenCentral() }
     dependencies {
         classpath("org.postgresql:postgresql:42.7.4")
+        classpath("org.flywaydb:flyway-database-postgresql:10.22.0")
     }
 }
 
@@ -22,6 +24,8 @@ java {
         languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
+
+repositories { mavenCentral() }
 
 val ktorVersion = "3.1.1"
 val jooqVersion = "3.19.16"
@@ -82,9 +86,7 @@ flyway {
 
 jooq {
     version.set(jooqVersion)
-    editions {
-        local.set(nu.studer.gradle.jooq.JooqEdition.OSS)
-    }
+    edition.set(nu.studer.gradle.jooq.JooqEdition.OSS)
     configurations {
         create("main") {
             jooqConfiguration.apply {
@@ -118,4 +120,8 @@ jooq {
 tasks.named("generateJooq") {
     dependsOn("flywayMigrate")
 }
+
+
+
+
 

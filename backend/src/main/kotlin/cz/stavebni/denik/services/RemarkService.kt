@@ -32,7 +32,7 @@ object RemarkService {
             .where(DAILY_REPORTS.ID.eq(reportId))
             .fetchOne() ?: throw IllegalArgumentException("Report not found")
 
-        val projectId = report.value1()
+        val projectId = report.value1()!!
         val isLocked = report.value2() != null
 
         val isMember = tx.selectCount()
@@ -160,3 +160,4 @@ object RemarkService {
         }
     }
 }
+
