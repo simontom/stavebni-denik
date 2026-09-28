@@ -44,9 +44,8 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
         // Visits
         Action.VisitCreate -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR) && resource.isMember
         Action.VisitDelete -> {
-            if (!resource.isMember) return false
-            if (user.role == Role.BOSS) return true
-            if (user.role == Role.WORKER && resource.authorId == user.id) return true
+            if (user.role == Role.BOSS && resource.isMember) return true
+            if (user.role == Role.WORKER && resource.isMember && resource.authorId == user.id) return true
             false
         }
     }
@@ -58,11 +57,12 @@ fun assertCan(user: SessionUser, action: Action, resource: Resource = Resource()
     }
 }
 
+fun canAccessProject(user: SessionUser, isMember: Boolean): Boolean {
+    if (user.role == Role.BOSS && user.isAdmin) return true
+    return isMember
+}
+
+// Keep this strictly for prompt compliance if needed
 fun canAccessProject(role: Role, isMember: Boolean): Boolean {
-    // According to tests: BOSS/WORKER/INSPECTOR see member projects
-    // Wait, the test says: "canAccessProject: BOSS/WORKER/INSPECTOR see member projects, BOSS with isAdmin sees all"
-    // Wait, role enum alone doesn't know isAdmin. If I only get role and isMember, I can only return isMember.
-    // Let me check the signature from prompt: `fun canAccessProject(role: Role, isMember: Boolean): Boolean`
-    // If BOSS with isAdmin sees all, wait... I need to include isAdmin in the signature, or maybe it is handled elsewhere?
     return isMember
 }
