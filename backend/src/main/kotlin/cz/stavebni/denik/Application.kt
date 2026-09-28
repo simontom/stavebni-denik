@@ -7,6 +7,8 @@ import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import cz.stavebni.denik.routes.authRoutes
+import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.db.DatabaseFactory
 import kotlinx.serialization.json.Json
 
@@ -26,9 +28,14 @@ fun Application.module() {
         })
     }
 
+    configureSecurity()
+
+    authRoutes()
+
     routing {
         get("/api/health") {
             call.respond(mapOf("status" to "ok"))
         }
     }
 }
+
