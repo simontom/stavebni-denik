@@ -401,19 +401,19 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### [x] Task 6.2: Auth pages (login, change password)
 
-### Task 6.3: Dashboard page
+### [x] Task 6.3: Dashboard page
 
 ### [x] Task 6.4 (Started list): Projects list + create/edit
 
-### Task 6.5: Project detail (reports calendar, members, authorized persons)
+### [x] Task 6.5: Project detail (reports calendar, members, authorized persons)
 
-### Task 6.6: Daily report view + create/edit
+### [x] Task 6.6: Daily report view + create/edit
 
-### Task 6.7: Photo upload + gallery
+### [x] Task 6.7: Photo upload + gallery
 
-### Task 6.8: Admin: users management
+### [x] Task 6.8: Admin: users management
 
-### Task 6.9: Admin: audit log viewer
+### [x] Task 6.9: Admin: audit log viewer
 
 ### [x] Task 6.10: Notifications dropdown
 
@@ -438,4 +438,5 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 ### Task 8.3: Final security review
 
 ### Task 8.4: Performance testing (1GB RAM validation)
+
 
