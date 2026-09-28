@@ -23,7 +23,9 @@ data class CurrentWeather(
 )
 
 object WeatherService {
-    private val client = HttpClient(CIO) {
+    var baseUrl: String = System.getenv("OPEN_METEO_BASE_URL") ?: "https://api.open-meteo.com/v1/forecast"
+
+    var client: HttpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
@@ -31,7 +33,7 @@ object WeatherService {
 
     suspend fun fetchWeather(lat: Double, lon: Double): CurrentWeather? {
         return try {
-            val response: OpenMeteoResponse = client.get("https://api.open-meteo.com/v1/forecast") {
+            val response: OpenMeteoResponse = client.get(baseUrl) {
                 parameter("latitude", lat)
                 parameter("longitude", lon)
                 parameter("current_weather", true)

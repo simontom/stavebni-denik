@@ -67,3 +67,20 @@ next-env.d.ts
 /graft/
 
 .superpowers/
+
+# Gradle & Java builds
+.gradle/
+**/build/
+/gradle-8.10/
+jdk-21*/
+/pg/
+*.zip
+run-*.ps1
+
+# Backend uploads
+/backend/uploads/
+/backend/src/main/resources/db/codegen/
+
+# Teamwork metadata
+/.agents/
+

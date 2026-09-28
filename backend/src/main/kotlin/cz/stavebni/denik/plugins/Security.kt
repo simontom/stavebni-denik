@@ -42,12 +42,7 @@ fun Application.configureSecurity() {
             validate { credential ->
                 val jwt = credential.payload
                 val user = JwtService.decodeUser(jwt)
-                if (user != null) {
-                    // TODO: Could check session DB table here if password changed
-                    UserPrincipal(user)
-                } else {
-                    null
-                }
+                user
             }
 
             challenge { defaultScheme, realm ->
@@ -56,6 +51,5 @@ fun Application.configureSecurity() {
         }
     }
 }
-
 
 data class UserPrincipal(val user: SessionUser) : Principal

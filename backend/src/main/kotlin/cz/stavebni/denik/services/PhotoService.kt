@@ -17,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.OffsetDateTime
 import java.util.UUID
+import javax.imageio.ImageIO
 import kotlin.io.path.absolutePathString
 
 @Serializable
@@ -32,6 +33,41 @@ data class PhotoDto(
 )
 
 object PhotoService {
+    private const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5 MB
+    private const val MAX_PIXELS = 8_000_000L // 8 Megapixels
+
+    private fun isJpeg(bytes: ByteArray): Boolean {
+        if (bytes.size < 3) return false
+        return (bytes[0].toInt() and 0xFF == 0xFF) &&
+               (bytes[1].toInt() and 0xFF == 0xD8) &&
+               (bytes[2].toInt() and 0xFF == 0xFF)
+    }
+
+    private fun isPng(bytes: ByteArray): Boolean {
+        if (bytes.size < 8) return false
+        return (bytes[0].toInt() and 0xFF == 0x89) &&
+               (bytes[1].toInt() and 0xFF == 0x50) &&
+               (bytes[2].toInt() and 0xFF == 0x4E) &&
+               (bytes[3].toInt() and 0xFF == 0x47)
+    }
+
+    private fun isWebp(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        val isRiff = (bytes[0].toInt() and 0xFF == 0x52) &&
+                     (bytes[1].toInt() and 0xFF == 0x49) &&
+                     (bytes[2].toInt() and 0xFF == 0x46) &&
+                     (bytes[3].toInt() and 0xFF == 0x46)
+        val isWebp = (bytes[8].toInt() and 0xFF == 0x57) &&
+                     (bytes[9].toInt() and 0xFF == 0x45) &&
+                     (bytes[10].toInt() and 0xFF == 0x42) &&
+                     (bytes[11].toInt() and 0xFF == 0x50)
+        return isRiff && isWebp
+    }
+
+    private fun validateMagicBytes(bytes: ByteArray): Boolean {
+        return isJpeg(bytes) || isPng(bytes) || isWebp(bytes)
+    }
+
     suspend fun uploadPhoto(
         user: SessionUser,
         reportId: UUID,
@@ -43,6 +79,16 @@ object PhotoService {
             throw IllegalArgumentException("Invalid file format")
         }
 
+        // 1. Byte Size Check (max 5 MB)
+        if (fileBytes.size > MAX_UPLOAD_BYTES) {
+            throw IllegalArgumentException("File size exceeds 5MB limit")
+        }
+
+        // 2. Fast Magic Byte Check (JPEG, PNG, WebP)
+        if (!validateMagicBytes(fileBytes)) {
+            throw IllegalArgumentException("Invalid image format or magic bytes")
+        }
+
         val report = DatabaseFactory.dsl.select(DAILY_REPORTS.LOCKEDAT)
             .from(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId))
@@ -51,14 +97,29 @@ object PhotoService {
         val isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null
         
         assertCan(user, Action.PhotoUpload, Resource(isMember = true, isLocked = isLocked))
-        
-        val thumbStream = ByteArrayOutputStream()
+
+        // 3. Pixel Count Check (max 8 Megapixels)
+        val img = ImageIO.read(ByteArrayInputStream(fileBytes))
+            ?: throw IllegalArgumentException("Invalid or corrupted image data")
+        if (img.width.toLong() * img.height.toLong() > MAX_PIXELS) {
+            throw IllegalArgumentException("Image dimensions exceed 8MP limit")
+        }
+
+        // 4. Re-encoding & sanitization (Airlock: never save raw unvalidated bytes to disk)
+        val cleanOrigStream = ByteArrayOutputStream()
         Thumbnails.of(ByteArrayInputStream(fileBytes))
             .size(1920, 1080)
             .outputFormat("jpg")
+            .toOutputStream(cleanOrigStream)
+        val cleanOrigBytes = cleanOrigStream.toByteArray()
+
+        val thumbStream = ByteArrayOutputStream()
+        Thumbnails.of(ByteArrayInputStream(fileBytes))
+            .size(400, 300)
+            .outputFormat("jpg")
             .toOutputStream(thumbStream)
-        
-        val processedBytes = thumbStream.toByteArray()
+        val processedThumbBytes = thumbStream.toByteArray()
+
         val uploadDir = Paths.get("uploads/photos").apply { 
             if (!Files.exists(this)) Files.createDirectories(this)
         }
@@ -67,8 +128,9 @@ object PhotoService {
         val originalPath = uploadDir.resolve("${fileId}_orig.jpg")
         val thumbPath = uploadDir.resolve("${fileId}_thumb.jpg")
         
-        Files.write(originalPath, fileBytes)
-        Files.write(thumbPath, processedBytes)
+        // Write only sanitized re-encoded JPEG bytes
+        Files.write(originalPath, cleanOrigBytes)
+        Files.write(thumbPath, processedThumbBytes)
         
         return AuditService.auditedTransaction(
             actor = user,
@@ -76,14 +138,15 @@ object PhotoService {
             entityType = "photo",
             entityId = ""
         ) { tx ->
+            val photoId = UUID.randomUUID()
             val record = tx.insertInto(PHOTOS)
-                .set(PHOTOS.ID, org.jooq.impl.DSL.field("uuidv7()", UUID::class.java))
+                .set(PHOTOS.ID, photoId)
                 .set(PHOTOS.REPORTID, reportId)
                 .set(PHOTOS.PATHORIGINAL, originalPath.absolutePathString())
                 .set(PHOTOS.PATHTHUMB, thumbPath.absolutePathString())
-                .set(PHOTOS.WIDTH, 1920)
-                .set(PHOTOS.HEIGHT, 1080)
-                .set(PHOTOS.BYTES, processedBytes.size)
+                .set(PHOTOS.WIDTH, img.width.coerceAtMost(1920))
+                .set(PHOTOS.HEIGHT, img.height.coerceAtMost(1080))
+                .set(PHOTOS.BYTES, cleanOrigBytes.size)
                 .set(PHOTOS.UPLOADEDBYID, user.id)
                 .returning()
                 .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
@@ -149,4 +212,3 @@ object PhotoService {
             }
     }
 }
-

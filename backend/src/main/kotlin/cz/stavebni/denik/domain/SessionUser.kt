@@ -28,4 +28,4 @@ data class SessionUser(
     val isAdmin: Boolean,
     val mustChangePwd: Boolean,
     @Serializable(with = UUIDSerializer::class) val sessionId: UUID,
-)
+) : io.ktor.server.auth.Principal

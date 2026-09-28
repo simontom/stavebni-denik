@@ -7,7 +7,6 @@ import cz.stavebni.denik.jooq.tables.references.NOTIFICATIONS
 import kotlinx.serialization.Serializable
 import org.jooq.DSLContext
 import org.jooq.JSONB
-import org.jooq.impl.DSL
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
 import java.time.OffsetDateTime
@@ -36,7 +35,7 @@ object NotificationService {
         val payloadJson = JSONB.jsonb(json.encodeToString(payload))
         
         tx.insertInto(NOTIFICATIONS)
-            .set(NOTIFICATIONS.ID, DSL.field("uuidv7()", UUID::class.java))
+            .set(NOTIFICATIONS.ID, UUID.randomUUID())
             .set(NOTIFICATIONS.RECIPIENTID, recipientId)
             .set(NOTIFICATIONS.KIND, "GENERAL")
             .set(NOTIFICATIONS.PAYLOAD, payloadJson)

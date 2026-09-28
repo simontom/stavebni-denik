@@ -69,10 +69,12 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.5.12")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
+    testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.testcontainers:testcontainers:$testcontainersVersion")
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
     testImplementation("org.testcontainers:junit-jupiter:$testcontainersVersion")
+    testImplementation("org.wiremock:wiremock:3.10.0")
     
     jooqGenerator("org.postgresql:postgresql:42.7.4")
 }
@@ -119,6 +121,18 @@ jooq {
 // Ensure flyway runs before jooq
 tasks.named("generateJooq") {
     dependsOn("flywayMigrate")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    systemProperty("api.version", "1.44")
+    systemProperty("docker.api.version", "1.44")
+    environment("DOCKER_API_VERSION", "1.44")
+    environment("DOCKER_HOST", "npipe:////./pipe/dockerDesktopLinuxEngine")
+    testLogging {
+        events("passed", "skipped", "failed")
+        showStandardStreams = true
+    }
 }
 
 

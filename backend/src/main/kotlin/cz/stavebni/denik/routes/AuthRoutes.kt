@@ -9,12 +9,16 @@ import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import cz.stavebni.denik.domain.SessionUser
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 @Serializable
 data class LoginRequest(val nickname: String, val password: String)
+
+@Serializable
+data class LoginResponse(val status: String, val user: SessionUser)
 
 fun Application.authRoutes() {
     routing {
@@ -47,7 +51,7 @@ fun Application.authRoutes() {
                 secure = false // true in production
             )
 
-            call.respond(mapOf("status" to "ok", "user" to user))
+            call.respond(LoginResponse(status = "ok", user = user))
         }
 
         post("/api/auth/logout") {
