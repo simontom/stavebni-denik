@@ -1,76 +1,136 @@
 /**
- * E2E preparer — upsertne `e2e-admin` účet s deterministickým heslem
- * a smaže předchozí `e2e-worker`. Voláno přes execSync z Playwright
+ * E2E preparer — seeds test users with valid UUIDs into PostgreSQL
+ * and cleans up previous test workers. Called via execSync from Playwright
  * globalSetup.
  *
  * Run:
  *   pnpm exec tsx scripts/dev/e2e-prepare.ts
  */
-import { PrismaPg } from "@prisma/adapter-pg";
-
-import { PrismaClient } from "../../src/generated/prisma/client";
+import { Client } from "pg";
 import { hashPassword } from "../../src/lib/crypto";
 
-const ADMIN_NICKNAME = "e2e-admin";
-const ADMIN_PASSWORD = "test1234";
-const WORKER_NICKNAME = "e2e-worker";
-const INVESTOR_NICKNAME = "e2e-investor";
-const INVESTOR_PASSWORD = "test1234";
+export const ADMIN_NICKNAME = "e2e-admin";
+export const ADMIN_PASSWORD = "Password123!";
+export const WORKER_NICKNAME = "e2e-worker";
+export const INVESTOR_NICKNAME = "e2e-investor";
+export const INVESTOR_PASSWORD = "Password123!";
+
+export const ADMIN_UUID = "11111111-1111-1111-1111-111111111111";
+export const INVESTOR_UUID = "22222222-2222-2222-2222-222222222222";
+
+async function getPgClient(): Promise<Client> {
+  const envUrl = process.env.DATABASE_URL;
+  const urlsToTry: string[] = [];
+
+  if (envUrl) {
+    urlsToTry.push(envUrl);
+  }
+  urlsToTry.push("postgresql://denik:denik_dev@localhost:5432/stavebni_denik");
+  urlsToTry.push("postgresql://postgres:devpassword@localhost:5432/stavebni_denik");
+
+  let lastError: unknown = null;
+  for (const url of urlsToTry) {
+    const client = new Client({ connectionString: url });
+    try {
+      await client.connect();
+      return client;
+    } catch (err) {
+      lastError = err;
+      try {
+        await client.end();
+      } catch {
+        // ignore
+      }
+    }
+  }
+  throw lastError || new Error("Failed to connect to PostgreSQL");
+}
 
 async function main(): Promise<void> {
-  const url = process.env.DATABASE_URL;
-  if (!url) throw new Error("DATABASE_URL must be set");
-  const prisma = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url }),
-  });
+  const client = await getPgClient();
+
   try {
-    const passwordHash = await hashPassword(ADMIN_PASSWORD);
-    await prisma.user.upsert({
-      where: { nickname: ADMIN_NICKNAME },
-      create: {
+    const adminHash = await hashPassword(ADMIN_PASSWORD);
+    const investorHash = await hashPassword(INVESTOR_PASSWORD);
+
+    const usersToSeed = [
+      {
+        id: ADMIN_UUID,
         nickname: ADMIN_NICKNAME,
         displayName: "E2E Admin",
-        passwordHash,
+        passwordHash: adminHash,
         role: "BOSS",
         ckaitNumber: "0000000",
         isAdmin: true,
-        isActive: true,
-        mustChangePwd: false,
       },
-      update: {
-        passwordHash,
-        isAdmin: true,
-        isActive: true,
-        mustChangePwd: false,
-        deletedAt: null,
-      },
-    });
-    const investorHash = await hashPassword(INVESTOR_PASSWORD);
-    await prisma.user.upsert({
-      where: { nickname: INVESTOR_NICKNAME },
-      create: {
+      {
+        id: INVESTOR_UUID,
         nickname: INVESTOR_NICKNAME,
         displayName: "E2E Investor",
         passwordHash: investorHash,
         role: "INVESTOR",
+        ckaitNumber: null,
         isAdmin: false,
-        isActive: true,
-        mustChangePwd: false,
       },
-      update: {
-        passwordHash: investorHash,
-        role: "INVESTOR",
-        isActive: true,
-        mustChangePwd: false,
-        deletedAt: null,
+      {
+        id: "33333333-3333-3333-3333-333333333333",
+        nickname: "admin@stavebni-denik.cz",
+        displayName: "Admin Stavební Deník",
+        passwordHash: adminHash,
+        role: "BOSS",
+        ckaitNumber: "1111111",
+        isAdmin: true,
       },
-    });
-    await prisma.user.deleteMany({
-      where: { nickname: { in: [WORKER_NICKNAME] } },
-    });
-    console.log("[e2e-prepare] OK — admin & investor upsertnuti, worker cleanup");
+      {
+        id: "44444444-4444-4444-4444-444444444444",
+        nickname: "manager@stavebni-denik.cz",
+        displayName: "Manager Stavební Deník",
+        passwordHash: adminHash,
+        role: "BOSS",
+        ckaitNumber: "2222222",
+        isAdmin: false,
+      },
+      {
+        id: "55555555-5555-5555-5555-555555555555",
+        nickname: "worker@stavebni-denik.cz",
+        displayName: "Worker Stavební Deník",
+        passwordHash: adminHash,
+        role: "WORKER",
+        ckaitNumber: null,
+        isAdmin: false,
+      },
+    ];
+
+    for (const u of usersToSeed) {
+      await client.query(
+        `INSERT INTO users (
+          "id", "nickname", "displayName", "passwordHash", "role",
+          "ckaitNumber", "isAdmin", "isActive", "mustChangePwd",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          $1::uuid, $2, $3, $4, $5::"Role",
+          $6, $7, true, false,
+          NOW(), NOW()
+        ) ON CONFLICT ("nickname") DO UPDATE SET
+          "displayName" = EXCLUDED."displayName",
+          "passwordHash" = EXCLUDED."passwordHash",
+          "role" = EXCLUDED."role",
+          "ckaitNumber" = EXCLUDED."ckaitNumber",
+          "isAdmin" = EXCLUDED."isAdmin",
+          "isActive" = true,
+          "mustChangePwd" = false,
+          "deletedAt" = NULL,
+          "updatedAt" = NOW()`,
+        [u.id, u.nickname, u.displayName, u.passwordHash, u.role, u.ckaitNumber, u.isAdmin],
+      );
+    }
+
+    // Clean up temporary test worker accounts
+    await client.query(`DELETE FROM users WHERE "nickname" LIKE 'e2e-worker%' OR "nickname" = $1`, [WORKER_NICKNAME]);
+
+    console.log("[e2e-prepare] OK — seeded users with valid UUIDs into PostgreSQL");
   } finally {
-    await prisma.$disconnect();
+    await client.end();
   }
 }
 

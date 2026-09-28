@@ -12,23 +12,23 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up JDK 21
       uses: actions/setup-java@v4
       with:
         java-version: '21'
         distribution: 'temurin'
-        
+
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-        
-    - name: Build Backend
+
+    - name: Test & Build Backend
       run: |
-        cd backend
-        ./gradlew build -x test
-        
+        chmod +x gradlew
+        ./gradlew test build
+
     - name: Build Frontend
       run: |
         cd frontend

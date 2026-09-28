@@ -11,10 +11,10 @@ import path from "node:path";
  */
 
 export const ADMIN_NICKNAME = "e2e-admin";
-export const ADMIN_PASSWORD = "test1234";
+export const ADMIN_PASSWORD = "Password123!";
 export const WORKER_NICKNAME = "e2e-worker";
 export const INVESTOR_NICKNAME = "e2e-investor";
-export const INVESTOR_PASSWORD = "test1234";
+export const INVESTOR_PASSWORD = "Password123!";
 
 export default async function globalSetup(): Promise<void> {
   // Playwright globalSetup runs in plain Node (no Next.js env loader),
@@ -23,15 +23,12 @@ export default async function globalSetup(): Promise<void> {
     try {
       process.loadEnvFile(path.resolve(__dirname, "..", ".env"));
     } catch {
-      // .env optional — fall through to the error below
+      // .env optional — fall through to the fallback below
     }
   }
 
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error(
-      "DATABASE_URL must be set for E2E (docker compose up postgres + .env).",
-    );
+  if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL = "postgresql://denik:denik_dev@localhost:5432/stavebni_denik";
   }
   const root = path.resolve(__dirname, "..");
   execSync("pnpm exec tsx scripts/dev/e2e-prepare.ts", {

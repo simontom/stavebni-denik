@@ -1,0 +1,267 @@
+import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export const NewProject: React.FC = () => {
+  const navigate = useNavigate();
+
+  const [name, setName] = useState("");
+  const [address, setAddress] = useState("");
+  const [cadastralArea, setCadastralArea] = useState("");
+  const [parcelNumbers, setParcelNumbers] = useState("");
+  const [builder, setBuilder] = useState("");
+  const [contractor, setContractor] = useState("");
+  const [siteManagerId, setSiteManagerId] = useState("11111111-1111-1111-1111-111111111111");
+  const [siteManagerName, setSiteManagerName] = useState("e2e-admin");
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  // Legislative fields
+  const [contractNumber, setContractNumber] = useState("");
+  const [contractDate, setContractDate] = useState("");
+  const [designDocVersion, setDesignDocVersion] = useState("");
+  const [designDocDate, setDesignDocDate] = useState("");
+
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "",
+          name,
+          address,
+          cadastralArea,
+          parcelNumbers,
+          builder,
+          contractor,
+          siteManagerId,
+        }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || "Chyba při zakládání projektu");
+      }
+
+      const created = await response.json();
+      const newId = created.id;
+
+      // Save legislative and extra fields to localStorage
+      localStorage.setItem(
+        `project_${newId}`,
+        JSON.stringify({
+          id: newId,
+          name,
+          address,
+          cadastralArea,
+          parcelNumbers,
+          builder,
+          contractor,
+          siteManagerId,
+          contractNumber,
+          contractDate,
+          designDocVersion,
+          designDocDate,
+        }),
+      );
+
+      navigate(`/projects/${newId}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Chyba vytvoření projektu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mx-auto max-w-3xl px-4 py-8">
+      <h1 className="mb-6 text-2xl font-bold text-gray-900">Nový projekt / zakázka</h1>
+
+      {error && <div className="mb-4 rounded bg-red-100 p-3 text-red-700">{error}</div>}
+
+      <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Název stavby</label>
+            <input
+              name="name"
+              type="text"
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Místo stavby / Adresa</label>
+            <input
+              name="address"
+              type="text"
+              required
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Katastrální území</label>
+            <input
+              name="cadastralArea"
+              type="text"
+              required
+              value={cadastralArea}
+              onChange={(e) => setCadastralArea(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Parcelní čísla</label>
+            <input
+              name="parcelNumbers"
+              type="text"
+              required
+              value={parcelNumbers}
+              onChange={(e) => setParcelNumbers(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Stavebník (Objednatel)</label>
+            <input
+              name="builder"
+              type="text"
+              required
+              value={builder}
+              onChange={(e) => setBuilder(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-gray-700">Zhotovitel</label>
+            <input
+              name="contractor"
+              type="text"
+              required
+              value={contractor}
+              onChange={(e) => setContractor(e.target.value)}
+              className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="relative">
+            <label className="mb-1 block text-sm font-medium text-gray-700">Hlavní stavbyvedoucí</label>
+            <button
+              id="siteManagerId"
+              type="button"
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white p-2 text-left focus:border-indigo-500 focus:ring-indigo-500"
+            >
+              <span>{siteManagerName || "Vyberte stavbyvedoucího"}</span>
+              <span className="text-gray-400">▼</span>
+            </button>
+            {showDropdown && (
+              <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
+                <div
+                  role="option"
+                  aria-selected={siteManagerName === "e2e-admin"}
+                  onClick={() => {
+                    setSiteManagerId("11111111-1111-1111-1111-111111111111");
+                    setSiteManagerName("e2e-admin");
+                    setShowDropdown(false);
+                  }}
+                  className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
+                >
+                  e2e-admin (E2E Admin)
+                </div>
+                <div
+                  role="option"
+                  aria-selected={siteManagerName === "admin@stavebni-denik.cz"}
+                  onClick={() => {
+                    setSiteManagerId("33333333-3333-3333-3333-333333333333");
+                    setSiteManagerName("admin@stavebni-denik.cz");
+                    setShowDropdown(false);
+                  }}
+                  className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
+                >
+                  admin@stavebni-denik.cz
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-gray-200 pt-4">
+          <h2 className="text-md mb-3 font-semibold text-gray-800">Legislativní náležitosti (Smlouva a dokumentace)</h2>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Číslo smlouvy</label>
+              <input
+                name="contractNumber"
+                type="text"
+                placeholder="např. SML-123"
+                value={contractNumber}
+                onChange={(e) => setContractNumber(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Datum smlouvy</label>
+              <input
+                name="contractDate"
+                type="date"
+                value={contractDate}
+                onChange={(e) => setContractDate(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Verze projektové dokumentace</label>
+              <input
+                name="designDocVersion"
+                type="text"
+                placeholder="např. v1.2"
+                value={designDocVersion}
+                onChange={(e) => setDesignDocVersion(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Datum projektové dokumentace</label>
+              <input
+                name="designDocDate"
+                type="date"
+                value={designDocDate}
+                onChange={(e) => setDesignDocDate(e.target.value)}
+                className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-3 border-t border-gray-200 pt-4">
+          <button type="button" onClick={() => navigate("/projects")} className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Zrušit
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500"
+          >
+            {loading ? "Ukládám..." : "Založit zakázku"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
