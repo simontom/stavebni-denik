@@ -9,6 +9,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import cz.stavebni.denik.routes.authRoutes
 import cz.stavebni.denik.plugins.configureSecurity
+import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
 import kotlinx.serialization.json.Json
 
@@ -29,6 +30,7 @@ fun Application.module() {
     }
 
     configureSecurity()
+    configureStatusPages()
 
     authRoutes()
 
@@ -38,4 +40,5 @@ fun Application.module() {
         }
     }
 }
+
 
