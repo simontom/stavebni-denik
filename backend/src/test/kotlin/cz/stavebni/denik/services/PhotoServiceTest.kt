@@ -1,7 +1,9 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
+import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.Role
+import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
@@ -115,6 +117,68 @@ class PhotoServiceTest : BaseIntegrationTest() {
                 }
             }
             assertTrue(ex.message!!.contains("magic bytes"))
+        }
+    }
+
+    @Test
+    fun `uploadPhoto rejects SVG payload disguised as image`() {
+        runBlocking {
+            val boss = createTestUser(role = Role.BOSS)
+            val reportId = UUID.randomUUID()
+            val svgBytes = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>".toByteArray()
+
+            val ex = assertThrows<IllegalArgumentException> {
+                runBlocking {
+                    PhotoService.uploadPhoto(boss, reportId, svgBytes, "image/svg+xml", "malicious.svg")
+                }
+            }
+            assertTrue(ex.message!!.contains("magic bytes"))
+        }
+    }
+
+    @Test
+    fun `uploadPhoto rejects image exceeding 8MP dimension limit`() {
+        runBlocking {
+            val boss = createTestUser(role = Role.BOSS)
+            val project = ProjectService.createProject(boss, ProjectDto(
+                id = "", name = "Photo 8MP Project", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            ))
+            val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28")
+            val reportId = UUID.fromString(report.id)
+
+            // 4000 x 2500 = 10,000,000 pixels (> 8MP)
+            val hugeImageBytes = createTestImageBytes(4000, 2500, "png")
+
+            val ex = assertThrows<IllegalArgumentException> {
+                runBlocking {
+                    PhotoService.uploadPhoto(boss, reportId, hugeImageBytes, "image/png", "huge_dims.png")
+                }
+            }
+            assertTrue(ex.message!!.contains("8MP"))
+        }
+    }
+
+    @Test
+    fun `uploadPhoto rejects photo upload on locked report`() {
+        runBlocking {
+            val boss = createTestUser(role = Role.BOSS)
+            val project = ProjectService.createProject(boss, ProjectDto(
+                id = "", name = "Locked Report Project", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            ))
+            val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28")
+            val reportId = UUID.fromString(report.id)
+
+            // Sign / lock report
+            DailyReportService.lockReport(boss, reportId)
+
+            val imageBytes = createTestImageBytes(200, 150, "png")
+            assertThrows<ForbiddenException> {
+                runBlocking {
+                    PhotoService.uploadPhoto(boss, reportId, imageBytes, "image/png", "photo_after_lock.png")
+                }
+            }
         }
     }
 }

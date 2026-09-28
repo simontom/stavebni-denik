@@ -3,6 +3,10 @@ package cz.stavebni.denik.services
 import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -104,5 +108,47 @@ class AuditServiceTest : BaseIntegrationTest() {
 
         val logCount = dsl.selectCount().from(AUDIT_LOG).fetchOne(0, Int::class.java)
         assertEquals(0, logCount)
+    }
+
+    @Test
+    fun `auditedTransaction maintains cryptographic integrity under high concurrency with advisory locks`() = runBlocking {
+        val user = createTestUser()
+        val concurrency = 10
+        val operationsPerCoroutine = 4
+        val totalOperations = concurrency * operationsPerCoroutine
+
+        val jobs = (1..concurrency).map { workerIdx ->
+            async(Dispatchers.Default) {
+                for (step in 1..operationsPerCoroutine) {
+                    AuditService.auditedTransaction(
+                        actor = user,
+                        action = "concurrent.action",
+                        entityType = "worker_$workerIdx",
+                        entityId = "step_$step"
+                    ) { tx ->
+                        step
+                    }
+                }
+            }
+        }
+
+        jobs.awaitAll()
+
+        val logs = dsl.selectFrom(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch()
+        assertEquals(totalOperations, logs.size)
+
+        var expectedPrevHash = "0000000000000000000000000000000000000000000000000000000000000000"
+        for (log in logs) {
+            val actualPrevHash = log.get(AUDIT_LOG.PREV_HASH)
+            assertEquals(expectedPrevHash, actualPrevHash, "Chain broken at log ID ${log.get(AUDIT_LOG.ID)}")
+
+            val action = log.get(AUDIT_LOG.ACTION)!!
+            val entityType = log.get(AUDIT_LOG.ENTITY_TYPE)!!
+            val entityId = log.get(AUDIT_LOG.ENTITY_ID)!!
+            val expectedHash = sha256(actualPrevHash + action + entityType + entityId)
+            assertEquals(expectedHash, log.get(AUDIT_LOG.ROW_HASH), "Hash mismatch at log ID ${log.get(AUDIT_LOG.ID)}")
+
+            expectedPrevHash = log.get(AUDIT_LOG.ROW_HASH)!!
+        }
     }
 }
