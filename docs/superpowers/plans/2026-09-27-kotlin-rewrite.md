@@ -423,20 +423,21 @@ git commit -m "feat: add DatabaseFactory, Flyway migration, jOOQ codegen"
 
 ### [x] Task 7.1: Dockerfile (multi-stage build)
 
-### Task 7.2: fly.toml configuration
+### [x] Task 7.2: fly.toml configuration
 
-### Task 7.3: CI/CD (GitHub Actions)
+### [x] Task 7.3: CI/CD (GitHub Actions)
 
 ---
 
 ## Phase 8: Integration & Polish
 
-### Task 8.1: E2E tests (Playwright)
+### [x] Task 8.1: E2E tests (Playwright)
 
-### Task 8.2: Photo reconciliation script
+### [x] Task 8.2: Photo reconciliation script
 
 ### Task 8.3: Final security review
 
 ### Task 8.4: Performance testing (1GB RAM validation)
+
 
 
