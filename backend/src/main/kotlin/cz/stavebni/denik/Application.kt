@@ -8,6 +8,7 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import cz.stavebni.denik.routes.authRoutes
+import cz.stavebni.denik.routes.projectRoutes
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
@@ -33,6 +34,7 @@ fun Application.module() {
     configureStatusPages()
 
     authRoutes()
+    projectRoutes()
 
     routing {
         get("/api/health") {
@@ -40,5 +42,6 @@ fun Application.module() {
         }
     }
 }
+
 
 
