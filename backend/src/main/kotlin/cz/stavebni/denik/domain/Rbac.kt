@@ -37,17 +37,46 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
         // Photos, remarks, materials
         Action.PhotoUpload -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember && !resource.isLocked
         Action.PhotoDelete -> user.role == Role.BOSS && resource.isMember && !resource.isLocked
-        Action.RemarkCreate -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR || user.role == Role.INVESTOR) && resource.isMember
-        Action.MaterialCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember && !resource.isLocked
-        Action.MaterialResolve -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
+        
+        Action.RemarkCreate -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR || user.role == Role.INVESTOR) && resource.isMember && !resource.isLocked
+        Action.RemarkUpdate,
+        Action.RemarkDelete -> {
+            if (resource.isLocked) return false
+            if (user.role == Role.BOSS && resource.isMember) return true
+            if (resource.isMember && resource.authorId == user.id) return true
+            false
+        }
 
-        // Visits
-        Action.VisitCreate -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR) && resource.isMember
-        Action.VisitDelete -> {
+        Action.MaterialCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember && !resource.isLocked
+        Action.MaterialUpdate,
+        Action.MaterialDelete -> {
+            if (resource.isLocked) return false
             if (user.role == Role.BOSS && resource.isMember) return true
             if (user.role == Role.WORKER && resource.isMember && resource.authorId == user.id) return true
             false
         }
+        Action.MaterialResolve -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
+
+        // Visits
+        Action.VisitCreate -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR) && resource.isMember && !resource.isLocked
+        Action.VisitUpdate,
+        Action.VisitDelete -> {
+            if (resource.isLocked) return false
+            if (user.role == Role.BOSS && resource.isMember) return true
+            if (resource.isMember && resource.authorId == user.id) return true
+            false
+        }
+        
+        // Site Handovers
+        Action.SiteHandoverCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
+        Action.SiteHandoverUpdate,
+        Action.SiteHandoverDelete -> {
+            if (resource.isLocked) return false
+            if (user.role == Role.BOSS && resource.isMember) return true
+            if (user.role == Role.WORKER && resource.isMember && resource.authorId == user.id) return true
+            false
+        }
+        Action.SiteHandoverSign -> (user.role == Role.BOSS || user.role == Role.WORKER || user.role == Role.INSPECTOR || user.role == Role.INVESTOR) && resource.isMember
     }
 }
 

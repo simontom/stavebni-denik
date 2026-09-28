@@ -29,8 +29,19 @@ sealed interface Action {
     data object PhotoUpload : Action
     data object PhotoDelete : Action
     data object RemarkCreate : Action
+    data object RemarkUpdate : Action
+    data object RemarkDelete : Action
     data object MaterialCreate : Action
+    data object MaterialUpdate : Action
+    data object MaterialDelete : Action
     data object MaterialResolve : Action
     data object VisitCreate : Action
+    data object VisitUpdate : Action
     data object VisitDelete : Action
+    
+    // Site Handovers
+    data object SiteHandoverCreate : Action
+    data object SiteHandoverUpdate : Action
+    data object SiteHandoverDelete : Action
+    data object SiteHandoverSign : Action
 }
