@@ -15,9 +15,11 @@ data class ProjectDto(
     val id: String,
     val name: String,
     val address: String,
-    val investorId: String?,
-    val defaultStartTime: String,
-    val defaultEndTime: String
+    val cadastralArea: String,
+    val parcelNumbers: String,
+    val builder: String,
+    val contractor: String,
+    val siteManagerId: String
 )
 
 object ProjectService {
@@ -28,18 +30,20 @@ object ProjectService {
         
         if (!user.isAdmin) {
             query.join(PROJECT_MEMBERS)
-                 .on(PROJECTS.ID.eq(PROJECT_MEMBERS.PROJECT_ID))
-                 .where(PROJECT_MEMBERS.USER_ID.eq(user.id))
+                 .on(PROJECTS.ID.eq(PROJECT_MEMBERS.PROJECTID))
+                 .where(PROJECT_MEMBERS.USERID.eq(user.id))
         }
         
         return query.fetch().map { r ->
             ProjectDto(
                 id = r.get(PROJECTS.ID).toString(),
-                name = r.get(PROJECTS.NAME),
-                address = r.get(PROJECTS.ADDRESS),
-                investorId = r.get(PROJECTS.INVESTOR_ID)?.toString(),
-                defaultStartTime = r.get(PROJECTS.DEFAULT_START_TIME),
-                defaultEndTime = r.get(PROJECTS.DEFAULT_END_TIME)
+                name = r.get(PROJECTS.NAME)!!,
+                address = r.get(PROJECTS.ADDRESS)!!,
+                cadastralArea = r.get(PROJECTS.CADASTRALAREA)!!,
+                parcelNumbers = r.get(PROJECTS.PARCELNUMBERS)!!,
+                builder = r.get(PROJECTS.BUILDER)!!,
+                contractor = r.get(PROJECTS.CONTRACTOR)!!,
+                siteManagerId = r.get(PROJECTS.SITEMANAGERID).toString()
             )
         }
     }
@@ -51,36 +55,37 @@ object ProjectService {
             actor = user,
             action = "project.create",
             entityType = "project",
-            entityId = "" // Will be updated after insertion
+            entityId = "" 
         ) { tx ->
             val record = tx.insertInto(PROJECTS)
                 .set(PROJECTS.NAME, data.name)
                 .set(PROJECTS.ADDRESS, data.address)
-                .set(PROJECTS.INVESTOR_ID, data.investorId?.let { UUID.fromString(it) })
-                .set(PROJECTS.DEFAULT_START_TIME, data.defaultStartTime)
-                .set(PROJECTS.DEFAULT_END_TIME, data.defaultEndTime)
+                .set(PROJECTS.CADASTRALAREA, data.cadastralArea)
+                .set(PROJECTS.PARCELNUMBERS, data.parcelNumbers)
+                .set(PROJECTS.BUILDER, data.builder)
+                .set(PROJECTS.CONTRACTOR, data.contractor)
+                .set(PROJECTS.SITEMANAGERID, UUID.fromString(data.siteManagerId))
                 .returning()
                 .fetchOne() ?: throw IllegalStateException("Failed to insert project")
                 
             val projectId = record.get(PROJECTS.ID)
             
-            // Add creator as member
             tx.insertInto(PROJECT_MEMBERS)
-                .set(PROJECT_MEMBERS.PROJECT_ID, projectId)
-                .set(PROJECT_MEMBERS.USER_ID, user.id)
+                .set(PROJECT_MEMBERS.PROJECTID, projectId)
+                .set(PROJECT_MEMBERS.USERID, user.id)
                 .execute()
-
-            // Ideally update audit log entityId here but we are in transaction
-            // Hashing logic already used empty entityId, in real app we'd need to generate ID beforehand
             
             ProjectDto(
                 id = projectId.toString(),
-                name = record.get(PROJECTS.NAME),
-                address = record.get(PROJECTS.ADDRESS),
-                investorId = record.get(PROJECTS.INVESTOR_ID)?.toString(),
-                defaultStartTime = record.get(PROJECTS.DEFAULT_START_TIME),
-                defaultEndTime = record.get(PROJECTS.DEFAULT_END_TIME)
+                name = record.get(PROJECTS.NAME)!!,
+                address = record.get(PROJECTS.ADDRESS)!!,
+                cadastralArea = record.get(PROJECTS.CADASTRALAREA)!!,
+                parcelNumbers = record.get(PROJECTS.PARCELNUMBERS)!!,
+                builder = record.get(PROJECTS.BUILDER)!!,
+                contractor = record.get(PROJECTS.CONTRACTOR)!!,
+                siteManagerId = record.get(PROJECTS.SITEMANAGERID).toString()
             )
         }
     }
 }
+

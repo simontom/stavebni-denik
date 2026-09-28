@@ -14,20 +14,20 @@ object UserService {
             .fetchOne() ?: return null
 
         return SessionUser(
-            id = record.get(USERS.ID),
-            nickname = record.get(USERS.NICKNAME),
-            displayName = record.get(USERS.DISPLAY_NAME),
-            role = Role.valueOf(record.get(USERS.ROLE)),
-            isAdmin = record.get(USERS.IS_ADMIN),
-            mustChangePwd = record.get(USERS.MUST_CHANGE_PWD),
+            id = record.get(USERS.ID)!!,
+            nickname = record.get(USERS.NICKNAME)!!,
+            displayName = record.get(USERS.DISPLAYNAME)!!,
+            role = cz.stavebni.denik.domain.Role.valueOf(record.get(USERS.ROLE)!!.name),
+            isAdmin = record.get(USERS.ISADMIN)!!,
+            mustChangePwd = record.get(USERS.MUSTCHANGEPWD)!!,
             sessionId = UUID.randomUUID()
         )
     }
 
     fun findPasswordHash(tx: DSLContext, nickname: String): String? {
-        return tx.select(USERS.PASSWORD_HASH)
+        return tx.select(USERS.PASSWORDHASH)
             .from(USERS)
             .where(USERS.NICKNAME.eq(nickname))
-            .fetchOne()?.value1()
+            .fetchOneInto(String::class.java)
     }
 }

@@ -12,6 +12,7 @@ import org.jooq.JSONB
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.util.UUID
+import java.time.OffsetDateTime
 
 @Serializable
 data class DailyReportDto(
@@ -36,30 +37,33 @@ object DailyReportService {
             entityId = ""
         ) { tx ->
             val record = tx.insertInto(DAILY_REPORTS)
-                .set(DAILY_REPORTS.PROJECT_ID, projectId)
-                .set(DAILY_REPORTS.AUTHOR_ID, user.id)
-                .set(DAILY_REPORTS.DATE, java.time.LocalDate.parse(date))
-                .set(DAILY_REPORTS.IS_LOCKED, false)
+                .set(DAILY_REPORTS.PROJECTID, projectId)
+                .set(DAILY_REPORTS.AUTHORID, user.id)
+                .set(DAILY_REPORTS.DATE, OffsetDateTime.parse(date + "T00:00:00Z"))
+                .set(DAILY_REPORTS.SEQUENCENUMBER, 1)
+                .set(DAILY_REPORTS.WORKERSBYTRADE, JSONB.valueOf("[]"))
+                .set(DAILY_REPORTS.WORKDESCRIPTION, "")
+                .set(DAILY_REPORTS.WEATHER, JSONB.valueOf("{}"))
                 .returning()
                 .fetchOne() ?: throw IllegalStateException("Failed to insert report")
                 
             DailyReportDto(
                 id = record.get(DAILY_REPORTS.ID).toString(),
-                projectId = record.get(DAILY_REPORTS.PROJECT_ID).toString(),
+                projectId = record.get(DAILY_REPORTS.PROJECTID).toString(),
                 date = record.get(DAILY_REPORTS.DATE).toString(),
                 weather = null,
                 generalNotes = null,
-                isLocked = false
+                isLocked = record.get(DAILY_REPORTS.LOCKEDAT) != null
             )
         }
     }
 
     suspend fun lockReport(user: SessionUser, reportId: UUID) {
-        val tx = cz.stavebni.denik.db.DatabaseFactory.dsl // Should be passed but keeping it simple for mock
+        val tx = cz.stavebni.denik.db.DatabaseFactory.dsl 
         val report = tx.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(reportId)).fetchOne()
             ?: throw IllegalArgumentException("Not found")
 
-        assertCan(user, Action.ReportSign, Resource(isMember = true, isLocked = report.get(DAILY_REPORTS.IS_LOCKED)))
+        assertCan(user, Action.ReportSign, Resource(isMember = true, isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null))
 
         AuditService.auditedTransaction(
             actor = user,
@@ -68,7 +72,7 @@ object DailyReportService {
             entityId = reportId.toString()
         ) { t ->
             t.update(DAILY_REPORTS)
-                .set(DAILY_REPORTS.IS_LOCKED, true)
+                .set(DAILY_REPORTS.LOCKEDAT, OffsetDateTime.now())
                 .where(DAILY_REPORTS.ID.eq(reportId))
                 .execute()
         }

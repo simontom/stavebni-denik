@@ -40,7 +40,7 @@ object JwtService {
         }
     }
 
-    fun decodeUser(jwt: DecodedJWT): SessionUser? {
+    fun decodeUser(jwt: com.auth0.jwt.interfaces.Payload): SessionUser? {
         return try {
             SessionUser(
                 id = UUID.fromString(jwt.getClaim("id").asString()),
@@ -56,3 +56,4 @@ object JwtService {
         }
     }
 }
+

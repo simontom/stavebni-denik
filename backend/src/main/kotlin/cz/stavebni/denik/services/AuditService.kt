@@ -10,6 +10,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jooq.DSLContext
 import org.jooq.JSONB
+import org.jooq.kotlin.coroutines.transactionCoroutine
 import java.security.MessageDigest
 
 object AuditService {
@@ -26,7 +27,7 @@ object AuditService {
         userAgent: String? = null,
         block: suspend (DSLContext) -> T
     ): T = withContext(NonCancellable + Dispatchers.IO) {
-        DatabaseFactory.dsl.transactionResult { config ->
+        DatabaseFactory.dsl.transactionCoroutine { config ->
             val tx = config.dsl()
             
             // 1. Acquire advisory lock
@@ -81,3 +82,4 @@ object AuditService {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 }
+
