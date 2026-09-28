@@ -10,6 +10,7 @@ plugins {
     application
     id("org.flywaydb.flyway") version "10.22.0"
     id("nu.studer.jooq") version "9.0"
+    id("com.gradleup.shadow") version "8.3.0"
 }
 
 application {
@@ -117,3 +118,4 @@ jooq {
 tasks.named("generateJooq") {
     dependsOn("flywayMigrate")
 }
+
