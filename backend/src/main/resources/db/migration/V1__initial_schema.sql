@@ -9,7 +9,7 @@ CREATE TYPE "RemarkType" AS ENUM ('INSPECTOR_REMARK', 'INVESTOR_NOTE');
 
 -- CreateTable
 CREATE TABLE "users" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "nickname" TEXT NOT NULL,
     "displayName" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE "users" (
 
 -- CreateTable
 CREATE TABLE "sessions" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "userId" UUID NOT NULL,
     "expiresAt" TIMESTAMPTZ NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -42,7 +42,7 @@ CREATE TABLE "sessions" (
 
 -- CreateTable
 CREATE TABLE "projects" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "address" TEXT NOT NULL,
     "cadastralArea" TEXT NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE "projects" (
 
 -- CreateTable
 CREATE TABLE "site_handovers" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "projectId" UUID NOT NULL,
     "type" TEXT NOT NULL,
     "date" TIMESTAMPTZ NOT NULL,
@@ -91,7 +91,7 @@ CREATE TABLE "site_handovers" (
 
 -- CreateTable
 CREATE TABLE "authorized_persons" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "projectId" UUID NOT NULL,
     "linkedUserId" UUID,
     "name" TEXT NOT NULL,
@@ -117,7 +117,7 @@ CREATE TABLE "project_members" (
 
 -- CreateTable
 CREATE TABLE "daily_reports" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "projectId" UUID NOT NULL,
     "sequenceNumber" INTEGER NOT NULL,
     "date" TIMESTAMPTZ NOT NULL,
@@ -152,7 +152,7 @@ CREATE TABLE "daily_reports" (
 
 -- CreateTable
 CREATE TABLE "photos" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "reportId" UUID NOT NULL,
     "pathOriginal" TEXT NOT NULL,
     "pathThumb" TEXT NOT NULL,
@@ -170,7 +170,7 @@ CREATE TABLE "photos" (
 
 -- CreateTable
 CREATE TABLE "remarks" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "reportId" UUID NOT NULL,
     "authorId" UUID NOT NULL,
     "type" "RemarkType" NOT NULL DEFAULT 'INSPECTOR_REMARK',
@@ -184,7 +184,7 @@ CREATE TABLE "remarks" (
 
 -- CreateTable
 CREATE TABLE "material_needs" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "reportId" UUID NOT NULL,
     "text" TEXT NOT NULL,
     "neededBy" TIMESTAMPTZ,
@@ -201,7 +201,7 @@ CREATE TABLE "material_needs" (
 
 -- CreateTable
 CREATE TABLE "addenda" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "reportId" UUID NOT NULL,
     "authorId" UUID NOT NULL,
     "text" TEXT NOT NULL,
@@ -240,7 +240,7 @@ CREATE TABLE "audit_log" (
 
 -- CreateTable
 CREATE TABLE "visits" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "reportId" UUID NOT NULL,
     "visitorName" TEXT NOT NULL,
     "visitorRole" TEXT NOT NULL,
@@ -258,7 +258,7 @@ CREATE TABLE "visits" (
 
 -- CreateTable
 CREATE TABLE "notifications" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "recipientId" UUID NOT NULL,
     "kind" TEXT NOT NULL,
     "payload" JSONB NOT NULL,
@@ -522,3 +522,4 @@ BEGIN
   END IF;
 END;
 $$;
+
