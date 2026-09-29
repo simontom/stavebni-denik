@@ -20,7 +20,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U denik -d stavebni_denik"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -37,7 +37,7 @@ jobs:
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
-        node-version: '20'
+        node-version: '22'
 
     - name: Test & Build Backend
       run: |
