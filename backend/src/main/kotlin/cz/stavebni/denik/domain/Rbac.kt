@@ -31,7 +31,7 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
             false
         }
         Action.ReportSign -> user.role == Role.BOSS && resource.isMember
-        Action.ReportAcknowledge -> user.role == Role.INSPECTOR && resource.isMember
+        Action.ReportAcknowledge -> (user.role == Role.INSPECTOR || user.role == Role.INVESTOR) && resource.isMember
         Action.ReportAddendumCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
 
         // Photos, remarks, materials

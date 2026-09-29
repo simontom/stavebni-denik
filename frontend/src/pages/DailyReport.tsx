@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 
 interface PhotoItem {
@@ -15,60 +15,68 @@ export const DailyReport: React.FC = () => {
   const currentUser = userStr ? JSON.parse(userStr) : null;
   const isInvestor = currentUser?.role === "INVESTOR" || currentUser?.nickname === "e2e-investor";
 
-  const storageKey = `report_${projectId}_${reportId}`;
-
-  const initialData = (() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return null;
-  })();
-
   // Report state
-  const [workDescription, setWorkDescription] = useState<string>(() => initialData?.workDescription || "Práce na stavbě");
-  const [workerTrade, setWorkerTrade] = useState<string>(() => initialData?.workerTrade || "Zedník");
-  const [workerCount, setWorkerCount] = useState<string>(() => initialData?.workerCount || "2");
-  const [isControlDay, setIsControlDay] = useState<boolean>(() => Boolean(initialData?.isControlDay));
-  const [constructionObj, setConstructionObj] = useState<string>(() => initialData?.constructionObj || "");
-  const [isSigned, setIsSigned] = useState<boolean>(() => Boolean(initialData?.isSigned));
-  const [isAcknowledged, setIsAcknowledged] = useState<boolean>(() => Boolean(initialData?.isAcknowledged));
+  const [workDescription, setWorkDescription] = useState<string>("Práce na stavbě");
+  const [workerTrade, setWorkerTrade] = useState<string>("Zedník");
+  const [workerCount, setWorkerCount] = useState<string>("2");
+  const [isControlDay, setIsControlDay] = useState<boolean>(false);
+  const [constructionObj, setConstructionObj] = useState<string>("");
+  const [isSigned, setIsSigned] = useState<boolean>(false);
+  const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
 
   // Photos
-  const [photos, setPhotos] = useState<PhotoItem[]>(() => initialData?.photos || []);
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const saveToStorage = (updates: Record<string, unknown>) => {
-    const current = {
-      workDescription,
-      workerTrade,
-      workerCount,
-      isControlDay,
-      constructionObj,
-      isCreated: true,
-      isSigned,
-      isAcknowledged,
-      photos,
-      ...updates,
+  useEffect(() => {
+    let ignore = false;
+    if (projectId && reportId) {
+      fetch(`/api/projects/${projectId}/reports/${reportId}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (ignore || !data) return;
+          if (data.workDescription) setWorkDescription(data.workDescription);
+          if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
+          if (data.constructionObj) setConstructionObj(data.constructionObj);
+          if (data.isSigned !== undefined) setIsSigned(Boolean(data.isSigned || data.isLocked));
+          if (data.isAcknowledged !== undefined) setIsAcknowledged(Boolean(data.isAcknowledged));
+          if (data.workersByTrade) {
+            try {
+              const trades = typeof data.workersByTrade === "string" ? JSON.parse(data.workersByTrade) : data.workersByTrade;
+              if (Array.isArray(trades) && trades.length > 0) {
+                if (trades[0].trade) setWorkerTrade(trades[0].trade);
+                if (trades[0].count) setWorkerCount(String(trades[0].count));
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (Array.isArray(data.photos) && data.photos.length > 0) {
+            setPhotos(
+              data.photos.map((p: { id: string; pathOriginal?: string }) => ({
+                id: p.id,
+                url: `/api/photos/${p.id}`,
+                name: p.pathOriginal ? p.pathOriginal.split(/[/\\]/).pop() || "photo.jpg" : "photo.jpg",
+              })),
+            );
+          }
+        })
+        .catch(() => {});
+    }
+    return () => {
+      ignore = true;
     };
-    localStorage.setItem(storageKey, JSON.stringify(current));
-  };
+  }, [projectId, reportId]);
 
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Trigger POST request matching /reports/ for Playwright waitForResponse
     try {
-      await fetch(`/api/projects/${projectId}/reports/${reportId}`, {
+      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          date: reportId,
           workDescription,
           workerTrade,
           workerCount,
@@ -76,11 +84,17 @@ export const DailyReport: React.FC = () => {
           constructionObj,
         }),
       });
-    } catch {
-      // ignore
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
+          if (data.constructionObj) setConstructionObj(data.constructionObj);
+          if (data.isSigned !== undefined) setIsSigned(Boolean(data.isSigned || data.isLocked));
+        }
+      }
+    } catch (err) {
+      console.error("Failed to create report:", err);
     }
-
-    saveToStorage({ isCreated: true });
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,30 +109,29 @@ export const DailyReport: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append("photo", selectedFile);
+      if (reportId) formData.append("reportId", reportId);
+      if (projectId) formData.append("projectId", projectId);
 
-      await fetch("/api/photos/upload", {
+      const res = await fetch("/api/photos/upload", {
         method: "POST",
         body: formData,
       });
 
+      if (!res.ok) {
+        throw new Error("Failed to upload photo");
+      }
+
+      const data = await res.json();
       const newPhoto: PhotoItem = {
-        id: Date.now().toString(),
-        url: URL.createObjectURL(selectedFile),
+        id: data.id || Date.now().toString(),
+        url: data.url || URL.createObjectURL(selectedFile),
         name: selectedFile.name,
       };
 
-      const updated = [...photos, newPhoto];
-      setPhotos(updated);
+      setPhotos((prev) => [...prev, newPhoto]);
       setSelectedFile(null);
-      saveToStorage({ photos: updated });
-    } catch {
-      // fallback
-      const newPhoto: PhotoItem = {
-        id: Date.now().toString(),
-        url: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>',
-        name: "dummy.jpg",
-      };
-      setPhotos([...photos, newPhoto]);
+    } catch (err) {
+      console.error("Photo upload error:", err);
     }
   };
 
@@ -126,24 +139,34 @@ export const DailyReport: React.FC = () => {
     if (!window.confirm("Opravdu chcete denní záznam podepsat a uzamknout?")) return;
 
     try {
-      await fetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
+      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signed: true }),
       });
-    } catch {
-      // ignore
+      if (res.ok) {
+        setIsSigned(true);
+      }
+    } catch (err) {
+      console.error("Failed to sign report:", err);
     }
-
-    setIsSigned(true);
-    saveToStorage({ isSigned: true });
   };
 
   const handleAcknowledge = async () => {
     if (!window.confirm("Potvrdit seznámení se záznamem?")) return;
 
-    setIsAcknowledged(true);
-    saveToStorage({ isAcknowledged: true });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}/acknowledge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acknowledged: true }),
+      });
+      if (res.ok) {
+        setIsAcknowledged(true);
+      }
+    } catch (err) {
+      console.error("Failed to acknowledge report:", err);
+    }
   };
 
   return (

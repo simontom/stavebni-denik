@@ -83,4 +83,5 @@ run-*.ps1
 
 # Teamwork metadata
 /.agents/
+/.kotlin/
 

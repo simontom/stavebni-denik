@@ -1,9 +1,12 @@
 import React from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, Navigate } from "react-router-dom";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
+  if (!userStr) {
+    return <Navigate to="/login" replace />;
+  }
   const user = userStr ? JSON.parse(userStr) : null;
 
   const handleLogout = async () => {

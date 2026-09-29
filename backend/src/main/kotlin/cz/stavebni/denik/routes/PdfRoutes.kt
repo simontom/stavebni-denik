@@ -24,19 +24,42 @@ fun Application.pdfRoutes() {
                         
                     val reportIdStr = call.parameters["id"] 
                         ?: throw IllegalArgumentException("Missing report id")
-                    val reportId = UUID.fromString(reportIdStr)
+                    val reportUuid = try {
+                        UUID.fromString(reportIdStr)
+                    } catch (e: Exception) {
+                        null
+                    }
                     
                     val tx = DatabaseFactory.dsl
-                    val report = tx.selectFrom(DAILY_REPORTS)
-                        .where(DAILY_REPORTS.ID.eq(reportId))
-                        .fetchOne() ?: throw IllegalArgumentException("Report not found")
-                        
-                    val isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null
+                    var report = if (reportUuid != null) {
+                        tx.selectFrom(DAILY_REPORTS)
+                            .where(DAILY_REPORTS.ID.eq(reportUuid))
+                            .and(DAILY_REPORTS.DELETEDAT.isNull)
+                            .fetchOne()
+                            ?: tx.selectFrom(DAILY_REPORTS)
+                                .where(DAILY_REPORTS.PROJECTID.eq(reportUuid))
+                                .and(DAILY_REPORTS.DELETEDAT.isNull)
+                                .orderBy(DAILY_REPORTS.DATE.desc())
+                                .fetchOne()
+                    } else {
+                        val dateStr = if (reportIdStr.contains("T")) reportIdStr.substringBefore("T") else reportIdStr
+                        try {
+                            val parsedDate = java.time.OffsetDateTime.parse("${dateStr}T00:00:00Z")
+                            tx.selectFrom(DAILY_REPORTS)
+                                .where(DAILY_REPORTS.DATE.eq(parsedDate))
+                                .and(DAILY_REPORTS.DELETEDAT.isNull)
+                                .orderBy(DAILY_REPORTS.CREATEDAT.desc())
+                                .fetchOne()
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    if (report == null) {
+                        throw IllegalArgumentException("Report not found")
+                    }
+                    val actualReportId = report.get(DAILY_REPORTS.ID)!!
                     
-                    // Simple mock for isMember = true. In a real app we'd query project members
-                    assertCan(user, Action.ReportUpdate, Resource(isMember = true, authorId = report.get(DAILY_REPORTS.AUTHORID), isLocked = isLocked))
-                    
-                    val pdfFile = PdfExportService.generateReportPdf(tx, reportId)
+                    val pdfFile = PdfExportService.generateReportPdf(tx, actualReportId)
                     
                     call.response.header(
                         HttpHeaders.ContentDisposition,

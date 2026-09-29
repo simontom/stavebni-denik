@@ -48,6 +48,12 @@ interface ProjectData {
   [key: string]: unknown;
 }
 
+interface ReportItemResponse {
+  id?: string;
+  date: string;
+  workDescription?: string;
+}
+
 export const ProjectDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -103,14 +109,35 @@ export const ProjectDetail: React.FC = () => {
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
   // Reports
-  const [reports] = useState<Array<{ id: string; date: string; summary: string }>>([{ id: "2026-09-11", date: "2026-09-11", summary: "Běžný denní záznam stavebních prací" }]);
+  const [reports, setReports] = useState<Array<{ id: string; date: string; summary: string }>>([
+    { id: "2026-09-11", date: "2026-09-11", summary: "Běžný denní záznam stavebních prací" },
+  ]);
 
   useEffect(() => {
+    let ignore = false;
+
+    if (id) {
+      fetch(`/api/projects/${id}/reports`)
+        .then((res) => (res.ok ? res.json() : []))
+        .then((data: ReportItemResponse[]) => {
+          if (ignore) return;
+          if (Array.isArray(data) && data.length > 0) {
+            setReports(
+              data.map((r) => ({
+                id: r.id || r.date,
+                date: r.date,
+                summary: r.workDescription || "Běžný denní záznam stavebních prací",
+              })),
+            );
+          }
+        })
+        .catch(() => {});
+    }
+
     if (project) {
       return;
     }
 
-    let ignore = false;
     // Fetch from backend /api/projects
     fetch("/api/projects")
       .then((res) => {
@@ -150,18 +177,24 @@ export const ProjectDetail: React.FC = () => {
     };
   }, [id, project]);
 
-  const handleDownloadPdf = () => {
-    const blob = new Blob(["%PDF-1.4\n1 0 obj\n<<\n/Title (Stavební Deník)\n>>\nendobj\ntrailer\n<<\n>>\n%%EOF"], {
-      type: "application/pdf",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `stavebni-denik-report-${id}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  const handleDownloadPdf = async () => {
+    try {
+      const targetId = reports.length > 0 ? reports[0].id : id;
+      const res = await fetch(`/api/reports/${targetId}/pdf`);
+      const responseToUse = res.ok ? res : await fetch(`/api/reports/${id}/pdf`);
+      if (!responseToUse.ok) throw new Error("Chyba při stahování PDF");
+      const blob = await responseToUse.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stavebni-denik-report-${targetId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("PDF download error:", err);
+    }
   };
 
   const handleAddMeter = () => {

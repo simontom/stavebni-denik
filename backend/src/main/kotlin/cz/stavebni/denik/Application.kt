@@ -11,6 +11,8 @@ import io.ktor.server.routing.*
 import cz.stavebni.denik.routes.authRoutes
 import cz.stavebni.denik.routes.projectRoutes
 import cz.stavebni.denik.routes.pdfRoutes
+import cz.stavebni.denik.routes.reportRoutes
+import cz.stavebni.denik.routes.photoRoutes
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
@@ -74,6 +76,8 @@ fun Application.module() {
     authRoutes()
     projectRoutes()
     pdfRoutes()
+    reportRoutes()
+    photoRoutes()
 
     routing {
         get("/api/health") {
