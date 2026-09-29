@@ -146,20 +146,26 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Start Ktor Backend
+      - name: Pre-build Backend
         run: |
           chmod +x gradlew
-          ./gradlew :backend:run &
-          BACKEND_PID=$!
-          echo "BACKEND_PID=$BACKEND_PID" >> $GITHUB_ENV
-          for i in {1..60}; do
+          ./gradlew assemble
+
+      - name: Start Ktor Backend
+        run: |
+          ./gradlew :backend:run > /tmp/backend.log 2>&1 &
+          for i in {1..90}; do
             if curl -s http://localhost:8080/api/health | grep -q "ok"; then
               echo "Backend is ready"
               break
             fi
             sleep 1
           done
-          curl -fsS http://localhost:8080/api/health || (echo "Backend failed to start"; exit 1)
+          if ! curl -fsS http://localhost:8080/api/health > /dev/null 2>&1; then
+            echo "=== Backend failed to start. Logs: ==="
+            cat /tmp/backend.log
+            exit 1
+          fi
 
       - name: Run Playwright E2E Tests
         run: pnpm exec playwright test
