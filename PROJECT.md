@@ -28,11 +28,11 @@
 
 ## Milestones
 
-| #   | Name                                                | Scope                                                                                                        | Dependencies | Status  |
-| --- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------ | ------- |
-| M1  | Backend Integration Tests & Runtime Fixes           | Fix backend bugs, photo airlock, gradle test runner, implement Testcontainers suite for services & routes    | none         | DONE    |
-| M2  | Frontend Routing, Vite Proxy & Playwright E2E Tests | Fix frontend TS, wire routes/nav shell, seed DB with UUIDs, update Playwright tests to pass against live app | M1           | DONE    |
-| M3  | Full Stack Verification, Security Audit & PR        | Run all CI gates (gradlew test, typecheck, lint, build, playwright), Forensic Audit, create PR               | M1, M2       | PLANNED |
+| #   | Name                                                | Scope                                                                                                        | Dependencies | Status |
+| --- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------ | ------ |
+| M1  | Backend Integration Tests & Runtime Fixes           | Fix backend bugs, photo airlock, gradle test runner, implement Testcontainers suite for services & routes    | none         | DONE   |
+| M2  | Frontend Routing, Vite Proxy & Playwright E2E Tests | Fix frontend TS, wire routes/nav shell, seed DB with UUIDs, update Playwright tests to pass against live app | M1           | DONE   |
+| M3  | Full Stack Verification, Security Audit & PR        | Run all CI gates (gradlew test, typecheck, lint, build, playwright), Forensic Audit, create PR               | M1, M2       | DONE   |
 
 ## Interface Contracts
 

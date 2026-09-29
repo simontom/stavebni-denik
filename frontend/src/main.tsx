@@ -12,7 +12,7 @@ import { AuditLogViewer } from "./pages/AuditLogViewer";
 import { AppLayout } from "./components/AppLayout";
 import "./index.css";
 
-function RootRoute() {
+export function RootRoute() {
   const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
   if (!userStr) {
     return <Navigate to="/login" replace />;

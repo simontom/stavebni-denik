@@ -125,10 +125,15 @@ tasks.named("generateJooq") {
 
 tasks.test {
     useJUnitPlatform()
-    systemProperty("api.version", "1.44")
-    systemProperty("docker.api.version", "1.44")
-    environment("DOCKER_API_VERSION", "1.44")
-    environment("DOCKER_HOST", "npipe:////./pipe/dockerDesktopLinuxEngine")
+    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+    if (isWindows) {
+        systemProperty("api.version", "1.44")
+        systemProperty("docker.api.version", "1.44")
+        environment("DOCKER_API_VERSION", "1.44")
+        if (System.getenv("DOCKER_HOST") == null) {
+            environment("DOCKER_HOST", "npipe:////./pipe/dockerDesktopLinuxEngine")
+        }
+    }
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true
