@@ -23,7 +23,7 @@ abstract class BaseIntegrationTest {
 
         val postgres: PostgreSQLContainer<*> by lazy {
             System.setProperty("docker.api.version", "1.44")
-            val container = PostgreSQLContainer("postgres:17-alpine").apply {
+            val container = PostgreSQLContainer("postgres:18-alpine").apply {
                 withDatabaseName("stavebni_denik_test")
                 withUsername("denik")
                 withPassword("denik_dev")
@@ -105,3 +105,4 @@ abstract class BaseIntegrationTest {
         return JwtService.createToken(user, Instant.now().plus(7, ChronoUnit.DAYS))
     }
 }
+
