@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload generated jOOQ sources
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: jooq-generated-sources
           path: backend/src/generated/jooq/
@@ -281,7 +281,7 @@ jobs:
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: playwright-report
           path: |
