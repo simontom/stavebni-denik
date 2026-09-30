@@ -32,12 +32,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <Link to="/projects" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
                   Projekty
                 </Link>
-                <Link to="/admin/users" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
-                  Uživatelé
-                </Link>
-                <Link to="/admin/audit" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
-                  Audit log
-                </Link>
+                {user?.isAdmin && (
+                  <>
+                    <Link to="/admin/users" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
+                      Uživatelé
+                    </Link>
+                    <Link to="/admin/audit" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
+                      Audit log
+                    </Link>
+                  </>
+                )}
               </nav>
             </div>
             <div className="flex items-center space-x-4">

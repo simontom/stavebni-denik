@@ -1,88 +1,81 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from "react";
+import { api } from "../lib/api";
 
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  user: string;
+interface AuditEntry {
+  id: number;
+  ts: string;
+  actorId?: string | null;
+  actorNickname?: string | null;
   action: string;
-  resource: string;
-  details: string;
+  entityType: string;
+  entityId: string;
+  rowHash: string;
 }
 
 export const AuditLogViewer: React.FC = () => {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    // Mock API fetch
-    const fetchLogs = () => {
-      setTimeout(() => {
-        setLogs([
-          {
-            id: 'log-1',
-            timestamp: '2023-10-05T14:22:10Z',
-            user: 'alice@example.com',
-            action: 'UPDATE_ROLE',
-            resource: 'User: 3',
-            details: 'Changed role from USER to MANAGER',
-          },
-          {
-            id: 'log-2',
-            timestamp: '2023-10-05T13:10:00Z',
-            user: 'bob@example.com',
-            action: 'CREATE_REPORT',
-            resource: 'Report: 42',
-            details: 'Created daily construction report',
-          },
-          {
-            id: 'log-3',
-            timestamp: '2023-10-04T09:05:33Z',
-            user: 'system',
-            action: 'BACKUP_COMPLETE',
-            resource: 'Database',
-            details: 'Automated daily backup successful',
-          }
-        ]);
-        setLoading(false);
-      }, 500);
-    };
-
-    fetchLogs();
+    api<AuditEntry[]>("/api/audit?limit=200")
+      .then((data) => setLogs(data))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Audit log se nepodařilo načíst"))
+      .finally(() => setLoading(false));
   }, []);
 
-  if (loading) {
-    return <div>Loading audit logs...</div>;
-  }
-
   return (
-    <div className="audit-log-viewer">
-      <h1>System Audit Logs</h1>
-      <p>Immutable record of system activities.</p>
-      
-      <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '20px' }}>
-        <thead>
-          <tr style={{ backgroundColor: '#2c3e50', color: 'white', textAlign: 'left' }}>
-            <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Timestamp</th>
-            <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>User</th>
-            <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Action</th>
-            <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Resource</th>
-            <th style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>Details</th>
-          </tr>
-        </thead>
-        <tbody>
-          {logs.map(log => (
-            <tr key={log.id}>
-              <td style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>
-                {new Date(log.timestamp).toLocaleString()}
-              </td>
-              <td style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>{log.user}</td>
-              <td style={{ padding: '12px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>{log.action}</td>
-              <td style={{ padding: '12px', borderBottom: '1px solid #ddd' }}>{log.resource}</td>
-              <td style={{ padding: '12px', borderBottom: '1px solid #ddd', color: '#555' }}>{log.details}</td>
+    <div className="mx-auto max-w-7xl px-4 py-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Audit log</h1>
+        <p className="mt-1 text-sm text-gray-500">Neměnný záznam všech změn v systému (posledních 200 událostí).</p>
+      </div>
+
+      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Čas</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uživatel</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Akce</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entita</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hash</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {loading && (
+              <tr>
+                <td colSpan={5} className="px-4 py-3 text-gray-500">
+                  Načítání…
+                </td>
+              </tr>
+            )}
+            {!loading && logs.length === 0 && !error && (
+              <tr>
+                <td colSpan={5} className="px-4 py-3 text-gray-500">
+                  Žádné záznamy
+                </td>
+              </tr>
+            )}
+            {logs.map((log) => (
+              <tr key={log.id}>
+                <td className="px-4 py-2 whitespace-nowrap text-gray-700">{new Date(log.ts).toLocaleString("cs-CZ")}</td>
+                <td className="px-4 py-2 text-gray-700">{log.actorNickname ?? log.actorId ?? "systém"}</td>
+                <td className="px-4 py-2 font-medium text-gray-900">{log.action}</td>
+                <td className="px-4 py-2 text-gray-600">
+                  {log.entityType}
+                  {log.entityId ? `: ${log.entityId}` : ""}
+                </td>
+                <td className="px-4 py-2 font-mono text-xs text-gray-400" title={log.rowHash}>
+                  {log.rowHash.slice(0, 12)}…
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };

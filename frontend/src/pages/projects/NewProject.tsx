@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { api, currentUser, json, type UserOption } from "../../lib/api";
 
 export const NewProject: React.FC = () => {
   const navigate = useNavigate();
@@ -10,9 +11,17 @@ export const NewProject: React.FC = () => {
   const [parcelNumbers, setParcelNumbers] = useState("");
   const [builder, setBuilder] = useState("");
   const [contractor, setContractor] = useState("");
-  const [siteManagerId, setSiteManagerId] = useState("11111111-1111-1111-1111-111111111111");
-  const [siteManagerName, setSiteManagerName] = useState("e2e-admin");
+  const me = currentUser();
+  const [siteManagerId, setSiteManagerId] = useState(me?.id ?? "");
+  const [siteManagerName, setSiteManagerName] = useState(me ? `${me.displayName} (${me.nickname})` : "");
   const [showDropdown, setShowDropdown] = useState(false);
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+
+  useEffect(() => {
+    api<UserOption[]>("/api/users/options")
+      .then(setUserOptions)
+      .catch(() => setUserOptions([]));
+  }, []);
 
   // Legislative fields
   const [contractNumber, setContractNumber] = useState("");
@@ -29,11 +38,10 @@ export const NewProject: React.FC = () => {
     setError("");
 
     try {
-      const response = await fetch("/api/projects", {
+      if (!siteManagerId) throw new Error("Vyberte hlavního stavbyvedoucího");
+      const created = await api<{ id: string }>("/api/projects", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: "",
+        body: json({
           name,
           address,
           cadastralArea,
@@ -41,37 +49,13 @@ export const NewProject: React.FC = () => {
           builder,
           contractor,
           siteManagerId,
+          contractNumber: contractNumber || null,
+          contractDate: contractDate || null,
+          designDocVersion: designDocVersion || null,
+          designDocDate: designDocDate || null,
         }),
       });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || "Chyba při zakládání projektu");
-      }
-
-      const created = await response.json();
-      const newId = created.id;
-
-      // Save legislative and extra fields to localStorage
-      localStorage.setItem(
-        `project_${newId}`,
-        JSON.stringify({
-          id: newId,
-          name,
-          address,
-          cadastralArea,
-          parcelNumbers,
-          builder,
-          contractor,
-          siteManagerId,
-          contractNumber,
-          contractDate,
-          designDocVersion,
-          designDocDate,
-        }),
-      );
-
-      navigate(`/projects/${newId}`);
+      navigate(`/projects/${created.id}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Chyba vytvoření projektu");
     } finally {
@@ -171,31 +155,23 @@ export const NewProject: React.FC = () => {
               <span className="text-gray-400">▼</span>
             </button>
             {showDropdown && (
-              <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
-                <div
-                  role="option"
-                  aria-selected={siteManagerName === "e2e-admin"}
-                  onClick={() => {
-                    setSiteManagerId("11111111-1111-1111-1111-111111111111");
-                    setSiteManagerName("e2e-admin");
-                    setShowDropdown(false);
-                  }}
-                  className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
-                >
-                  e2e-admin (E2E Admin)
-                </div>
-                <div
-                  role="option"
-                  aria-selected={siteManagerName === "admin@stavebni-denik.cz"}
-                  onClick={() => {
-                    setSiteManagerId("33333333-3333-3333-3333-333333333333");
-                    setSiteManagerName("admin@stavebni-denik.cz");
-                    setShowDropdown(false);
-                  }}
-                  className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
-                >
-                  admin@stavebni-denik.cz
-                </div>
+              <div role="listbox" className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
+                {userOptions.length === 0 && <div className="px-4 py-2 text-sm text-gray-500">Žádní uživatelé k výběru</div>}
+                {userOptions.map((u) => (
+                  <div
+                    key={u.id}
+                    role="option"
+                    aria-selected={siteManagerId === u.id}
+                    onClick={() => {
+                      setSiteManagerId(u.id);
+                      setSiteManagerName(`${u.displayName} (${u.nickname})`);
+                      setShowDropdown(false);
+                    }}
+                    className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
+                  >
+                    {u.displayName} ({u.nickname})
+                  </div>
+                ))}
               </div>
             )}
           </div>
