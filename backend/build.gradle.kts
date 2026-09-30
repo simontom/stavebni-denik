@@ -1,17 +1,7 @@
-buildscript {
-    repositories { mavenCentral() }
-    dependencies {
-        classpath("org.postgresql:postgresql:42.7.4")
-        classpath("org.flywaydb:flyway-database-postgresql:10.22.0")
-    }
-}
-
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     application
-    id("org.flywaydb.flyway") version "10.22.0"
-    id("nu.studer.jooq") version "9.0"
     id("com.gradleup.shadow") version "8.3.0"
 }
 
@@ -28,9 +18,25 @@ java {
 repositories { mavenCentral() }
 
 val ktorVersion = "3.1.1"
-val jooqVersion = "3.19.16"
-val flywayVersion = "10.22.0"
-val testcontainersVersion = "1.20.4"
+// PostgreSQL 18 is the only supported database version.
+//   - jOOQ 3.21: OSS SQLDialect.POSTGRES tracks PG18 catalog changes
+//   - Flyway >= 11.14: first line that officially supports PG18
+//   - pgjdbc >= 42.7.7: fixes CVE-2025-49146
+val jooqVersion = "3.21.8"
+val flywayVersion = "12.11.0"
+val pgJdbcVersion = "42.7.13"
+val testcontainersVersion = "1.21.4"
+val postgresImage = "postgres:18-alpine"
+
+// Generated jOOQ sources are committed (see generateJooq below) so that
+// build/test/Docker builds never need a live database.
+val jooqGeneratedDir = layout.projectDirectory.dir("src/generated/jooq")
+
+kotlin {
+    sourceSets["main"].kotlin.srcDir(jooqGeneratedDir)
+}
+
+val codegen: SourceSet by sourceSets.creating
 
 dependencies {
     implementation("io.ktor:ktor-server-core:$ktorVersion")
@@ -44,7 +50,7 @@ dependencies {
     implementation("io.ktor:ktor-server-rate-limit:$ktorVersion")
     implementation("io.ktor:ktor-server-sessions:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
-    
+
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
     implementation("io.ktor:ktor-client-content-negotiation:$ktorVersion")
@@ -53,7 +59,7 @@ dependencies {
     implementation("org.jooq:jooq-kotlin:$jooqVersion")
     implementation("org.jooq:jooq-kotlin-coroutines:$jooqVersion")
 
-    implementation("org.postgresql:postgresql:42.7.4")
+    implementation("org.postgresql:postgresql:$pgJdbcVersion")
     implementation("com.zaxxer:HikariCP:6.2.1")
 
     implementation("org.flywaydb:flyway-core:$flywayVersion")
@@ -65,7 +71,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("io.konform:konform:0.7.0")
     implementation("net.coobird:thumbnailator:0.4.20")
-    
+
     implementation("ch.qos.logback:logback-classic:1.5.12")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
@@ -75,57 +81,20 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
     testImplementation("org.testcontainers:junit-jupiter:$testcontainersVersion")
     testImplementation("org.wiremock:wiremock:3.10.0")
-    
-    jooqGenerator("org.postgresql:postgresql:42.7.4")
+
+    // jOOQ code generation toolchain (runs only via `generateJooq`)
+    "codegenImplementation"("org.jooq:jooq-codegen:$jooqVersion")
+    "codegenImplementation"("org.jooq:jooq-meta:$jooqVersion")
+    "codegenImplementation"("org.flywaydb:flyway-core:$flywayVersion")
+    "codegenImplementation"("org.flywaydb:flyway-database-postgresql:$flywayVersion")
+    "codegenImplementation"("org.postgresql:postgresql:$pgJdbcVersion")
+    "codegenImplementation"("org.testcontainers:postgresql:$testcontainersVersion")
+    "codegenRuntimeOnly"("org.slf4j:slf4j-simple:2.0.17")
 }
 
-flyway {
-    url = "jdbc:postgresql://localhost:5432/stavebni_denik"
-    user = "denik"
-    password = "denik_dev"
-    locations = arrayOf("filesystem:src/main/resources/db/migration")
-}
+val isWindows = System.getProperty("os.name").lowercase().contains("windows")
 
-jooq {
-    version.set(jooqVersion)
-    edition.set(nu.studer.gradle.jooq.JooqEdition.OSS)
-    configurations {
-        create("main") {
-            jooqConfiguration.apply {
-                jdbc.apply {
-                    driver = "org.postgresql.Driver"
-                    url = "jdbc:postgresql://localhost:5432/stavebni_denik"
-                    user = "denik"
-                    password = "denik_dev"
-                }
-                generator.apply {
-                    name = "org.jooq.codegen.KotlinGenerator"
-                    database.apply {
-                        name = "org.jooq.meta.postgres.PostgresDatabase"
-                        inputSchema = "public"
-                    }
-                    generate.apply {
-                        isKotlinSetterJvmNameAnnotationsOnIsPrefix = true
-                        isPojosAsKotlinDataClasses = true
-                    }
-                    target.apply {
-                        packageName = "cz.stavebni.denik.jooq"
-                        directory = "build/generated-sources/jooq"
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Ensure flyway runs before jooq
-tasks.named("generateJooq") {
-    dependsOn("flywayMigrate")
-}
-
-tasks.test {
-    useJUnitPlatform()
-    val isWindows = System.getProperty("os.name").lowercase().contains("windows")
+fun JavaForkOptions.configureDockerForWindows() {
     if (isWindows) {
         systemProperty("api.version", "1.44")
         systemProperty("docker.api.version", "1.44")
@@ -134,13 +103,37 @@ tasks.test {
             environment("DOCKER_HOST", "npipe:////./pipe/dockerDesktopLinuxEngine")
         }
     }
+}
+
+/**
+ * Regenerates the jOOQ classes in src/generated/jooq:
+ * starts a throwaway PostgreSQL 18 container (Testcontainers), applies the
+ * Flyway migrations and introspects the resulting schema.
+ *
+ * Run after every migration change and commit the result:
+ *   ./gradlew :backend:generateJooq
+ * CI fails the PR when the committed sources drift from the migrations.
+ */
+tasks.register<JavaExec>("generateJooq") {
+    group = "jooq"
+    description = "Generate jOOQ sources from Flyway migrations against PostgreSQL 18 (Testcontainers)"
+    classpath = codegen.runtimeClasspath
+    mainClass.set("cz.stavebni.denik.codegen.JooqCodegen")
+    args(
+        layout.projectDirectory.dir("src/main/resources/db/migration").asFile.absolutePath,
+        jooqGeneratedDir.asFile.absolutePath,
+        postgresImage,
+    )
+    inputs.dir("src/main/resources/db/migration")
+    outputs.dir(jooqGeneratedDir)
+    configureDockerForWindows()
+}
+
+tasks.test {
+    useJUnitPlatform()
+    configureDockerForWindows()
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = true
     }
 }
-
-
-
-
-

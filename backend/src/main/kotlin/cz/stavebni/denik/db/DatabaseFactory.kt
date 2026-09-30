@@ -15,23 +15,6 @@ object DatabaseFactory {
     val isInitialized: Boolean
         get() = ::dsl.isInitialized
 
-    private fun applySchemaDefaults(ds: DataSource) {
-        ds.connection.use { conn ->
-            conn.createStatement().use { stmt ->
-                stmt.execute("""
-                    ALTER TABLE IF EXISTS "projects" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "daily_reports" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "site_handovers" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "authorized_persons" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "users" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "material_needs" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "visits" ALTER COLUMN "updatedAt" SET DEFAULT CURRENT_TIMESTAMP;
-                    ALTER TABLE IF EXISTS "project_members" ALTER COLUMN "role" SET DEFAULT 'BOSS';
-                """.trimIndent())
-            }
-        }
-    }
-
     fun init(jdbcUrl: String, user: String, password: String) {
         val ds = HikariDataSource(HikariConfig().apply {
             this.jdbcUrl = jdbcUrl
@@ -41,26 +24,16 @@ object DatabaseFactory {
             isAutoCommit = true
             transactionIsolation = "TRANSACTION_READ_COMMITTED"
         })
-
-        Flyway.configure()
-            .dataSource(ds)
-            .locations("classpath:db/migration")
-            .load()
-            .migrate()
-
-        applySchemaDefaults(ds)
-
-        dsl = DSL.using(ds, SQLDialect.POSTGRES)
+        initFromDataSource(ds)
     }
 
+    /** All schema changes live in Flyway migrations (db/migration); nothing is altered at runtime. */
     fun initFromDataSource(ds: DataSource) {
         Flyway.configure()
             .dataSource(ds)
             .locations("classpath:db/migration")
             .load()
             .migrate()
-
-        applySchemaDefaults(ds)
 
         dsl = DSL.using(ds, SQLDialect.POSTGRES)
     }

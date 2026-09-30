@@ -10,44 +10,42 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint_build:
     name: Lint + typecheck + build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: stavebni_denik
-          POSTGRES_USER: denik
-          POSTGRES_PASSWORD: denik_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U denik -d stavebni_denik"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: gradle
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
       - name: Setup pnpm
         run: npm install -g pnpm
+
+      # Until backend/src/generated/jooq is committed, generate it here
+      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
+      - name: Ensure jOOQ sources
+        run: |
+          chmod +x gradlew
+          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
+            ./gradlew :backend:generateJooq --console=plain
+          fi
 
       - name: Backend assemble & compile
         run: |
@@ -80,31 +78,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: stavebni_denik
-          POSTGRES_USER: denik
-          POSTGRES_PASSWORD: denik_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U denik -d stavebni_denik"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: gradle
 
+      # Until backend/src/generated/jooq is committed, generate it here
+      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
+      - name: Ensure jOOQ sources
+        run: |
+          chmod +x gradlew
+          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
+            ./gradlew :backend:generateJooq --console=plain
+          fi
+
+      # Tests start their own postgres:18-alpine via Testcontainers.
       - name: Run Backend Integration Tests
         run: |
           set -o pipefail
@@ -120,6 +114,60 @@ jobs:
             grep -nE "^e: |FAILED|What went wrong|Exception|expected:" /tmp/gradle-test.log | head -120 || true
             echo '```'
             echo "### tail"; echo '```'; tail -n 80 /tmp/gradle-test.log; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  jooq:
+    name: jOOQ codegen drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Regenerate jOOQ sources (Testcontainers postgres:18-alpine)
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew :backend:generateJooq --console=plain 2>&1 | tee /tmp/jooq.log
+
+      - name: Fail on drift
+        run: |
+          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
+            echo "::warning::backend/src/generated/jooq is not committed yet. Run './gradlew :backend:generateJooq' locally and commit it; until then CI generates the sources on the fly."
+            exit 0
+          fi
+          git add -N backend/src/generated/jooq
+          if ! git diff --quiet -- backend/src/generated/jooq; then
+            git diff --stat -- backend/src/generated/jooq | tail -n 40
+            echo "::error::Generated jOOQ sources are out of date. Run './gradlew :backend:generateJooq' and commit backend/src/generated/jooq."
+            exit 1
+          fi
+
+      - name: Upload generated jOOQ sources
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jooq-generated-sources
+          path: backend/src/generated/jooq/
+          retention-days: 14
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "## jOOQ codegen failure"
+            echo '```'
+            grep -nE "ERROR|Exception|What went wrong|Caused by" /tmp/jooq.log | head -60 || true
+            echo '```'
+            echo "### tail"; echo '```'; tail -n 60 /tmp/jooq.log; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
@@ -145,16 +193,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: gradle
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -172,10 +221,18 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Pre-build Backend
+      # Until backend/src/generated/jooq is committed, generate it here
+      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
+      - name: Ensure jOOQ sources
         run: |
           chmod +x gradlew
-          ./gradlew assemble
+          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
+            ./gradlew :backend:generateJooq --console=plain
+          fi
+
+      - name: Pre-build Backend
+        run: |
+          ./gradlew assemble --console=plain
 
       - name: Start Ktor Backend
         timeout-minutes: 4
