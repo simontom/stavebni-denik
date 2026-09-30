@@ -28,3 +28,6 @@
 
 # PowerShell skripty: CRLF (vyžaduje PowerShell ISE / nativní editor)
 *.ps1 text eol=crlf
+
+# jOOQ classes generated from the Flyway migrations (./gradlew :backend:generateJooq)
+backend/src/generated/** linguist-generated=true

@@ -1,15 +1,8 @@
 import { expect, test } from "@playwright/test";
-import {
-  ADMIN_NICKNAME,
-  ADMIN_PASSWORD,
-  INVESTOR_NICKNAME,
-  INVESTOR_PASSWORD,
-} from "./global-setup";
+import { ADMIN_NICKNAME, ADMIN_PASSWORD, INVESTOR_NICKNAME, INVESTOR_PASSWORD } from "./global-setup";
 
 test.describe("Legislative Compliance", () => {
-  test("complete flow: legislative fields, site handovers, authorized persons, and investor acknowledgment", async ({
-    page,
-  }) => {
+  test("complete flow: legislative fields, site handovers, authorized persons, and investor acknowledgment", async ({ page }) => {
     test.setTimeout(180_000);
 
     // 1. Login as BOSS (admin)
@@ -48,26 +41,20 @@ test.describe("Legislative Compliance", () => {
 
     await page.locator('input[id="handover-type"]').fill("Předání staveniště zhotoviteli");
     await page.locator('input[id="handover-date"]').fill("2026-09-11");
-    await page
-      .locator('input[id="handover-participants"]')
-      .fill("Ing. Jan Novák (objednatel), Petr Svoboda (zhotovitel)");
+    await page.locator('input[id="handover-participants"]').fill("Ing. Jan Novák (objednatel), Petr Svoboda (zhotovitel)");
 
     await page.getByRole("button", { name: /Přidat měřidlo/i }).click();
     await page.locator('input[placeholder*="Médium"]').fill("Elektřina VT");
     await page.locator('input[placeholder*="Výrobní číslo"]').fill("EL-98765");
     await page.locator('input[placeholder*="Stav"]').fill("12450 kWh");
 
-    await page
-      .locator('textarea[id="handover-notes"]')
-      .fill("Staveniště předáno bez výhrad.");
+    await page.locator('textarea[id="handover-notes"]').fill("Staveniště předáno bez výhrad.");
 
     await page.getByRole("button", { name: /Uložit předání/i }).click();
 
     // Verify record in list
     await expect(page.getByText("Předání staveniště zhotoviteli")).toBeVisible();
-    await expect(
-      page.getByText("Ing. Jan Novák (objednatel), Petr Svoboda (zhotovitel)"),
-    ).toBeVisible();
+    await expect(page.getByText("Ing. Jan Novák (objednatel), Petr Svoboda (zhotovitel)")).toBeVisible();
     await expect(page.getByText("Elektřina VT")).toBeVisible();
     await expect(page.getByText("12450 kWh")).toBeVisible();
     await expect(page.getByText("Čeká na podpis")).toBeVisible();
@@ -84,20 +71,16 @@ test.describe("Legislative Compliance", () => {
     await page.getByRole("button", { name: /Přidat osobu/i }).click();
     await page.locator('input[id="person-name"]').fill("Ing. Arch. Petr Černý");
     await page.locator('input[id="person-company"]').fill("Architekti s.r.o.");
-    await page
-      .locator('input[id="person-auth"]')
-      .fill("Autorský dozor projektanta");
+    await page.locator('input[id="person-auth"]').fill("Autorský dozor projektanta");
     await page.getByRole("button", { name: /^Uložit$/i }).click();
 
-    await expect(page.getByText("Ing. Arch. Petr Černý")).toBeVisible();
+    await expect(page.getByText("Ing. Arch. Petr Černý").first()).toBeVisible();
     await expect(page.getByText("Architekti s.r.o.")).toBeVisible();
     await expect(page.getByText("Autorský dozor projektanta")).toBeVisible();
 
     // Revoke external person
     page.once("dialog", (d) => d.accept());
-    await page
-      .getByRole("button", { name: /Zrušit Ing. Arch. Petr Černý/i })
-      .click();
+    await page.getByRole("button", { name: /Zrušit Ing. Arch. Petr Černý/i }).click();
     await expect(page.getByText("Zrušeno", { exact: true })).toBeVisible();
 
     // 6. Add Investor as project member

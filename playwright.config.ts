@@ -1,37 +1,34 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
 
 /**
- * Playwright config for browser smoke tests.
+ * Playwright config for browser E2E tests.
  *
- * Two modes:
- *   * Local — when `BASE_URL` is NOT set, we spawn `pnpm dev` and
- *     point Playwright at http://localhost:3000. The dev server needs
- *     a reachable Postgres (the project's `docker-compose.yml` covers
- *     this); the smoke specs themselves do NOT depend on any seeded
- *     user, so a fresh DB is fine.
- *   * Staging — set `BASE_URL=https://staging.example.com` (and seed a
- *     test BOSS account separately) to point the same specs at a
- *     remote instance from CI / a deploy pipeline.
- *
- * NOT wired into the default CI job — running the dev server in the
- * GitHub Actions container takes minutes and would need its own
- * Postgres + seed step. Add a dedicated workflow when there's a
- * staging deploy to point it at.
+ * Runs against Vite React frontend on port 5173 with proxy to Ktor backend on port 8080.
+ * In CI the suite is tuned to fail fast and leave evidence behind (list output,
+ * HTML report, traces on failure) instead of silently running into the job timeout.
  */
+const isCI = Boolean(process.env.CI);
+
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: path.resolve(__dirname, "e2e"),
   fullyParallel: false,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 2 : 0,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
+  maxFailures: isCI ? 3 : undefined,
+  globalTimeout: isCI ? 10 * 60_000 : undefined,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
   workers: 1,
-  reporter: process.env.CI ? "github" : "list",
-  // globalSetup používá Prisma napřímo k upsertu `e2e-admin` účtu se
-  // známým heslem — specs ho pak používají v login flow bez závislosti
-  // na seed scriptu.
-  globalSetup: "./e2e/global-setup.ts",
+  reporter: isCI
+    ? [["list"], ["github"], ["html", { open: "never" }], ["json", { outputFile: "playwright-report/results.json" }]]
+    : "list",
+  globalSetup: path.resolve(__dirname, "e2e/global-setup.ts"),
   use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
-    trace: "on-first-retry",
+    baseURL: process.env.BASE_URL ?? "http://localhost:5173",
+    actionTimeout: 10_000,
+    navigationTimeout: 15_000,
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: [
@@ -43,9 +40,11 @@ export default defineConfig({
   webServer: process.env.BASE_URL
     ? undefined
     : {
-        command: "pnpm dev",
-        url: "http://localhost:3000/login",
-        reuseExistingServer: !process.env.CI,
+        command: "pnpm --prefix frontend dev",
+        url: "http://localhost:5173/login",
+        reuseExistingServer: !isCI,
         timeout: 120_000,
+        stdout: "pipe",
+        stderr: "pipe",
       },
 });

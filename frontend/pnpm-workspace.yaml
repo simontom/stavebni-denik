@@ -1,0 +1,6 @@
+# frontend/ is its own pnpm workspace root (independent of the legacy root package)
+packages:
+  - "."
+
+# Supply-chain guard: only install versions published at least a day ago.
+minimumReleaseAge: 1440
