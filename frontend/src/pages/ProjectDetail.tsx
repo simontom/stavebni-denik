@@ -77,7 +77,7 @@ export const ProjectDetail: React.FC = () => {
   // Handovers
   const [handovers, setHandovers] = useState<Handover[]>([]);
   const [showHandoverModal, setShowHandoverModal] = useState(false);
-  const [handoverType, setHandoverType] = useState("Předání stavenitě zhotoviteli");
+  const [handoverType, setHandoverType] = useState("Předání staveniště zhotoviteli");
   const [handoverDate, setHandoverDate] = useState(today());
   const [handoverParticipants, setHandoverParticipants] = useState("");
   const [meters, setMeters] = useState<Meter[]>([]);
@@ -161,7 +161,7 @@ export const ProjectDetail: React.FC = () => {
   };
 
   const openHandoverModal = () => {
-    setHandoverType("Předání stavenitě zhotoviteli");
+    setHandoverType("Předání staveniště zhotoviteli");
     setHandoverDate(today());
     setHandoverParticipants("");
     setMeters([]);
@@ -293,7 +293,7 @@ export const ProjectDetail: React.FC = () => {
             Záznamy
           </Link>
           <Link to={`/projects/${id}?tab=handovers`} className={tabClass("handovers")}>
-            Předání stavenitě
+            Předání staveniště
           </Link>
           <Link to={`/projects/${id}?tab=members`} className={tabClass("members")}>
             Členové
@@ -406,11 +406,11 @@ export const ProjectDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Tab 3: Site Handovers (Předání stavenitě) */}
+      {/* Tab 3: Site Handovers (Předání staveniště) */}
       {tab === "handovers" && (
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Předání a převzetí stavenitě</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Předání a převzetí staveniště</h2>
             <button type="button" onClick={openHandoverModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
               Přidat předání
             </button>
@@ -419,7 +419,7 @@ export const ProjectDetail: React.FC = () => {
           {showHandoverModal && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
               <div className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-xl">
-                <h3 className="text-lg font-bold">Protokol o předání stavenitě</h3>
+                <h3 className="text-lg font-bold">Protokol o předání staveniště</h3>
                 <div>
                   <label htmlFor="handover-type" className="mb-1 block text-xs font-medium text-gray-700">
                     Typ předání
@@ -500,7 +500,7 @@ export const ProjectDetail: React.FC = () => {
           )}
 
           {handovers.length === 0 ? (
-            <p className="text-sm text-gray-500">Zatím nebylo zaznamenáno žádné předání stavenitě.</p>
+            <p className="text-sm text-gray-500">Zatím nebylo zaznamenáno žádné předání staveniště.</p>
           ) : (
             <div className="space-y-4">
               {handovers.map((h) => (
