@@ -7,6 +7,7 @@ import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.services.PhotoDto
 import cz.stavebni.denik.services.PhotoService
+import cz.stavebni.denik.services.ProjectAccess
 import kotlinx.serialization.Serializable
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -16,7 +17,6 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.io.File
-import java.time.OffsetDateTime
 import java.util.UUID
 
 @Serializable
@@ -63,41 +63,23 @@ fun Application.photoRoutes() {
                 }
 
                 val tx = DatabaseFactory.dsl
+                val projectUuid = projectIdStr?.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "projectId") }
                 val reportUuid: UUID = try {
-                    if (!reportIdStr.isNullOrBlank()) {
-                        try {
-                            UUID.fromString(reportIdStr)
-                        } catch (e: Exception) {
-                            val projUuid = projectIdStr?.let { UUID.fromString(it) }
-                            val dateStr = if (reportIdStr!!.contains("T")) reportIdStr!!.substringBefore("T") else reportIdStr!!
-                            val parsedDate = OffsetDateTime.parse("${dateStr}T00:00:00Z")
-                            val rep = if (projUuid != null) {
-                                tx.selectFrom(DAILY_REPORTS)
-                                    .where(DAILY_REPORTS.PROJECTID.eq(projUuid))
-                                    .and(DAILY_REPORTS.DATE.eq(parsedDate))
-                                    .and(DAILY_REPORTS.DELETEDAT.isNull)
-                                    .fetchOne()
-                            } else null
-                            rep?.get(DAILY_REPORTS.ID) ?: throw IllegalArgumentException("Report not found for date $reportIdStr")
-                        }
-                    } else if (!projectIdStr.isNullOrBlank()) {
-                        val projUuid = UUID.fromString(projectIdStr)
-                        val latestRep = tx.selectFrom(DAILY_REPORTS)
-                            .where(DAILY_REPORTS.PROJECTID.eq(projUuid))
-                            .and(DAILY_REPORTS.DELETEDAT.isNull)
+                    when {
+                        !reportIdStr.isNullOrBlank() -> resolveReportId(tx, reportIdStr!!, projectUuid)
+                        projectUuid != null -> tx.select(DAILY_REPORTS.ID)
+                            .from(DAILY_REPORTS)
+                            .where(DAILY_REPORTS.PROJECTID.eq(projectUuid).and(DAILY_REPORTS.DELETEDAT.isNull))
                             .orderBy(DAILY_REPORTS.DATE.desc())
-                            .fetchOne()
-                        latestRep?.get(DAILY_REPORTS.ID) ?: throw IllegalArgumentException("No reports found for project $projectIdStr")
-                    } else {
-                        val latestRep = tx.selectFrom(DAILY_REPORTS)
-                            .where(DAILY_REPORTS.DELETEDAT.isNull)
-                            .orderBy(DAILY_REPORTS.CREATEDAT.desc())
-                            .fetchOne()
-                        latestRep?.get(DAILY_REPORTS.ID) ?: throw IllegalArgumentException("No reports available to attach photo")
+                            .limit(1)
+                            .fetchOne()?.value1()
+                            ?: throw IllegalArgumentException("No reports found for project $projectIdStr")
+                        else -> throw IllegalArgumentException("Missing reportId")
                     }
                 } catch (e: Exception) {
                     throw IllegalArgumentException("Invalid report reference: ${e.message}")
                 }
+                ProjectAccess.requireReportAccess(tx, user, reportUuid)
 
                 val photo = PhotoService.uploadPhoto(
                     user = user,

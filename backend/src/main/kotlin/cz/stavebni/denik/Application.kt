@@ -13,6 +13,8 @@ import cz.stavebni.denik.routes.projectRoutes
 import cz.stavebni.denik.routes.pdfRoutes
 import cz.stavebni.denik.routes.reportRoutes
 import cz.stavebni.denik.routes.photoRoutes
+import cz.stavebni.denik.routes.userRoutes
+import cz.stavebni.denik.routes.auditRoutes
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
@@ -78,6 +80,8 @@ fun Application.module() {
     pdfRoutes()
     reportRoutes()
     photoRoutes()
+    userRoutes()
+    auditRoutes()
 
     routing {
         get("/api/health") {

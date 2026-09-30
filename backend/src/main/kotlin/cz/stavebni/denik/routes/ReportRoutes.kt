@@ -1,10 +1,13 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.services.DailyReportService
+import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.util.Dates
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -12,9 +15,12 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import org.jooq.DSLContext
 import java.time.LocalDate
-import java.time.OffsetDateTime
 import java.util.UUID
 
 @Serializable
@@ -29,64 +35,80 @@ data class CreateReportPayload(
     val signed: Boolean? = null
 )
 
-private fun resolveReportId(tx: DSLContext, idOrDate: String, projectIdStr: String?): UUID {
-    return try {
+/**
+ * Resolves a report reference that is either a report UUID or a `YYYY-MM-DD`
+ * date. Dates are only unique within a project, so without a project the most
+ * recently created report of that date is used.
+ */
+internal fun resolveReportId(tx: DSLContext, idOrDate: String, projectId: UUID?): UUID {
+    val asUuid = try {
         UUID.fromString(idOrDate)
-    } catch (e: Exception) {
-        val projId = projectIdStr?.let { UUID.fromString(it) }
-        val dateStr = if (idOrDate.contains("T")) idOrDate.substringBefore("T") else idOrDate
-        val parsedDate = OffsetDateTime.parse("${dateStr}T00:00:00Z")
-        val rep = if (projId != null) {
-            tx.selectFrom(DAILY_REPORTS)
-                .where(DAILY_REPORTS.PROJECTID.eq(projId).and(DAILY_REPORTS.DATE.eq(parsedDate)))
-                .fetchOne()
-        } else {
-            tx.selectFrom(DAILY_REPORTS)
-                .where(DAILY_REPORTS.DATE.eq(parsedDate))
-                .orderBy(DAILY_REPORTS.CREATEDAT.desc())
-                .fetchOne()
-        }
-        rep?.get(DAILY_REPORTS.ID) ?: throw IllegalArgumentException("Report not found for identifier $idOrDate")
+    } catch (e: IllegalArgumentException) {
+        null
     }
+    val condition = if (asUuid != null) {
+        DAILY_REPORTS.ID.eq(asUuid)
+    } else {
+        DAILY_REPORTS.DATE.eq(Dates.parse(idOrDate.substringBefore("T")))
+    }
+    val scoped = if (projectId != null) condition.and(DAILY_REPORTS.PROJECTID.eq(projectId)) else condition
+    return tx.select(DAILY_REPORTS.ID)
+        .from(DAILY_REPORTS)
+        .where(scoped.and(DAILY_REPORTS.DELETEDAT.isNull))
+        .orderBy(DAILY_REPORTS.CREATEDAT.desc())
+        .limit(1)
+        .fetchOne()
+        ?.value1()
+        ?: throw NotFoundException("Záznam nenalezen: $idOrDate")
 }
+
+private fun workersJson(payload: CreateReportPayload): String {
+    if (!payload.workersByTrade.isNullOrBlank()) return payload.workersByTrade
+    val trade = payload.workerTrade?.trim()
+    if (trade.isNullOrEmpty()) return "[]"
+    val count = payload.workerCount?.trim()?.toIntOrNull() ?: 1
+    // Built with kotlinx.serialization so user input is always escaped correctly.
+    return Json.encodeToString(
+        kotlinx.serialization.json.JsonArray.serializer(),
+        buildJsonArray {
+            add(buildJsonObject {
+                put("trade", trade)
+                put("count", count)
+            })
+        }
+    )
+}
+
+private suspend fun ApplicationCall.receivePayload(): CreateReportPayload =
+    try {
+        receive<CreateReportPayload>()
+    } catch (e: Exception) {
+        CreateReportPayload()
+    }
 
 fun Application.reportRoutes() {
     routing {
         authenticate("auth-jwt") {
             route("/api/projects/{projectId}/reports") {
                 get {
-                    call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                    val projectIdStr = call.parameters["projectId"] ?: throw IllegalArgumentException("Missing projectId")
-                    val projectId = UUID.fromString(projectIdStr)
-                    val reports = DailyReportService.getReports(projectId)
-                    call.respond(reports)
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
+                    ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                    call.respond(DailyReportService.getReports(projectId))
                 }
 
                 post {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                    val projectIdStr = call.parameters["projectId"] ?: throw IllegalArgumentException("Missing projectId")
-                    val projectId = UUID.fromString(projectIdStr)
-                    val payload = try {
-                        call.receive<CreateReportPayload>()
-                    } catch (e: Exception) {
-                        CreateReportPayload()
-                    }
-
-                    val date = payload.date ?: LocalDate.now().toString()
-                    val workersByTrade = if (!payload.workersByTrade.isNullOrBlank()) {
-                        payload.workersByTrade
-                    } else if (!payload.workerTrade.isNullOrBlank()) {
-                        "[{\"trade\":\"${payload.workerTrade}\",\"count\":${payload.workerCount ?: "1"}}]"
-                    } else {
-                        "[]"
-                    }
+                    val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
+                    ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                    val payload = call.receivePayload()
 
                     val report = DailyReportService.createReport(
                         user = user,
                         projectId = projectId,
-                        date = date,
+                        date = payload.date ?: LocalDate.now().toString(),
                         workDescription = payload.workDescription ?: "",
-                        workersByTrade = workersByTrade,
+                        workersByTrade = workersJson(payload),
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj
                     )
@@ -95,10 +117,10 @@ fun Application.reportRoutes() {
 
                 route("/{reportIdOrDate}") {
                     get {
-                        call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                        val projectIdStr = call.parameters["projectId"] ?: throw IllegalArgumentException("Missing projectId")
+                        val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
-                        val projectId = UUID.fromString(projectIdStr)
+                        ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
                         val report = DailyReportService.getReport(projectId, reportIdOrDate)
                             ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Report not found"))
                         call.respond(report)
@@ -106,30 +128,17 @@ fun Application.reportRoutes() {
 
                     post {
                         val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                        val projectIdStr = call.parameters["projectId"] ?: throw IllegalArgumentException("Missing projectId")
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
-                        val projectId = UUID.fromString(projectIdStr)
-                        val payload = try {
-                            call.receive<CreateReportPayload>()
-                        } catch (e: Exception) {
-                            CreateReportPayload()
-                        }
-
-                        val date = payload.date ?: reportIdOrDate
-                        val workersByTrade = if (!payload.workersByTrade.isNullOrBlank()) {
-                            payload.workersByTrade
-                        } else if (!payload.workerTrade.isNullOrBlank()) {
-                            "[{\"trade\":\"${payload.workerTrade}\",\"count\":${payload.workerCount ?: "1"}}]"
-                        } else {
-                            "[]"
-                        }
+                        ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                        val payload = call.receivePayload()
 
                         val report = DailyReportService.createReport(
                             user = user,
                             projectId = projectId,
-                            date = date,
+                            date = payload.date ?: reportIdOrDate,
                             workDescription = payload.workDescription ?: "",
-                            workersByTrade = workersByTrade,
+                            workersByTrade = workersJson(payload),
                             isControlDay = payload.isControlDay ?: false,
                             constructionObj = payload.constructionObj
                         )
@@ -138,18 +147,20 @@ fun Application.reportRoutes() {
 
                     post("/sign") {
                         val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                        val projectIdStr = call.parameters["projectId"]
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
-                        val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectIdStr)
+                        ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                        val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectId)
                         DailyReportService.signReport(user, reportId)
                         call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                     }
 
                     post("/acknowledge") {
                         val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                        val projectIdStr = call.parameters["projectId"]
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
-                        val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectIdStr)
+                        ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                        val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectId)
                         DailyReportService.acknowledgeReport(user, reportId)
                         call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                     }
@@ -158,20 +169,21 @@ fun Application.reportRoutes() {
 
             route("/api/reports/{id}") {
                 get {
-                    call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
                     val tx = DatabaseFactory.dsl
                     val reportId = resolveReportId(tx, id, null)
-                    val rec = tx.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(reportId)).fetchOne()
+                    val projectId = ProjectAccess.requireReportAccess(tx, user, reportId)
+                    val report = DailyReportService.getReport(projectId, reportId.toString())
                         ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Report not found"))
-                    val report = DailyReportService.getReport(rec.get(DAILY_REPORTS.PROJECTID)!!, reportId.toString())
-                    call.respond(report ?: mapOf("status" to "ok"))
+                    call.respond(report)
                 }
 
                 post("/sign") {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
                     val reportId = resolveReportId(DatabaseFactory.dsl, id, null)
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.signReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                 }
@@ -180,6 +192,7 @@ fun Application.reportRoutes() {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
                     val reportId = resolveReportId(DatabaseFactory.dsl, id, null)
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.acknowledgeReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                 }

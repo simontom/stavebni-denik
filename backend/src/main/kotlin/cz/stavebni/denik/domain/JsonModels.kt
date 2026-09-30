@@ -28,11 +28,12 @@ data class GpsCoords(
     val lon: Double
 )
 
+/** Meter reading recorded in a site handover protocol (e.g. "Elektřina VT", "EL-98765", "12450 kWh"). */
 @Serializable
 data class MeterState(
-    val meterId: String,
-    val value: Double,
-    val unit: String? = null
+    val medium: String = "",
+    val serialNumber: String = "",
+    val state: String = ""
 )
 
 @Serializable

@@ -58,6 +58,9 @@ object DailyReportService {
                 .fetchOne()
 
             val record = if (existing != null) {
+                if (existing.lockedat != null) {
+                    throw IllegalStateException("Záznam je podepsán a uzamčen, nelze jej měnit")
+                }
                 tx.update(DAILY_REPORTS)
                     .set(DAILY_REPORTS.WORKDESCRIPTION, workDescription)
                     .set(DAILY_REPORTS.WORKERSBYTRADE, JSONB.valueOf(workersByTrade.ifBlank { "[]" }))
