@@ -2,6 +2,7 @@ package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.domain.Role
+import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.module
 import cz.stavebni.denik.services.DailyReportService
@@ -39,8 +40,8 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         return baos.toByteArray()
     }
 
-    private suspend fun createProjectAndReport(bossRole: Role = Role.BOSS): Pair<String, String> {
-        val boss = createTestUser(role = bossRole)
+    /** Creates a project owned by [boss] (who therefore is a project member) with one report. */
+    private suspend fun createProjectAndReport(boss: SessionUser = createTestUser(role = Role.BOSS)): Pair<String, String> {
         val project = ProjectService.createProject(
             boss,
             ProjectDto(
@@ -72,7 +73,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         val fakeImageBytes = "This is a plain text file pretending to be a JPG".toByteArray()
 
@@ -109,7 +110,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         val svgBytes = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(1)</script></svg>".toByteArray()
 
@@ -145,7 +146,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         // 5.5 MB payload
         val oversizedBytes = ByteArray(5500 * 1024) { 0xFF.toByte() }
@@ -182,7 +183,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         val jpegBytes = createTestImageBytes(400, 300, "jpeg")
         // Verify valid JPEG magic bytes in generated array
@@ -266,7 +267,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         // Lock report
         DailyReportService.lockReport(boss, UUID.fromString(reportId))
@@ -298,7 +299,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         val response = client.get("/api/reports/$reportId/pdf") {
             header(HttpHeaders.Authorization, "Bearer $token")
@@ -339,7 +340,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
 
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
-        val (_, reportId) = createProjectAndReport()
+        val (_, reportId) = createProjectAndReport(boss)
 
         // Lock report first
         DailyReportService.lockReport(boss, UUID.fromString(reportId))

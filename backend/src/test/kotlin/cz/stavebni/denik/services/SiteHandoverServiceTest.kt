@@ -26,7 +26,7 @@ class SiteHandoverServiceTest : BaseIntegrationTest() {
             type = "PROTOCOL_ZACATEK",
             date = "2026-09-28T09:00:00Z",
             participants = "Jan Novak, Petr Stavitel",
-            meterStates = listOf(MeterState(meterId = "EL-01", value = 12450.5, unit = "kWh")),
+            meterStates = listOf(MeterState(medium = "Elektřina VT", serialNumber = "EL-01", state = "12450.5 kWh")),
             notes = "Prevzeti probehlo bez zavad"
         )
         val created = SiteHandoverService.createHandover(boss, dto)
@@ -38,7 +38,7 @@ class SiteHandoverServiceTest : BaseIntegrationTest() {
         assertNotNull(fetched)
         assertEquals("PROTOCOL_ZACATEK", fetched!!.type)
         assertEquals(1, fetched.meterStates?.size)
-        assertEquals(12450.5, fetched.meterStates?.first()?.value)
+        assertEquals("12450.5 kWh", fetched.meterStates?.first()?.state)
 
         // 3. List
         val list = SiteHandoverService.listHandovers(dsl, boss, UUID.fromString(project.id))
