@@ -80,7 +80,7 @@ fun Application.projectRoutes() {
                         }
                     }
 
-                    // --- Site handovers (předání stavenitě) -------------------------
+                    // --- Site handovers (předání staveniště) -------------------------
                     route("/handovers") {
                         get {
                             val user = call.sessionUser()

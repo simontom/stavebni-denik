@@ -1,67 +1,62 @@
-# Project: Stavební Deník — Backend Integration & Frontend E2E Tests
+# Project: Stavební deník (construction site diary)
 
-## Architecture
+## Architecture (current stack)
 
-- **Backend**: Kotlin 2.1.10, Ktor 3.1.1, jOOQ, Flyway, PostgreSQL 17, Argon2id, JWT auth.
-- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4.
+- **Backend**: Kotlin 2.1, Ktor 3.1, jOOQ 3.21, Flyway 12, **PostgreSQL 18 only** (schema uses `uuidv7()`), Argon2id passwords, JWT in an HttpOnly cookie.
+- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4 (`frontend/`, its own pnpm workspace + lockfile).
 - **Testing**:
-  - Backend: JUnit 5 (Jupiter), Testcontainers (PostgreSQL 17-alpine), Ktor `testApplication`, WireMock / MockEngine.
-  - Frontend E2E: Playwright, running against live local stack (Ktor backend on 8080 + Vite frontend dev server on 5173/3000 with `/api` proxy).
+  - Backend: JUnit 5, Testcontainers `postgres:18-alpine`, Ktor `testApplication`, WireMock / MockEngine.
+  - E2E: Playwright against the live stack (Ktor on :8080, Vite dev server on :5173 proxying `/api`).
+- **Legacy** (being retired, not built by CI): Next.js + Prisma app in `src/`, `prisma/`, `test/` and the nightly `audit-verify.yml` job.
 
-## Feature Inventory
+## jOOQ code generation
 
-| #   | Feature                         | Description                                                                                                               | Milestone | Source              |
-| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------- |
-| 1   | Gradle JUnit 5 Runner           | Add `useJUnitPlatform()` in `backend/build.gradle.kts` so `./gradlew test` discovers tests                                | M1        | Survey 1            |
-| 2   | Backend Runtime Fixes           | Fix `uuidv7()` -> `gen_random_uuid()`, auth `SessionUser` principal, StatusPages 401/403, CORS, DatabaseFactory guard     | M1        | Survey 1, 3         |
-| 3   | Image Airlock Validation        | Fix `PhotoService.kt` to enforce 5MB cap, magic byte validation, and sharp/Thumbnailator re-encoding per docs/SECURITY.md | M1        | Survey 3            |
-| 4   | External API Mocking            | WireMock / Ktor MockEngine for `WeatherService` (OpenMeteo) and process mock for `PdfExportService` (typst)               | M1        | Survey 1            |
-| 5   | Testcontainers Base Harness     | Create `BaseIntegrationTest` with PostgreSQLContainer("postgres:17-alpine") and table cleanup                             | M1        | Survey 1            |
-| 6   | Service Integration Tests       | JUnit 5 integration tests for all 17 backend services with real database queries                                          | M1        | Survey 1            |
-| 7   | Ktor Route Integration Tests    | Ktor `testApplication` tests for Auth, Projects, Reports, PDF, and Health endpoints                                       | M1        | Survey 1            |
-| 8   | Frontend Build & Proxy          | Fix TS6133 in `ProjectDetail.tsx`, configure Vite `/api` proxy to `http://localhost:8080`                                 | M2        | Survey 2, 3         |
-| 9   | Frontend Route & Shell Mounting | Mount all pages in `frontend/src/main.tsx` with `<nav aria-label="Hlavní">` application shell                             | M2        | Survey 2            |
-| 10  | Frontend / E2E Alignment        | Align Czech strings, UUID regexes, and data-testids in React UI and Playwright specs                                      | M2        | Survey 2            |
-| 11  | E2E Database Seeding            | Update `e2e/global-setup.ts` / `e2e-prepare.ts` to seed valid UUID users into PostgreSQL                                  | M2        | Survey 3            |
-| 12  | Playwright E2E Suite Execution  | Update `playwright.config.ts` and E2E specs so all 13+ tests pass against the live stack                                  | M2        | Survey 2, 3         |
-| 13  | CI Gate & PR Verification       | Fix `.github/workflows/ci.yml`, verify all CI gates pass, create PR against `main`                                        | M3        | Survey 3, AGENTS.md |
+Generated classes live in `backend/src/generated/jooq` and are meant to be committed, so builds, tests and Docker/Fly builds never need a database.
 
-## Milestones
+```bash
+./gradlew :backend:generateJooq   # starts postgres:18-alpine via Testcontainers, runs Flyway, generates Kotlin
+```
 
-| #   | Name                                                | Scope                                                                                                        | Dependencies | Status |
-| --- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------ | ------ |
-| M1  | Backend Integration Tests & Runtime Fixes           | Fix backend bugs, photo airlock, gradle test runner, implement Testcontainers suite for services & routes    | none         | DONE   |
-| M2  | Frontend Routing, Vite Proxy & Playwright E2E Tests | Fix frontend TS, wire routes/nav shell, seed DB with UUIDs, update Playwright tests to pass against live app | M1           | DONE   |
-| M3  | Full Stack Verification, Security Audit & PR        | Run all CI gates (gradlew test, typecheck, lint, build, playwright), Forensic Audit, create PR               | M1, M2       | DONE   |
+Run it after every migration change and commit the result. CI job "jOOQ codegen drift check" fails when the committed sources are out of date (and, until the directory is committed, generates them on the fly and uploads them as the `jooq-generated-sources` artifact).
 
-## Interface Contracts
+Schema changes go into new Flyway migrations (`backend/src/main/resources/db/migration/V<n>__*.sql`). Nothing alters the schema at runtime.
 
-### Frontend ↔ Backend
+## Runtime configuration (backend)
 
-- **Base URL**: `/api` (proxied by Vite to `http://localhost:8080`)
-- **Health**: `GET /api/health` -> `{"status":"ok"}`
-- **Auth**:
-  - `POST /api/auth/login` -> `{"email":"...","password":"..."}` returns cookie `token` or bearer token.
-  - `POST /api/auth/logout` -> clears session.
-- **Projects**:
-  - `GET /api/projects` -> `[{"id":"<UUID>", "name":"...", "status":"...", ...}]`
-  - `POST /api/projects` -> `{"name":"...", ...}` -> `{"id":"<UUID>", ...}`
-- **Reports**:
-  - `GET /api/projects/{projectId}/reports` -> list of reports
-  - `POST /api/projects/{projectId}/reports` -> create report
-  - `GET /api/reports/{id}/pdf` -> application/pdf
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` | |
+| `APP_ENV` | development | `production` makes `JWT_SECRET` mandatory and cookies `Secure` |
+| `JWT_SECRET` | random per process (dev only) | required in production |
+| `UPLOADS_DIR` | `./uploads` | photos in `<dir>/photos` (mount a volume in production) |
+| `CORS_ALLOWED_ORIGINS` | none (CORS off) | comma separated; the SPA is same-origin |
+| `OPEN_METEO_BASE_URL` | Open-Meteo | weather snapshot |
 
-### Test Infrastructure Contracts
+## API overview (all under `/api`, JWT cookie auth unless noted)
 
-- **Backend**: `./gradlew test` (using Java 21) discovers and runs all JUnit 5 unit and integration tests against dynamic Testcontainers PostgreSQL.
-- **E2E**: `e2e/global-setup.ts` runs prior to tests and seeds test users (`admin@stavebni-denik.cz`, `manager@stavebni-denik.cz`, etc.) with Argon2id hashes and valid UUIDs in `users` table.
-- **Playwright**: `npx playwright test` executes against `http://localhost:5173` (or configured baseURL) with live backend on `http://localhost:8080`.
+- `GET /health` (public)
+- Auth: `POST /auth/login`, `POST /auth/logout`
+- Users (admin): `GET/POST /users`, `PATCH/DELETE /users/{id}`, `POST /users/{id}/activate|deactivate`; `GET /users/options` (project managers)
+- Projects: `GET/POST /projects`, `GET /projects/{id}`
+  - Members: `GET/POST /projects/{id}/members`, `DELETE /projects/{id}/members/{userId}`
+  - Authorized persons: `GET/POST /projects/{id}/authorized-persons`, `POST /authorized-persons/{id}/revoke`
+  - Site handovers: `GET/POST /projects/{id}/handovers`, `GET/PUT/DELETE /handovers/{id}`, `POST /handovers/{id}/sign`
+  - Reports: `GET/POST /projects/{id}/reports`, `GET/POST /projects/{id}/reports/{idOrDate}`, `POST …/sign`, `POST …/acknowledge`, `GET /reports/{id}/pdf`
+- Photos: `POST /photos/upload`, `GET /photos/{id}`, `GET /photos/{id}/thumb`
+- Audit log (admin): `GET /audit?limit=200`
 
-## Code Layout
+Project-scoped endpoints require project membership; app admins can open every project.
 
-- `backend/src/main/kotlin/cz/stavebni/denik/` — Kotlin application source (Application, plugins, routes, services, db, domain)
-- `backend/src/test/kotlin/cz/stavebni/denik/` — Kotlin tests (unit tests, integration tests)
-- `frontend/src/` — React SPA source (pages, components, main.tsx, api)
-- `e2e/` — Playwright test specifications and fixtures
-- `scripts/dev/` — Developer and test setup scripts (e2e-prepare.ts)
-- `.github/workflows/ci.yml` — GitHub Actions CI pipeline
+## Code layout
+
+- `backend/src/main/kotlin/cz/stavebni/denik/` — application (config, db, domain, plugins, routes, services, util)
+- `backend/src/codegen/java/` — jOOQ code generator runner
+- `backend/src/generated/jooq/` — generated jOOQ sources (committed)
+- `backend/src/test/kotlin/cz/stavebni/denik/` — integration tests
+- `frontend/src/` — React SPA (`lib/api.ts` is the API client)
+- `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
+- `.github/workflows/ci.yml` — lint/build, integration, jOOQ drift check, E2E
+
+## Follow-ups
+
+See `claude/pr60-fix-plan.md` in the project docs: retire the legacy Next.js/Prisma tree, port the audit-chain verifier to Kotlin, ship the SPA + typst from one Docker image.
