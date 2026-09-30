@@ -35,5 +35,6 @@ export default async function globalSetup(): Promise<void> {
     cwd: root,
     stdio: "inherit",
     env: process.env,
+    timeout: 60_000,
   });
 }

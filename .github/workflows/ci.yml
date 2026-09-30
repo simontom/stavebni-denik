@@ -51,15 +51,29 @@ jobs:
 
       - name: Backend assemble & compile
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew assemble
+          ./gradlew assemble --console=plain 2>&1 | tee /tmp/gradle.log
 
       - name: Frontend install, lint & build
         run: |
+          set -o pipefail
           cd frontend
-          pnpm install
-          pnpm lint
-          pnpm build
+          { pnpm install && pnpm lint && pnpm build; } 2>&1 | tee /tmp/frontend.log
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "## lint_build failure"
+            for f in /tmp/gradle.log /tmp/frontend.log; do
+              [ -f "$f" ] || continue
+              echo "### $f (errors)"; echo '```'
+              grep -nE "^e: |error|FAILED|What went wrong" "$f" | head -80 || true
+              echo '```'
+              echo "### $f (tail)"; echo '```'; tail -n 60 "$f"; echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
 
   integration:
     name: Integration tests (Testcontainers Postgres)
@@ -93,8 +107,20 @@ jobs:
 
       - name: Run Backend Integration Tests
         run: |
+          set -o pipefail
           chmod +x gradlew
-          ./gradlew test
+          ./gradlew test --console=plain 2>&1 | tee /tmp/gradle-test.log
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "## integration failure"
+            echo '```'
+            grep -nE "^e: |FAILED|What went wrong|Exception|expected:" /tmp/gradle-test.log | head -120 || true
+            echo '```'
+            echo "### tail"; echo '```'; tail -n 80 /tmp/gradle-test.log; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   e2e:
     name: E2E tests (Playwright + Postgres service)
@@ -152,28 +178,52 @@ jobs:
           ./gradlew assemble
 
       - name: Start Ktor Backend
+        timeout-minutes: 4
         run: |
-          ./gradlew :backend:run > /tmp/backend.log 2>&1 &
-          for i in {1..90}; do
-            if curl -s http://localhost:8080/api/health | grep -q "ok"; then
-              echo "Backend is ready"
+          ./gradlew :backend:run --console=plain > /tmp/backend.log 2>&1 &
+          for i in {1..120}; do
+            if curl -fsS --max-time 2 http://localhost:8080/api/health 2>/dev/null | grep -q "ok"; then
+              echo "Backend is ready after ${i}s"
               break
             fi
             sleep 1
           done
-          if ! curl -fsS http://localhost:8080/api/health > /dev/null 2>&1; then
+          if ! curl -fsS --max-time 2 http://localhost:8080/api/health > /dev/null 2>&1; then
             echo "=== Backend failed to start. Logs: ==="
             cat /tmp/backend.log
             exit 1
           fi
 
       - name: Run Playwright E2E Tests
-        run: pnpm exec playwright test
+        timeout-minutes: 12
+        run: |
+          set -o pipefail
+          pnpm exec playwright test 2>&1 | tee /tmp/playwright.log
 
-      - name: Upload Playwright report on failure
-        if: failure()
+      - name: E2E summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Playwright"
+            echo '```'
+            grep -nE "✘|✓|passed|failed|flaky|Error:|Timeout|expect\(|at .*spec\.ts" /tmp/playwright.log | head -150 || true
+            echo '```'
+            echo "### Playwright tail"; echo '```'; tail -n 60 /tmp/playwright.log 2>/dev/null; echo '```'
+            echo "## Backend log (errors)"
+            echo '```'
+            grep -nE "ERROR|WARN|Exception|Caused by" /tmp/backend.log | head -80 || true
+            echo '```'
+            echo "### Backend log tail"; echo '```'; tail -n 60 /tmp/backend.log 2>/dev/null; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: test-results/
+          path: |
+            playwright-report/
+            test-results/
+            /tmp/backend.log
+            /tmp/playwright.log
           retention-days: 14
