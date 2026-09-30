@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { currentUser } from "../lib/api";
 
 interface PhotoItem {
   id: string;
@@ -10,10 +11,10 @@ interface PhotoItem {
 export const DailyReport: React.FC = () => {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
-  // User role
-  const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
-  const currentUser = userStr ? JSON.parse(userStr) : null;
-  const isInvestor = currentUser?.role === "INVESTOR" || currentUser?.nickname === "e2e-investor";
+  // User role: investors and inspectors acknowledge, builders write and sign.
+  const me = currentUser();
+  const isInvestor = me?.role === "INVESTOR" || me?.role === "INSPECTOR";
+  const [error, setError] = useState("");
 
   // Report state
   const [workDescription, setWorkDescription] = useState<string>("Práce na stavbě");
@@ -91,9 +92,14 @@ export const DailyReport: React.FC = () => {
           if (data.constructionObj) setConstructionObj(data.constructionObj);
           if (data.isSigned !== undefined) setIsSigned(Boolean(data.isSigned || data.isLocked));
         }
+        setError("");
+      } else {
+        const body = await res.json().catch(() => null);
+        setError(body?.error || "Záznam se nepodařilo uložit");
       }
     } catch (err) {
       console.error("Failed to create report:", err);
+      setError("Záznam se nepodařilo uložit");
     }
   };
 
@@ -118,7 +124,8 @@ export const DailyReport: React.FC = () => {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to upload photo");
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error || "Nahrání fotky se nezdařilo");
       }
 
       const data = await res.json();
@@ -132,6 +139,7 @@ export const DailyReport: React.FC = () => {
       setSelectedFile(null);
     } catch (err) {
       console.error("Photo upload error:", err);
+      setError(err instanceof Error ? err.message : "Nahrání fotky se nezdařilo");
     }
   };
 
@@ -200,6 +208,8 @@ export const DailyReport: React.FC = () => {
           </div>
         )}
       </div>
+
+      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
 
       {/* Main Report Form */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
@@ -305,7 +315,6 @@ export const DailyReport: React.FC = () => {
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {photos.map((p, idx) => (
               <div key={p.id} className="rounded border bg-gray-50 p-2 text-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={p.url} alt={`Fotka ${idx + 1}`} className="mb-2 h-32 w-full rounded object-cover" />
                 <span className="block truncate text-xs text-gray-600">{p.name}</span>
               </div>
