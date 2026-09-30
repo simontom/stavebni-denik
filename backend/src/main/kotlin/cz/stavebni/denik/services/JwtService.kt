@@ -10,9 +10,8 @@ import java.util.Date
 import java.util.UUID
 
 object JwtService {
-    private val secret = System.getenv("JWT_SECRET") ?: "dev_secret_key_123"
     private val issuer = "stavebni_denik"
-    private val algorithm = Algorithm.HMAC256(secret)
+    private val algorithm by lazy { Algorithm.HMAC256(cz.stavebni.denik.config.AppConfig.jwtSecret) }
 
     fun createToken(user: SessionUser, expiration: Instant): String {
         return JWT.create()

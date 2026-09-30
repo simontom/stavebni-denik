@@ -1,5 +1,6 @@
 package cz.stavebni.denik.routes
 
+import cz.stavebni.denik.config.AppConfig
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.services.JwtService
 import cz.stavebni.denik.services.PasswordService
@@ -48,7 +49,8 @@ fun Application.authRoutes() {
                 httpOnly = true,
                 path = "/",
                 maxAge = 7 * 24 * 60 * 60,
-                secure = false // true in production
+                secure = AppConfig.isProduction,
+                extensions = mapOf("SameSite" to "Lax")
             )
 
             call.respond(LoginResponse(status = "ok", user = user))
@@ -60,7 +62,9 @@ fun Application.authRoutes() {
                 value = "",
                 httpOnly = true,
                 path = "/",
-                maxAge = 0
+                maxAge = 0,
+                secure = AppConfig.isProduction,
+                extensions = mapOf("SameSite" to "Lax")
             )
             call.respond(mapOf("status" to "ok"))
         }

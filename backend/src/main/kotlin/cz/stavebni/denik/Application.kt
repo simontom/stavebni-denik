@@ -8,6 +8,8 @@ import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.ktor.server.http.content.singlePageApplication
+import cz.stavebni.denik.config.AppConfig
 import cz.stavebni.denik.routes.authRoutes
 import cz.stavebni.denik.routes.projectRoutes
 import cz.stavebni.denik.routes.pdfRoutes
@@ -31,8 +33,14 @@ fun Application.module() {
         )
     }
 
-    install(CORS) {
-        anyHost()
+    // The SPA is served same-origin (Vite proxy in dev), so CORS is only
+    // enabled for explicitly configured origins - never for any host.
+    val corsOrigins = AppConfig.corsAllowedOrigins
+    if (corsOrigins.isNotEmpty()) install(CORS) {
+        corsOrigins.forEach { origin ->
+            val scheme = origin.substringBefore("://", "https")
+            allowHost(origin.substringAfter("://"), schemes = listOf(scheme))
+        }
         allowHeader(HttpHeaders.ContentType)
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.Cookie)
@@ -72,6 +80,7 @@ fun Application.module() {
         }
     }
 
+    configureSecurityHeaders()
     configureSecurity()
     configureStatusPages()
 
@@ -86,6 +95,33 @@ fun Application.module() {
     routing {
         get("/api/health") {
             call.respond(mapOf("status" to "ok"))
+        }
+    }
+
+    // Production image: the built React SPA is served by Ktor from the same origin.
+    AppConfig.staticDir?.let { dir ->
+        routing {
+            singlePageApplication {
+                filesPath = dir
+                defaultPage = "index.html"
+            }
+        }
+    }
+}
+
+private const val CONTENT_SECURITY_POLICY =
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+        "connect-src 'self' https://api.open-meteo.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+/** Security headers for every response (API and SPA). HSTS only behind HTTPS in production. */
+fun Application.configureSecurityHeaders() {
+    intercept(ApplicationCallPipeline.Plugins) {
+        call.response.header("X-Content-Type-Options", "nosniff")
+        call.response.header("X-Frame-Options", "DENY")
+        call.response.header("Referrer-Policy", "strict-origin-when-cross-origin")
+        call.response.header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        if (AppConfig.isProduction) {
+            call.response.header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         }
     }
 }

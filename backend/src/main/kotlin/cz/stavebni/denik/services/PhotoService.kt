@@ -120,7 +120,7 @@ object PhotoService {
             .toOutputStream(thumbStream)
         val processedThumbBytes = thumbStream.toByteArray()
 
-        val uploadDir = Paths.get("uploads/photos").apply { 
+        val uploadDir = cz.stavebni.denik.config.AppConfig.uploadsDir.resolve("photos").apply { 
             if (!Files.exists(this)) Files.createDirectories(this)
         }
         

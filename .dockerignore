@@ -1,6 +1,4 @@
-# Keep the build context lean. Anything not strictly needed for `next build`
-# / `prisma generate` should be excluded so we don't bust Docker cache
-# on unrelated changes.
+# Keep the Docker build context lean (see Dockerfile: frontend + backend only).
 
 # Source control & editor metadata
 .git
@@ -15,39 +13,45 @@
 .env.*
 !.env.example
 
-# Build artifacts
+# Build output & caches (the image builds everything itself)
+**/node_modules
+**/build
+**/dist
+.gradle
+**/.gradle
+.kotlin
+**/.kotlin
 .next
-out
-build
-dist
 coverage
 test-results
 playwright-report
-playwright/.cache
+.pnpm-store
 
-# Generated Prisma client — regenerated inside the builder stage.
-src/generated/prisma
-
-# Local volume (photos, PDF exports, audit-verify log).
+# Local data
+uploads
 .dev-data
 /data
 
-# Dependencies — re-installed by the deps stage.
-node_modules
-.pnpm-store
+# Portable tool-chains kept next to the repo on developer machines
+jdk21.zip
+jdk-21.0.2/
+pg.zip
+pg/
+gradle.zip
+gradle-8.10/
 
 # Logs & OS junk
 *.log
 .DS_Store
 
-# Top-level developer docs not needed at runtime.
+# Not needed in the image
+docs/
+graft/
+e2e/
+test/
+src/
+prisma/
 README.md
 AGENTS.md
 CLAUDE.md
-docs/
-
-jdk21.zip
-pg.zip
-pg/
-gradle-8.10/
-
+GEMINI.md

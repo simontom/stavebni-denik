@@ -12,7 +12,7 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.response.*
 
 fun Application.configureSecurity() {
-    val secret = System.getenv("JWT_SECRET") ?: "dev_secret_key_123"
+    val secret = cz.stavebni.denik.config.AppConfig.jwtSecret
     val issuer = "stavebni_denik"
     val algorithm = Algorithm.HMAC256(secret)
 

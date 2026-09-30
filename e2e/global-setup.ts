@@ -4,10 +4,9 @@ import path from "node:path";
 /**
  * Playwright globalSetup — běží JEDNOU před celou test sadou.
  *
- * Upsertne `e2e-admin` účet s deterministickým heslem. Protože
- * Playwright runuje v CommonJS modu a Prisma 7 ESM client používá
- * `import.meta.url`, nelze ho importovat napřímo — místo toho
- * spustíme tsx skript jako child proces, který ESM rozumí.
+ * Upsertne E2E účty (`e2e-admin`, `e2e-investor`, …) s deterministickým
+ * heslem přímo do PostgreSQL 18 (schéma vytváří Flyway v Kotlin backendu,
+ * backend proto musí běžet). Seed běží jako tsx child proces s timeoutem.
  */
 
 export const ADMIN_NICKNAME = "e2e-admin";
@@ -17,8 +16,8 @@ export const INVESTOR_NICKNAME = "e2e-investor";
 export const INVESTOR_PASSWORD = "Password123!";
 
 export default async function globalSetup(): Promise<void> {
-  // Playwright globalSetup runs in plain Node (no Next.js env loader),
-  // so we load .env ourselves. Node 20.6+ has process.loadEnvFile.
+  // Playwright globalSetup runs in plain Node, so we load .env ourselves.
+  // Node 20.6+ has process.loadEnvFile.
   if (!process.env.DATABASE_URL) {
     try {
       process.loadEnvFile(path.resolve(__dirname, "..", ".env"));
