@@ -103,7 +103,7 @@ class ProjectDetailRoutesTest : BaseIntegrationTest() {
             contentType(ContentType.Application.Json)
             setBody(
                 SiteHandoverDto(
-                    projectId = project.id, type = "Předání stavenitě zhotoviteli", date = "2026-09-11",
+                    projectId = project.id, type = "Předání staveniště zhotoviteli", date = "2026-09-11",
                     participants = "Novák, Svoboda",
                     meterStates = listOf(MeterState("Elektřina VT", "EL-98765", "12450 kWh")),
                 )

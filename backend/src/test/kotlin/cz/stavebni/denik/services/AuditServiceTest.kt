@@ -11,15 +11,24 @@ import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import java.security.MessageDigest
+import org.jooq.Record
 import java.util.UUID
 
 class AuditServiceTest : BaseIntegrationTest() {
 
-    private fun sha256(payload: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(payload.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
-    }
+    /** Recomputes the canonical hash of a stored row (see AuditHash). */
+    private fun expectedHash(log: Record): String = AuditHash.rowHash(
+        action = log.get(AUDIT_LOG.ACTION)!!,
+        entityType = log.get(AUDIT_LOG.ENTITY_TYPE)!!,
+        entityId = log.get(AUDIT_LOG.ENTITY_ID)!!,
+        actorId = log.get(AUDIT_LOG.ACTOR_ID),
+        before = null,
+        after = null,
+        ip = log.get(AUDIT_LOG.IP),
+        userAgent = log.get(AUDIT_LOG.USER_AGENT),
+        prevHash = log.get(AUDIT_LOG.PREV_HASH)!!,
+        ts = log.get(AUDIT_LOG.TS)!!,
+    )
 
     @Test
     fun `auditedTransaction inserts log and establishes genesis hash`() = runBlocking {
@@ -46,8 +55,7 @@ class AuditServiceTest : BaseIntegrationTest() {
         assertEquals("123", log.get(AUDIT_LOG.ENTITY_ID))
         assertEquals("0000000000000000000000000000000000000000000000000000000000000000", log.get(AUDIT_LOG.PREV_HASH))
 
-        val expectedHash = sha256("0000000000000000000000000000000000000000000000000000000000000000" + "project.test" + "project" + "123")
-        assertEquals(expectedHash, log.get(AUDIT_LOG.ROW_HASH))
+        assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
     }
 
     @Test
@@ -70,11 +78,9 @@ class AuditServiceTest : BaseIntegrationTest() {
         assertEquals(log2.get(AUDIT_LOG.ROW_HASH), log3.get(AUDIT_LOG.PREV_HASH))
 
         // Verify cryptographic integrity
-        val expectedHash2 = sha256(log1.get(AUDIT_LOG.ROW_HASH)!! + "step2" + "test" + "2")
-        assertEquals(expectedHash2, log2.get(AUDIT_LOG.ROW_HASH))
-
-        val expectedHash3 = sha256(log2.get(AUDIT_LOG.ROW_HASH)!! + "step3" + "test" + "3")
-        assertEquals(expectedHash3, log3.get(AUDIT_LOG.ROW_HASH))
+        assertEquals(expectedHash(log2), log2.get(AUDIT_LOG.ROW_HASH))
+        assertEquals(expectedHash(log3), log3.get(AUDIT_LOG.ROW_HASH))
+        assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
     @Test
@@ -142,13 +148,34 @@ class AuditServiceTest : BaseIntegrationTest() {
             val actualPrevHash = log.get(AUDIT_LOG.PREV_HASH)
             assertEquals(expectedPrevHash, actualPrevHash, "Chain broken at log ID ${log.get(AUDIT_LOG.ID)}")
 
-            val action = log.get(AUDIT_LOG.ACTION)!!
-            val entityType = log.get(AUDIT_LOG.ENTITY_TYPE)!!
-            val entityId = log.get(AUDIT_LOG.ENTITY_ID)!!
-            val expectedHash = sha256(actualPrevHash + action + entityType + entityId)
-            assertEquals(expectedHash, log.get(AUDIT_LOG.ROW_HASH), "Hash mismatch at log ID ${log.get(AUDIT_LOG.ID)}")
+            assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH), "Hash mismatch at log ID ${log.get(AUDIT_LOG.ID)}")
 
             expectedPrevHash = log.get(AUDIT_LOG.ROW_HASH)!!
         }
+    }
+
+    @Test
+    fun `verifyChain detects a tampered row`() = runBlocking {
+        val user = createTestUser()
+        AuditService.auditedTransaction(actor = user, action = "a1", entityType = "test", entityId = "1") { 1 }
+        AuditService.auditedTransaction(actor = user, action = "a2", entityType = "test", entityId = "2") { 2 }
+        AuditService.auditedTransaction(actor = user, action = "a3", entityType = "test", entityId = "3") { 3 }
+
+        val intact = AuditService.verifyChain(dsl)
+        assertTrue(intact.ok)
+        assertEquals(3L, intact.totalRows)
+
+        val secondId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).offset(1).limit(1).fetchOne()!!.value1()!!
+        // The append-only trigger blocks UPDATEs; bypass it the way an attacker with DDL rights would.
+        dsl.execute("ALTER TABLE \"audit_log\" DISABLE TRIGGER audit_log_no_update")
+        try {
+            dsl.update(AUDIT_LOG).set(AUDIT_LOG.ENTITY_ID, "tampered").where(AUDIT_LOG.ID.eq(secondId)).execute()
+        } finally {
+            dsl.execute("ALTER TABLE \"audit_log\" ENABLE TRIGGER audit_log_no_update")
+        }
+
+        val broken = AuditService.verifyChain(dsl)
+        assertFalse(broken.ok)
+        assertEquals(secondId, broken.brokenAtId)
     }
 }

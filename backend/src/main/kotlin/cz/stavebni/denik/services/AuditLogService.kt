@@ -24,6 +24,11 @@ data class AuditEntryDto(
 /** Read side of the append-only audit log (admins only). */
 object AuditLogService {
 
+    fun verify(tx: DSLContext, actor: SessionUser): AuditVerifyResult {
+        assertCan(actor, Action.AuditVerify)
+        return AuditService.verifyChain(tx)
+    }
+
     fun list(tx: DSLContext, actor: SessionUser, limit: Int = 200): List<AuditEntryDto> {
         assertCan(actor, Action.AuditRead)
         val rows = tx.selectFrom(AUDIT_LOG)

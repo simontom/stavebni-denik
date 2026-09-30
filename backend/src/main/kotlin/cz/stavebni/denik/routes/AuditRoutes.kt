@@ -17,6 +17,12 @@ fun Application.auditRoutes() {
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 200
                 call.respond(AuditLogService.list(DatabaseFactory.dsl, actor, limit))
             }
+
+            // Recomputes the whole hash chain (tamper evidence).
+            get("/api/audit/verify") {
+                val actor = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                call.respond(AuditLogService.verify(DatabaseFactory.dsl, actor))
+            }
         }
     }
 }
