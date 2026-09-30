@@ -3,11 +3,24 @@
  * and cleans up previous test workers. Called via execSync from Playwright
  * globalSetup.
  *
+ * The schema is owned by the Kotlin backend (Flyway migrations), so the
+ * backend must have started once against the database before this runs.
+ *
  * Run:
  *   pnpm exec tsx scripts/dev/e2e-prepare.ts
  */
+import { hash } from "@node-rs/argon2";
 import { Client } from "pg";
-import { hashPassword } from "../../src/lib/crypto";
+
+/** Same Argon2id parameters as the backend (PasswordService.kt: t=2, m=64 MiB, p=1). */
+async function hashPassword(plain: string): Promise<string> {
+  return hash(plain, {
+    algorithm: 2, // Algorithm.Argon2id (ambient const enum, see @node-rs/argon2)
+    timeCost: 2,
+    memoryCost: 65_536,
+    parallelism: 1,
+  });
+}
 
 export const ADMIN_NICKNAME = "e2e-admin";
 export const ADMIN_PASSWORD = "Password123!";

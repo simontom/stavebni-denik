@@ -13,6 +13,10 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Pinned so installs are reproducible (frontend/ is its own pnpm workspace).
+  PNPM_VERSION: 12.8.1
+
 jobs:
   lint_build:
     name: Lint + typecheck + build
@@ -36,7 +40,7 @@ jobs:
           node-version: '22'
 
       - name: Setup pnpm
-        run: npm install -g pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
       # Until backend/src/generated/jooq is committed, generate it here
       # (Testcontainers postgres:18-alpine; Docker is available on the runner).
@@ -57,7 +61,9 @@ jobs:
         run: |
           set -o pipefail
           cd frontend
-          { pnpm install && pnpm lint && pnpm build; } 2>&1 | tee /tmp/frontend.log
+          # --frozen-lockfile once frontend/pnpm-lock.yaml is committed
+          if [ -f pnpm-lock.yaml ]; then INSTALL="pnpm install --frozen-lockfile"; else INSTALL="pnpm install"; fi
+          { $INSTALL && pnpm lint && pnpm build; } 2>&1 | tee /tmp/frontend.log
 
       - name: Failure summary
         if: failure()
@@ -208,7 +214,7 @@ jobs:
           node-version: '22'
 
       - name: Setup pnpm
-        run: npm install -g pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
       - name: Install root dependencies
         run: pnpm install --frozen-lockfile
@@ -216,7 +222,7 @@ jobs:
       - name: Install frontend dependencies
         run: |
           cd frontend
-          pnpm install
+          if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; else pnpm install; fi
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
@@ -284,3 +290,49 @@ jobs:
             /tmp/backend.log
             /tmp/playwright.log
           retention-days: 14
+
+  docker:
+    name: Docker image build (Fly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      # Until backend/src/generated/jooq is committed, generate it here
+      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
+      - name: Ensure jOOQ sources
+        run: |
+          chmod +x gradlew
+          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
+            ./gradlew :backend:generateJooq --console=plain
+          fi
+
+      - name: Build image (no push)
+        run: |
+          set -o pipefail
+          docker build --progress=plain -t stavebni-denik:ci . 2>&1 | tee /tmp/docker.log
+
+      - name: Smoke test image contents
+        run: |
+          docker run --rm --entrypoint typst stavebni-denik:ci --version
+          docker run --rm --entrypoint sh stavebni-denik:ci -c 'test -f /app/app.jar && test -f /app/static/index.html && echo "jar + SPA present"'
+
+      - name: Failure summary
+        if: failure()
+        run: |
+          {
+            echo "## docker build failure"
+            echo '```'
+            grep -nE "ERROR|error:|failed" /tmp/docker.log | head -60 || true
+            echo '```'
+            echo "### tail"; echo '```'; tail -n 60 /tmp/docker.log; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
