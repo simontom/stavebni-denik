@@ -285,11 +285,70 @@ jobs:
           docker run --rm --entrypoint typst stavebni-denik:ci --version
           docker run --rm --entrypoint sh stavebni-denik:ci -c 'test -f /app/app.jar && test -f /app/static/index.html && echo "jar + SPA present"'
 
+      # Boots the image in production mode against a throwaway PostgreSQL 18.
+      # This is what catches a fat jar that cannot start (e.g. Flyway's
+      # META-INF/services entries lost when the jar is assembled).
+      - name: Boot image against PostgreSQL 18
+        run: |
+          set -euo pipefail
+          DB_PASSWORD="$(openssl rand -hex 16)"
+          JWT_SECRET="$(openssl rand -base64 32)"
+
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              echo "=== smoke test failed; app log tail ==="
+              docker logs --tail 80 smoke-app 2>&1 || true
+            fi
+            docker rm -f smoke-app smoke-pg >/dev/null 2>&1 || true
+            docker network rm smoke-net >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker network create smoke-net >/dev/null
+          docker run -d --name smoke-pg --network smoke-net \
+            -e POSTGRES_DB=stavebni_denik -e POSTGRES_USER=denik -e POSTGRES_PASSWORD="$DB_PASSWORD" \
+            postgres:18-alpine >/dev/null
+          for i in $(seq 1 30); do
+            docker exec smoke-pg pg_isready -U denik -d stavebni_denik >/dev/null 2>&1 && break
+            sleep 1
+          done
+
+          docker run -d --name smoke-app --network smoke-net -p 8080:8080 \
+            -e APP_ENV=production -e JWT_SECRET="$JWT_SECRET" \
+            -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
+            -e DB_USER=denik -e DB_PASSWORD="$DB_PASSWORD" \
+            stavebni-denik:ci >/dev/null
+
+          for i in $(seq 1 60); do
+            curl -fsS --max-time 2 http://localhost:8080/api/health 2>/dev/null | grep -q ok && break
+            sleep 1
+          done
+          curl -fsS --max-time 2 http://localhost:8080/api/health | grep -q ok
+          echo "health ok"
+
+          # Every Flyway migration in the repo must have been applied.
+          expected="$(ls backend/src/main/resources/db/migration/V*.sql | wc -l)"
+          applied="$(docker exec smoke-pg psql -U denik -d stavebni_denik -tAc 'select count(*) from flyway_schema_history where success')"
+          echo "migrations applied: $applied / $expected"
+          [ "$applied" -eq "$expected" ]
+
+          # Authentication is enforced and the SPA is served with security headers.
+          code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/projects)"
+          echo "GET /api/projects without a session -> $code"
+          [ "$code" = "401" ]
+
+          curl -fsS -D /tmp/smoke-headers.txt -o /tmp/smoke-index.html http://localhost:8080/
+          grep -qi '^content-security-policy:' /tmp/smoke-headers.txt
+          grep -qi '^x-frame-options: DENY' /tmp/smoke-headers.txt
+          grep -q '<div id="root">' /tmp/smoke-index.html
+          echo "SPA served with security headers"
+
       - name: Failure summary
         if: failure()
         run: |
           {
-            echo "## docker build failure"
+            echo "## docker job failure (build log below; the boot test prints the app log in its own step)"
             echo '```'
             grep -nE "ERROR|error:|failed" /tmp/docker.log | head -60 || true
             echo '```'
