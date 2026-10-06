@@ -129,6 +129,14 @@ tasks.register<JavaExec>("generateJooq") {
     configureDockerForWindows()
 }
 
+// Flyway (and Ktor) discover their modules through META-INF/services files that
+// exist in several jars. Without merging them the fat jar keeps only one copy
+// (for Flyway just the 3 PostgreSQL entries instead of ~40) and Flyway.configure()
+// fails with a NullPointerException at startup.
+tasks.shadowJar {
+    mergeServiceFiles()
+}
+
 tasks.test {
     useJUnitPlatform()
     configureDockerForWindows()
