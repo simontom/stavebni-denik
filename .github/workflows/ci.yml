@@ -42,15 +42,6 @@ jobs:
       - name: Setup pnpm
         run: npm install -g pnpm@${{ env.PNPM_VERSION }}
 
-      # Until backend/src/generated/jooq is committed, generate it here
-      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
-      - name: Ensure jOOQ sources
-        run: |
-          chmod +x gradlew
-          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
-            ./gradlew :backend:generateJooq --console=plain
-          fi
-
       - name: Backend assemble & compile
         run: |
           set -o pipefail
@@ -95,15 +86,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      # Until backend/src/generated/jooq is committed, generate it here
-      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
-      - name: Ensure jOOQ sources
-        run: |
-          chmod +x gradlew
-          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
-            ./gradlew :backend:generateJooq --console=plain
-          fi
-
       # Tests start their own postgres:18-alpine via Testcontainers.
       - name: Run Backend Integration Tests
         run: |
@@ -146,13 +128,10 @@ jobs:
 
       - name: Fail on drift
         run: |
-          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
-            echo "::warning::backend/src/generated/jooq is not committed yet. Run './gradlew :backend:generateJooq' locally and commit it; until then CI generates the sources on the fly."
-            exit 0
-          fi
-          git add -N backend/src/generated/jooq
-          if ! git diff --quiet -- backend/src/generated/jooq; then
-            git diff --stat -- backend/src/generated/jooq | tail -n 40
+          # status --porcelain also reports added (untracked) and deleted files,
+          # which a plain `git diff` would miss.
+          if [ -n "$(git status --porcelain -- backend/src/generated/jooq)" ]; then
+            git status --short -- backend/src/generated/jooq | head -n 40
             echo "::error::Generated jOOQ sources are out of date. Run './gradlew :backend:generateJooq' and commit backend/src/generated/jooq."
             exit 1
           fi
@@ -227,14 +206,8 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      # Until backend/src/generated/jooq is committed, generate it here
-      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
-      - name: Ensure jOOQ sources
-        run: |
-          chmod +x gradlew
-          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
-            ./gradlew :backend:generateJooq --console=plain
-          fi
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
       - name: Pre-build Backend
         run: |
@@ -300,22 +273,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: gradle
-
-      # Until backend/src/generated/jooq is committed, generate it here
-      # (Testcontainers postgres:18-alpine; Docker is available on the runner).
-      - name: Ensure jOOQ sources
-        run: |
-          chmod +x gradlew
-          if [ -z "$(git ls-files backend/src/generated/jooq)" ]; then
-            ./gradlew :backend:generateJooq --console=plain
-          fi
-
+      # The image build uses the committed jOOQ sources and needs no JDK or
+      # database on the runner.
       - name: Build image (no push)
         run: |
           set -o pipefail

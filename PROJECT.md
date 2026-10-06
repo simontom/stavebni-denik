@@ -17,20 +17,28 @@ Generated classes live in `backend/src/generated/jooq` and are meant to be commi
 ./gradlew :backend:generateJooq   # starts postgres:18-alpine via Testcontainers, runs Flyway, generates Kotlin
 ```
 
-Run it after every migration change and commit the result. CI job "jOOQ codegen drift check" fails when the committed sources are out of date (and, until the directory is committed, generates them on the fly and uploads them as the `jooq-generated-sources` artifact).
+Run it after every migration change and commit the result. CI job "jOOQ codegen drift check" regenerates the sources and fails the PR when they differ from what is committed (modified, added or deleted files); it uploads the fresh output as the `jooq-generated-sources` artifact.
+
+To check for drift locally (needs Docker; empty output means in sync):
+
+```bash
+./gradlew :backend:generateJooq && git status --short backend/src/generated/jooq
+```
+
+If two branches change the schema, never merge the generated files by hand: resolve the migrations, then regenerate.
 
 Schema changes go into new Flyway migrations (`backend/src/main/resources/db/migration/V<n>__*.sql`). Nothing alters the schema at runtime.
 
 ## Runtime configuration (backend)
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` | |
-| `APP_ENV` | development | `production` makes `JWT_SECRET` mandatory and cookies `Secure` |
-| `JWT_SECRET` | random per process (dev only) | required in production |
-| `UPLOADS_DIR` | `./uploads` | photos in `<dir>/photos` (mount a volume in production) |
-| `CORS_ALLOWED_ORIGINS` | none (CORS off) | comma separated; the SPA is same-origin |
-| `OPEN_METEO_BASE_URL` | Open-Meteo | weather snapshot |
+| Variable                             | Default                                                                 | Notes                                                          |
+| ------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                |
+| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure` |
+| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                         |
+| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)        |
+| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                        |
+| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                               |
 
 ## API overview (all under `/api`, JWT cookie auth unless noted)
 
