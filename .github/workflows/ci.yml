@@ -206,12 +206,18 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # The seed resets known admin accounts and deletes users; it must refuse
+      # every non-local database.
+      - name: Seed safety guard tests
+        run: pnpm exec tsx --test scripts/dev/local-db-guard.test.ts
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Pre-build Backend
         run: |
-          ./gradlew assemble --console=plain
+          set -o pipefail
+          ./gradlew assemble --console=plain 2>&1 | tee /tmp/gradle-assemble.log
 
       - name: Start Ktor Backend
         timeout-minutes: 4
@@ -240,6 +246,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           {
+            if [ -f /tmp/gradle-assemble.log ]; then
+              echo "## Backend pre-build (gradle assemble)"
+              echo '```'
+              grep -nE "^e: |FAILED|What went wrong|Could not|Caused by" /tmp/gradle-assemble.log | head -40 || true
+              echo '```'
+              echo "### Gradle assemble tail"; echo '```'; tail -n 40 /tmp/gradle-assemble.log; echo '```'
+            fi
             echo "## Playwright"
             echo '```'
             grep -nE "✘|✓|passed|failed|flaky|Error:|Timeout|expect\(|at .*spec\.ts" /tmp/playwright.log | head -150 || true
@@ -262,6 +275,7 @@ jobs:
             test-results/
             /tmp/backend.log
             /tmp/playwright.log
+            /tmp/gradle-assemble.log
           retention-days: 14
 
   docker:
