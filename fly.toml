@@ -8,6 +8,9 @@ primary_region = "fra"
 #   fly secrets set JWT_SECRET=$(openssl rand -base64 32) \
 #     JDBC_URL=jdbc:postgresql://<host>:5432/stavebni_denik DB_USER=... DB_PASSWORD=...
 # The database must be PostgreSQL 18 (schema uses uuidv7()).
+# This build is not released for real diary data yet: in production mode the app
+# refuses to start unless `fly secrets set ALLOW_UNRELEASED_BUILD=true` is set
+# (staging with test data only). See PROJECT.md, "Release gate".
 [env]
   APP_ENV = "production"
   UPLOADS_DIR = "/data/uploads"
