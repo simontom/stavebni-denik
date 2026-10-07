@@ -16,29 +16,15 @@ test.describe("Security headers", () => {
    * Fetch the login page via Playwright's `request` context — this gives us
    * the raw headers without browser CSP enforcement interfering.
    */
-  test("CSP header is present and does NOT contain 'unsafe-eval'", async ({
-    request,
-  }) => {
+  test("CSP header is present and does NOT contain 'unsafe-eval'", async ({ request }) => {
     const res = await request.get("/login");
     expect(res.status()).toBe(200);
 
     const csp = res.headers()["content-security-policy"];
-    expect(
-      csp,
-      "Content-Security-Policy header must be present",
-    ).toBeTruthy();
+    expect(csp, "Content-Security-Policy header must be present").toBeTruthy();
 
-    // The fix: 'unsafe-eval' must be absent in production.
-    // Next.js dev server requires it for webpack HMR.
-    const isDev = !process.env.BASE_URL; // If Playwright booted `pnpm dev`, it's local.
-    if (!isDev) {
-      expect(
-        csp,
-        "CSP must not allow 'unsafe-eval' in production.",
-      ).not.toContain("unsafe-eval");
-    } else {
-      expect(csp).toContain("unsafe-eval");
-    }
+    // In Vite, 'unsafe-eval' is not needed and must be absent.
+    expect(csp, "CSP must not allow 'unsafe-eval'.").not.toContain("unsafe-eval");
 
     // Sanity-check the directives we know must be present.
     expect(csp).toContain("default-src 'self'");
@@ -56,9 +42,7 @@ test.describe("Security headers", () => {
     expect(res.headers()["x-content-type-options"]).toBe("nosniff");
   });
 
-  test("Strict-Transport-Security includes includeSubDomains and preload", async ({
-    request,
-  }) => {
+  test("Strict-Transport-Security includes includeSubDomains and preload", async ({ request }) => {
     const res = await request.get("/login");
     const hsts = res.headers()["strict-transport-security"];
     // HSTS may be omitted in local HTTP (not fatal in dev), but must
@@ -70,9 +54,7 @@ test.describe("Security headers", () => {
     }
   });
 
-  test("CSP connect-src allows Open-Meteo and nothing else external", async ({
-    request,
-  }) => {
+  test("CSP connect-src allows Open-Meteo and nothing else external", async ({ request }) => {
     const res = await request.get("/login");
     const csp = res.headers()["content-security-policy"];
 
@@ -89,10 +71,7 @@ test.describe("Security headers", () => {
 
     // Capture CSP violation reports surfaced as browser console errors.
     page.on("console", (msg) => {
-      if (
-        msg.type() === "error" &&
-        msg.text().toLowerCase().includes("content security policy")
-      ) {
+      if (msg.type() === "error" && msg.text().toLowerCase().includes("content security policy")) {
         violations.push(msg.text());
       }
     });
@@ -101,16 +80,12 @@ test.describe("Security headers", () => {
     await page.addInitScript(() => {
       document.addEventListener("securitypolicyviolation", (e) => {
         // @ts-expect-error -- window.__cspViolations for test retrieval
-        (window.__cspViolations ??= []).push(
-          `${e.violatedDirective}: ${e.blockedURI}`,
-        );
+        (window.__cspViolations ??= []).push(`${e.violatedDirective}: ${e.blockedURI}`);
       });
     });
 
     await page.goto("/login");
-    await expect(
-      page.locator('input[name="nickname"]'),
-    ).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('input[name="nickname"]')).toBeVisible({ timeout: 10_000 });
 
     // Give any deferred scripts a moment to load.
     await page.waitForTimeout(1000);
@@ -120,14 +95,8 @@ test.describe("Security headers", () => {
       () => window.__cspViolations ?? [],
     );
 
-    expect(
-      violations,
-      `CSP console errors on login page: ${violations.join(", ")}`,
-    ).toHaveLength(0);
+    expect(violations, `CSP console errors on login page: ${violations.join(", ")}`).toHaveLength(0);
 
-    expect(
-      domViolations,
-      `CSP DOM violations on login page: ${(domViolations as string[]).join(", ")}`,
-    ).toHaveLength(0);
+    expect(domViolations, `CSP DOM violations on login page: ${(domViolations as string[]).join(", ")}`).toHaveLength(0);
   });
 });
