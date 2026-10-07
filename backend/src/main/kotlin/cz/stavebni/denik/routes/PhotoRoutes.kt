@@ -1,6 +1,8 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.ForbiddenException
+import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
@@ -97,42 +99,40 @@ fun Application.photoRoutes() {
                     photo = photo
                 ))
             }
-        }
 
-        route("/api/photos/{id}") {
-            get {
-                val idStr = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
-                val photoId = UUID.fromString(idStr)
-                val tx = DatabaseFactory.dsl
-                val record = tx.selectFrom(PHOTOS)
-                    .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
-                    .fetchOne() ?: throw IllegalArgumentException("Photo not found")
-
-                val file = File(record.get(PHOTOS.PATHORIGINAL)!!)
-                if (!file.exists()) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@get
-                }
-                call.response.header(HttpHeaders.ContentType, "image/jpeg")
-                call.respondFile(file)
-            }
-
-            get("/thumb") {
-                val idStr = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
-                val photoId = UUID.fromString(idStr)
-                val tx = DatabaseFactory.dsl
-                val record = tx.selectFrom(PHOTOS)
-                    .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
-                    .fetchOne() ?: throw IllegalArgumentException("Photo not found")
-
-                val file = File(record.get(PHOTOS.PATHTHUMB)!!)
-                if (!file.exists()) {
-                    call.respond(HttpStatusCode.NotFound)
-                    return@get
-                }
-                call.response.header(HttpHeaders.ContentType, "image/jpeg")
-                call.respondFile(file)
+            // Photos are evidence from the site: only logged-in members of the
+            // report's project (and app admins) may download them.
+            route("/api/photos/{id}") {
+                get { call.respondPhoto(thumbnail = false) }
+                get("/thumb") { call.respondPhoto(thumbnail = true) }
             }
         }
     }
+}
+
+/**
+ * Sends the original (or the thumbnail) of a photo to a user who may see its
+ * report. A photo the caller may not see is answered with 404, exactly like a
+ * missing one, so photo ids cannot be probed.
+ */
+private suspend fun ApplicationCall.respondPhoto(thumbnail: Boolean) {
+    val user = principal<SessionUser>() ?: throw UnauthenticatedException()
+    val photoId = ProjectAccess.parseId(parameters["id"], "photo id")
+    val tx = DatabaseFactory.dsl
+    val record = tx.selectFrom(PHOTOS)
+        .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
+        .fetchOne() ?: throw NotFoundException("Fotka nenalezena")
+
+    try {
+        ProjectAccess.requireReportAccess(tx, user, record.get(PHOTOS.REPORTID)!!)
+    } catch (e: ForbiddenException) {
+        throw NotFoundException("Fotka nenalezena")
+    }
+
+    val file = File(record.get(if (thumbnail) PHOTOS.PATHTHUMB else PHOTOS.PATHORIGINAL)!!)
+    if (!file.exists()) throw NotFoundException("Fotka nenalezena")
+
+    response.header(HttpHeaders.ContentType, "image/jpeg")
+    response.header(HttpHeaders.CacheControl, "private, max-age=86400")
+    respondFile(file)
 }

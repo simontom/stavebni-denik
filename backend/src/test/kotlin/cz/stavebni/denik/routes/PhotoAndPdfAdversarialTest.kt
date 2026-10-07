@@ -239,8 +239,10 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         assertTrue((fileBytes[0].toInt() and 0xFF) == 0xFF)
         assertTrue((fileBytes[1].toInt() and 0xFF) == 0xD8)
 
-        // Verify GET /api/photos/{id} serves the real file
-        val getPhotoResp = client.get("/api/photos/$photoUuid")
+        // Verify GET /api/photos/{id} serves the real file to a logged-in project member
+        val getPhotoResp = client.get("/api/photos/$photoUuid") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
         assertEquals(HttpStatusCode.OK, getPhotoResp.status)
         val photoContentType = getPhotoResp.headers[HttpHeaders.ContentType]
         assertNotNull(photoContentType)
@@ -249,7 +251,9 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         assertEquals(fileBytes.size, downloadedBytes.size)
 
         // Verify GET /api/photos/{id}/thumb serves the thumbnail
-        val getThumbResp = client.get("/api/photos/$photoUuid/thumb")
+        val getThumbResp = client.get("/api/photos/$photoUuid/thumb") {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
         assertEquals(HttpStatusCode.OK, getThumbResp.status)
         val thumbContentType = getThumbResp.headers[HttpHeaders.ContentType]
         assertNotNull(thumbContentType)
