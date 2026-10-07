@@ -1,7 +1,0 @@
-ktor:
-  deployment:
-    port: 8080
-    port: ${PORT}
-  application:
-    modules:
-      - cz.stavebni.denik.ApplicationKt.module
