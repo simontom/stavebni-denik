@@ -110,6 +110,10 @@ Project-scoped endpoints require project membership. App admins can **read** eve
 
 A new daily entry is **on time** for today and for any day since the previous working day (Monday to Friday; public holidays are not considered): on a Monday that is Friday, Saturday, Sunday and Monday. An entry for an **earlier** day is a **late entry**: it needs a reason (at most 1,000 characters), is flagged (`isLateEntry`, `lateEntryReason`) and the flag and reason are part of the record, the audit snapshot and the PDF (`Pozdní zápis:`). An entry for a day in the **future** is refused. "Today" is the date in Prague (decision D10). Only a _new_ entry is checked: correcting an existing one is not a new entry, and the reason of a late entry stays. A flagged entry without a reason cannot exist in the database either (check constraint, migration V3). The form asks for the reason when it opens a day before the previous working day, and does not offer a date in the future.
 
+## Weather
+
+The weather of a day is **entered by hand** (decision D12): a free-text condition (the form suggests common ones), the lowest and the highest temperature. Everything is optional; an entry with no value is stored as no weather, and sending an empty `weather` object on a save clears it, while leaving `weather` out keeps what is stored. Temperatures must lie between -60 and 60 °C and the lowest cannot exceed the highest; the text is at most 200 characters. The PDF shows it as readable text (`zataženo, 8,5 až 15 °C`, or `Neuvedeno`), and the audit snapshot keeps that same text, because snapshots hold no decimals (a number's textual form could change on the way through `jsonb` and break the hash chain). **Not done:** filling the weather in automatically from Open-Meteo; its free API is non-commercial, so that needs a commercial key first. `WeatherService` still exists for that purpose but nothing calls it.
+
 ## Cross-site requests
 
 The session cookie is `SameSite=Lax`. In addition, `CrossSiteRequestGuard` refuses every state-changing request (anything but GET, HEAD, OPTIONS) under `/api/` that a browser makes on behalf of another site, with `403`:

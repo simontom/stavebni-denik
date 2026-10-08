@@ -86,6 +86,27 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the weather is written as readable text in the PDF`() = runBlocking {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Počasí", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val report = DailyReportService.createReport(
+            boss, UUID.fromString(project.id), "2026-09-28",
+            workDescription = "Zápis", weather = cz.stavebni.denik.domain.WeatherData(8.5, 15.0, "zataženo, mlha")
+        )
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
+
+        assertTrue(text.contains("zataženo, mlha, 8,5 až 15 °C"), text)
+        assertFalse(text.contains("tempMin"), "no raw JSON in the PDF: $text")
+    }
+
+    @Test
     fun `an entry that is on time has no late-entry line`() = runBlocking {
         val text = exportText("Včas", "Normální zápis")
 

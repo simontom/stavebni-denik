@@ -126,3 +126,39 @@ test("an entry for an earlier day is a flagged late entry with a reason; a futur
   await expect(page.getByText(/budoucí datum/i)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toBeDisabled();
 });
+
+test("the weather is entered by hand, saved with the entry, shown again, and can be cleared", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+  const saved = () => page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
+
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('input[name="weatherCondition"]')).toHaveValue("", { timeout: 15_000 });
+  await page.locator('textarea[name="workDescription"]').fill("Betonáž");
+  await page.locator('input[name="weatherCondition"]').fill("zataženo");
+  await page.locator('input[name="weatherMin"]').fill("8.5");
+  await page.locator('input[name="weatherMax"]').fill("15");
+  const first = saved();
+  await save().click();
+  expect((await first).ok()).toBeTruthy();
+
+  // Back again: the weather is what was entered.
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('input[name="weatherCondition"]')).toHaveValue("zataženo", { timeout: 15_000 });
+  await expect(page.locator('input[name="weatherMin"]')).toHaveValue("8.5");
+  await expect(page.locator('input[name="weatherMax"]')).toHaveValue("15");
+
+  // Clearing the fields clears the weather.
+  await page.locator('input[name="weatherCondition"]').fill("");
+  await page.locator('input[name="weatherMin"]').fill("");
+  await page.locator('input[name="weatherMax"]').fill("");
+  const second = saved();
+  await save().click();
+  expect((await second).ok()).toBeTruthy();
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('textarea[name="workDescription"]')).toHaveValue("Betonáž", { timeout: 15_000 });
+  await expect(page.locator('input[name="weatherCondition"]')).toHaveValue("");
+  await expect(page.locator('input[name="weatherMin"]')).toHaveValue("");
+});

@@ -127,7 +127,9 @@ object PdfExportService {
             address = project.get(PROJECTS.ADDRESS) ?: "",
             date = report.get(DAILY_REPORTS.DATE).toString(),
             sequenceNumber = report.get(DAILY_REPORTS.SEQUENCENUMBER) ?: 0,
-            weather = report.get(DAILY_REPORTS.WEATHER)?.data() ?: "Neuvedeno",
+            weather = report.get(DAILY_REPORTS.WEATHER)?.data()
+                ?.let { raw -> runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(cz.stavebni.denik.domain.WeatherData.serializer(), raw) }.getOrNull() }
+                ?.takeUnless { it.isEmpty() }?.describe() ?: "Neuvedeno",
             workDescription = report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "",
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,

@@ -37,7 +37,9 @@ data class CreateReportPayload(
     /** The `updatedAt` the client last saw; see [DailyReportService.ReportInput.expectedUpdatedAt]. */
     val expectedUpdatedAt: String? = null,
     /** Required when a new entry is for a day before the previous working day (a late entry). */
-    val lateEntryReason: String? = null
+    val lateEntryReason: String? = null,
+    /** The weather, entered by hand; leave it out to keep what is stored, send an empty object to clear it. */
+    val weather: cz.stavebni.denik.domain.WeatherData? = null
 )
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
@@ -120,7 +122,8 @@ fun Application.reportRoutes() {
                         workersByTrade = workersJson(payload) ?: "[]",
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj,
-                        lateEntryReason = payload.lateEntryReason
+                        lateEntryReason = payload.lateEntryReason,
+                        weather = payload.weather
                     )
                     call.respond(HttpStatusCode.Created, report)
                 }
@@ -153,7 +156,8 @@ fun Application.reportRoutes() {
                                 isControlDay = payload.isControlDay,
                                 constructionObj = payload.constructionObj,
                                 expectedUpdatedAt = payload.expectedInstant(),
-                                lateEntryReason = payload.lateEntryReason
+                                lateEntryReason = payload.lateEntryReason,
+                                weather = payload.weather
                             )
                         )
                         call.respond(HttpStatusCode.OK, report)
