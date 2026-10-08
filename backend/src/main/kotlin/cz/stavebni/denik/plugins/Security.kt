@@ -2,8 +2,12 @@ package cz.stavebni.denik.plugins
 
 import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
+import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.services.JwtService
+import cz.stavebni.denik.services.SessionService
 import cz.stavebni.denik.domain.SessionUser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import io.ktor.server.auth.Principal
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -40,9 +44,12 @@ fun Application.configureSecurity() {
             }
 
             validate { credential ->
-                val jwt = credential.payload
-                val user = JwtService.decodeUser(jwt)
-                user
+                // The token only names a session and a user. Whether the session is still valid,
+                // and what the user may do now, is decided by the database on every request.
+                val claims = JwtService.decodeUser(credential.payload) ?: return@validate null
+                withContext(Dispatchers.IO) {
+                    SessionService.resolve(DatabaseFactory.dsl, claims.sessionId, claims.id)
+                }
             }
 
             challenge { defaultScheme, realm ->

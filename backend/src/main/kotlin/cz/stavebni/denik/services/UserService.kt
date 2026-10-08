@@ -187,16 +187,22 @@ object UserService {
             entityType = "user",
             entityId = id.toString(),
         ) { tx ->
+            if (req.isAdmin == false) requireAnotherActiveAdminIfTargetIsOne(tx, id)
+
             val update = tx.update(USERS).set(USERS.UPDATEDAT, OffsetDateTime.now())
             if (displayName != null) update.set(USERS.DISPLAYNAME, displayName)
             if (role != null) update.set(USERS.ROLE, DbRole.valueOf(role.name))
             if (req.isAdmin != null) update.set(USERS.ISADMIN, req.isAdmin)
             if (req.ckaitNumber != null) update.set(USERS.CKAITNUMBER, req.ckaitNumber.trim().ifEmpty { null })
-            update.where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
+            val updated = update.where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
                 .returning()
                 .fetchOne()
-                ?.let { toDto(it) }
                 ?: throw NotFoundException("Uživatel nenalezen")
+
+            // New rights apply at once on the server; end the sessions so the user's own screen
+            // (which remembers the role from login) does not keep showing the old ones.
+            if (role != null || req.isAdmin != null) SessionService.revokeAllForUser(tx, id)
+            toDto(updated)
         }
     }
 
@@ -210,14 +216,19 @@ object UserService {
             entityType = "user",
             entityId = id.toString(),
         ) { tx ->
-            tx.update(USERS)
+            if (!active) requireAnotherActiveAdminIfTargetIsOne(tx, id)
+
+            val updated = tx.update(USERS)
                 .set(USERS.ISACTIVE, active)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
                 .returning()
                 .fetchOne()
-                ?.let { toDto(it) }
                 ?: throw NotFoundException("Uživatel nenalezen")
+
+            // Reactivating an account must not bring back sessions from before it was deactivated.
+            if (!active) SessionService.revokeAllForUser(tx, id)
+            toDto(updated)
         }
     }
 
@@ -232,6 +243,8 @@ object UserService {
             entityType = "user",
             entityId = id.toString(),
         ) { tx ->
+            requireAnotherActiveAdminIfTargetIsOne(tx, id)
+
             val now = OffsetDateTime.now()
             val updated = tx.update(USERS)
                 .set(USERS.DELETEDAT, now)
@@ -240,6 +253,22 @@ object UserService {
                 .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
                 .execute()
             if (updated == 0) throw NotFoundException("Uživatel nenalezen")
+            SessionService.revokeAllForUser(tx, id)
+        }
+    }
+
+    /**
+     * The application must always keep an administrator. Called inside the audited transaction
+     * (which is serialised by the audit lock) before an admin is demoted, deactivated or deleted:
+     * if the target is an active admin and nobody else is, the change is refused. The actor's own
+     * `isAdmin` flag cannot be trusted here: it is the value from the start of the request.
+     */
+    private fun requireAnotherActiveAdminIfTargetIsOne(tx: DSLContext, targetId: UUID) {
+        fun activeAdmins() = USERS.ISADMIN.eq(true).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull)
+
+        val targetIsActiveAdmin = tx.fetchExists(USERS, activeAdmins().and(USERS.ID.eq(targetId)))
+        if (targetIsActiveAdmin && !tx.fetchExists(USERS, activeAdmins().and(USERS.ID.ne(targetId)))) {
+            throw IllegalStateException("Musí zůstat alespoň jeden aktivní administrátor")
         }
     }
 
