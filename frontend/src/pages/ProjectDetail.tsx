@@ -145,7 +145,17 @@ export const ProjectDetail: React.FC = () => {
     }
     try {
       const res = await fetch(`/api/reports/${target.id}/pdf`);
-      if (!res.ok) throw new Error("Chyba při stahování PDF");
+      if (!res.ok) {
+        // Show the server's own explanation (for example "Export do PDF není na serveru dostupný").
+        let message = "Chyba při stahování PDF";
+        try {
+          const body = await res.json();
+          if (body && typeof body.error === "string") message = body.error;
+        } catch {
+          // the body was not JSON
+        }
+        throw new Error(message);
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -255,9 +265,7 @@ export const ProjectDetail: React.FC = () => {
   if (!project) return <div className="p-8 text-center text-red-600">{error || "Projekt nenalezen"}</div>;
 
   const tabClass = (name: string) =>
-    `border-b-2 px-1 pb-4 text-sm font-medium ${
-      tab === name ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"
-    }`;
+    `border-b-2 px-1 pb-4 text-sm font-medium ${tab === name ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"}`;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8">

@@ -86,8 +86,15 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      # typst renders the PDF exports. RealTypstPdfTest runs the real tool; REQUIRE_TYPST=1 below
+      # makes a missing typst a failure instead of a skip.
+      - name: Install typst (pinned)
+        uses: ./.github/actions/install-typst
+
       # Tests start their own postgres:18-alpine via Testcontainers.
       - name: Run Backend Integration Tests
+        env:
+          REQUIRE_TYPST: "1"
         run: |
           set -o pipefail
           chmod +x gradlew
@@ -210,6 +217,10 @@ jobs:
       # every non-local database.
       - name: Seed safety guard tests
         run: pnpm exec tsx --test scripts/dev/local-db-guard.test.ts
+
+      # The E2E flow downloads a real PDF, so the backend needs typst on its PATH.
+      - name: Install typst (pinned)
+        uses: ./.github/actions/install-typst
 
       - name: Make gradlew executable
         run: chmod +x gradlew

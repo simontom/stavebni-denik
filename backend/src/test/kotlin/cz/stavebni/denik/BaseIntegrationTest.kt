@@ -6,6 +6,8 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.*
 import cz.stavebni.denik.services.JwtService
 import cz.stavebni.denik.services.PasswordService
+import cz.stavebni.denik.services.PdfExportService
+import cz.stavebni.denik.services.TypstCompiler
 import org.jooq.DSLContext
 import org.junit.jupiter.api.BeforeEach
 import org.testcontainers.containers.PostgreSQLContainer
@@ -47,6 +49,16 @@ abstract class BaseIntegrationTest {
     val dsl: DSLContext get() {
         postgres // ensure container initialized
         return DatabaseFactory.dsl
+    }
+
+    /**
+     * Integration tests do not need the typst tool: PDF generation runs against this fake, which
+     * writes a small valid PDF. A test that wants the real thing sets
+     * `PdfExportService.compiler = ProcessTypstCompiler()` itself (see RealTypstPdfTest).
+     */
+    @BeforeEach
+    fun installFakeTypst() {
+        PdfExportService.compiler = FakeTypst
     }
 
     @BeforeEach
@@ -113,5 +125,19 @@ abstract class BaseIntegrationTest {
             .onConflictDoNothing()
             .execute()
         return JwtService.createToken(user, expiresAt.toInstant())
+    }
+}
+
+/** A minimal but valid PDF, used by tests that only care about the HTTP / file handling around a PDF. */
+val MINIMAL_PDF: ByteArray = (
+    "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj " +
+        "3 0 obj<</Type/Page/MediaBox[0 0 595 842]/Parent 2 0 R>>endobj\nxref\n0 4\n0000000000 65535 f\n" +
+        "0000000009 00000 n\n0000000052 00000 n\n0000000102 00000 n\ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n178\n%%EOF\n"
+    ).toByteArray(Charsets.ISO_8859_1)
+
+/** Stands in for typst in tests that do not exercise the real tool. */
+object FakeTypst : TypstCompiler {
+    override fun compile(workDir: java.io.File, typstFile: java.io.File, pdfFile: java.io.File) {
+        pdfFile.writeBytes(MINIMAL_PDF)
     }
 }
