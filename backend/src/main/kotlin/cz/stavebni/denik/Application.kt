@@ -4,8 +4,10 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.netty.*
+import io.ktor.server.plugins.bodylimit.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.http.content.singlePageApplication
@@ -25,6 +27,9 @@ import cz.stavebni.denik.db.DatabaseFactory
 import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) = EngineMain.main(args)
+
+private const val JSON_BODY_LIMIT_BYTES = 256L * 1024
+const val UPLOAD_BODY_LIMIT_BYTES = 6L * 1024 * 1024
 
 fun Application.module() {
     // Before anything touches the database or the network.
@@ -64,6 +69,12 @@ fun Application.module() {
 
     // Before any route runs: a state-changing request that another site makes through the user's browser is refused.
     install(CrossSiteRequestGuard)
+
+    // Nothing may make the server buffer an unbounded request body, not even before login. JSON
+    // requests are small; a photo upload carries one file of at most 5 MB plus multipart framing.
+    install(RequestBodyLimit) {
+        bodyLimit { call -> if (call.request.path() == "/api/photos/upload") UPLOAD_BODY_LIMIT_BYTES else JSON_BODY_LIMIT_BYTES }
+    }
 
     install(ContentNegotiation) {
         json(Json {

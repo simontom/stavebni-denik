@@ -7,6 +7,7 @@ import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.module
 import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.ProjectDto
+import cz.stavebni.denik.services.PhotoStorage
 import cz.stavebni.denik.services.ProjectService
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -224,13 +225,13 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         // Verify real file saving on disk
         val origPathStr = dbRecord.get(PHOTOS.PATHORIGINAL)!!
         val thumbPathStr = dbRecord.get(PHOTOS.PATHTHUMB)!!
-        val origFile = File(origPathStr)
-        val thumbFile = File(thumbPathStr)
-
-        assertTrue(origFile.exists(), "Original file must exist at $origPathStr")
-        assertTrue(origFile.length() > 0, "Original file size must be > 0")
-        assertTrue(thumbFile.exists(), "Thumb file must exist at $thumbPathStr")
-        assertTrue(thumbFile.length() > 0, "Thumb file size must be > 0")
+        // The row holds storage keys, not absolute paths; the files exist behind them.
+        val origFile = PhotoStorage.resolve(origPathStr)?.toFile()
+        val thumbFile = PhotoStorage.resolve(thumbPathStr)?.toFile()
+        assertNotNull(origFile, "Original file must exist behind key $origPathStr")
+        assertNotNull(thumbFile, "Thumb file must exist behind key $thumbPathStr")
+        assertTrue(origFile!!.length() > 0, "Original file size must be > 0")
+        assertTrue(thumbFile!!.length() > 0, "Thumb file size must be > 0")
 
         // Verify file is a valid readable JPEG on disk
         val loadedImage = ImageIO.read(origFile)

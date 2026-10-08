@@ -29,6 +29,9 @@ export const AdminUsers: React.FC = () => {
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [createError, setCreateError] = useState("");
 
+  // Password reset result (the password is shown once)
+  const [resetResult, setResetResult] = useState<{ nickname: string; password: string } | null>(null);
+
   // Edit User Modal State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
@@ -119,6 +122,16 @@ export const AdminUsers: React.FC = () => {
     }
   };
 
+  const handleResetPassword = async (user: User) => {
+    if (!window.confirm(`Vygenerovat uživateli ${user.nickname} nové dočasné heslo? Stávající heslo i všechna jeho přihlášení přestanou platit.`)) return;
+    try {
+      const result = await api<{ initialPassword: string }>(`/api/users/${user.id}/reset-password`, { method: "POST" });
+      setResetResult({ nickname: user.nickname, password: result.initialPassword });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Heslo se nepodařilo obnovit");
+    }
+  };
+
   const handleDeleteUser = async (user: User) => {
     if (!window.confirm("Opravdu chcete uživatele smazat?")) return;
     try {
@@ -202,6 +215,9 @@ export const AdminUsers: React.FC = () => {
                 <td className="space-x-2 px-6 py-4 text-right text-sm font-medium whitespace-nowrap">
                   <button type="button" onClick={() => handleOpenEdit(user)} className="text-indigo-600 hover:text-indigo-900">
                     Upravit
+                  </button>
+                  <button type="button" onClick={() => void handleResetPassword(user)} className="text-gray-600 hover:text-gray-900">
+                    Obnovit heslo
                   </button>
                   <button type="button" onClick={() => void handleToggleActive(user)} className="text-amber-600 hover:text-amber-900">
                     {user.isActive ? "Deaktivovat" : "Aktivovat"}
@@ -289,6 +305,37 @@ export const AdminUsers: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Password reset result */}
+      {resetResult && (
+        <div role="dialog" aria-modal="true" aria-label="Nové heslo" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900">Heslo bylo obnoveno</h3>
+            <div className="rounded border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+              <p>Předejte tyto údaje uživateli. Při přihlášení si zvolí vlastní heslo.</p>
+              <div className="mt-3 space-y-1 rounded border border-green-300 bg-white p-2 font-mono text-xs">
+                <div>
+                  <strong>Uživatel:</strong> {resetResult.nickname}
+                </div>
+                <div>
+                  <strong>Heslo:</strong> {resetResult.password}
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end border-t pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm("Heslo se po zavření nezobrazí. Máte údaje bezpečně uloženy?")) setResetResult(null);
+                }}
+                className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                Hotovo
+              </button>
+            </div>
           </div>
         </div>
       )}

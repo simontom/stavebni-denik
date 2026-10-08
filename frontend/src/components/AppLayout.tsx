@@ -1,13 +1,19 @@
 import React from "react";
-import { Link, useNavigate, Navigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
   if (!userStr) {
     return <Navigate to="/login" replace />;
   }
   const user = userStr ? JSON.parse(userStr) : null;
+  // The server refuses everything else while the password is temporary; do not even offer it.
+  const mustChangePwd = user?.mustChangePwd === true;
+  if (mustChangePwd && location.pathname !== "/change-password") {
+    return <Navigate to="/change-password" replace />;
+  }
 
   const handleLogout = async () => {
     try {
@@ -29,10 +35,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 🏗️ Stavební deník
               </Link>
               <nav aria-label="Hlavní" className="flex space-x-4">
-                <Link to="/projects" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
-                  Projekty
-                </Link>
-                {user?.isAdmin && (
+                {!mustChangePwd && (
+                  <Link to="/projects" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
+                    Projekty
+                  </Link>
+                )}
+                {!mustChangePwd && user?.isAdmin && (
                   <>
                     <Link to="/admin/users" className="rounded-md px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-indigo-600">
                       Uživatelé
@@ -46,6 +54,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex items-center space-x-4">
               {user && <span className="text-sm text-gray-600">{user.displayName || user.nickname}</span>}
+              {!mustChangePwd && (
+                <Link to="/change-password" className="text-sm text-gray-500 hover:text-gray-700">
+                  Změnit heslo
+                </Link>
+              )}
               <button type="button" onClick={handleLogout} className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-500 hover:bg-gray-50 hover:text-gray-700">
                 Odhlásit se
               </button>
