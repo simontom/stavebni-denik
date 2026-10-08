@@ -1,20 +1,24 @@
 name: Audit verify
 
-# Daily tamper-evidence check of the audit_log hash chain.
+# Daily tamper-evidence check of the audit_log hash chain, with the Kotlin application's own command:
 #
-# Walks the whole chain via `scripts/verify-audit.ts`. The script exits:
-#   0 — chain intact, 1 — chain broken, 2 — unexpected error.
-# A non-zero exit fails this job (so GitHub notifies the maintainers) and,
-# when SMTP_* / ALERT_EMAIL secrets are configured, the script also e-mails
-# the BOSS directly. Can be triggered manually via "Run workflow".
+#   java -cp backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify
 #
-# Required repository secret (when missing, the workflow runs but
-# every meaningful step is skipped via a guard — see steps below):
-#   AUDIT_DATABASE_URL  — connection string to the production database
-#                         (a read-only role is sufficient).
-# Optional secrets for the e-mail alert (otherwise the alert is skipped):
-#   SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM,
-#   ALERT_EMAIL
+# It only reads (no migration, no write), so a read-only database role is enough. Exit codes:
+#   0 chain intact   1 chain BROKEN   3 the check could not run (database unreachable, schema missing, ...)
+# Anything but 0 fails this job, and GitHub then notifies the maintainers.
+#
+# THIS WORKFLOW FAILS WHEN IT IS NOT CONFIGURED. A nightly check that goes green without having checked anything is
+# worse than none: nobody notices that nothing is watching the log. Until a production database exists, disable the
+# workflow in the Actions tab (it can be re-enabled there), or set the secrets below.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   AUDIT_JDBC_URL       e.g. jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require  (must be reachable from GitHub)
+#   AUDIT_DB_USER        a role that can SELECT from audit_log
+#   AUDIT_DB_PASSWORD
+# Optional repository variable:
+#   AUDIT_ANCHOR         "<id>:<hash>" printed by `audit-head`; when set, the check also proves the log was not cut
+#                        back below that row.
 
 on:
   schedule:
@@ -33,64 +37,53 @@ jobs:
   verify:
     name: Verify audit-log hash chain
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
-      DATABASE_URL: ${{ secrets.AUDIT_DATABASE_URL }}
-      NEXT_PUBLIC_APP_NAME: Stavební deník
-      TZ: Europe/Prague
-      NEXT_TELEMETRY_DISABLED: "1"
-      # E-mail alert configuration (read by scripts/verify-audit.ts via the
-      # SMTP helper). Missing values simply disable the e-mail.
-      SMTP_HOST: ${{ secrets.SMTP_HOST }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_SECURE: ${{ secrets.SMTP_SECURE }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
-      SMTP_PASS: ${{ secrets.SMTP_PASS }}
-      SMTP_FROM: ${{ secrets.SMTP_FROM }}
-      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      JDBC_URL: ${{ secrets.AUDIT_JDBC_URL }}
+      DB_USER: ${{ secrets.AUDIT_DB_USER }}
+      DB_PASSWORD: ${{ secrets.AUDIT_DB_PASSWORD }}
+      AUDIT_ANCHOR: ${{ vars.AUDIT_ANCHOR }}
 
     steps:
-      # GitHub Actions disallows `secrets.X` in job-level `if:`, so we
-      # gate at step level via this guard that reads the env var the
-      # secret was projected into.
-      - name: Check AUDIT_DATABASE_URL
-        id: guard
+      - name: Check that the database is configured
         run: |
-          if [ -z "${DATABASE_URL}" ]; then
-            echo "::notice::AUDIT_DATABASE_URL secret is not configured — skipping nightly audit chain verification. Set the secret in repo Settings → Secrets → Actions to enable it."
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "configured=true" >> "$GITHUB_OUTPUT"
+          missing=""
+          [ -n "${JDBC_URL}" ] || missing="$missing AUDIT_JDBC_URL"
+          [ -n "${DB_USER}" ] || missing="$missing AUDIT_DB_USER"
+          [ -n "${DB_PASSWORD}" ] || missing="$missing AUDIT_DB_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error title=Audit log is not being verified::Missing repository secrets:$missing. Set them, or disable this workflow until a production database exists."
+            exit 1
           fi
 
       - name: Checkout
-        if: steps.guard.outputs.configured == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v5
 
-      - name: Setup pnpm
-        if: steps.guard.outputs.configured == 'true'
-        uses: pnpm/action-setup@v6
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
         with:
-          version: 10.15.0
-          run_install: false
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
 
-      - name: Setup Node.js
-        if: steps.guard.outputs.configured == 'true'
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
+      - name: Build the application jar
+        run: |
+          chmod +x gradlew
+          ./gradlew :backend:shadowJar -x test --console=plain
 
-      - name: Install dependencies
-        if: steps.guard.outputs.configured == 'true'
-        run: pnpm install --frozen-lockfile
-
-      - name: Generate Prisma client
-        if: steps.guard.outputs.configured == 'true'
-        run: pnpm exec prisma generate
-
-      - name: Verify audit-log hash chain
-        if: steps.guard.outputs.configured == 'true'
-        # Call tsx directly (the `verify:audit` package script reads a local
-        # .env which does not exist in CI — here the env comes from secrets).
-        run: pnpm exec tsx scripts/verify-audit.ts
+      - name: Verify the audit-log hash chain
+        run: |
+          set +e
+          if [ -n "${AUDIT_ANCHOR}" ]; then
+            java -cp backend/build/libs/*-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify "${AUDIT_ANCHOR}"
+          else
+            java -cp backend/build/libs/*-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify
+          fi
+          code=$?
+          case "$code" in
+            0) echo "Audit log intact." ;;
+            1) echo "::error title=AUDIT LOG BROKEN::The hash chain does not verify (or the log was cut below the anchor). Treat this as a security incident: do not write to the database, and see the output above." ;;
+            3) echo "::error title=Audit log could not be checked::The check did not run (see the output above). Nothing was verified." ;;
+            *) echo "::error title=Audit check failed unexpectedly::exit code $code" ;;
+          esac
+          exit "$code"

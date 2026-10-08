@@ -1,14 +1,15 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * E2E security header tests — verify that the HTTP response headers we set
- * in next.config.ts are actually delivered by the running server.
+ * Browser-side security header checks of the page the E2E suite opens.
  *
- * These tests require the app to be running (locally via `pnpm dev` or
- * via BASE_URL pointing at a staging deployment). They do NOT require a
- * logged-in user — security headers are applied to every response.
+ * Which server answers depends on BASE_URL: by default it is the Vite development server (port 5173), which sends a
+ * development version of the headers (frontend/vite.config.ts; its script-src allows inline scripts for hot reloading,
+ * the production policy does not); on a staging deployment it is the real server. So a green run here proves little
+ * about production. The headers of the real Ktor server, on every kind of response, are tested by
+ * `SecurityHeadersTest` in the backend, and the CI Docker job checks them on the built image.
  *
- * Run: `pnpm e2e` (local) or `BASE_URL=https://staging.example.com pnpm e2e`
+ * No logged-in user is needed: the headers are on every response.
  */
 
 test.describe("Security headers", () => {

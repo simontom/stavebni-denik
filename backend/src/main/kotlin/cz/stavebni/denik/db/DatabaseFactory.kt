@@ -15,7 +15,8 @@ object DatabaseFactory {
     val isInitialized: Boolean
         get() = ::dsl.isInitialized
 
-    fun init(jdbcUrl: String, user: String, password: String) {
+    /** [migrate] false connects without touching the schema (read-only checks, which must work with a read-only role). */
+    fun init(jdbcUrl: String, user: String, password: String, migrate: Boolean = true) {
         val ds = HikariDataSource(HikariConfig().apply {
             this.jdbcUrl = jdbcUrl
             this.username = user
@@ -24,16 +25,18 @@ object DatabaseFactory {
             isAutoCommit = true
             transactionIsolation = "TRANSACTION_READ_COMMITTED"
         })
-        initFromDataSource(ds)
+        initFromDataSource(ds, migrate)
     }
 
     /** All schema changes live in Flyway migrations (db/migration); nothing is altered at runtime. */
-    fun initFromDataSource(ds: DataSource) {
-        Flyway.configure()
-            .dataSource(ds)
-            .locations("classpath:db/migration")
-            .load()
-            .migrate()
+    fun initFromDataSource(ds: DataSource, migrate: Boolean = true) {
+        if (migrate) {
+            Flyway.configure()
+                .dataSource(ds)
+                .locations("classpath:db/migration")
+                .load()
+                .migrate()
+        }
 
         dsl = DSL.using(ds, SQLDialect.POSTGRES)
     }
