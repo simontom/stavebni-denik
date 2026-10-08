@@ -16,6 +16,26 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 
+/**
+ * The newest row of the chain: id and row hash. Written down somewhere outside the database (a private
+ * repository, a timestamping service), it later proves that nothing up to that row was removed or
+ * rewritten, which the chain alone cannot: an attacker who deletes the newest rows, or the whole log,
+ * leaves a chain that is still internally consistent. Text form: `<id>:<rowHash>`.
+ */
+@Serializable
+data class AuditAnchor(val id: Long, val rowHash: String) {
+    override fun toString() = "$id:$rowHash"
+
+    companion object {
+        /** Parses `<id>:<rowHash>`; null when the text is not of that form. */
+        fun parse(text: String): AuditAnchor? {
+            val id = text.substringBefore(':').trim().toLongOrNull() ?: return null
+            val hash = text.substringAfter(':', "").trim()
+            return if (hash.isNotEmpty() && hash.all { it.isLetterOrDigit() }) AuditAnchor(id, hash) else null
+        }
+    }
+}
+
 @Serializable
 data class AuditVerifyResult(
     val ok: Boolean,
@@ -24,6 +44,8 @@ data class AuditVerifyResult(
     val brokenAtId: Long? = null,
     val reason: String? = null,
     val checkedAt: String,
+    /** The newest row of the chain; record it outside the database and pass it back as the anchor next time. */
+    val head: AuditAnchor? = null,
 )
 
 object AuditService {
@@ -160,11 +182,17 @@ object AuditService {
     /**
      * Walks the whole chain in id order and recomputes every row hash.
      * Returns the first broken row, if any.
+     *
+     * With an [anchor] recorded earlier outside the database it also proves that the log still contains
+     * that very row: a log that was emptied, cut short or rewritten up to the anchor fails even though
+     * the rest of the chain is consistent.
      */
-    fun verifyChain(tx: DSLContext, batchSize: Int = 1000): AuditVerifyResult {
+    fun verifyChain(tx: DSLContext, batchSize: Int = 1000, anchor: AuditAnchor? = null): AuditVerifyResult {
         var expectedPrev = AuditHash.GENESIS_HASH
         var lastId = 0L
         var total = 0L
+        var head: AuditAnchor? = null
+        var anchorMatched = false
         val checkedAt = OffsetDateTime.now(ZoneOffset.UTC).toString()
 
         while (true) {
@@ -181,7 +209,7 @@ object AuditService {
                 val prevHash = r.get(AUDIT_LOG.PREV_HASH)!!
                 val storedHash = r.get(AUDIT_LOG.ROW_HASH)!!
                 if (!AuditHash.hashesEqual(prevHash, expectedPrev)) {
-                    return AuditVerifyResult(false, total, id, "prev_hash mismatch on id=$id", checkedAt)
+                    return AuditVerifyResult(false, total, id, "prev_hash mismatch on id=$id", checkedAt, head)
                 }
                 val recomputed = AuditHash.rowHash(
                     action = r.get(AUDIT_LOG.ACTION)!!,
@@ -196,12 +224,27 @@ object AuditService {
                     ts = r.get(AUDIT_LOG.TS)!!,
                 )
                 if (!AuditHash.hashesEqual(recomputed, storedHash)) {
-                    return AuditVerifyResult(false, total, id, "row_hash mismatch on id=$id", checkedAt)
+                    return AuditVerifyResult(false, total, id, "row_hash mismatch on id=$id", checkedAt, head)
+                }
+                if (anchor != null && id == anchor.id) {
+                    if (!AuditHash.hashesEqual(storedHash, anchor.rowHash)) {
+                        return AuditVerifyResult(false, total, id, "anchor mismatch: row id=$id is not the row that was recorded", checkedAt, head)
+                    }
+                    anchorMatched = true
                 }
                 expectedPrev = storedHash
                 lastId = id
+                head = AuditAnchor(id, storedHash)
             }
         }
-        return AuditVerifyResult(true, total, null, null, checkedAt)
+        if (anchor != null && !anchorMatched) {
+            val have = head?.let { "rows up to id=${it.id}" } ?: "no rows"
+            return AuditVerifyResult(
+                false, total, null,
+                "anchor row id=${anchor.id} is missing: rows were removed from the log (it has $have)",
+                checkedAt, head
+            )
+        }
+        return AuditVerifyResult(true, total, null, null, checkedAt, head)
     }
 }

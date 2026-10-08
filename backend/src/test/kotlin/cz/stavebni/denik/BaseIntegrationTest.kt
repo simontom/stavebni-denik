@@ -74,7 +74,13 @@ abstract class BaseIntegrationTest {
             "site_handovers", "project_members", "projects", "sessions",
             "rate_limit_attempts", "notifications", "users"
         )
-        DatabaseFactory.dsl.execute("TRUNCATE TABLE " + tables.joinToString(", ") { "\"$it\"" } + " RESTART IDENTITY CASCADE")
+        // The audit log refuses TRUNCATE (migration V2); tests start from an empty database, so step around that guard.
+        DatabaseFactory.dsl.execute("ALTER TABLE \"audit_log\" DISABLE TRIGGER audit_log_no_truncate")
+        try {
+            DatabaseFactory.dsl.execute("TRUNCATE TABLE " + tables.joinToString(", ") { "\"$it\"" } + " RESTART IDENTITY CASCADE")
+        } finally {
+            DatabaseFactory.dsl.execute("ALTER TABLE \"audit_log\" ENABLE TRIGGER audit_log_no_truncate")
+        }
     }
 
     fun createTestUser(

@@ -124,6 +124,17 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
 - `.github/workflows/ci.yml` — lint/build, integration, jOOQ drift check, E2E
 
+## Audit log
+
+Every change goes through `AuditService`: the audit row and the business change share one transaction, appenders are serialised by an advisory lock, and each row carries the hash of the previous one (a chain). The database refuses `UPDATE`, `DELETE` (migration V1) and `TRUNCATE` (V2) on `audit_log` with triggers. Those triggers stop mistakes and an application that holds ordinary privileges; **whoever owns the table can still switch them off**, and a log that was cut short, or emptied, is still a valid chain. So the newest row has to be **recorded outside the database**, and checked against:
+
+```bash
+fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head"          # prints <id>:<hash>; store it somewhere the database owner cannot reach
+fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify 1234:ab12…"   # chain + that row 1234 still exists unchanged
+```
+
+`audit-verify` exits `0` when the chain is intact (and the anchor, if given, is found unchanged) and `1` when it is not, printing the reason; without an anchor it cannot see a cut tail. The same check is available to administrators as `GET /api/audit/verify` and `GET /api/audit/verify?anchor=<id>:<hash>`, which also returns the current `head`. An anchor stays valid while the log grows. **Not automated yet:** the scheduled job that records the head (a private repository, an RFC 3161 timestamp, the PDF footer: decision D4) and runs the check; the nightly workflow still runs the legacy Prisma script. Separate database roles for migrations and for the application (decision D5) are also open; V1 and V2 already revoke `UPDATE`, `DELETE` and `TRUNCATE` from a role named `app` when it exists.
+
 ## First administrator and password recovery
 
 A fresh database has no users, so nobody can log in. Two operator commands run against the database from inside the application image (same `JDBC_URL`, `DB_USER`, `DB_PASSWORD` as the application; they migrate the schema if needed):
@@ -147,7 +158,7 @@ Before the first release:
 - **Sessions:** ~~server-side revocation, password change and reset, login rate limiting, breached-password check, Origin / Sec-Fetch-Site check~~ done.
 - **Authorization:** project membership decided in one place; app admins do not get member rights implicitly.
 - **Signed reports:** cannot be signed twice or changed afterwards (also enforced in the database); corrections go through addenda.
-- **Audit log:** records what changed (entity ids, before/after), cannot be truncated, latest hash anchored outside the database; the nightly verifier runs against the Kotlin schema.
+- **Audit log:** records what changed (entity ids, before/after); ~~cannot be truncated~~ done (V2 trigger); the check against an anchor recorded outside the database exists (see "Audit log"). Still open: the scheduled job that records the head and runs the check (the nightly verifier still runs against the legacy schema), separate database roles.
 - **PDF export:** user text cannot inject typst code; timeouts; no blank-PDF fallback; required content.
 - **Uploads and requests:** size and dimension limits are checked before decoding.
 - **Legal model:** follows zákon 283/2021 Sb. § 166 and vyhláška 131/2024 Sb. (§ 10, příloha 12), confirmed with a lawyer.
