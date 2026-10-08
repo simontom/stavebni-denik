@@ -211,7 +211,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         for (outsider in listOf(adminBoss, adminWorker)) {
             assertThrows<ForbiddenException> { DailyReportService.createReport(outsider, projectId, "2026-09-29") }
             assertThrows<ForbiddenException> {
-                DailyReportService.createReport(outsider, projectId, "2026-09-28", workDescription = "Přepsáno")
+                DailyReportService.saveReport(outsider, projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Přepsáno"))
             }
         }
 
@@ -235,7 +235,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         DailyReportService.lockReport(boss, UUID.fromString(created.id))
 
         assertThrows<ConflictException> {
-            DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Jiný text")
+            DailyReportService.saveReport(boss, projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Jiný text"))
         }
 
         assertEquals("Podepsaný text", report(created.id).workdescription)
@@ -246,7 +246,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "První verze")
-        DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Druhá verze")
+        DailyReportService.saveReport(boss, projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Druhá verze"))
 
         val createRow = auditRows("report.create").single()
         assertEquals(created.id, createRow.get(AUDIT_LOG.ENTITY_ID), "the audit row must name the new report")

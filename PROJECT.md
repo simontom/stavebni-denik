@@ -41,15 +41,16 @@ docker compose down -v && docker compose up -d   # then start the backend again
 
 ## Runtime configuration (backend)
 
-| Variable                             | Default                                                                 | Notes                                                                                                                |
-| ------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                                                                      |
-| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure`                                                       |
-| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                                                                               |
-| `ALLOW_UNRELEASED_BUILD`             | unset                                                                   | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only) |
-| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)                                                              |
-| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                                                                              |
-| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                                                                                     |
+| Variable                             | Default                                                                 | Notes                                                                                                                                            |
+| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                                                                                                  |
+| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure`                                                                                   |
+| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                                                                                                           |
+| `ALLOW_UNRELEASED_BUILD`             | unset                                                                   | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only)                             |
+| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)                                                                                          |
+| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                                                                                                          |
+| `CLIENT_IP_HEADER`                   | unset (TCP peer address)                                                | name of the header a trusted reverse proxy sets to the client address (`Fly-Client-IP` on Fly); only set it when every request passes that proxy |
+| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                                                                                                                 |
 
 ## Sessions
 
@@ -61,11 +62,27 @@ Login creates a server-side session (table `sessions`, valid for 12 hours) and s
 
 Not done yet (see the Release gate): password change and reset, login rate limiting, and a cross-site request check.
 
+## Passwords and login limits
+
+- **Policy** (`PasswordPolicy`): 12 to 256 characters with a lower-case letter, an upper-case letter, a digit and a special character. The change-password form shows the same checklist; the server enforces it.
+- **Temporary passwords:** an account made by an administrator, and an account whose password an administrator reset, has `mustChangePwd`. Such a session may only call `POST /api/auth/change-password`; everything else answers `403` with `code: PASSWORD_CHANGE_REQUIRED` (the SPA then shows the change form). This is decided from the database on every request, so whoever handed out the password cannot go on acting as that user.
+- **Change:** needs the current password; wrong answers are limited to 5 per 15 minutes per user; all the user's other sessions end. **Reset** (administrators, `Action.UserPasswordReset`): new generated password shown once (`Cache-Control: no-store`), every session of the user ends, a login lockout of the account is lifted. Neither password nor hash is written to the audit log.
+- **Login limits** (table `rate_limit_attempts`, failures only): 30 failures per client address and 20 per account name within 15 minutes, then `429` with `Retry-After`; a successful login does not reset the counters. The address comes from `CLIENT_IP_HEADER` when it is configured, otherwise from the TCP peer; `X-Forwarded-For` and the request body are never trusted. A known name can therefore be locked for up to 15 minutes by someone else; an administrator reset lifts it.
+- Unknown, deactivated and deleted accounts take the same time as a wrong password and get the same answer. Argon2 runs off the request threads, at most 4 at a time.
+
+## Request and upload limits
+
+- Every request body is capped before it is read: **256 KiB** for JSON, **6 MiB** for `POST /api/photos/upload`. Larger requests are answered with `413`.
+- An upload carries **one** image of at most **5 MiB**, at most 8 multipart parts, and text fields of at most 256 characters (`400` otherwise). Ktor's `formFieldLimit` applies to every part including the file, so it is set to the request cap and the exact limits are checked in `PhotoRoutes`.
+- The image type is checked by its magic bytes (JPEG, PNG, WebP). Its dimensions are read from the **header** and checked (at most 8 megapixels and 12,000 px per side) **before** any pixel is decoded, so a tiny file that claims billions of pixels cannot exhaust memory. A damaged image is a `400`.
+- Accepted images are decoded once and stored as new metadata-free JPEGs (fitted into 1920x1080, never scaled up) plus a 400x300 thumbnail. The stored width and height are those of the file on disk.
+- The database stores **relative keys** (`photos/<uuid>_orig.jpg`, `photos/<uuid>_thumb.jpg`), never absolute paths, and the API never returns a path. A key is only followed when it has exactly that shape and resolves inside `UPLOADS_DIR`; otherwise the photo answers `404`. If the database write fails, the two files already written are removed.
+
 ## API overview (all under `/api`, JWT cookie auth unless noted)
 
 - `GET /health` (public)
-- Auth: `POST /auth/login`, `POST /auth/logout`
-- Users (admin): `GET/POST /users`, `PATCH/DELETE /users/{id}`, `POST /users/{id}/activate|deactivate`; `GET /users/options` (project managers)
+- Auth: `POST /auth/login`, `POST /auth/logout`, `POST /auth/change-password`
+- Users (admin): `GET/POST /users`, `PATCH/DELETE /users/{id}`, `POST /users/{id}/activate|deactivate`, `POST /users/{id}/reset-password`; `GET /users/options` (project managers)
 - Projects: `GET/POST /projects`, `GET /projects/{id}`
   - Members: `GET/POST /projects/{id}/members`, `DELETE /projects/{id}/members/{userId}`
   - Authorized persons: `GET/POST /projects/{id}/authorized-persons`, `POST /authorized-persons/{id}/revoke`
@@ -82,6 +99,17 @@ Project-scoped endpoints require project membership. App admins can **read** eve
 - `POST …/acknowledge` records that an inspector or investor (a member) has taken note of the report. It only works on a **signed** report and only once; otherwise `409`.
 - `GET/POST /reports/{reportId}/…` take a report id only; a bare date is `400` (a date is only unique within a project, so use the project-scoped route). A report id of another project is `404` through `/projects/{id}/reports/{reportId}`.
 - Every report change is written to the audit log in the same transaction, with the real report id and a before/after snapshot (`report.create`, `report.update`, `report.lock`, `report.acknowledge`).
+
+## Cross-site requests
+
+The session cookie is `SameSite=Lax`. In addition, `CrossSiteRequestGuard` refuses every state-changing request (anything but GET, HEAD, OPTIONS) under `/api/` that a browser makes on behalf of another site, with `403`:
+
+1. an `Origin` listed in `CORS_ALLOWED_ORIGINS` is accepted;
+2. otherwise `Sec-Fetch-Site` decides: `same-origin` and `none` pass, `same-site` and `cross-site` are refused;
+3. browsers without that header send `Origin` on every POST: its host has to equal the `Host` the request was sent to;
+4. with neither header (scripts, curl, tests) the request passes: only a browser can be tricked into a cross-site request.
+
+Behind the Vite dev proxy the page and the API are the same origin for the browser (`Sec-Fetch-Site: same-origin`), so nothing needs configuring.
 
 ## Code layout
 
@@ -113,7 +141,7 @@ This build is **not released for real diary data**. While that is true, the app 
 
 Before the first release:
 
-- **Sessions:** server-side revocation (a deactivated or demoted user loses access at once), password change and reset, login rate limiting.
+- **Sessions:** ~~server-side revocation, password change and reset, login rate limiting~~ done. Still open: a breached-password check (HIBP, fail open) and an Origin / Sec-Fetch-Site check against cross-site requests (the cookie is SameSite=Lax only).
 - **Authorization:** project membership decided in one place; app admins do not get member rights implicitly.
 - **Signed reports:** cannot be signed twice or changed afterwards (also enforced in the database); corrections go through addenda.
 - **Audit log:** records what changed (entity ids, before/after), cannot be truncated, latest hash anchored outside the database; the nightly verifier runs against the Kotlin schema.

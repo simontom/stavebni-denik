@@ -28,9 +28,13 @@ export const DailyReport: React.FC = () => {
   const [error, setError] = useState("");
 
   // Report state
-  const [workDescription, setWorkDescription] = useState<string>("Práce na stavbě");
-  const [workerTrade, setWorkerTrade] = useState<string>("Zedník");
-  const [workerCount, setWorkerCount] = useState<string>("2");
+  // A new entry starts empty: invented defaults would end up in a legal record if nobody noticed them.
+  const [workDescription, setWorkDescription] = useState<string>("");
+  const [workerTrade, setWorkerTrade] = useState<string>("");
+  const [workerCount, setWorkerCount] = useState<string>("");
+  // Saving is only possible once it is known whether the day already has an entry: an unloaded form
+  // must never be saved over an entry that exists.
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading");
   const [isControlDay, setIsControlDay] = useState<boolean>(false);
   const [constructionObj, setConstructionObj] = useState<string>("");
   const [isSigned, setIsSigned] = useState<boolean>(false);
@@ -44,9 +48,15 @@ export const DailyReport: React.FC = () => {
     let ignore = false;
     if (projectId && reportId) {
       fetch(`/api/projects/${projectId}/reports/${reportId}`)
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => {
+          if (res.ok) return res.json();
+          if (res.status === 404) return null; // no entry for this day yet: an empty form is right
+          throw new Error(`Záznam se nepodařilo načíst (${res.status})`);
+        })
         .then((data) => {
-          if (ignore || !data) return;
+          if (ignore) return;
+          setLoadState("ready");
+          if (!data) return;
           if (data.workDescription) setWorkDescription(data.workDescription);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
@@ -65,15 +75,19 @@ export const DailyReport: React.FC = () => {
           }
           if (Array.isArray(data.photos) && data.photos.length > 0) {
             setPhotos(
-              data.photos.map((p: { id: string; pathOriginal?: string }) => ({
+              data.photos.map((p: { id: string }, index: number) => ({
                 id: p.id,
                 url: `/api/photos/${p.id}`,
-                name: p.pathOriginal ? p.pathOriginal.split(/[/\\]/).pop() || "photo.jpg" : "photo.jpg",
+                name: `Fotka ${index + 1}`,
               })),
             );
           }
         })
-        .catch(() => {});
+        .catch((err: unknown) => {
+          if (ignore) return;
+          setLoadState("failed");
+          setError(err instanceof Error ? err.message : "Záznam se nepodařilo načíst");
+        });
     }
     return () => {
       ignore = true;
@@ -82,6 +96,7 @@ export const DailyReport: React.FC = () => {
 
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loadState !== "ready") return;
 
     try {
       const res = await fetch(`/api/projects/${projectId}/reports/${reportId}`, {
@@ -301,7 +316,11 @@ export const DailyReport: React.FC = () => {
           </div>
 
           <div className="flex justify-end gap-3 border-t border-gray-200 pt-4">
-            <button type="submit" className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+            <button
+              type="submit"
+              disabled={loadState !== "ready"}
+              className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Vytvořit záznam
             </button>
           </div>

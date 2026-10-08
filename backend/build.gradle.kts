@@ -47,6 +47,7 @@ dependencies {
     implementation("io.ktor:ktor-server-auth:$ktorVersion")
     implementation("io.ktor:ktor-server-auth-jwt:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
+    implementation("io.ktor:ktor-server-body-limit:$ktorVersion")
     implementation("io.ktor:ktor-server-rate-limit:$ktorVersion")
     implementation("io.ktor:ktor-server-sessions:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")

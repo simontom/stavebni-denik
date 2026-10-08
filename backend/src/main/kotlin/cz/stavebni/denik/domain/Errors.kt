@@ -8,3 +8,6 @@ class NotFoundException(message: String) : RuntimeException(message)
  * permit it (for example signing a report that is already signed). Maps to HTTP 409.
  */
 class ConflictException(message: String) : RuntimeException(message)
+
+/** Too many attempts in a short time. Maps to HTTP 429 with a `Retry-After` header. */
+class TooManyRequestsException(val retryAfterSeconds: Long, message: String) : RuntimeException(message)
