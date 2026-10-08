@@ -1,6 +1,8 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.services.AuditService.Audited
+import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
@@ -10,12 +12,15 @@ import cz.stavebni.denik.jooq.tables.records.PhotosRecord
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
 import net.coobird.thumbnailator.Thumbnails
 import org.jooq.DSLContext
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.util.UUID
 import javax.imageio.ImageIO
@@ -30,7 +35,25 @@ data class PhotoDto(
     @Serializable(with = UUIDSerializer::class) val uploadedById: UUID
 )
 
+/** What the audit log keeps of a photo: ids, sizes and the hashes of the two stored files (text and whole numbers only). */
+@Serializable
+internal data class PhotoSnapshot(
+    val id: String,
+    val reportId: String,
+    val projectId: String,
+    val width: Int,
+    val height: Int,
+    val bytes: Int,
+    val uploadedById: String,
+    val sha256Original: String?,
+    val sha256Thumbnail: String?,
+    val deletedAt: String?,
+)
+
 object PhotoService {
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
     /** Largest accepted upload. The route reads at most this much (+1 byte, to notice an excess). */
     const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5 MB
     private const val MAX_PIXELS = 8_000_000L // 8 Megapixels
@@ -129,14 +152,16 @@ object PhotoService {
             throw IllegalArgumentException("Invalid image format or magic bytes")
         }
 
-        val report = DatabaseFactory.dsl.select(DAILY_REPORTS.LOCKEDAT)
+        // An early, cheap look so that a request that cannot succeed does not make the server decode an image. The
+        // decision that counts is made again inside the transaction below, on the locked report row.
+        val early = DatabaseFactory.dsl.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
             .from(DAILY_REPORTS)
-            .where(DAILY_REPORTS.ID.eq(reportId))
+            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
             .fetchOne() ?: throw IllegalArgumentException("Report not found")
-            
-        val isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null
-        
-        assertCan(user, Action.PhotoUpload, Resource(isMember = true, isLocked = isLocked))
+        assertCan(
+            user, Action.PhotoUpload,
+            Resource(isMember = ProjectAccess.isMember(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
+        )
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
         //    the image is then decoded exactly once.
@@ -153,14 +178,22 @@ object PhotoService {
         PhotoStorage.write(originalKey, original.bytes)
         PhotoStorage.write(thumbKey, thumbnail.bytes)
 
+        val photoId = UUID.randomUUID()
         try {
-            return AuditService.auditedTransaction(
-                actor = user,
-                action = "photo.upload",
-                entityType = "photo",
-                entityId = ""
-            ) { tx ->
-                val photoId = UUID.randomUUID()
+            return AuditService.auditedWrite(user, "photo") { tx ->
+                // The report is locked while the photo is judged and inserted: a report signed while the image was being
+                // processed (which took time, outside any lock) is refused here, not silently given a new photo.
+                val report = tx.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
+                    .from(DAILY_REPORTS)
+                    .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
+                    .forUpdate()
+                    .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
+                val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
+                assertCan(
+                    user, Action.PhotoUpload,
+                    Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+                )
+
                 val record = tx.insertInto(PHOTOS)
                     .set(PHOTOS.ID, photoId)
                     .set(PHOTOS.REPORTID, reportId)
@@ -173,7 +206,23 @@ object PhotoService {
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
 
-                toDto(record)
+                // The audit row names the photo and the report, and holds the hashes of both stored files: a swapped file
+                // on the volume no longer matches the chain.
+                Audited(
+                    result = toDto(record),
+                    action = "photo.upload",
+                    entityId = photoId.toString(),
+                    after = Json.encodeToJsonElement(
+                        PhotoSnapshot.serializer(),
+                        PhotoSnapshot(
+                            id = photoId.toString(), reportId = reportId.toString(), projectId = projectId.toString(),
+                            width = original.width, height = original.height, bytes = original.bytes.size,
+                            uploadedById = user.id.toString(),
+                            sha256Original = sha256(original.bytes), sha256Thumbnail = sha256(thumbnail.bytes),
+                            deletedAt = null,
+                        )
+                    ),
+                )
             }
         } catch (e: Throwable) {
             // No row was created, so no one will ever reference these files.
@@ -184,31 +233,34 @@ object PhotoService {
     }
 
     suspend fun deletePhoto(user: SessionUser, photoId: UUID) {
-        val tx = DatabaseFactory.dsl
-        
-        val photo = tx.selectFrom(PHOTOS)
-            .where(PHOTOS.ID.eq(photoId))
-            .fetchOne() ?: throw IllegalArgumentException("Photo not found")
-            
-        val report = tx.select(DAILY_REPORTS.LOCKEDAT)
-            .from(DAILY_REPORTS)
-            .where(DAILY_REPORTS.ID.eq(photo.get(PHOTOS.REPORTID)))
-            .fetchOne() ?: throw IllegalArgumentException("Report not found")
-            
-        val isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null
-        
-        assertCan(user, Action.PhotoDelete, Resource(isMember = true, isLocked = isLocked))
-        
-        AuditService.auditedTransaction(
-            actor = user,
-            action = "photo.delete",
-            entityType = "photo",
-            entityId = photoId.toString()
-        ) { t ->
-            t.update(PHOTOS)
-                .set(PHOTOS.DELETEDAT, OffsetDateTime.now())
-                .where(PHOTOS.ID.eq(photoId))
-                .execute()
+        AuditService.auditedWrite(user, "photo") { tx ->
+            val photo = tx.selectFrom(PHOTOS)
+                .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne() ?: throw IllegalArgumentException("Photo not found")
+            val report = tx.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
+                .from(DAILY_REPORTS)
+                .where(DAILY_REPORTS.ID.eq(photo.get(PHOTOS.REPORTID)))
+                .forUpdate()
+                .fetchOne() ?: throw IllegalArgumentException("Report not found")
+            val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
+            assertCan(
+                user, Action.PhotoDelete,
+                Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+            )
+
+            val now = OffsetDateTime.now()
+            tx.update(PHOTOS).set(PHOTOS.DELETEDAT, now).where(PHOTOS.ID.eq(photoId)).execute()
+            fun snapshot(deletedAt: String?) = Json.encodeToJsonElement(
+                PhotoSnapshot.serializer(),
+                PhotoSnapshot(
+                    id = photoId.toString(), reportId = photo.get(PHOTOS.REPORTID).toString(), projectId = projectId.toString(),
+                    width = photo.get(PHOTOS.WIDTH)!!, height = photo.get(PHOTOS.HEIGHT)!!, bytes = photo.get(PHOTOS.BYTES)!!,
+                    uploadedById = photo.get(PHOTOS.UPLOADEDBYID).toString(), sha256Original = null, sha256Thumbnail = null,
+                    deletedAt = deletedAt,
+                )
+            )
+            Audited(result = Unit, action = "photo.delete", entityId = photoId.toString(), before = snapshot(null), after = snapshot(now.toString()))
         }
     }
 

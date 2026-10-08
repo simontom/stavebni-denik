@@ -97,7 +97,9 @@ Login creates a server-side session (table `sessions`, valid for 12 hours) and s
 - Photos: `POST /photos/upload`, `GET /photos/{id}`, `GET /photos/{id}/thumb`
 - Audit log (admin): `GET /audit?limit=200`
 
-Project-scoped endpoints require project membership. App admins can **read** every project, but being an admin gives no right to write: creating, overwriting, signing or acknowledging a report requires real membership of that project.
+Project-scoped endpoints require project membership. App admins can **read** every project, but being an admin gives no right to write: creating, overwriting, signing or acknowledging a report, uploading or removing a photo, and creating, changing, deleting or signing a site handover protocol all require real membership of that project. The membership is judged inside the transaction, on rows locked `FOR UPDATE`, never assumed. **Joining a project as an administrator is the audited way in** (decision D1): a project manager of the project, or an administrator, may add members (an administrator adds themselves), and the audit row names the project, the user and the role before and after. An administrator cannot change their own role (they could otherwise make themselves a project manager and then a member of any project); changing someone's role or administrator flag ends their sessions and is audited with before and after, and fixing a display name does not log anyone out.
+
+**Signed records are immutable in the database too** (migration V5, triggers that compare the whole row): a signed daily report cannot be changed or deleted (only the acknowledgement can still be added), photos cannot be added to, changed on or removed from a signed report, and a signed handover protocol cannot be changed or deleted. The application checks all of this first; a photo whose processing was still running when the report was signed is refused at insert time, not given to the signed record. The audit rows of photos, handovers, authorised persons and members carry the entity id and before/after snapshots (a photo's row holds the SHA-256 of both stored files).
 
 ### Daily reports: signing and acknowledging
 

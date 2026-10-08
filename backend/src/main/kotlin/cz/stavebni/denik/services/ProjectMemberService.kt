@@ -8,6 +8,7 @@ import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.DSLContext
 import java.util.UUID
 import cz.stavebni.denik.jooq.enums.Role as DbRole
@@ -26,6 +27,13 @@ data class AddMemberRequest(
     val userId: String,
     val role: String,
 )
+
+/** One member of a project as the audit log keeps it: who, and in which role. */
+@Serializable
+internal data class MemberSnapshot(val userId: String, val role: String)
+
+private fun memberSnapshot(userId: UUID, role: String): kotlinx.serialization.json.JsonElement =
+    kotlinx.serialization.json.Json.encodeToJsonElement(MemberSnapshot.serializer(), MemberSnapshot(userId.toString(), role))
 
 object ProjectMemberService {
 
@@ -56,18 +64,19 @@ object ProjectMemberService {
         val role = Role.entries.firstOrNull { it.name == req.role.trim().uppercase() }
             ?: throw IllegalArgumentException("Neznámá role: ${req.role}")
 
-        AuditService.auditedTransaction(
-            actor = actor,
-            action = "project.member.add",
-            entityType = "project",
-            entityId = projectId.toString(),
-        ) { tx ->
+        // Who may do this: a project manager of the project, or an app administrator as the audited way in (decision D1).
+        // Either way the audit row names the project, the user and the role before and after.
+        AuditService.auditedWrite(actor, "project") { tx ->
             ProjectAccess.requireAccess(tx, actor, projectId)
             val userExists = tx.fetchExists(
                 USERS,
                 USERS.ID.eq(userId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true))
             )
             if (!userExists) throw NotFoundException("Uživatel nenalezen")
+            val before = tx.select(PROJECT_MEMBERS.ROLE).from(PROJECT_MEMBERS)
+                .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
+                .forUpdate()
+                .fetchOne(PROJECT_MEMBERS.ROLE)
 
             tx.insertInto(PROJECT_MEMBERS)
                 .set(PROJECT_MEMBERS.PROJECTID, projectId)
@@ -78,23 +87,35 @@ object ProjectMemberService {
                 .doUpdate()
                 .set(PROJECT_MEMBERS.ROLE, DbRole.valueOf(role.name))
                 .execute()
+            AuditService.Audited(
+                result = Unit,
+                action = "project.member.add",
+                entityId = projectId.toString(),
+                before = before?.let { memberSnapshot(userId, it.name) },
+                after = memberSnapshot(userId, role.name),
+            )
         }
         return listMembers(cz.stavebni.denik.db.DatabaseFactory.dsl, actor, projectId)
     }
 
     suspend fun removeMember(actor: SessionUser, projectId: UUID, userId: UUID) {
         assertCan(actor, Action.ProjectMemberManage)
-        AuditService.auditedTransaction(
-            actor = actor,
-            action = "project.member.remove",
-            entityType = "project",
-            entityId = projectId.toString(),
-        ) { tx ->
+        AuditService.auditedWrite(actor, "project") { tx ->
             ProjectAccess.requireAccess(tx, actor, projectId)
-            val deleted = tx.deleteFrom(PROJECT_MEMBERS)
+            val before = tx.select(PROJECT_MEMBERS.ROLE).from(PROJECT_MEMBERS)
+                .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
+                .forUpdate()
+                .fetchOne(PROJECT_MEMBERS.ROLE) ?: throw NotFoundException("Člen projektu nenalezen")
+            tx.deleteFrom(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
                 .execute()
-            if (deleted == 0) throw NotFoundException("Člen projektu nenalezen")
+            AuditService.Audited(
+                result = Unit,
+                action = "project.member.remove",
+                entityId = projectId.toString(),
+                before = memberSnapshot(userId, before.name),
+                after = null,
+            )
         }
     }
 }
