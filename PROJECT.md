@@ -29,6 +29,14 @@ If two branches change the schema, never merge the generated files by hand: reso
 
 Schema changes go into new Flyway migrations (`backend/src/main/resources/db/migration/V<n>__*.sql`). Nothing alters the schema at runtime.
 
+**Until the first release the baseline `V1__initial_schema.sql` could still be edited** (no production database exists). That was last done on 2026-10-08: the former `V2` defaults were folded into `V1`, a report's date became a real `DATE`, `weather` became nullable, and the legal-record foreign keys became `ON DELETE RESTRICT`. From now on every schema change is a new migration (`V2`, `V3`, …); the rule "a released migration never changes" starts with the first release tag.
+
+After pulling a change that edited `V1`, a local database that already applied the old `V1`/`V2` fails Flyway's validation. Recreate it (the data is test data):
+
+```bash
+docker compose down -v && docker compose up -d   # then start the backend again
+```
+
 ## Runtime configuration (backend)
 
 | Variable                             | Default                                                                 | Notes                                                          |
