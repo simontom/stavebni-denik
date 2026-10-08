@@ -29,6 +29,26 @@ object AppConfig {
         get() = env("APP_ENV")?.lowercase() == "production"
 
     /**
+     * Deliberate opt-in for running this build with `APP_ENV=production`.
+     *
+     * The application is not released for real diary data yet (PROJECT.md,
+     * "Release gate"). Until then a production machine must not start it by
+     * accident; the guard is removed together with the last release-gate item.
+     */
+    val allowUnreleasedBuild: Boolean
+        get() = env("ALLOW_UNRELEASED_BUILD")?.lowercase() == "true"
+
+    /** Fails startup in production mode unless [allowUnreleasedBuild] is set. */
+    fun requireReleaseOptIn() {
+        if (!isProduction) return
+        check(allowUnreleasedBuild) {
+            "This build is not released for production use yet (see PROJECT.md, \"Release gate\"). " +
+                "To start it anyway on a machine that only holds test data, set ALLOW_UNRELEASED_BUILD=true."
+        }
+        log.warn("ALLOW_UNRELEASED_BUILD=true: running an unreleased build in production mode - use test data only")
+    }
+
+    /**
      * HMAC secret for session JWTs. Outside production a random secret is
      * generated per process (sessions do not survive a restart) so that no
      * well-known default secret exists in the code base.

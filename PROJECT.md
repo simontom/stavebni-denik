@@ -39,14 +39,15 @@ docker compose down -v && docker compose up -d   # then start the backend again
 
 ## Runtime configuration (backend)
 
-| Variable                             | Default                                                                 | Notes                                                          |
-| ------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                |
-| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure` |
-| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                         |
-| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)        |
-| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                        |
-| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                               |
+| Variable                             | Default                                                                 | Notes                                                                                                                |
+| ------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                                                                      |
+| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure`                                                       |
+| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                                                                               |
+| `ALLOW_UNRELEASED_BUILD`             | unset                                                                   | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only) |
+| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)                                                              |
+| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                                                                              |
+| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                                                                                     |
 
 ## API overview (all under `/api`, JWT cookie auth unless noted)
 
@@ -73,6 +74,24 @@ Project-scoped endpoints require project membership; app admins can open every p
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
 - `.github/workflows/ci.yml` — lint/build, integration, jOOQ drift check, E2E
 
+## Release gate
+
+This build is **not released for real diary data**. While that is true, the app refuses to start with `APP_ENV=production` unless `ALLOW_UNRELEASED_BUILD=true` is set (staging with test data only). The pull request that completes the list below removes that guard.
+
+Before the first release:
+
+- **Sessions:** server-side revocation (a deactivated or demoted user loses access at once), password change and reset, login rate limiting.
+- **Authorization:** project membership decided in one place; app admins do not get member rights implicitly.
+- **Signed reports:** cannot be signed twice or changed afterwards (also enforced in the database); corrections go through addenda.
+- **Audit log:** records what changed (entity ids, before/after), cannot be truncated, latest hash anchored outside the database; the nightly verifier runs against the Kotlin schema.
+- **PDF export:** user text cannot inject typst code; timeouts; no blank-PDF fallback; required content.
+- **Uploads and requests:** size and dimension limits are checked before decoding.
+- **Legal model:** follows zákon 283/2021 Sb. § 166 and vyhláška 131/2024 Sb. (§ 10, příloha 12), confirmed with a lawyer.
+- **Operations:** separate database roles for migrations and runtime, backups with a tested restore, a way to create the first admin, GDPR paperwork.
+
 ## Follow-ups
 
-See `claude/pr60-fix-plan.md` in the project docs: retire the legacy Next.js/Prisma tree, port the audit-chain verifier to Kotlin, ship the SPA + typst from one Docker image.
+- Retire the legacy Next.js/Prisma tree (`src/`, `prisma/`, `test/`, root `package.json`): first replace the E2E seed and the nightly `audit-verify` workflow, which still depend on it.
+- Port the audit-chain verifier to Kotlin and retire the Prisma-based nightly job.
+- Commit `frontend/pnpm-lock.yaml` and use frozen installs everywhere.
+- Update the docs that still describe the old stack (`README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DEPLOYMENT.md`, the CI gates in `AGENTS.md`).

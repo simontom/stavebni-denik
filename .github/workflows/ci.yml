@@ -206,12 +206,18 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      # The seed resets known admin accounts and deletes users; it must refuse
+      # every non-local database.
+      - name: Seed safety guard tests
+        run: pnpm exec tsx --test scripts/dev/local-db-guard.test.ts
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Pre-build Backend
         run: |
-          ./gradlew assemble --console=plain
+          set -o pipefail
+          ./gradlew assemble --console=plain 2>&1 | tee /tmp/gradle-assemble.log
 
       - name: Start Ktor Backend
         timeout-minutes: 4
@@ -240,6 +246,13 @@ jobs:
         if: ${{ !cancelled() }}
         run: |
           {
+            if [ -f /tmp/gradle-assemble.log ]; then
+              echo "## Backend pre-build (gradle assemble)"
+              echo '```'
+              grep -nE "^e: |FAILED|What went wrong|Could not|Caused by" /tmp/gradle-assemble.log | head -40 || true
+              echo '```'
+              echo "### Gradle assemble tail"; echo '```'; tail -n 40 /tmp/gradle-assemble.log; echo '```'
+            fi
             echo "## Playwright"
             echo '```'
             grep -nE "✘|✓|passed|failed|flaky|Error:|Timeout|expect\(|at .*spec\.ts" /tmp/playwright.log | head -150 || true
@@ -262,6 +275,7 @@ jobs:
             test-results/
             /tmp/backend.log
             /tmp/playwright.log
+            /tmp/gradle-assemble.log
           retention-days: 14
 
   docker:
@@ -314,8 +328,18 @@ jobs:
             sleep 1
           done
 
+          # An unreleased build must refuse to start in production mode unless the
+          # operator opts in explicitly (the guard runs before the database is used).
+          if docker run --rm -e APP_ENV=production -e JWT_SECRET="$JWT_SECRET" \
+              stavebni-denik:ci > /tmp/release-guard.log 2>&1; then
+            echo "::error::the image started in production mode without ALLOW_UNRELEASED_BUILD"
+            exit 1
+          fi
+          grep -q 'ALLOW_UNRELEASED_BUILD' /tmp/release-guard.log
+          echo "release guard refuses an unreleased production start"
+
           docker run -d --name smoke-app --network smoke-net -p 8080:8080 \
-            -e APP_ENV=production -e JWT_SECRET="$JWT_SECRET" \
+            -e APP_ENV=production -e ALLOW_UNRELEASED_BUILD=true -e JWT_SECRET="$JWT_SECRET" \
             -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
             -e DB_USER=denik -e DB_PASSWORD="$DB_PASSWORD" \
             stavebni-denik:ci >/dev/null
