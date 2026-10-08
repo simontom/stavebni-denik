@@ -20,6 +20,15 @@ async function readError(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
+/** Suggestions for the weather field; any text is accepted. */
+const WEATHER_CONDITIONS = ["jasno", "polojasno", "oblačno", "zataženo", "mlha", "přeháňky", "déšť", "bouřka", "sněžení", "silný vítr"];
+
+/** A temperature field as the number the server expects, or undefined when it is empty. */
+const temperature = (value: string): number | undefined => {
+  const n = Number.parseFloat(value.replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+};
+
 export const DailyReport: React.FC = () => {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
@@ -46,6 +55,10 @@ export const DailyReport: React.FC = () => {
   const [conflict, setConflict] = useState<boolean>(false);
   // A new entry for a day before the previous working day is a late entry (decision D10) and needs a reason.
   // The server decides; this only decides what the form shows. An existing entry shows what was recorded.
+  // The weather is entered by hand (decision D12). Empty fields mean "not stated".
+  const [weatherCondition, setWeatherCondition] = useState<string>("");
+  const [weatherMin, setWeatherMin] = useState<string>("");
+  const [weatherMax, setWeatherMax] = useState<string>("");
   const [lateEntryReason, setLateEntryReason] = useState<string>("");
   const [isLateEntry, setIsLateEntry] = useState<boolean>(false);
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
@@ -71,6 +84,11 @@ export const DailyReport: React.FC = () => {
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setLateEntryReason(typeof data.lateEntryReason === "string" ? data.lateEntryReason : "");
+          if (data.weather) {
+            setWeatherCondition(typeof data.weather.condition === "string" ? data.weather.condition : "");
+            setWeatherMin(typeof data.weather.tempMin === "number" ? String(data.weather.tempMin) : "");
+            setWeatherMax(typeof data.weather.tempMax === "number" ? String(data.weather.tempMax) : "");
+          }
           if (data.workDescription) setWorkDescription(data.workDescription);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
@@ -125,6 +143,8 @@ export const DailyReport: React.FC = () => {
           constructionObj,
           ...(updatedAt ? { expectedUpdatedAt: updatedAt } : {}),
           ...(needsLateReason ? { lateEntryReason } : {}),
+          // Always sent: what the form shows is what is stored (an empty weather clears it).
+          weather: { condition: weatherCondition.trim() || undefined, tempMin: temperature(weatherMin), tempMax: temperature(weatherMax) },
         }),
       });
       if (res.ok) {
@@ -347,6 +367,66 @@ export const DailyReport: React.FC = () => {
                 className="w-full rounded-md border border-gray-300 p-2"
                 placeholder="2"
               />
+            </div>
+          </div>
+
+          {/* Weather, entered by hand */}
+          <div>
+            <div className="mb-1 block text-sm font-medium text-gray-700">Počasí</div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label htmlFor="weatherCondition" className="mb-1 block text-xs text-gray-600">
+                  Podmínky
+                </label>
+                <input
+                  id="weatherCondition"
+                  name="weatherCondition"
+                  type="text"
+                  list="weather-conditions"
+                  maxLength={200}
+                  value={weatherCondition}
+                  onChange={(e) => setWeatherCondition(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 p-2"
+                  placeholder="např. zataženo"
+                />
+                <datalist id="weather-conditions">
+                  {WEATHER_CONDITIONS.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+              </div>
+              <div>
+                <label htmlFor="weatherMin" className="mb-1 block text-xs text-gray-600">
+                  Nejnižší teplota (°C)
+                </label>
+                <input
+                  id="weatherMin"
+                  name="weatherMin"
+                  type="number"
+                  step="0.5"
+                  min={-60}
+                  max={60}
+                  value={weatherMin}
+                  onChange={(e) => setWeatherMin(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 p-2"
+                />
+              </div>
+              <div>
+                <label htmlFor="weatherMax" className="mb-1 block text-xs text-gray-600">
+                  Nejvyšší teplota (°C)
+                </label>
+                <input
+                  id="weatherMax"
+                  name="weatherMax"
+                  type="number"
+                  step="0.5"
+                  min={-60}
+                  max={60}
+                  value={weatherMax}
+                  onChange={(e) => setWeatherMax(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 p-2"
+                />
+              </div>
             </div>
           </div>
 
