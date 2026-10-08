@@ -18,6 +18,13 @@ import kotlin.system.exitProcess
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
  *
+ * The two audit commands only read: they do not migrate the schema, so they work with a read-only database role and
+ * can run from a scheduler against a database that a newer or older version of the application owns.
+ *
+ * Exit codes: 0 done / chain intact, 1 refused / chain BROKEN, 2 wrong usage, 3 the command could not be carried out
+ * (database unreachable, schema missing, ...). A check that could not run must never look like a broken chain, nor like
+ * an intact one.
+ *
  * On Fly.io: `fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin alice 'Alice Novakova'"`.
  * It reads the same JDBC_URL, DB_USER and DB_PASSWORD as the application. The generated password is printed once, to
  * standard output only, and has to be changed at the first login.
@@ -29,12 +36,16 @@ fun main(args: Array<String>) {
         exitProcess(2)
     }
     quietLogging()
-    DatabaseFactory.init(
-        jdbcUrl = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
-        user = System.getenv("DB_USER") ?: "denik",
-        password = System.getenv("DB_PASSWORD") ?: "denik_dev",
+    exitProcess(
+        AdminCli.runGuarded(args.toList(), out = ::println, err = System.err::println) {
+            DatabaseFactory.init(
+                jdbcUrl = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
+                user = System.getenv("DB_USER") ?: "denik",
+                password = System.getenv("DB_PASSWORD") ?: "denik_dev",
+                migrate = !AdminCli.readsOnly(args.toList()),
+            )
+        },
     )
-    exitProcess(AdminCli.run(args.toList(), out = ::println, err = System.err::println))
 }
 
 /**
@@ -65,6 +76,24 @@ object AdminCli {
             "audit-head" -> args.size == 1
             "audit-verify" -> args.size == 1 || (args.size == 2 && AuditAnchor.parse(args[1]) != null)
             else -> false
+        }
+
+    /** The commands that only read: they never change the schema or any row. */
+    fun readsOnly(args: List<String>): Boolean = args.firstOrNull() in setOf("audit-head", "audit-verify")
+
+    /**
+     * [connect] opens the database; [run] then carries the command out. Anything unexpected on the way (a refused
+     * connection, a missing table) is exit code 3 with a one-line reason: not a stack trace on the terminal, and not
+     * the code that means "the chain is broken".
+     */
+    fun runGuarded(args: List<String>, out: (String) -> Unit, err: (String) -> Unit, connect: () -> Unit): Int =
+        try {
+            connect()
+            run(args, out, err)
+        } catch (e: Exception) {
+            // The first line only: a driver message can be long, and must not carry anything but what went wrong.
+            err("Could not carry out the command: ${e.javaClass.simpleName}: ${e.message?.lineSequence()?.firstOrNull().orEmpty()}")
+            3
         }
 
     /** Returns the process exit code: 0 done, 1 refused, 2 wrong usage. */

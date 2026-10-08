@@ -3,13 +3,13 @@
 ## Architecture (current stack)
 
 - **Backend**: Kotlin 2.1, Ktor 3.1, jOOQ 3.21, Flyway 12, **PostgreSQL 18 only** (schema uses `uuidv7()`), Argon2id passwords, JWT in an HttpOnly cookie.
-- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4 (`frontend/`, its own pnpm workspace; the lockfile is not committed yet, see the Follow-ups).
+- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4 (`frontend/`, its own pnpm workspace; `frontend/pnpm-lock.yaml` is committed and CI and the image build install with `--frozen-lockfile`, so a `package.json` that disagrees with it fails the build).
 - **PDF export** (`GET /api/reports/{id}/pdf`): the `typst` command line tool (installed in the Docker image, pinned by checksum) renders the fixed template `backend/src/main/resources/pdf/report.typ`. User text never becomes part of the template: it travels as JSON data and is shown as plain text, so it cannot be executed as typst code. Each export gets its own temporary directory, a 20 s timeout (the process is killed), and at most two exports run at the same time. Without typst the endpoint answers `503`; it never returns an empty PDF.
-- **Docker image** (`Dockerfile`): Ktor + the built SPA + typst on a **glibc** (Ubuntu) Temurin JRE. It must not be Alpine: the password library `argon2-jvm` loads a native library through JNA, and on Alpine (musl libc) the JVM dies with SIGSEGV as soon as a password is hashed (creating a user). The application also hashes and verifies one throwaway password at startup (`PasswordService.ensureWorks`), so such a broken environment fails at deploy time, not at the first account creation.
+- **Docker image** (`Dockerfile`): Ktor + the built SPA + typst on a **glibc** (Ubuntu) Temurin JRE. It must not be Alpine: the password library `argon2-jvm` loads a native library through JNA, and on Alpine (musl libc) the JVM dies with SIGSEGV as soon as a password is hashed (creating a user). The application also hashes and verifies one throwaway password at startup (`PasswordService.ensureWorks`), so such a broken environment fails at deploy time, not at the first account creation. **The application does not run as root:** the entrypoint (`/app/entrypoint.sh`, written by the Dockerfile) starts as root only to give the data volume (`/data/uploads`, root-owned when Fly mounts it) to the user `app`, then drops privileges with `setpriv` before the JVM starts; the CI boot test checks the process user and the owner of the photo directory. **Memory:** `JAVA_TOOL_OPTIONS` caps the heap at 40 % of the machine (`-XX:MaxRAMPercentage=40`) and ends the process on an out-of-memory error (Fly restarts it); the rest is for what the heap does not hold: Argon2 (up to 4 x 64 MiB native), image decoding, class metadata, threads and the typst processes. `fly.toml` asks for a `shared-cpu-1x` machine with **1 GB** (Fly's default is 256 MB); change that value together with the percentage.
 - **Testing**:
   - Backend: JUnit 5, Testcontainers `postgres:18-alpine`, Ktor `testApplication`, WireMock / MockEngine. Tests use a fake typst; `RealTypstPdfTest` runs the real tool and is skipped when typst is not installed (CI installs it and sets `REQUIRE_TYPST=1`, which turns a missing typst into a failure).
   - E2E: Playwright against the live stack (Ktor on :8080, Vite dev server on :5173 proxying `/api`).
-- **Legacy** (being retired, not built by CI): Next.js + Prisma app in `src/`, `prisma/`, `test/` and the nightly `audit-verify.yml` job.
+- **Legacy** (being retired, not built by CI): Next.js + Prisma app in `src/`, `prisma/`, `test/`, and the scripts under `scripts/` that use it.
 
 ## jOOQ code generation
 
@@ -137,7 +137,8 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `backend/src/test/kotlin/cz/stavebni/denik/` — integration tests
 - `frontend/src/` — React SPA (`lib/api.ts` is the API client)
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
-- `.github/workflows/ci.yml` — lint/build, integration (with real typst), jOOQ drift check, Docker image build + boot test (release gate, security headers), E2E
+- `.github/workflows/ci.yml` — lint/build, integration (with real typst), jOOQ drift check, Docker image build + boot test (release gate, security headers, non-root user, volume ownership), E2E
+- `.github/dependabot.yml` — weekly update pull requests for `frontend/` (npm/pnpm), the Gradle build (root and `backend/`), GitHub Actions and the Docker base images; the legacy root npm tree is switched off. Versions kept in plain `val xVersion = "…"` lines of the Kotlin build scripts may not be seen by Dependabot (a version catalog would fix that).
 
 ## Audit log
 
@@ -148,7 +149,7 @@ fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit
 fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify 1234:ab12…"   # chain + that row 1234 still exists unchanged
 ```
 
-`audit-verify` exits `0` when the chain is intact (and the anchor, if given, is found unchanged) and `1` when it is not, printing the reason; without an anchor it cannot see a cut tail. The same check is available to administrators as `GET /api/audit/verify` and `GET /api/audit/verify?anchor=<id>:<hash>`, which also returns the current `head`. An anchor stays valid while the log grows. **Not automated yet:** the scheduled job that records the head (a private repository, an RFC 3161 timestamp, the PDF footer: decision D4) and runs the check; the nightly workflow still runs the legacy Prisma script. Separate database roles for migrations and for the application (decision D5) are also open; V1 and V2 already revoke `UPDATE`, `DELETE` and `TRUNCATE` from a role named `app` when it exists.
+`audit-verify` exits `0` when the chain is intact (and the anchor, if given, is found unchanged) and `1` when it is not, printing the reason; `3` means the check **could not run** (database unreachable, schema missing): that is neither "intact" nor "broken", and an unattended check must treat it as a failure. Both audit commands only read: they **do not migrate** the schema, so a read-only database role is enough and a scheduler cannot change a database that another version of the application owns. Without an anchor the check cannot see a cut tail. The same check is available to administrators as `GET /api/audit/verify` and `GET /api/audit/verify?anchor=<id>:<hash>`, which also returns the current `head`. An anchor stays valid while the log grows. **Not automated yet:** the scheduled job that _records_ the head (a private repository, an RFC 3161 timestamp, the PDF footer: decision D4). The nightly workflow `audit-verify.yml` runs the Kotlin command above (secrets `AUDIT_JDBC_URL`, `AUDIT_DB_USER`, `AUDIT_DB_PASSWORD`, optional variable `AUDIT_ANCHOR`); **it fails while it is not configured**, so that nobody believes the log is watched when it is not (disable the workflow until a production database exists). The database must be reachable from GitHub's runners; otherwise run the same command where the database is. Separate database roles for migrations and for the application (decision D5) are also open; V1 and V2 already revoke `UPDATE`, `DELETE` and `TRUNCATE` from a role named `app` when it exists.
 
 ## First administrator and password recovery
 
@@ -181,7 +182,5 @@ Before the first release:
 
 ## Follow-ups
 
-- Retire the legacy Next.js/Prisma tree (`src/`, `prisma/`, `test/`, root `package.json`): first replace the E2E seed and the nightly `audit-verify` workflow, which still depend on it.
-- Port the audit-chain verifier to Kotlin and retire the Prisma-based nightly job.
-- Commit `frontend/pnpm-lock.yaml` and use frozen installs everywhere.
+- Retire the legacy Next.js/Prisma tree (`src/`, `prisma/`, `test/`, root `package.json`): first replace the E2E seed (`scripts/dev/e2e-prepare.ts`), which still depends on it; `scripts/verify-audit.ts` is then dead too.
 - Update the docs that still describe the old stack (`README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DEPLOYMENT.md`, the CI gates in `AGENTS.md`).
