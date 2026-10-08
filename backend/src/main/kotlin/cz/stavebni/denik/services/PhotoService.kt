@@ -16,6 +16,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import net.coobird.thumbnailator.Thumbnails
 import org.jooq.DSLContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -23,6 +27,8 @@ import java.io.IOException
 import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.util.UUID
+import kotlin.math.ceil
+import kotlin.math.sqrt
 import javax.imageio.ImageIO
 
 @Serializable
@@ -56,8 +62,16 @@ object PhotoService {
 
     /** Largest accepted upload. The route reads at most this much (+1 byte, to notice an excess). */
     const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5 MB
-    private const val MAX_PIXELS = 8_000_000L // 8 Megapixels
-    private const val MAX_SIDE_PIXELS = 12_000 // longest side; a 1 x 8,000,000 image stays within 8 MP
+    /** What a JPEG header may claim: a phone photo is 12 to 50 MP. Decoding is reduced below, so this is not what is held in memory. */
+    private const val MAX_JPEG_PIXELS = 64_000_000L
+    /** Other formats (PNG ...) are decoded in full by the JDK, so they get a smaller limit. */
+    private const val MAX_OTHER_PIXELS = 16_000_000L
+    private const val MAX_SIDE_PIXELS = 16_000 // longest side; a 1 x 16,000 image is fine, a 1 x 60,000,000 one is not
+    /** Most pixels held in memory for one image. The JPEG reader skips pixels while decoding to stay below it. */
+    private const val MAX_DECODED_PIXELS = 4_000_000L
+
+    /** Decoding and encoding are heavy: at most two images at the same time, whatever the number of uploads. */
+    private val imageSlots = Semaphore(2)
 
     private class Encoded(val bytes: ByteArray, val width: Int, val height: Int)
 
@@ -65,6 +79,10 @@ object PhotoService {
      * Decodes an image, but only after its dimensions were read from the file *header* and checked.
      * A tiny file can claim billions of pixels (a decompression bomb); decoding it first would
      * allocate all of them. A bad header or a failing decoder is a client error, not a server error.
+     *
+     * A big photo is accepted and decoded already reduced: the reader skips pixels while decoding
+     * (source subsampling), so what is held in memory never exceeds about [MAX_DECODED_PIXELS], whatever the
+     * size of the original. The stored picture is at most 1920 x 1080 anyway.
      */
     private fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
         try {
@@ -77,10 +95,17 @@ object PhotoService {
                     val width = reader.getWidth(0)
                     val height = reader.getHeight(0)
                     if (width <= 0 || height <= 0) throw IllegalArgumentException("Invalid or corrupted image data")
-                    if (width.toLong() * height.toLong() > MAX_PIXELS || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
-                        throw IllegalArgumentException("Image dimensions exceed 8MP limit")
+                    val pixels = width.toLong() * height.toLong()
+                    val maxPixels = if (reader.formatName.equals("JPEG", ignoreCase = true)) MAX_JPEG_PIXELS else MAX_OTHER_PIXELS
+                    if (pixels > maxPixels || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
+                        throw IllegalArgumentException("Image dimensions exceed ${maxPixels / 1_000_000}MP limit")
                     }
-                    return reader.read(0) ?: throw IllegalArgumentException("Invalid or corrupted image data")
+                    val param = reader.defaultReadParam
+                    if (pixels > MAX_DECODED_PIXELS) {
+                        val step = ceil(sqrt(pixels.toDouble() / MAX_DECODED_PIXELS)).toInt()
+                        param.setSourceSubsampling(step, step, 0, 0)
+                    }
+                    return reader.read(0, param) ?: throw IllegalArgumentException("Invalid or corrupted image data")
                 } finally {
                     reader.dispose()
                 }
@@ -165,18 +190,29 @@ object PhotoService {
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
         //    the image is then decoded exactly once.
-        val image = decodeWithinLimits(fileBytes)
-
         // 4. Re-encoding & sanitization (Airlock: never save raw unvalidated bytes to disk).
-        //    Both files are made from the one decoded image. They are fresh JPEGs without metadata.
-        val original = encodeJpeg(image, 1920, 1080)
-        val thumbnail = encodeJpeg(image, 400, 300)
+        //    Both files are made from the one decoded image. They are fresh JPEGs without metadata, turned upright first:
+        //    the camera's orientation lives in the metadata that is thrown away. The work is bounded (two images at a
+        //    time) and runs off the request threads.
+        val (original, thumbnail) = imageSlots.withPermit {
+            withContext(Dispatchers.Default) {
+                val decoded = decodeWithinLimits(fileBytes)
+                val orientation = if (isJpeg(fileBytes)) ImageOrientation.of(fileBytes) else 1
+                val image = if (orientation == 1) decoded else ImageOrientation.apply(decoded, orientation)
+                encodeJpeg(image, 1920, 1080) to encodeJpeg(image, 400, 300)
+            }
+        }
 
         val fileId = UUID.randomUUID()
         val originalKey = PhotoStorage.keyFor(fileId, thumbnail = false)
         val thumbKey = PhotoStorage.keyFor(fileId, thumbnail = true)
         PhotoStorage.write(originalKey, original.bytes)
-        PhotoStorage.write(thumbKey, thumbnail.bytes)
+        try {
+            PhotoStorage.write(thumbKey, thumbnail.bytes)
+        } catch (e: Throwable) {
+            PhotoStorage.deleteQuietly(originalKey) // no row will ever refer to the first file
+            throw e
+        }
 
         val photoId = UUID.randomUUID()
         try {

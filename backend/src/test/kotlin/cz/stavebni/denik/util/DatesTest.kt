@@ -44,4 +44,16 @@ class DatesTest {
         // Midday is the same date everywhere.
         assertEquals(LocalDate.of(2026, 10, 8), Dates.today(at("2026-10-08T10:00:00Z")))
     }
+
+    @Test
+    fun `dates outside a sane range are refused, not passed on to the database`() {
+        for (bad in listOf("+9999999-01-01", "0001-01-01", "1850-06-01", "2300-01-01", "+999999999-12-31")) {
+            assertThrows<IllegalArgumentException>(bad) { Dates.parseLocalDate(bad) }
+            assertThrows<IllegalArgumentException>(bad) { Dates.parse(bad) }
+        }
+        assertThrows<IllegalArgumentException> { Dates.parse("+9999999-01-01T00:00:00Z") }
+        assertEquals(LocalDate.of(2026, 9, 28), Dates.parseLocalDate("2026-09-28"))
+        assertEquals(LocalDate.of(1900, 1, 1), Dates.parseLocalDate("1900-01-01"))
+        assertEquals(LocalDate.of(2200, 12, 31), Dates.parseLocalDate("2200-12-31"))
+    }
 }
