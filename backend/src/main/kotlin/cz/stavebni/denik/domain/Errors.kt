@@ -9,5 +9,11 @@ class NotFoundException(message: String) : RuntimeException(message)
  */
 class ConflictException(message: String) : RuntimeException(message)
 
+/**
+ * The entry was changed (or is gone) since the client read it: the save was based on an outdated version.
+ * Maps to HTTP 409 with `code: STALE_VERSION`, so the client can offer to reload instead of showing a plain error.
+ */
+class StaleVersionException(message: String) : RuntimeException(message)
+
 /** Too many attempts in a short time. Maps to HTTP 429 with a `Retry-After` header. */
 class TooManyRequestsException(val retryAfterSeconds: Long, message: String) : RuntimeException(message)

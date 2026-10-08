@@ -20,6 +20,8 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jooq.DSLContext
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 import java.util.UUID
 
 @Serializable
@@ -31,8 +33,19 @@ data class CreateReportPayload(
     val workersByTrade: String? = null,
     val isControlDay: Boolean? = null,
     val constructionObj: String? = null,
-    val signed: Boolean? = null
+    val signed: Boolean? = null,
+    /** The `updatedAt` the client last saw; see [DailyReportService.ReportInput.expectedUpdatedAt]. */
+    val expectedUpdatedAt: String? = null
 )
+
+private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
+    expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
+        try {
+            OffsetDateTime.parse(it)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("Neplatná hodnota expectedUpdatedAt")
+        }
+    }
 
 /**
  * Resolves a report reference that is either a report UUID or a `YYYY-MM-DD`
@@ -135,7 +148,8 @@ fun Application.reportRoutes() {
                                 workDescription = payload.workDescription,
                                 workersByTrade = workersJson(payload),
                                 isControlDay = payload.isControlDay,
-                                constructionObj = payload.constructionObj
+                                constructionObj = payload.constructionObj,
+                                expectedUpdatedAt = payload.expectedInstant()
                             )
                         )
                         call.respond(HttpStatusCode.OK, report)
