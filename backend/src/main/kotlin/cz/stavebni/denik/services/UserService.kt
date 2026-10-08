@@ -10,6 +10,10 @@ import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.serialization.Serializable
 import org.jooq.DSLContext
+import cz.stavebni.denik.jooq.tables.records.UsersRecord
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.Record
 import java.security.SecureRandom
 import java.time.OffsetDateTime
@@ -72,6 +76,17 @@ data class ChangePasswordRequest(
 data class ResetPasswordResponse(
     /** Shown to the administrator exactly once; only the Argon2id hash is stored. */
     val initialPassword: String,
+)
+
+@Serializable
+internal data class UserSnapshot(
+    val id: String,
+    val nickname: String,
+    val displayName: String,
+    val role: String,
+    val isAdmin: Boolean,
+    val isActive: Boolean,
+    val ckaitNumber: String?,
 )
 
 object UserService {
@@ -195,12 +210,15 @@ object UserService {
         val displayName = req.displayName?.trim()
         if (displayName != null) require(displayName.isNotEmpty()) { "Jméno a příjmení je povinné" }
 
-        return AuditService.auditedTransaction(
-            actor = actor,
-            action = "user.update",
-            entityType = "user",
-            entityId = id.toString(),
-        ) { tx ->
+        return AuditService.auditedWrite(actor, "user") { tx ->
+            val existing = tx.selectFrom(USERS)
+                .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne() ?: throw NotFoundException("Uživatel nenalezen")
+            // Whoever may edit users could otherwise make themselves a project manager (and then a member of any project).
+            if (id == actor.id && role != null && existing.role?.name != role.name) {
+                throw IllegalArgumentException("Nelze změnit vlastní roli")
+            }
             if (req.isAdmin == false) requireAnotherActiveAdminIfTargetIsOne(tx, id)
 
             val update = tx.update(USERS).set(USERS.UPDATEDAT, OffsetDateTime.now())
@@ -214,11 +232,28 @@ object UserService {
                 ?: throw NotFoundException("Uživatel nenalezen")
 
             // New rights apply at once on the server; end the sessions so the user's own screen
-            // (which remembers the role from login) does not keep showing the old ones.
-            if (role != null || req.isAdmin != null) SessionService.revokeAllForUser(tx, id)
-            toDto(updated)
+            // (which remembers the role from login) does not keep showing the old ones. Only when they really changed:
+            // fixing a display name must not log the person out.
+            val rightsChanged = existing.role != updated.role || existing.isadmin != updated.isadmin
+            if (rightsChanged) SessionService.revokeAllForUser(tx, id)
+            AuditService.Audited(
+                result = toDto(updated),
+                action = "user.update",
+                entityId = id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
     }
+
+    /** What the audit log keeps of a user: who they are and what they may do. Never the password hash. */
+    private fun UsersRecord.toSnapshot(): JsonElement = Json.encodeToJsonElement(
+        UserSnapshot.serializer(),
+        UserSnapshot(
+            id = id.toString(), nickname = nickname ?: "", displayName = displayname ?: "", role = role?.name ?: "",
+            isAdmin = isadmin ?: false, isActive = isactive ?: false, ckaitNumber = ckaitnumber,
+        )
+    )
 
     suspend fun setActive(actor: SessionUser, id: UUID, active: Boolean): UserDto {
         assertCan(actor, if (active) Action.UserActivate else Action.UserDeactivate)
