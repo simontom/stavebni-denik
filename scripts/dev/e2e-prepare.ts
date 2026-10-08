@@ -12,6 +12,8 @@
 import { hash } from "@node-rs/argon2";
 import { Client } from "pg";
 
+import { assertLocalDatabase } from "./local-db-guard";
+
 /** Same Argon2id parameters as the backend (PasswordService.kt: t=2, m=64 MiB, p=1). */
 async function hashPassword(plain: string): Promise<string> {
   return hash(plain, {
@@ -36,6 +38,9 @@ async function getPgClient(): Promise<Client> {
   const urlsToTry: string[] = [];
 
   if (envUrl) {
+    // This script resets known admin accounts and deletes users: never run it
+    // against anything but a database on this machine.
+    assertLocalDatabase(envUrl);
     urlsToTry.push(envUrl);
   }
   urlsToTry.push("postgresql://denik:denik_dev@localhost:5432/stavebni_denik");

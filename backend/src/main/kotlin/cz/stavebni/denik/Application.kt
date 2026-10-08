@@ -25,6 +25,9 @@ import kotlinx.serialization.json.Json
 fun main(args: Array<String>) = EngineMain.main(args)
 
 fun Application.module() {
+    // Before anything touches the database or the network.
+    AppConfig.requireReleaseOptIn()
+
     if (!DatabaseFactory.isInitialized) {
         DatabaseFactory.init(
             jdbcUrl = System.getenv("JDBC_URL") ?: System.getProperty("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
