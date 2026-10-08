@@ -18,6 +18,7 @@ import cz.stavebni.denik.routes.reportRoutes
 import cz.stavebni.denik.routes.photoRoutes
 import cz.stavebni.denik.routes.userRoutes
 import cz.stavebni.denik.routes.auditRoutes
+import cz.stavebni.denik.plugins.CrossSiteRequestGuard
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
@@ -60,6 +61,9 @@ fun Application.module() {
         allowCredentials = true
         exposeHeader(HttpHeaders.SetCookie)
     }
+
+    // Before any route runs: a state-changing request that another site makes through the user's browser is refused.
+    install(CrossSiteRequestGuard)
 
     install(ContentNegotiation) {
         json(Json {
