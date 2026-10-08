@@ -8,6 +8,17 @@ interface PhotoItem {
   name: string;
 }
 
+/** The message the server sent for a failed request ({ "error": "..." }), or a fallback. */
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body && typeof body.error === "string") return body.error;
+  } catch {
+    // the body was not JSON
+  }
+  return fallback;
+}
+
 export const DailyReport: React.FC = () => {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
@@ -154,9 +165,13 @@ export const DailyReport: React.FC = () => {
       });
       if (res.ok) {
         setIsSigned(true);
+        setError("");
+      } else {
+        setError(await readError(res, "Záznam se nepodařilo podepsat"));
       }
     } catch (err) {
       console.error("Failed to sign report:", err);
+      setError("Záznam se nepodařilo podepsat");
     }
   };
 
@@ -171,9 +186,13 @@ export const DailyReport: React.FC = () => {
       });
       if (res.ok) {
         setIsAcknowledged(true);
+        setError("");
+      } else {
+        setError(await readError(res, "Záznam se nepodařilo potvrdit"));
       }
     } catch (err) {
       console.error("Failed to acknowledge report:", err);
+      setError("Záznam se nepodařilo potvrdit");
     }
   };
 
@@ -199,8 +218,8 @@ export const DailyReport: React.FC = () => {
           </div>
         </div>
 
-        {/* Investor Acknowledgment Button */}
-        {isInvestor && !isAcknowledged && (
+        {/* Investor Acknowledgment Button: only a signed (locked) report can be acknowledged */}
+        {isInvestor && isSigned && !isAcknowledged && (
           <div className="mt-4 flex justify-end border-t border-gray-200 pt-4">
             <button type="button" onClick={handleAcknowledge} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
               Potvrdit seznámení

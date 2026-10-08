@@ -50,51 +50,111 @@ object AuditService {
             val tx = config.dsl()
 
             // 1. Serialise appenders (same lock key as the original implementation)
-            tx.execute("SELECT pg_advisory_xact_lock(42)")
+            tx.execute(AUDIT_LOCK_SQL)
 
-            // 2. Previous hash (genesis for the first row)
-            val prevHash = tx.select(AUDIT_LOG.ROW_HASH)
-                .from(AUDIT_LOG)
-                .orderBy(AUDIT_LOG.ID.desc())
-                .limit(1)
-                .fetchOne()
-                ?.value1()
-                ?: AuditHash.GENESIS_HASH
+            // 2. The audit row is written before the business logic, so the caller has to
+            //    know the entity id (and any snapshots) up front.
+            appendRow(tx, actor, action, entityType, entityId, before, after, ip, userAgent)
 
-            // 3. Timestamp is part of the hash, so it is stored explicitly
-            //    with the same (millisecond) precision that is hashed.
-            val ts = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS)
-            val actorId = actor?.id?.toString()
-            val rowHash = AuditHash.rowHash(
-                action = action,
-                entityType = entityType,
-                entityId = entityId,
-                actorId = actorId,
-                before = before,
-                after = after,
-                ip = ip,
-                userAgent = userAgent,
-                prevHash = prevHash,
-                ts = ts,
-            )
-
-            tx.insertInto(AUDIT_LOG)
-                .set(AUDIT_LOG.TS, ts)
-                .set(AUDIT_LOG.ACTOR_ID, actorId)
-                .set(AUDIT_LOG.ACTION, action)
-                .set(AUDIT_LOG.ENTITY_TYPE, entityType)
-                .set(AUDIT_LOG.ENTITY_ID, entityId)
-                .set(AUDIT_LOG.BEFORE, before?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
-                .set(AUDIT_LOG.AFTER, after?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
-                .set(AUDIT_LOG.IP, ip)
-                .set(AUDIT_LOG.USER_AGENT, userAgent)
-                .set(AUDIT_LOG.PREV_HASH, prevHash)
-                .set(AUDIT_LOG.ROW_HASH, rowHash)
-                .execute()
-
-            // 4. Business logic in the same transaction
+            // 3. Business logic in the same transaction
             block(tx)
         }
+    }
+
+    /**
+     * Outcome of a [auditedWrite] block: the value to return plus what the audit row
+     * should record. Everything here is only known once the change has been made
+     * (the id of a row that was just created, its state after the change).
+     */
+    class Audited<T>(
+        val result: T,
+        val action: String,
+        val entityId: String,
+        val before: JsonElement? = null,
+        val after: JsonElement? = null,
+    )
+
+    /**
+     * The write path for changes that must be authorized, applied and audited as one unit.
+     *
+     * Takes the audit lock first, so concurrent writers are strictly serialised: [block]
+     * can read the current state (lock flags, membership) and act on it without a
+     * check-then-act race. It runs in the transaction and appends the audit row
+     * *afterwards*, with the real entity id and the before/after snapshots it returns.
+     * An exception thrown by [block] rolls the whole transaction back, so there is no
+     * audit row for a change that did not happen.
+     *
+     * [block] is deliberately not `suspend`: nothing slow (HTTP calls, image or PDF work)
+     * may run while the lock is held, and a nested audited write would deadlock on it.
+     */
+    suspend fun <T> auditedWrite(
+        actor: SessionUser?,
+        entityType: String,
+        block: (DSLContext) -> Audited<T>,
+    ): T = withContext(NonCancellable + Dispatchers.IO) {
+        DatabaseFactory.dsl.transactionCoroutine { config ->
+            val tx = config.dsl()
+            tx.execute(AUDIT_LOCK_SQL)
+            val outcome = block(tx)
+            appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, null, null)
+            outcome.result
+        }
+    }
+
+    /** Same lock key as the original implementation. */
+    private const val AUDIT_LOCK_SQL = "SELECT pg_advisory_xact_lock(42)"
+
+    /** Appends one hash-chained row. Must run under [AUDIT_LOCK_SQL] in the caller's transaction. */
+    private fun appendRow(
+        tx: DSLContext,
+        actor: SessionUser?,
+        action: String,
+        entityType: String,
+        entityId: String,
+        before: JsonElement?,
+        after: JsonElement?,
+        ip: String?,
+        userAgent: String?,
+    ) {
+        // Previous hash (genesis for the first row)
+        val prevHash = tx.select(AUDIT_LOG.ROW_HASH)
+            .from(AUDIT_LOG)
+            .orderBy(AUDIT_LOG.ID.desc())
+            .limit(1)
+            .fetchOne()
+            ?.value1()
+            ?: AuditHash.GENESIS_HASH
+
+        // The timestamp is part of the hash, so it is stored explicitly
+        // with the same (millisecond) precision that is hashed.
+        val ts = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS)
+        val actorId = actor?.id?.toString()
+        val rowHash = AuditHash.rowHash(
+            action = action,
+            entityType = entityType,
+            entityId = entityId,
+            actorId = actorId,
+            before = before,
+            after = after,
+            ip = ip,
+            userAgent = userAgent,
+            prevHash = prevHash,
+            ts = ts,
+        )
+
+        tx.insertInto(AUDIT_LOG)
+            .set(AUDIT_LOG.TS, ts)
+            .set(AUDIT_LOG.ACTOR_ID, actorId)
+            .set(AUDIT_LOG.ACTION, action)
+            .set(AUDIT_LOG.ENTITY_TYPE, entityType)
+            .set(AUDIT_LOG.ENTITY_ID, entityId)
+            .set(AUDIT_LOG.BEFORE, before?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
+            .set(AUDIT_LOG.AFTER, after?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
+            .set(AUDIT_LOG.IP, ip)
+            .set(AUDIT_LOG.USER_AGENT, userAgent)
+            .set(AUDIT_LOG.PREV_HASH, prevHash)
+            .set(AUDIT_LOG.ROW_HASH, rowHash)
+            .execute()
     }
 
     /**

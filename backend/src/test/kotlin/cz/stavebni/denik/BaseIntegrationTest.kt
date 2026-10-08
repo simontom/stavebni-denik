@@ -112,8 +112,19 @@ abstract class BaseIntegrationTest {
         )
     }
 
+    /**
+     * A token for [user], backed by a real session row (the server looks the session up on every
+     * request). Calling it again for the same [SessionUser] reuses that session.
+     */
     fun generateJwtToken(user: SessionUser): String {
-        return JwtService.createToken(user, Instant.now().plus(7, ChronoUnit.DAYS))
+        val expiresAt = OffsetDateTime.now().plusHours(12)
+        dsl.insertInto(SESSIONS)
+            .set(SESSIONS.ID, user.sessionId)
+            .set(SESSIONS.USERID, user.id)
+            .set(SESSIONS.EXPIRESAT, expiresAt)
+            .onConflictDoNothing()
+            .execute()
+        return JwtService.createToken(user, expiresAt.toInstant())
     }
 }
 
