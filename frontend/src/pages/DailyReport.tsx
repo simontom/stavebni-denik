@@ -39,6 +39,10 @@ export const DailyReport: React.FC = () => {
   const [constructionObj, setConstructionObj] = useState<string>("");
   const [isSigned, setIsSigned] = useState<boolean>(false);
   const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
+  // The version of the entry as this form last saw it (null for a day without an entry). Sent back on save, so a
+  // second person's changes are not overwritten without anybody noticing.
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<boolean>(false);
 
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -57,6 +61,7 @@ export const DailyReport: React.FC = () => {
           if (ignore) return;
           setLoadState("ready");
           if (!data) return;
+          setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           if (data.workDescription) setWorkDescription(data.workDescription);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
@@ -109,11 +114,14 @@ export const DailyReport: React.FC = () => {
           workerCount,
           isControlDay,
           constructionObj,
+          ...(updatedAt ? { expectedUpdatedAt: updatedAt } : {}),
         }),
       });
       if (res.ok) {
         const data = await res.json();
+        setConflict(false);
         if (data) {
+          setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
           if (data.isSigned !== undefined) setIsSigned(Boolean(data.isSigned || data.isLocked));
@@ -121,6 +129,8 @@ export const DailyReport: React.FC = () => {
         setError("");
       } else {
         const body = await res.json().catch(() => null);
+        // Somebody else saved this entry after it was loaded here: offer to load their version.
+        setConflict(res.status === 409 && body?.code === "STALE_VERSION");
         setError(body?.error || "Záznam se nepodařilo uložit");
       }
     } catch (err) {
@@ -243,7 +253,19 @@ export const DailyReport: React.FC = () => {
         )}
       </div>
 
-      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <div role="alert" className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
+          {error}
+          {conflict && (
+            <div className="mt-2">
+              <button type="button" onClick={() => window.location.reload()} className="rounded bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800">
+                Načíst aktuální verzi
+              </button>
+              <span className="ml-2 text-xs">Co jste právě napsali, si před načtením zkopírujte.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main Report Form */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">

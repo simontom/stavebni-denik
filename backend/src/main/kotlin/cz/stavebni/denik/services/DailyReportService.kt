@@ -7,6 +7,7 @@ import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
+import cz.stavebni.denik.domain.StaleVersionException
 import cz.stavebni.denik.domain.WeatherData
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.domain.can
@@ -36,6 +37,11 @@ data class DailyReportDto(
     val constructionObj: String? = null,
     val isSigned: Boolean = false,
     val isAcknowledged: Boolean = false,
+    /**
+     * When the entry was last changed (ISO-8601). A client that edits the entry sends it back as
+     * `expectedUpdatedAt`: the save is refused (409) when somebody else changed the entry in between.
+     */
+    val updatedAt: String? = null,
     val photos: List<PhotoDto> = emptyList()
 )
 
@@ -73,6 +79,8 @@ object DailyReportService {
         val workersByTrade: String? = null,
         val isControlDay: Boolean? = null,
         val constructionObj: String? = null,
+        /** The `updatedAt` of the entry as the client last saw it; when given, the save only goes through if it still matches. */
+        val expectedUpdatedAt: OffsetDateTime? = null,
     )
 
     private enum class WriteMode { CREATE_ONLY, SAVE }
@@ -126,6 +134,9 @@ object DailyReportService {
                 .fetchOne()
 
             if (existing == null) {
+                if (input.expectedUpdatedAt != null) {
+                    throw StaleVersionException("Záznam, který upravujete, už neexistuje. Načtěte stránku znovu.")
+                }
                 val nextSeq = tx.fetchCount(DAILY_REPORTS, DAILY_REPORTS.PROJECTID.eq(projectId)) + 1
                 val created = tx.insertInto(DAILY_REPORTS)
                     .set(DAILY_REPORTS.PROJECTID, projectId)
@@ -154,6 +165,10 @@ object DailyReportService {
                 }
                 // A site manager of the project may correct any entry; anyone else only their own.
                 assertCan(user, Action.ReportUpdate, Resource(isMember = isMember, authorId = existing.authorid))
+                // The row is locked, so this is an atomic compare-and-set: whoever saved first wins, the other is told.
+                if (input.expectedUpdatedAt != null && !existing.updatedat!!.isEqual(input.expectedUpdatedAt)) {
+                    throw StaleVersionException("Záznam mezitím změnil někdo jiný. Načtěte jej znovu, aby se jeho změny neztratily.")
+                }
 
                 val updated = tx.update(DAILY_REPORTS)
                     .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: existing.workdescription)
@@ -306,6 +321,7 @@ object DailyReportService {
         constructionObj = record.constructionobj,
         isSigned = record.signedat != null,
         isAcknowledged = record.acknowledgedat != null,
+        updatedAt = record.updatedat?.toString(),
         photos = photos
     )
 

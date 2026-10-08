@@ -91,6 +91,8 @@ Not done yet (see the Release gate): password change and reset, login rate limit
   - Authorized persons: `GET/POST /projects/{id}/authorized-persons`, `POST /authorized-persons/{id}/revoke`
   - Site handovers: `GET/POST /projects/{id}/handovers`, `GET/PUT/DELETE /handovers/{id}`, `POST /handovers/{id}/sign`
   - Reports: `GET/POST /projects/{id}/reports`, `GET/POST /projects/{id}/reports/{idOrDate}`, `POST …/sign`, `POST …/acknowledge`, `GET /reports/{id}/pdf`
+    - `POST /projects/{id}/reports` only creates (201, or 409 when the day has an entry); `POST …/reports/{date}` saves: it creates the entry or changes only the fields the request mentions. A bad or missing body is a 4xx and changes nothing.
+    - **Two people editing one entry:** every entry carries `updatedAt`. A save that sends it back as `expectedUpdatedAt` is a compare-and-set on the locked row: if somebody else saved in between it is refused with `409` and `code: STALE_VERSION` (the SPA then offers to load the other version) and nothing is overwritten. A save without it is last-one-wins (the SPA always sends it for an existing entry).
 - Photos: `POST /photos/upload`, `GET /photos/{id}`, `GET /photos/{id}/thumb`
 - Audit log (admin): `GET /audit?limit=200`
 
