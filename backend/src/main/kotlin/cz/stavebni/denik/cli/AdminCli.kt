@@ -86,13 +86,13 @@ object AdminCli {
             }
             "audit-head" -> {
                 if (args.size != 1) return usage()
-                val head = AuditService.verifyChain(DatabaseFactory.dsl).head
-                if (head == null) {
-                    err("The audit log is empty.")
-                    1
-                } else {
-                    out(head.toString())
-                    0
+                val result = AuditService.verifyChain(DatabaseFactory.dsl)
+                val head = result.head
+                when {
+                    // A head of a damaged chain must never be recorded as the anchor to trust.
+                    !result.ok -> { err("Audit log BROKEN: ${result.reason}"); 1 }
+                    head == null -> { err("The audit log is empty."); 1 }
+                    else -> { out(head.toString()); 0 }
                 }
             }
             "audit-verify" -> {

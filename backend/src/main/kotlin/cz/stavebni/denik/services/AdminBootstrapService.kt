@@ -2,6 +2,7 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.jooq.tables.references.USERS
+import org.jooq.impl.DSL
 import java.time.OffsetDateTime
 import cz.stavebni.denik.jooq.enums.Role as DbRole
 
@@ -35,7 +36,7 @@ object AdminBootstrapService {
             check(!tx.fetchExists(USERS, USERS.ISADMIN.eq(true).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))) {
                 "An active administrator already exists. Create further users in the application, or reset a password with 'reset-password'."
             }
-            check(!tx.fetchExists(USERS, USERS.NICKNAME.eq(nick))) { "A user named '$nick' already exists." }
+            check(!tx.fetchExists(USERS, DSL.lower(USERS.NICKNAME).eq(nick.lowercase()))) { "A user named '$nick' already exists." }
             val now = OffsetDateTime.now()
             tx.insertInto(USERS)
                 .set(USERS.NICKNAME, nick)

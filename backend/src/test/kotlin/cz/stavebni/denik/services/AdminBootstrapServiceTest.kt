@@ -121,12 +121,15 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `a reset refuses unknown, deactivated and deleted accounts`() = runBlocking {
+    fun `a reset refuses unknown, deactivated and deleted accounts`() = runBlocking<Unit> {
         createTestUser(nickname = "gone_user", role = Role.WORKER)
+        createTestUser(nickname = "removed_user", role = Role.WORKER)
         dsl.update(USERS).set(USERS.ISACTIVE, false).where(USERS.NICKNAME.eq("gone_user")).execute()
+        dsl.update(USERS).set(USERS.DELETEDAT, java.time.OffsetDateTime.now()).where(USERS.NICKNAME.eq("removed_user")).execute()
 
         assertThrows<IllegalStateException> { AdminBootstrapService.resetPassword("nobody") }
         assertThrows<IllegalStateException> { AdminBootstrapService.resetPassword("gone_user") }
+        assertThrows<IllegalStateException> { AdminBootstrapService.resetPassword("removed_user") }
     }
 
     // --- the command line -----------------------------------------------------------------------
