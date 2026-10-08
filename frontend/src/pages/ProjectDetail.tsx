@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { pragueToday } from "../lib/dates";
 
 interface Meter {
   medium: string;
@@ -56,8 +57,7 @@ interface ReportItem {
   isSigned?: boolean;
 }
 
-// The diary is kept in Czech time: between 00:00 and 02:00 in Prague UTC is still on the previous day.
-const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date());
+const today = pragueToday;
 const formatDate = (iso?: string | null) => (iso ? iso.split("T")[0] : "");
 
 export const ProjectDetail: React.FC = () => {
@@ -382,6 +382,7 @@ export const ProjectDetail: React.FC = () => {
             <input
               id="new-report-date"
               type="date"
+              max={today()}
               value={newReportDate}
               onChange={(e) => setNewReportDate(e.target.value)}
               className="rounded border border-gray-300 px-3 py-1.5 text-sm"

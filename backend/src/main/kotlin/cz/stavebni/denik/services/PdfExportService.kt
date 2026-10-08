@@ -85,6 +85,8 @@ internal data class ReportPdfData(
     val weather: String,
     val workDescription: String,
     val isSigned: Boolean,
+    val isLateEntry: Boolean,
+    val lateEntryReason: String,
 )
 
 object PdfExportService {
@@ -128,6 +130,8 @@ object PdfExportService {
             weather = report.get(DAILY_REPORTS.WEATHER)?.data() ?: "Neuvedeno",
             workDescription = report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "",
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
+            isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
+            lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
         )
     }
 

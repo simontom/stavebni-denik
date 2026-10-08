@@ -35,6 +35,7 @@ import java.util.UUID
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -242,6 +243,16 @@ open class DailyReports(
      */
     val DELETEDAT: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("deletedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
+    /**
+     * The column <code>public.daily_reports.isLateEntry</code>.
+     */
+    val ISLATEENTRY: TableField<DailyReportsRecord, Boolean?> = createField(DSL.name("isLateEntry"), SQLDataType.BOOLEAN.nullable(false).defaultValue(DSL.field(DSL.raw("false"), SQLDataType.BOOLEAN)), this, "")
+
+    /**
+     * The column <code>public.daily_reports.lateEntryReason</code>.
+     */
+    val LATEENTRYREASON: TableField<DailyReportsRecord, String?> = createField(DSL.name("lateEntryReason"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)
@@ -384,6 +395,9 @@ open class DailyReports(
 
     val visits: VisitsPath
         get(): VisitsPath = visits()
+    override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true)
+    )
     override fun `as`(alias: String): DailyReports = DailyReports(DSL.name(alias), this)
     override fun `as`(alias: Name): DailyReports = DailyReports(alias, this)
     override fun `as`(alias: Table<*>): DailyReports = DailyReports(alias.qualifiedName, this)

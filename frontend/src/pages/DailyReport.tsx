@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { currentUser } from "../lib/api";
+import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
 interface PhotoItem {
   id: string;
@@ -43,6 +44,12 @@ export const DailyReport: React.FC = () => {
   // second person's changes are not overwritten without anybody noticing.
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [conflict, setConflict] = useState<boolean>(false);
+  // A new entry for a day before the previous working day is a late entry (decision D10) and needs a reason.
+  // The server decides; this only decides what the form shows. An existing entry shows what was recorded.
+  const [lateEntryReason, setLateEntryReason] = useState<string>("");
+  const [isLateEntry, setIsLateEntry] = useState<boolean>(false);
+  const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
+  const isFuture = !!reportId && isFutureDate(reportId);
 
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -62,6 +69,8 @@ export const DailyReport: React.FC = () => {
           setLoadState("ready");
           if (!data) return;
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+          setIsLateEntry(Boolean(data.isLateEntry));
+          setLateEntryReason(typeof data.lateEntryReason === "string" ? data.lateEntryReason : "");
           if (data.workDescription) setWorkDescription(data.workDescription);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
@@ -101,7 +110,7 @@ export const DailyReport: React.FC = () => {
 
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loadState !== "ready") return;
+    if (loadState !== "ready" || isFuture) return;
 
     try {
       const res = await fetch(`/api/projects/${projectId}/reports/${reportId}`, {
@@ -115,6 +124,7 @@ export const DailyReport: React.FC = () => {
           isControlDay,
           constructionObj,
           ...(updatedAt ? { expectedUpdatedAt: updatedAt } : {}),
+          ...(needsLateReason ? { lateEntryReason } : {}),
         }),
       });
       if (res.ok) {
@@ -122,6 +132,8 @@ export const DailyReport: React.FC = () => {
         setConflict(false);
         if (data) {
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+          setIsLateEntry(Boolean(data.isLateEntry));
+          if (typeof data.lateEntryReason === "string") setLateEntryReason(data.lateEntryReason);
           if (data.isControlDay !== undefined) setIsControlDay(Boolean(data.isControlDay));
           if (data.constructionObj) setConstructionObj(data.constructionObj);
           if (data.isSigned !== undefined) setIsSigned(Boolean(data.isSigned || data.isLocked));
@@ -238,6 +250,7 @@ export const DailyReport: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             {isControlDay && <span className="rounded bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800">Kontrolní den</span>}
             {constructionObj && <span className="rounded bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">SO: {constructionObj}</span>}
+            {isLateEntry && <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Pozdní zápis</span>}
             {isSigned && <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno</span>}
             {isAcknowledged && <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Potvrzeno investorem</span>}
           </div>
@@ -270,6 +283,34 @@ export const DailyReport: React.FC = () => {
       {/* Main Report Form */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <form onSubmit={handleCreateReport} className="space-y-6">
+          {isFuture && (
+            <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
+              Záznam nelze založit pro budoucí datum.
+            </div>
+          )}
+          {needsLateReason && (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3">
+              <label htmlFor="lateEntryReason" className="mb-1 block text-sm font-semibold text-amber-900">
+                Pozdní zápis: uveďte důvod
+              </label>
+              <p className="mb-2 text-xs text-amber-900">Záznam je za den dřívější než předchozí pracovní den. Bude označen jako pozdní zápis a důvod zůstane součástí záznamu.</p>
+              <textarea
+                id="lateEntryReason"
+                name="lateEntryReason"
+                value={lateEntryReason}
+                onChange={(e) => setLateEntryReason(e.target.value)}
+                rows={2}
+                required
+                maxLength={1000}
+                className="w-full rounded-md border border-amber-300 p-2"
+              />
+            </div>
+          )}
+          {isLateEntry && lateEntryReason && (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+              <span className="font-semibold">Důvod pozdního zápisu:</span> {lateEntryReason}
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium text-gray-700">Popis prací</label>
             <textarea
@@ -340,7 +381,7 @@ export const DailyReport: React.FC = () => {
           <div className="flex justify-end gap-3 border-t border-gray-200 pt-4">
             <button
               type="submit"
-              disabled={loadState !== "ready"}
+              disabled={loadState !== "ready" || isFuture}
               className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Vytvořit záznam

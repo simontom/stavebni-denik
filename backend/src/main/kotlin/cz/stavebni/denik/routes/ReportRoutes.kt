@@ -35,7 +35,9 @@ data class CreateReportPayload(
     val constructionObj: String? = null,
     val signed: Boolean? = null,
     /** The `updatedAt` the client last saw; see [DailyReportService.ReportInput.expectedUpdatedAt]. */
-    val expectedUpdatedAt: String? = null
+    val expectedUpdatedAt: String? = null,
+    /** Required when a new entry is for a day before the previous working day (a late entry). */
+    val lateEntryReason: String? = null
 )
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
@@ -113,11 +115,12 @@ fun Application.reportRoutes() {
                     val report = DailyReportService.createReport(
                         user = user,
                         projectId = projectId,
-                        date = payload.date ?: Dates.today().toString(),
+                        date = payload.date ?: Dates.today(DailyReportService.clock).toString(),
                         workDescription = payload.workDescription ?: "",
                         workersByTrade = workersJson(payload) ?: "[]",
                         isControlDay = payload.isControlDay ?: false,
-                        constructionObj = payload.constructionObj
+                        constructionObj = payload.constructionObj,
+                        lateEntryReason = payload.lateEntryReason
                     )
                     call.respond(HttpStatusCode.Created, report)
                 }
@@ -149,7 +152,8 @@ fun Application.reportRoutes() {
                                 workersByTrade = workersJson(payload),
                                 isControlDay = payload.isControlDay,
                                 constructionObj = payload.constructionObj,
-                                expectedUpdatedAt = payload.expectedInstant()
+                                expectedUpdatedAt = payload.expectedInstant(),
+                                lateEntryReason = payload.lateEntryReason
                             )
                         )
                         call.respond(HttpStatusCode.OK, report)

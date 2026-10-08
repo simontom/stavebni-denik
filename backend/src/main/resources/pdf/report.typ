@@ -27,6 +27,12 @@
   [*Adresa:*], [#plain(d.address)],
   [*Datum:*], [#d.date],
   [*Stav záznamu:*], [#if d.isSigned [podepsán a uzamčen] else [rozpracovaný]],
+  // A late entry (written after the previous working day) says so, with the author's reason.
+  ..if d.isLateEntry {
+    ([*Pozdní zápis:*], [#plain(d.lateEntryReason)])
+  } else {
+    ()
+  },
 )
 
 == Počasí

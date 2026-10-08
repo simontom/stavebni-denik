@@ -63,6 +63,36 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `a late entry says so in the PDF, with its reason (hostile text stays text)`() = runBlocking {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Pozdní zápis", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Zápis")
+        dsl.update(cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS)
+            .set(cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS.ISLATEENTRY, true)
+            .set(cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS.LATEENTRYREASON, "Deník byl na jiné stavbě #panic(\"X\")")
+            .where(cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS.ID.eq(UUID.fromString(report.id)))
+            .execute()
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
+
+        assertTrue(text.contains("Pozdní zápis:"), text)
+        assertTrue(text.contains("Deník byl na jiné stavbě #panic(\"X\")"), text)
+    }
+
+    @Test
+    fun `an entry that is on time has no late-entry line`() = runBlocking {
+        val text = exportText("Včas", "Normální zápis")
+
+        assertFalse(text.contains("Pozdní zápis:"), text)
+    }
+
+    @Test
     fun `typst code and markup in report text is shown as text and never executed`() = runBlocking {
         val text = exportText(
             projectName = "#panic(\"INJECTED\") *bold* _it_",

@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.config.AppConfig
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.ConflictException
@@ -20,6 +21,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.jooq.DSLContext
 import org.jooq.JSONB
+import java.time.Clock
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -37,6 +40,9 @@ data class DailyReportDto(
     val constructionObj: String? = null,
     val isSigned: Boolean = false,
     val isAcknowledged: Boolean = false,
+    /** An entry for a day earlier than today and the previous working day (decision D10); it carries the author's reason. */
+    val isLateEntry: Boolean = false,
+    val lateEntryReason: String? = null,
     /**
      * When the entry was last changed (ISO-8601). A client that edits the entry sends it back as
      * `expectedUpdatedAt`: the save is refused (409) when somebody else changed the entry in between.
@@ -69,6 +75,8 @@ internal data class ReportSnapshot(
     val lockedAt: String?,
     val acknowledgedAt: String?,
     val acknowledgedById: String?,
+    val isLateEntry: Boolean = false,
+    val lateEntryReason: String? = null,
 )
 
 object DailyReportService {
@@ -81,9 +89,34 @@ object DailyReportService {
         val constructionObj: String? = null,
         /** The `updatedAt` of the entry as the client last saw it; when given, the save only goes through if it still matches. */
         val expectedUpdatedAt: OffsetDateTime? = null,
+        /** Why an entry for an earlier day is only written now; required for such an entry, ignored for an on-time one. */
+        val lateEntryReason: String? = null,
     )
 
     private enum class WriteMode { CREATE_ONLY, SAVE }
+
+    /** The clock behind "today" (Prague time); tests replace it. */
+    @Volatile
+    var clock: Clock = Clock.system(Dates.PRAGUE)
+
+    /** Longest accepted reason for a late entry. */
+    const val MAX_LATE_REASON_CHARS = 1_000
+
+    /**
+     * Decision D10: a new entry is for today or for a day since the previous working day. An earlier day is a late
+     * entry and needs a reason (returned, to be stored with the flag); a day in the future is refused.
+     * Returns null for an entry that is on time. Only a *new* entry is checked: correcting an existing one is not a new entry.
+     */
+    private fun lateReasonFor(date: LocalDate, reason: String?): String? {
+        if (!AppConfig.entryDateWindowEnforced) return null
+        val today = Dates.today(clock)
+        require(!date.isAfter(today)) { "Záznam nelze založit pro budoucí datum ($date)" }
+        if (!date.isBefore(Dates.previousWorkingDay(today))) return null
+        val text = reason?.trim().orEmpty()
+        require(text.isNotEmpty()) { "Záznam za $date je pozdní zápis (dnes je $today): uveďte důvod pozdního zápisu" }
+        require(text.length <= MAX_LATE_REASON_CHARS) { "Důvod pozdního zápisu může mít nejvýše $MAX_LATE_REASON_CHARS znaků" }
+        return text
+    }
 
     /**
      * Creates the report of a day. A day that already has a report is a conflict (409), never an overwrite.
@@ -95,10 +128,11 @@ object DailyReportService {
         workDescription: String = "",
         workersByTrade: String = "[]",
         isControlDay: Boolean = false,
-        constructionObj: String? = null
+        constructionObj: String? = null,
+        lateEntryReason: String? = null
     ): DailyReportDto = write(
         user, projectId, date, WriteMode.CREATE_ONLY,
-        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj),
+        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason),
     )
 
     /**
@@ -137,6 +171,7 @@ object DailyReportService {
                 if (input.expectedUpdatedAt != null) {
                     throw StaleVersionException("Záznam, který upravujete, už neexistuje. Načtěte stránku znovu.")
                 }
+                val lateReason = lateReasonFor(parsedDate, input.lateEntryReason)
                 val nextSeq = tx.fetchCount(DAILY_REPORTS, DAILY_REPORTS.PROJECTID.eq(projectId)) + 1
                 val created = tx.insertInto(DAILY_REPORTS)
                     .set(DAILY_REPORTS.PROJECTID, projectId)
@@ -147,6 +182,8 @@ object DailyReportService {
                     .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: "")
                     .set(DAILY_REPORTS.ISCONTROLDAY, input.isControlDay ?: false)
                     .set(DAILY_REPORTS.CONSTRUCTIONOBJ, input.constructionObj)
+                    .set(DAILY_REPORTS.ISLATEENTRY, lateReason != null)
+                    .set(DAILY_REPORTS.LATEENTRYREASON, lateReason)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
 
@@ -321,6 +358,8 @@ object DailyReportService {
         constructionObj = record.constructionobj,
         isSigned = record.signedat != null,
         isAcknowledged = record.acknowledgedat != null,
+        isLateEntry = record.islateentry ?: false,
+        lateEntryReason = record.lateentryreason,
         updatedAt = record.updatedat?.toString(),
         photos = photos
     )
@@ -342,6 +381,8 @@ object DailyReportService {
             lockedAt = lockedat?.toString(),
             acknowledgedAt = acknowledgedat?.toString(),
             acknowledgedById = get(DAILY_REPORTS.ACKNOWLEDGEDBYID)?.toString(),
+            isLateEntry = islateentry ?: false,
+            lateEntryReason = lateentryreason,
         )
     )
 }
