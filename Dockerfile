@@ -4,7 +4,7 @@
 # backend/src/generated/jooq (no database is needed at build time).
 
 # --- 1. Frontend (Vite) ------------------------------------------------------
-FROM node:22-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /app/frontend
 RUN npm install -g pnpm@12.8.1
 # The committed lockfile decides what is installed; a missing or outdated one fails the build.
