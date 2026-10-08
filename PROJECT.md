@@ -129,7 +129,7 @@ A fresh database has no users, so nobody can log in. Two operator commands run a
 # first administrator (refused as soon as an active administrator exists)
 fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin alice 'Alice Novakova'"
 
-# the only administrator is locked out or forgot the password: new temporary password, all sessions end
+# the only administrator is locked out or forgot the password: new temporary password, all sessions end, a login lockout is lifted
 fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password alice"
 ```
 

@@ -54,7 +54,8 @@ object AdminBootstrapService {
 
     /**
      * New temporary password for an active account, e.g. the only administrator who is locked out.
-     * Every session of the account ends and the password has to be changed at the next login.
+     * Every session of the account ends, a login lockout of the account is lifted, and the password has to be
+     * changed at the next login.
      */
     suspend fun resetPassword(nickname: String): Result {
         val nick = nickname.trim()
@@ -76,6 +77,8 @@ object AdminBootstrapService {
                 ?.get(USERS.ID)
                 ?: throw IllegalStateException("No active user named '$nick'.")
             SessionService.revokeAllForUser(tx, id)
+            // The usual reason for a reset is that nobody can log in any more: lift a login lockout of the account too.
+            RateLimiter.clear(tx, RateLimiter.Rules.LOGIN_USER, UserService.loginKey(nick))
         }
         return Result(nick, password)
     }
