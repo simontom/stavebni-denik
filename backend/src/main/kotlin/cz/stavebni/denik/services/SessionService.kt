@@ -77,6 +77,14 @@ object SessionService {
             .execute()
     }
 
+    /** Ends the user's other sessions but keeps [keepSessionId], e.g. after the user changed the password. */
+    fun revokeOthersForUser(tx: DSLContext, userId: UUID, keepSessionId: UUID) {
+        tx.update(SESSIONS)
+            .set(SESSIONS.REVOKEDAT, OffsetDateTime.now())
+            .where(SESSIONS.USERID.eq(userId).and(SESSIONS.ID.ne(keepSessionId)).and(SESSIONS.REVOKEDAT.isNull))
+            .execute()
+    }
+
     /** Ends every session of a user, e.g. when the account is deactivated or its rights change. */
     fun revokeAllForUser(tx: DSLContext, userId: UUID) {
         tx.update(SESSIONS)

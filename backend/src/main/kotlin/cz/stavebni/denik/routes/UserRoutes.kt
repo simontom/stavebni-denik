@@ -27,6 +27,7 @@ fun Application.userRoutes() {
                 post {
                     val actor = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val req = call.receive<CreateUserRequest>()
+                    call.response.header(HttpHeaders.CacheControl, "no-store")
                     call.respond(HttpStatusCode.Created, UserService.createUser(actor, req))
                 }
 
@@ -48,6 +49,14 @@ fun Application.userRoutes() {
                         val id = ProjectAccess.parseId(call.parameters["id"])
                         UserService.deleteUser(actor, id)
                         call.respond(HttpStatusCode.NoContent)
+                    }
+
+                    post("/reset-password") {
+                        val actor = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                        val id = ProjectAccess.parseId(call.parameters["id"])
+                        // The new password is in the body: neither the browser nor a proxy may keep a copy.
+                        call.response.header(HttpHeaders.CacheControl, "no-store")
+                        call.respond(UserService.resetPassword(actor, id))
                     }
 
                     post("/activate") {
