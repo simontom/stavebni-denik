@@ -70,6 +70,14 @@ Not done yet (see the Release gate): password change and reset, login rate limit
 - **Login limits** (table `rate_limit_attempts`, failures only): 30 failures per client address and 20 per account name within 15 minutes, then `429` with `Retry-After`; a successful login does not reset the counters. The address comes from `CLIENT_IP_HEADER` when it is configured, otherwise from the TCP peer; `X-Forwarded-For` and the request body are never trusted. A known name can therefore be locked for up to 15 minutes by someone else; an administrator reset lifts it.
 - Unknown, deactivated and deleted accounts take the same time as a wrong password and get the same answer. Argon2 runs off the request threads, at most 4 at a time.
 
+## Request and upload limits
+
+- Every request body is capped before it is read: **256 KiB** for JSON, **6 MiB** for `POST /api/photos/upload`. Larger requests are answered with `413`.
+- An upload carries **one** image of at most **5 MiB**, at most 8 multipart parts, and text fields of at most 256 characters (`400` otherwise). Ktor's `formFieldLimit` applies to every part including the file, so it is set to the request cap and the exact limits are checked in `PhotoRoutes`.
+- The image type is checked by its magic bytes (JPEG, PNG, WebP). Its dimensions are read from the **header** and checked (at most 8 megapixels and 12,000 px per side) **before** any pixel is decoded, so a tiny file that claims billions of pixels cannot exhaust memory. A damaged image is a `400`.
+- Accepted images are decoded once and stored as new metadata-free JPEGs (fitted into 1920x1080, never scaled up) plus a 400x300 thumbnail. The stored width and height are those of the file on disk.
+- The database stores **relative keys** (`photos/<uuid>_orig.jpg`, `photos/<uuid>_thumb.jpg`), never absolute paths, and the API never returns a path. A key is only followed when it has exactly that shape and resolves inside `UPLOADS_DIR`; otherwise the photo answers `404`. If the database write fails, the two files already written are removed.
+
 ## API overview (all under `/api`, JWT cookie auth unless noted)
 
 - `GET /health` (public)
