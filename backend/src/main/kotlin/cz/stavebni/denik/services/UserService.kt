@@ -1,9 +1,11 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
+import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.serialization.Serializable
@@ -58,6 +60,18 @@ data class UpdateUserRequest(
     val role: String? = null,
     val isAdmin: Boolean? = null,
     val ckaitNumber: String? = null,
+)
+
+@Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String,
+)
+
+@Serializable
+data class ResetPasswordResponse(
+    /** Shown to the administrator exactly once; only the Argon2id hash is stored. */
+    val initialPassword: String,
 )
 
 object UserService {
@@ -140,7 +154,7 @@ object UserService {
         require(displayName.isNotEmpty()) { "Jméno a příjmení je povinné" }
         val role = parseRole(req.role)
         val password = generatePassword()
-        val hash = PasswordService.hash(password)
+        val hash = PasswordService.hashAsync(password)
 
         val created = AuditService.auditedTransaction(
             actor = actor,
@@ -271,6 +285,86 @@ object UserService {
             throw IllegalStateException("Musí zůstat alespoň jeden aktivní administrátor")
         }
     }
+
+    /**
+     * A user changes their own password. The current one has to be given (a stolen session alone is not
+     * enough), wrong answers are rate limited, and the new one has to meet [PasswordPolicy]. Every other
+     * session of the user ends; the calling session goes on and is no longer forced to change the password.
+     */
+    suspend fun changeOwnPassword(actor: SessionUser, request: ChangePasswordRequest) {
+        val db = DatabaseFactory.dsl
+        val key = actor.id.toString()
+        RateLimiter.retryAfter(db, RateLimiter.Rules.PASSWORD_CHANGE, key)?.let {
+            throw TooManyRequestsException(it.seconds, "Příliš mnoho pokusů o změnu hesla. Zkuste to znovu za ${RateLimiter.describeWait(it)}.")
+        }
+
+        val issues = PasswordPolicy.issues(request.newPassword)
+        require(issues.isEmpty()) { issues.joinToString(" ") }
+        require(request.currentPassword.length <= PasswordPolicy.MAX_LENGTH) { "Stávající heslo není správné." }
+
+        val currentHash = db.select(USERS.PASSWORDHASH)
+            .from(USERS)
+            .where(USERS.ID.eq(actor.id).and(USERS.DELETEDAT.isNull))
+            .fetchOne(USERS.PASSWORDHASH)
+            ?: throw NotFoundException("Uživatel nenalezen")
+        if (!PasswordService.verifyAsync(currentHash, request.currentPassword)) {
+            RateLimiter.recordFailure(db, RateLimiter.Rules.PASSWORD_CHANGE, key)
+            throw IllegalArgumentException("Stávající heslo není správné.")
+        }
+        require(request.newPassword != request.currentPassword) { "Nové heslo musí být jiné než stávající." }
+
+        val newHash = PasswordService.hashAsync(request.newPassword)
+        // The audit row names the account and the action only; neither password nor hash goes into it.
+        AuditService.auditedTransaction(
+            actor = actor,
+            action = "user.password_change",
+            entityType = "user",
+            entityId = actor.id.toString(),
+        ) { tx ->
+            tx.update(USERS)
+                .set(USERS.PASSWORDHASH, newHash)
+                .set(USERS.MUSTCHANGEPWD, false)
+                .set(USERS.UPDATEDAT, OffsetDateTime.now())
+                .where(USERS.ID.eq(actor.id))
+                .execute()
+            SessionService.revokeOthersForUser(tx, actor.id, actor.sessionId)
+        }
+    }
+
+    /**
+     * An administrator sets a new generated password for another user. The user has to change it at the
+     * next login, every session of theirs ends at once, and a login lockout of the account is lifted.
+     * The password is shown to the administrator once and stored only as a hash.
+     */
+    suspend fun resetPassword(actor: SessionUser, id: UUID): ResetPasswordResponse {
+        assertCan(actor, Action.UserPasswordReset)
+        if (id == actor.id) throw IllegalArgumentException("Vlastní heslo změníte v nabídce Změnit heslo")
+
+        val password = generatePassword()
+        val hash = PasswordService.hashAsync(password)
+        AuditService.auditedTransaction(
+            actor = actor,
+            action = "user.password_reset",
+            entityType = "user",
+            entityId = id.toString(),
+        ) { tx ->
+            val nickname = tx.update(USERS)
+                .set(USERS.PASSWORDHASH, hash)
+                .set(USERS.MUSTCHANGEPWD, true)
+                .set(USERS.UPDATEDAT, OffsetDateTime.now())
+                .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
+                .returning(USERS.NICKNAME)
+                .fetchOne()
+                ?.get(USERS.NICKNAME)
+                ?: throw NotFoundException("Uživatel nenalezen")
+            SessionService.revokeAllForUser(tx, id)
+            RateLimiter.clear(tx, RateLimiter.Rules.LOGIN_USER, loginKey(nickname))
+        }
+        return ResetPasswordResponse(initialPassword = password)
+    }
+
+    /** The key under which failed logins of an account name are counted. */
+    fun loginKey(nickname: String): String = nickname.trim().lowercase().take(128)
 
     fun generatePassword(length: Int = 14): String =
         (1..length).map { PASSWORD_ALPHABET[random.nextInt(PASSWORD_ALPHABET.length)] }.joinToString("")

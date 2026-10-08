@@ -3,6 +3,7 @@ package cz.stavebni.denik.plugins
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -16,6 +17,10 @@ fun Application.configureStatusPages() {
                 is UnauthenticatedException -> call.respond(HttpStatusCode.Unauthorized, mapOf("error" to (cause.message ?: "Unauthenticated")))
                 is ForbiddenException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "Forbidden")))
                 is NotFoundException -> call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "Not found")))
+                is TooManyRequestsException -> {
+                    call.response.header(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())
+                    call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to cause.message))
+                }
                 is ConflictException -> call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "Conflict")))
                 is SecurityException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to cause.message))
                 is IllegalArgumentException -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))

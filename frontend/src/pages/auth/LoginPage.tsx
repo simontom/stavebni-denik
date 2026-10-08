@@ -23,6 +23,11 @@ export function LoginPage() {
         body: JSON.stringify({ nickname, password }),
       });
 
+      if (response.status === 429) {
+        // Too many failed attempts: the server says how long to wait.
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(body?.error ?? "Příliš mnoho pokusů. Zkuste to později.");
+      }
       if (!response.ok) {
         throw new Error("Neplatné přihlašovací jméno nebo heslo");
       }
@@ -32,7 +37,8 @@ export function LoginPage() {
         localStorage.setItem("user", JSON.stringify(data.user));
       }
 
-      navigate("/projects");
+      // A temporary password (new account, administrator reset) has to be replaced first.
+      navigate(data?.user?.mustChangePwd ? "/change-password" : "/projects");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Chyba přihlášení");
     }

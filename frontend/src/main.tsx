@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LoginPage } from "./pages/auth/LoginPage";
+import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
 import { Dashboard } from "./pages/Dashboard";
 import { ProjectList } from "./pages/projects/ProjectList";
 import { NewProject } from "./pages/projects/NewProject";
@@ -26,6 +27,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<RootRoute />} />
+        <Route
+          path="/change-password"
+          element={
+            <AppLayout>
+              <ChangePasswordPage />
+            </AppLayout>
+          }
+        />
         <Route
           path="/dashboard"
           element={

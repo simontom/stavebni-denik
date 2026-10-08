@@ -65,6 +65,15 @@ object AppConfig {
     val uploadsDir: Path
         get() = Paths.get(env("UPLOADS_DIR") ?: "uploads")
 
+    /**
+     * Name of a request header that a trusted reverse proxy sets to the real client address
+     * (`Fly-Client-IP` on Fly.io). Only set it when *every* request passes through that proxy,
+     * which overwrites the header: otherwise a client could invent its own address and escape
+     * the per-address login limit. Unset, the address of the TCP peer is used.
+     */
+    val clientIpHeader: String?
+        get() = env("CLIENT_IP_HEADER")
+
     /** Directory with the built SPA (`frontend/dist`); served by Ktor when set. */
     val staticDir: String?
         get() = env("STATIC_DIR")
