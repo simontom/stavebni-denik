@@ -50,6 +50,7 @@ docker compose down -v && docker compose up -d   # then start the backend again
 | `UPLOADS_DIR`                        | `./uploads`                                                              | photos in `<dir>/photos` (mount a volume in production)                                                                                          |
 | `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                          | comma separated; the SPA is same-origin                                                                                                          |
 | `PWNED_PASSWORDS_URL`                | on in production (`https://api.pwnedpasswords.com/range`), off elsewhere | range endpoint of the Pwned Passwords service; `off` disables the breached-password check                                                        |
+| `ENTRY_DATE_WINDOW`                  | on                                                                       | `off` disables the late-entry rule below (a data import, a demo); on by default                                                                  |
 | `CLIENT_IP_HEADER`                   | unset (TCP peer address)                                                 | name of the header a trusted reverse proxy sets to the client address (`Fly-Client-IP` on Fly); only set it when every request passes that proxy |
 | `OPEN_METEO_BASE_URL`                | Open-Meteo                                                               | weather snapshot                                                                                                                                 |
 
@@ -104,6 +105,10 @@ Project-scoped endpoints require project membership. App admins can **read** eve
 - `POST …/acknowledge` records that an inspector or investor (a member) has taken note of the report. It only works on a **signed** report and only once; otherwise `409`.
 - `GET/POST /reports/{reportId}/…` take a report id only; a bare date is `400` (a date is only unique within a project, so use the project-scoped route). A report id of another project is `404` through `/projects/{id}/reports/{reportId}`.
 - Every report change is written to the audit log in the same transaction, with the real report id and a before/after snapshot (`report.create`, `report.update`, `report.lock`, `report.acknowledge`).
+
+## Entry dates and late entries
+
+A new daily entry is **on time** for today and for any day since the previous working day (Monday to Friday; public holidays are not considered): on a Monday that is Friday, Saturday, Sunday and Monday. An entry for an **earlier** day is a **late entry**: it needs a reason (at most 1,000 characters), is flagged (`isLateEntry`, `lateEntryReason`) and the flag and reason are part of the record, the audit snapshot and the PDF (`Pozdní zápis:`). An entry for a day in the **future** is refused. "Today" is the date in Prague (decision D10). Only a _new_ entry is checked: correcting an existing one is not a new entry, and the reason of a late entry stays. A flagged entry without a reason cannot exist in the database either (check constraint, migration V3). The form asks for the reason when it opens a day before the previous working day, and does not offer a date in the future.
 
 ## Cross-site requests
 

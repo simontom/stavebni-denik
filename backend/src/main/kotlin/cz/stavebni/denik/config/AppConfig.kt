@@ -85,6 +85,13 @@ object AppConfig {
             else -> value.takeUnless { it.equals("off", ignoreCase = true) || it.equals("none", ignoreCase = true) }
         }
 
+    /**
+     * Whether a new diary entry has to be for today or since the previous working day (decision D10); anything
+     * earlier needs a flagged late entry with a reason, and future dates are refused. On unless `ENTRY_DATE_WINDOW=off`.
+     */
+    val entryDateWindowEnforced: Boolean
+        get() = !(env("ENTRY_DATE_WINDOW")?.equals("off", ignoreCase = true) ?: false)
+
     /** Directory with the built SPA (`frontend/dist`); served by Ktor when set. */
     val staticDir: String?
         get() = env("STATIC_DIR")

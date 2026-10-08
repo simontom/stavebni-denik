@@ -1,6 +1,7 @@
 package cz.stavebni.denik.util
 
 import java.time.Clock
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -16,6 +17,13 @@ import java.time.ZoneOffset
 object Dates {
     /** The site diary is kept in Czech time: "today" is the day on a clock in Prague, not in UTC. */
     val PRAGUE: ZoneId = ZoneId.of("Europe/Prague")
+
+    /** The last Monday-to-Friday day before [date] (Friday for a Saturday, Sunday or Monday). Public holidays are not considered. */
+    fun previousWorkingDay(date: LocalDate): LocalDate {
+        var day = date.minusDays(1)
+        while (day.dayOfWeek == DayOfWeek.SATURDAY || day.dayOfWeek == DayOfWeek.SUNDAY) day = day.minusDays(1)
+        return day
+    }
 
     /** Today's calendar date in Prague. Between 00:00 and 02:00 local time UTC is still on the previous day. */
     fun today(clock: Clock = Clock.system(PRAGUE)): LocalDate = LocalDate.now(clock.withZone(PRAGUE))

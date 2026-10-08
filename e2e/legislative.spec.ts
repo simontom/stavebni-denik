@@ -97,7 +97,8 @@ test.describe("Legislative Compliance", () => {
 
     // 7. Create Daily Report with Control Day and SO
     await page.getByRole("link", { name: /^Záznamy$/i }).click();
-    await page.locator('input[id="new-report-date"]').fill("2026-09-11");
+    // Today in Prague: an earlier day would be a late entry and would need a reason.
+    await page.locator('input[id="new-report-date"]').fill(new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date()));
     await page.getByRole("button", { name: /otevřít den/i }).click();
 
     await expect(page).toHaveURL(/\/projects\/.+\/reports\/.+/);

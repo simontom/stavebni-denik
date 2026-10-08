@@ -21,6 +21,8 @@ abstract class BaseIntegrationTest {
     companion object {
         init {
             System.setProperty("docker.api.version", "1.44")
+            // Most tests use fixed dates in the past; EntryDateWindowTest switches the window on for itself.
+            System.setProperty("ENTRY_DATE_WINDOW", "off")
         }
 
         val postgres: PostgreSQLContainer<*> by lazy {
