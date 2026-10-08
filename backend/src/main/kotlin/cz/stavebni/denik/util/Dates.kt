@@ -5,10 +5,27 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 
 /**
- * Calendar dates (contract date, handover date, report date …) are stored as
- * TIMESTAMPTZ at UTC midnight and exchanged with the frontend as `YYYY-MM-DD`.
+ * Calendar dates are exchanged with the frontend as `YYYY-MM-DD`.
+ *
+ * A daily report's date is a real `DATE` column ([parseLocalDate]); the other
+ * calendar dates (contract date, handover date …) are still stored as
+ * TIMESTAMPTZ at UTC midnight ([parse]).
  */
 object Dates {
+    /**
+     * Accepts `YYYY-MM-DD` or a full ISO-8601 date-time; a time part is dropped, not
+     * converted: the calendar day the client names is the day that is meant.
+     */
+    fun parseLocalDate(value: String): LocalDate {
+        val v = value.trim()
+        if (v.isEmpty()) throw IllegalArgumentException("Chybí datum")
+        return try {
+            LocalDate.parse(v.substringBefore("T"))
+        } catch (e: Exception) {
+            throw IllegalArgumentException("Neplatné datum: $value")
+        }
+    }
+
     /** Accepts `YYYY-MM-DD` or a full ISO-8601 offset date-time; blank → null. */
     fun parseOrNull(value: String?): OffsetDateTime? {
         if (value.isNullOrBlank()) return null
