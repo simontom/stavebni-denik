@@ -10,7 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Security Invariants
 
-See [`docs/SECURITY.md`](docs/SECURITY.md) for details on image upload airlock validations (magic byte signatures, sharp re-encoding, 8MP/5MB caps).
+See [`docs/SECURITY.md`](docs/SECURITY.md) for details on image upload airlock validations (magic byte signatures, re-encoding of every upload into a fresh JPEG, 8MP/5MB caps; the Kotlin backend does this with ImageIO, see PROJECT.md "Request and upload limits").
 
 # Git Workflow & Pull Requests (Strict)
 

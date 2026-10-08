@@ -21,12 +21,14 @@ import io.ktor.server.response.*
  *    request was addressed to.
  * 4. Neither header: not a browser that can be tricked into a cross-site request (scripts, curl, tests): allowed.
  *
- * Safe methods (GET, HEAD, OPTIONS) and everything outside `/api/` are not checked.
+ * Safe methods (GET, HEAD, OPTIONS) are not checked. Every other request is, whatever its path: the router
+ * normalises a path (`//api/...`, `/%61pi/...`) before it matches a route, so a check on the raw text of the path
+ * can be walked around.
  */
 val CrossSiteRequestGuard = createApplicationPlugin("CrossSiteRequestGuard") {
     onCall { call ->
         val request = call.request
-        if (request.httpMethod in SAFE_METHODS || !request.path().startsWith("/api/")) return@onCall
+        if (request.httpMethod in SAFE_METHODS) return@onCall
 
         val crossSite = isCrossSite(
             secFetchSite = request.headers["Sec-Fetch-Site"],

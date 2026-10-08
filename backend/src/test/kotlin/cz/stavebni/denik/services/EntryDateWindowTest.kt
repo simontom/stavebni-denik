@@ -143,7 +143,7 @@ class EntryDateWindowTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `on a Monday the weekend and Friday are still on time`() = runBlocking {
+    fun `on a Monday the weekend and Friday are still on time`() = runBlocking<Unit> {
         DailyReportService.clock = clockAt("2026-10-05T08:00:00Z") // Monday
         val boss = createTestUser(role = Role.BOSS)
         val projectId = project(boss)

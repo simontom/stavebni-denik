@@ -212,6 +212,22 @@ class AuditGuardTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `audit-head refuses to print the head of a damaged chain`() {
+        append(createTestUser(), 3)
+        val secondId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).offset(1).limit(1).fetchOne()!!.value1()!!
+        withTriggerOff("audit_log_no_update") {
+            dsl.update(AUDIT_LOG).set(AUDIT_LOG.ENTITY_ID, "tampered").where(AUDIT_LOG.ID.eq(secondId)).execute()
+        }
+
+        val run = cli("audit-head")
+
+        // A job that recorded this head as the anchor would "trust" a log that already has damage before it.
+        assertEquals(1, run.code)
+        assertTrue(run.out.isEmpty(), "no head is printed: ${run.out}")
+        assertTrue(run.err.single().startsWith("Audit log BROKEN:"), run.err.toString())
+    }
+
+    @Test
     fun `audit-head of an empty log is a failure`() {
         val run = cli("audit-head")
 

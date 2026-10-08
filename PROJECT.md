@@ -3,7 +3,7 @@
 ## Architecture (current stack)
 
 - **Backend**: Kotlin 2.1, Ktor 3.1, jOOQ 3.21, Flyway 12, **PostgreSQL 18 only** (schema uses `uuidv7()`), Argon2id passwords, JWT in an HttpOnly cookie.
-- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4 (`frontend/`, its own pnpm workspace + lockfile).
+- **Frontend**: Vite 8, React 19, React Router 7, Tailwind CSS 4 (`frontend/`, its own pnpm workspace; the lockfile is not committed yet, see the Follow-ups).
 - **PDF export** (`GET /api/reports/{id}/pdf`): the `typst` command line tool (installed in the Docker image, pinned by checksum) renders the fixed template `backend/src/main/resources/pdf/report.typ`. User text never becomes part of the template: it travels as JSON data and is shown as plain text, so it cannot be executed as typst code. Each export gets its own temporary directory, a 20 s timeout (the process is killed), and at most two exports run at the same time. Without typst the endpoint answers `503`; it never returns an empty PDF.
 - **Docker image** (`Dockerfile`): Ktor + the built SPA + typst on a **glibc** (Ubuntu) Temurin JRE. It must not be Alpine: the password library `argon2-jvm` loads a native library through JNA, and on Alpine (musl libc) the JVM dies with SIGSEGV as soon as a password is hashed (creating a user). The application also hashes and verifies one throwaway password at startup (`PasswordService.ensureWorks`), so such a broken environment fails at deploy time, not at the first account creation.
 - **Testing**:
@@ -48,6 +48,7 @@ docker compose down -v && docker compose up -d   # then start the backend again
 | `JWT_SECRET`                         | random per process (dev only)                                            | required in production                                                                                                                           |
 | `ALLOW_UNRELEASED_BUILD`             | unset                                                                    | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only)                             |
 | `UPLOADS_DIR`                        | `./uploads`                                                              | photos in `<dir>/photos` (mount a volume in production)                                                                                          |
+| `STATIC_DIR`                         | unset (SPA not served)                                                   | directory of the built SPA; the Docker image sets `/app/static`; Ktor then serves the SPA from the same origin                                   |
 | `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                          | comma separated; the SPA is same-origin                                                                                                          |
 | `PWNED_PASSWORDS_URL`                | on in production (`https://api.pwnedpasswords.com/range`), off elsewhere | range endpoint of the Pwned Passwords service; `off` disables the breached-password check                                                        |
 | `ENTRY_DATE_WINDOW`                  | on                                                                       | `off` disables the late-entry rule below (a data import, a demo); on by default                                                                  |
@@ -61,8 +62,6 @@ Login creates a server-side session (table `sessions`, valid for 12 hours) and s
 - logging out, deactivating or deleting a user, or changing a user's role or admin flag ends their sessions at once (the user has to log in again);
 - rights claimed inside a token are ignored, and a token whose session is revoked, expired or unknown is refused with `401`, even with a valid signature;
 - the application always keeps at least one active administrator: demoting, deactivating or deleting the last one answers `409`.
-
-Not done yet (see the Release gate): password change and reset, login rate limiting, and a cross-site request check.
 
 ## Passwords and login limits
 
@@ -133,7 +132,7 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `backend/src/test/kotlin/cz/stavebni/denik/` — integration tests
 - `frontend/src/` — React SPA (`lib/api.ts` is the API client)
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
-- `.github/workflows/ci.yml` — lint/build, integration, jOOQ drift check, E2E
+- `.github/workflows/ci.yml` — lint/build, integration (with real typst), jOOQ drift check, Docker image build + boot test (release gate, security headers), E2E
 
 ## Audit log
 
@@ -158,7 +157,7 @@ fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt creat
 fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password alice"
 ```
 
-Both print a generated password once, to standard output only (nothing else is printed there); it is stored only as an Argon2id hash, the account has to change it at the first login, and the audit log records the action without an acting user and without the password. `create-admin` makes the account a project manager (BOSS) with the administrator flag; further users are created in the application. Exit codes: `0` done, `1` refused (for example an administrator already exists), `2` wrong usage. Locally: `java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt …` after `./gradlew :backend:shadowJar`.
+Both print a generated password once, to standard output only (framework logging is reduced to warnings and errors, which share the terminal); it is stored only as an Argon2id hash, the account has to change it at the first login, and the audit log records the action without an acting user and without the password. `create-admin` makes the account a project manager (BOSS) with the administrator flag; further users are created in the application. Exit codes: `0` done, `1` refused (for example an administrator already exists), `2` wrong usage. Locally: `java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt …` after `./gradlew :backend:shadowJar`.
 
 ## Release gate
 
