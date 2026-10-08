@@ -26,15 +26,17 @@ object ProjectAccess {
     /**
      * Ensures the project exists (and is not soft-deleted) and that [user] may open it.
      *
-     * @return true when the user acts as a project member (members, and admins
-     *   who are treated as members for RBAC purposes).
+     * @return whether the user is really a member of the project. An app admin who is
+     *   not a member may read the project (this returns false) but must not be treated
+     *   as a member when deciding about writes: pass this value, not `true`, to
+     *   [cz.stavebni.denik.domain.Resource].
      */
     fun requireAccess(tx: DSLContext, user: SessionUser, projectId: UUID): Boolean {
         val exists = tx.fetchExists(PROJECTS, PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))
         if (!exists) throw NotFoundException("Projekt nenalezen")
         val member = isMember(tx, user.id, projectId)
         if (!member && !user.isAdmin) throw ForbiddenException(Action.ProjectListAll)
-        return true
+        return member
     }
 
     /** Resolves the project of a report and checks access to it. */

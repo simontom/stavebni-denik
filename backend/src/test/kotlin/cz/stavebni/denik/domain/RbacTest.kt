@@ -85,6 +85,33 @@ class RbacTest {
     }
 
     @Test
+    fun `a signed report cannot be signed again`() {
+        val boss = testUser(role = Role.BOSS)
+
+        assertTrue(can(boss, Action.ReportSign, Resource(isMember = true, isLocked = false)))
+        assertFalse(can(boss, Action.ReportSign, Resource(isMember = true, isLocked = true)))
+    }
+
+    @Test
+    fun `report create needs project membership, also for BOSS and app admins`() {
+        val boss = testUser(role = Role.BOSS)
+        val worker = testUser(role = Role.WORKER)
+        val adminBoss = testUser(role = Role.BOSS, isAdmin = true)
+        val adminWorker = testUser(role = Role.WORKER, isAdmin = true)
+        val inspector = testUser(role = Role.INSPECTOR)
+
+        assertTrue(can(boss, Action.ReportCreate, Resource(isMember = true)))
+        assertTrue(can(worker, Action.ReportCreate, Resource(isMember = true)))
+
+        // being an app admin is not membership
+        for (outsider in listOf(boss, worker, adminBoss, adminWorker)) {
+            assertFalse(can(outsider, Action.ReportCreate, Resource(isMember = false)), "${outsider.role} admin=${outsider.isAdmin}")
+        }
+        // inspectors and investors only read and acknowledge
+        assertFalse(can(inspector, Action.ReportCreate, Resource(isMember = true)))
+    }
+
+    @Test
     fun `report acknowledge only INSPECTOR member`() {
         val inspector = testUser(role = Role.INSPECTOR)
         val boss = testUser(role = Role.BOSS)
