@@ -81,6 +81,8 @@ dependencies {
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
     testImplementation("org.testcontainers:junit-jupiter:$testcontainersVersion")
     testImplementation("org.wiremock:wiremock:3.10.0")
+    // Reads the text of a generated PDF back, to check what the real typst rendered.
+    testImplementation("org.apache.pdfbox:pdfbox:3.0.4")
 
     // jOOQ code generation toolchain (runs only via `generateJooq`)
     "codegenImplementation"("org.jooq:jooq-codegen:$jooqVersion")

@@ -4,6 +4,7 @@ import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.services.PdfExportService
+import cz.stavebni.denik.services.PdfUnavailableException
 import cz.stavebni.denik.services.ProjectAccess
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -28,13 +29,18 @@ fun Application.pdfRoutes() {
                     }
                     ProjectAccess.requireReportAccess(tx, user, reportId)
 
-                    val pdfFile = PdfExportService.generateReportPdf(tx, reportId)
+                    // A broken or missing PDF tool must be an error the user can see, never an empty "PDF".
+                    val document = try {
+                        PdfExportService.generateReportPdf(tx, reportId)
+                    } catch (e: PdfUnavailableException) {
+                        call.application.environment.log.error("PDF export is unavailable: ${e.message}")
+                        call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Export do PDF není na serveru dostupný"))
+                        return@get
+                    }
 
-                    call.response.header(
-                        HttpHeaders.ContentDisposition,
-                        "attachment; filename=\"${pdfFile.name}\""
-                    )
-                    call.respondFile(pdfFile)
+                    call.response.header(HttpHeaders.ContentDisposition, "attachment; filename=\"${document.fileName}\"")
+                    call.response.header(HttpHeaders.CacheControl, "private, no-store")
+                    call.respondBytes(document.bytes, ContentType.Application.Pdf)
                 }
             }
         }
