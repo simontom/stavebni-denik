@@ -6,6 +6,7 @@ package cz.stavebni.denik.jooq.tables.records
 
 import cz.stavebni.denik.jooq.tables.DailyReports
 
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -32,9 +33,9 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         set(value): Unit = set(2, value)
         get(): Int? = get(2) as Int?
 
-    open var date: OffsetDateTime?
+    open var date: LocalDate?
         set(value): Unit = set(3, value)
-        get(): OffsetDateTime? = get(3) as OffsetDateTime?
+        get(): LocalDate? = get(3) as LocalDate?
 
     open var authorid: UUID?
         set(value): Unit = set(4, value)
@@ -145,7 +146,7 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
     /**
      * Create a detached, initialised DailyReportsRecord
      */
-    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: OffsetDateTime? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, acknowledgedat: OffsetDateTime? = null, acknowledgedbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, acknowledgedat: OffsetDateTime? = null, acknowledgedbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null): this() {
         this.id = id
         this.projectid = projectid
         this.sequencenumber = sequencenumber

@@ -28,6 +28,7 @@ import cz.stavebni.denik.jooq.tables.Users.UsersPath
 import cz.stavebni.denik.jooq.tables.Visits.VisitsPath
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
 
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 
@@ -114,7 +115,7 @@ open class DailyReports(
     /**
      * The column <code>public.daily_reports.date</code>.
      */
-    val DATE: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("date"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "")
+    val DATE: TableField<DailyReportsRecord, LocalDate?> = createField(DSL.name("date"), SQLDataType.LOCALDATE.nullable(false), this, "")
 
     /**
      * The column <code>public.daily_reports.authorId</code>.
@@ -194,7 +195,7 @@ open class DailyReports(
     /**
      * The column <code>public.daily_reports.weather</code>.
      */
-    val WEATHER: TableField<DailyReportsRecord, JSONB?> = createField(DSL.name("weather"), SQLDataType.JSONB.nullable(false), this, "")
+    val WEATHER: TableField<DailyReportsRecord, JSONB?> = createField(DSL.name("weather"), SQLDataType.JSONB, this, "")
 
     /**
      * The column <code>public.daily_reports.signedAt</code>.

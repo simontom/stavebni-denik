@@ -19,7 +19,7 @@ CREATE TABLE "users" (
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "mustChangePwd" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdById" UUID,
     "deletedAt" TIMESTAMPTZ,
     "passwordChangedAt" TIMESTAMPTZ,
@@ -63,7 +63,7 @@ CREATE TABLE "projects" (
     "startedAt" TIMESTAMPTZ,
     "endedAt" TIMESTAMPTZ,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdById" UUID,
     "deletedAt" TIMESTAMPTZ,
 
@@ -83,7 +83,7 @@ CREATE TABLE "site_handovers" (
     "signedById" UUID,
     "signedAt" TIMESTAMPTZ,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMPTZ,
 
     CONSTRAINT "site_handovers_pkey" PRIMARY KEY ("id")
@@ -99,7 +99,7 @@ CREATE TABLE "authorized_persons" (
     "authorization" TEXT,
     "revokedAt" TIMESTAMPTZ,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "authorized_persons_pkey" PRIMARY KEY ("id")
 );
@@ -108,7 +108,7 @@ CREATE TABLE "authorized_persons" (
 CREATE TABLE "project_members" (
     "projectId" UUID NOT NULL,
     "userId" UUID NOT NULL,
-    "role" "Role" NOT NULL,
+    "role" "Role" NOT NULL DEFAULT 'BOSS',
     "addedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "addedById" UUID,
 
@@ -120,7 +120,7 @@ CREATE TABLE "daily_reports" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "projectId" UUID NOT NULL,
     "sequenceNumber" INTEGER NOT NULL,
-    "date" TIMESTAMPTZ NOT NULL,
+    "date" DATE NOT NULL,
     "authorId" UUID NOT NULL,
     "constructionObj" TEXT,
     "isControlDay" BOOLEAN NOT NULL DEFAULT false,
@@ -136,14 +136,14 @@ CREATE TABLE "daily_reports" (
     "safetyNotes" TEXT,
     "defects" TEXT,
     "otherNotes" TEXT,
-    "weather" JSONB NOT NULL,
+    "weather" JSONB,
     "signedAt" TIMESTAMPTZ,
     "signedById" UUID,
     "lockedAt" TIMESTAMPTZ,
     "acknowledgedAt" TIMESTAMPTZ,
     "acknowledgedById" UUID,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdById" UUID,
     "deletedAt" TIMESTAMPTZ,
 
@@ -192,7 +192,7 @@ CREATE TABLE "material_needs" (
     "resolvedAt" TIMESTAMPTZ,
     "resolvedById" UUID,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdById" UUID,
     "deletedAt" TIMESTAMPTZ,
 
@@ -250,7 +250,7 @@ CREATE TABLE "visits" (
     "notes" TEXT,
     "authorId" UUID NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMPTZ NOT NULL,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMPTZ,
 
     CONSTRAINT "visits_pkey" PRIMARY KEY ("id")
@@ -315,7 +315,9 @@ CREATE INDEX "daily_reports_deletedAt_idx" ON "daily_reports"("deletedAt");
 CREATE INDEX "daily_reports_authorId_idx" ON "daily_reports"("authorId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "daily_reports_projectId_date_key" ON "daily_reports"("projectId", "date");
+-- One live report per project and day. A soft-deleted report must not block a new
+-- report for that day, so only rows that are not deleted are covered.
+CREATE UNIQUE INDEX "daily_reports_projectId_date_key" ON "daily_reports"("projectId", "date") WHERE "deletedAt" IS NULL;
 
 -- CreateIndex
 CREATE UNIQUE INDEX "daily_reports_projectId_sequenceNumber_key" ON "daily_reports"("projectId", "sequenceNumber");
@@ -368,6 +370,11 @@ CREATE INDEX "visits_visitedAt_idx" ON "visits"("visitedAt");
 -- CreateIndex
 CREATE INDEX "notifications_recipientId_readAt_createdAt_idx" ON "notifications"("recipientId", "readAt", "createdAt");
 
+-- Foreign keys of the diary's legal records (projects, reports and everything that hangs off
+-- them) use ON DELETE RESTRICT: records are soft-deleted, and a stray DELETE of a project or a
+-- report must fail instead of silently wiping the diary. CASCADE is kept only for rows that are
+-- not part of the record (sessions, project membership, notifications).
+
 -- AddForeignKey
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -375,7 +382,7 @@ ALTER TABLE "sessions" ADD CONSTRAINT "sessions_userId_fkey" FOREIGN KEY ("userI
 ALTER TABLE "projects" ADD CONSTRAINT "projects_siteManagerId_fkey" FOREIGN KEY ("siteManagerId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -384,7 +391,7 @@ ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_createdById_fkey" FO
 ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "authorized_persons" ADD CONSTRAINT "authorized_persons_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "authorized_persons" ADD CONSTRAINT "authorized_persons_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -393,7 +400,7 @@ ALTER TABLE "project_members" ADD CONSTRAINT "project_members_projectId_fkey" FO
 ALTER TABLE "project_members" ADD CONSTRAINT "project_members_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -405,28 +412,28 @@ ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_signedById_fkey" FOREI
 ALTER TABLE "daily_reports" ADD CONSTRAINT "daily_reports_acknowledgedById_fkey" FOREIGN KEY ("acknowledgedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "photos" ADD CONSTRAINT "photos_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "photos" ADD CONSTRAINT "photos_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "photos" ADD CONSTRAINT "photos_uploadedById_fkey" FOREIGN KEY ("uploadedById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "remarks" ADD CONSTRAINT "remarks_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "remarks" ADD CONSTRAINT "remarks_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "remarks" ADD CONSTRAINT "remarks_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "material_needs" ADD CONSTRAINT "material_needs_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "material_needs" ADD CONSTRAINT "material_needs_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "addenda" ADD CONSTRAINT "addenda_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "addenda" ADD CONSTRAINT "addenda_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "addenda" ADD CONSTRAINT "addenda_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "visits" ADD CONSTRAINT "visits_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "visits" ADD CONSTRAINT "visits_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "visits" ADD CONSTRAINT "visits_authorId_fkey" FOREIGN KEY ("authorId") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

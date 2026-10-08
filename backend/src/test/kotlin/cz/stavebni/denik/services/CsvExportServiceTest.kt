@@ -26,11 +26,10 @@ class CsvExportServiceTest : BaseIntegrationTest() {
             .set(DAILY_REPORTS.ID, r2Id)
             .set(DAILY_REPORTS.PROJECTID, projectId)
             .set(DAILY_REPORTS.AUTHORID, boss.id)
-            .set(DAILY_REPORTS.DATE, java.time.OffsetDateTime.parse("2026-09-28T00:00:00Z"))
+            .set(DAILY_REPORTS.DATE, java.time.LocalDate.parse("2026-09-28"))
             .set(DAILY_REPORTS.SEQUENCENUMBER, 2)
             .set(DAILY_REPORTS.WORKERSBYTRADE, org.jooq.JSONB.valueOf("[]"))
             .set(DAILY_REPORTS.WORKDESCRIPTION, "Betonaz podkladniho betonu")
-            .set(DAILY_REPORTS.WEATHER, org.jooq.JSONB.valueOf("{}"))
             .execute()
 
         dsl.update(DAILY_REPORTS)
@@ -42,5 +41,8 @@ class CsvExportServiceTest : BaseIntegrationTest() {
         assertTrue(csv.startsWith("Sequence Number,Date,Work Description,Work Suspended\n"))
         assertTrue(csv.contains("Vykopove prace pro kanalizaci \"\"usek A\"\""))
         assertTrue(csv.contains("Betonaz podkladniho betonu"))
+        // The report date is a calendar date, exported as YYYY-MM-DD.
+        assertTrue(csv.contains("\n1,2026-09-27,"), csv)
+        assertTrue(csv.contains("\n2,2026-09-28,"), csv)
     }
 }

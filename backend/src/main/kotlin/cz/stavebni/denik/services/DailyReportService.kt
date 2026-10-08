@@ -7,6 +7,7 @@ import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.domain.WeatherData
 import cz.stavebni.denik.jooq.tables.references.*
+import cz.stavebni.denik.util.Dates
 import kotlinx.serialization.Serializable
 import org.jooq.JSONB
 import java.util.UUID
@@ -42,8 +43,7 @@ object DailyReportService {
     ): DailyReportDto {
         assertCan(user, Action.ReportCreate, Resource(isMember = true))
 
-        val normalizedDateStr = if (date.contains("T")) date.substringBefore("T") else date
-        val parsedDate = OffsetDateTime.parse("${normalizedDateStr}T00:00:00Z")
+        val parsedDate = Dates.parseLocalDate(date)
 
         return AuditService.auditedTransaction(
             actor = user,
@@ -82,7 +82,6 @@ object DailyReportService {
                     .set(DAILY_REPORTS.WORKDESCRIPTION, workDescription)
                     .set(DAILY_REPORTS.ISCONTROLDAY, isControlDay)
                     .set(DAILY_REPORTS.CONSTRUCTIONOBJ, constructionObj)
-                    .set(DAILY_REPORTS.WEATHER, JSONB.valueOf("{}"))
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
             }
@@ -93,7 +92,7 @@ object DailyReportService {
             DailyReportDto(
                 id = reportId.toString(),
                 projectId = record.projectid.toString(),
-                date = record.date.toString().substringBefore("T"),
+                date = record.date.toString(),
                 weather = null,
                 generalNotes = record.othernotes,
                 isLocked = record.lockedat != null,
@@ -124,7 +123,7 @@ object DailyReportService {
                 DailyReportDto(
                     id = reportId.toString(),
                     projectId = record.projectid.toString(),
-                    date = record.date.toString().substringBefore("T"),
+                    date = record.date.toString(),
                     weather = null,
                     generalNotes = record.othernotes,
                     isLocked = record.lockedat != null,
@@ -150,8 +149,7 @@ object DailyReportService {
                 .and(DAILY_REPORTS.DELETEDAT.isNull)
                 .fetchOne()
         } catch (e: Exception) {
-            val dateStr = if (reportIdOrDate.contains("T")) reportIdOrDate.substringBefore("T") else reportIdOrDate
-            val parsedDate = OffsetDateTime.parse("${dateStr}T00:00:00Z")
+            val parsedDate = Dates.parseLocalDate(reportIdOrDate)
             tx.selectFrom(DAILY_REPORTS)
                 .where(DAILY_REPORTS.PROJECTID.eq(projectId))
                 .and(DAILY_REPORTS.DATE.eq(parsedDate))
@@ -165,7 +163,7 @@ object DailyReportService {
         return DailyReportDto(
             id = reportId.toString(),
             projectId = record.projectid.toString(),
-            date = record.date.toString().substringBefore("T"),
+            date = record.date.toString(),
             weather = null,
             generalNotes = record.othernotes,
             isLocked = record.lockedat != null,

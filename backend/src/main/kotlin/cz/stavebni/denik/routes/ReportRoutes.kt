@@ -49,7 +49,7 @@ internal fun resolveReportId(tx: DSLContext, idOrDate: String, projectId: UUID?)
     val condition = if (asUuid != null) {
         DAILY_REPORTS.ID.eq(asUuid)
     } else {
-        DAILY_REPORTS.DATE.eq(Dates.parse(idOrDate.substringBefore("T")))
+        DAILY_REPORTS.DATE.eq(Dates.parseLocalDate(idOrDate))
     }
     val scoped = if (projectId != null) condition.and(DAILY_REPORTS.PROJECTID.eq(projectId)) else condition
     return tx.select(DAILY_REPORTS.ID)
