@@ -10,6 +10,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.http.content.singlePageApplication
 import cz.stavebni.denik.config.AppConfig
+import cz.stavebni.denik.services.PasswordService
 import cz.stavebni.denik.routes.authRoutes
 import cz.stavebni.denik.routes.projectRoutes
 import cz.stavebni.denik.routes.pdfRoutes
@@ -27,6 +28,9 @@ fun main(args: Array<String>) = EngineMain.main(args)
 fun Application.module() {
     // Before anything touches the database or the network.
     AppConfig.requireReleaseOptIn()
+
+    // Fail at startup, not at the first account creation, if the native Argon2 library cannot run here.
+    PasswordService.ensureWorks()
 
     if (!DatabaseFactory.isInitialized) {
         DatabaseFactory.init(

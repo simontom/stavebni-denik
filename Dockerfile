@@ -21,13 +21,19 @@ COPY backend backend
 RUN gradle :backend:shadowJar --no-daemon -x test
 
 # --- 3. Runtime --------------------------------------------------------------
-FROM eclipse-temurin:21-jre-alpine
+# A glibc (Ubuntu) base on purpose, NOT Alpine: the password hashing library (argon2-jvm) loads a
+# native libargon2 through JNA, and on Alpine (musl libc) the JVM dies with SIGSEGV as soon as a
+# password is *hashed* (creating a user), while verifying one still works. The static typst binary
+# below runs on any libc.
+FROM eclipse-temurin:21-jre
 # The archive is pinned by checksum. When TYPST_VERSION changes, update TYPST_SHA256 too (and the
 # same pair in .github/actions/install-typst/action.yml). typst publishes no checksums; this one was computed from
 # two independent downloads and matches the size GitHub lists for the asset.
 ARG TYPST_VERSION=0.13.1
 ARG TYPST_SHA256=7d214bfeffc2e585dc422d1a09d2b144969421281e8c7f5d784b65fc69b5673f
-RUN apk add --no-cache fontconfig ttf-dejavu \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends xz-utils fontconfig fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/* \
     && wget -q "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
     && echo "${TYPST_SHA256}  typst-x86_64-unknown-linux-musl.tar.xz" | sha256sum -c - \
     && tar -xf typst-x86_64-unknown-linux-musl.tar.xz \

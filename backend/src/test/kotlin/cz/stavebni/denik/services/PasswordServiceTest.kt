@@ -15,4 +15,18 @@ class PasswordServiceTest {
         assertTrue(PasswordService.verify(hash, password))
         assertFalse(PasswordService.verify(hash, "WrongPassword123!"))
     }
+
+    @Test
+    fun `the startup self-test passes and can be called repeatedly`() {
+        PasswordService.ensureWorks()
+        PasswordService.ensureWorks() // only the first call does any work
+    }
+
+    @Test
+    fun `hashes verify with the standard PHC string of other implementations`() {
+        // A hash produced elsewhere (the E2E seed uses @node-rs/argon2) must keep verifying here: m=65536, t=2, p=1.
+        val hash = PasswordService.hash("Password123!")
+
+        assertTrue(Regex("^\\\$argon2id\\\$v=19\\\$m=65536,t=2,p=1\\\$[A-Za-z0-9+/]+\\\$[A-Za-z0-9+/]+$").matches(hash), hash)
+    }
 }
