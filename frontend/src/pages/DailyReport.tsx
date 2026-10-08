@@ -65,10 +65,10 @@ export const DailyReport: React.FC = () => {
           }
           if (Array.isArray(data.photos) && data.photos.length > 0) {
             setPhotos(
-              data.photos.map((p: { id: string; pathOriginal?: string }) => ({
+              data.photos.map((p: { id: string }, index: number) => ({
                 id: p.id,
                 url: `/api/photos/${p.id}`,
-                name: p.pathOriginal ? p.pathOriginal.split(/[/\\]/).pop() || "photo.jpg" : "photo.jpg",
+                name: `Fotka ${index + 1}`,
               })),
             );
           }

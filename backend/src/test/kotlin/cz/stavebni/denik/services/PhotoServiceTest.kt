@@ -46,17 +46,17 @@ class PhotoServiceTest : BaseIntegrationTest() {
         assertNotNull(result.id)
         assertEquals(reportId, result.reportId)
         assertEquals(boss.id, result.uploadedById)
-        assertTrue(result.pathOriginal.endsWith(".jpg"))
-        assertTrue(result.pathThumb.endsWith(".jpg"))
-
-        // Verify disk files exist and are not empty
-        val originalFile = Paths.get(result.pathOriginal)
-        val thumbFile = Paths.get(result.pathThumb)
-        assertTrue(Files.exists(originalFile))
-        assertTrue(Files.exists(thumbFile))
+        // The database holds storage keys (relative to the uploads directory), and the files exist behind them
+        val keys = dsl.select(PHOTOS.PATHORIGINAL, PHOTOS.PATHTHUMB).from(PHOTOS).where(PHOTOS.ID.eq(result.id)).fetchOne()!!
+        assertTrue(keys.get(PHOTOS.PATHORIGINAL)!!.endsWith(".jpg"))
+        assertTrue(keys.get(PHOTOS.PATHTHUMB)!!.endsWith(".jpg"))
+        val originalFile = PhotoStorage.resolve(keys.get(PHOTOS.PATHORIGINAL)!!)
+        val thumbFile = PhotoStorage.resolve(keys.get(PHOTOS.PATHTHUMB)!!)
+        assertNotNull(originalFile, "the original must exist behind its key")
+        assertNotNull(thumbFile, "the thumbnail must exist behind its key")
 
         // Verify the stored files are genuine JPEG images
-        val loadedImg = ImageIO.read(originalFile.toFile())
+        val loadedImg = ImageIO.read(originalFile!!.toFile())
         assertNotNull(loadedImg)
 
         // Verify database entry
