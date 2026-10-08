@@ -25,6 +25,14 @@ object Dates {
         return day
     }
 
+    /** Years the diary accepts. ISO dates reach year 999,999,999, which PostgreSQL's DATE cannot hold: that must be a 400, not a 500. */
+    private val YEARS = 1900..2200
+
+    private fun plausible(date: LocalDate, original: String): LocalDate {
+        if (date.year !in YEARS) throw IllegalArgumentException("Neplatné datum: $original")
+        return date
+    }
+
     /** Today's calendar date in Prague. Between 00:00 and 02:00 local time UTC is still on the previous day. */
     fun today(clock: Clock = Clock.system(PRAGUE)): LocalDate = LocalDate.now(clock.withZone(PRAGUE))
 
@@ -36,7 +44,7 @@ object Dates {
         val v = value.trim()
         if (v.isEmpty()) throw IllegalArgumentException("Chybí datum")
         return try {
-            LocalDate.parse(v.substringBefore("T"))
+            plausible(LocalDate.parse(v.substringBefore("T")), value)
         } catch (e: Exception) {
             throw IllegalArgumentException("Neplatné datum: $value")
         }
@@ -47,8 +55,8 @@ object Dates {
         if (value.isNullOrBlank()) return null
         val v = value.trim()
         return try {
-            if (v.length == 10) LocalDate.parse(v).atStartOfDay().atOffset(ZoneOffset.UTC)
-            else OffsetDateTime.parse(v)
+            if (v.length == 10) plausible(LocalDate.parse(v), value).atStartOfDay().atOffset(ZoneOffset.UTC)
+            else OffsetDateTime.parse(v).also { plausible(it.toLocalDate(), value) }
         } catch (e: Exception) {
             throw IllegalArgumentException("Neplatné datum: $value")
         }

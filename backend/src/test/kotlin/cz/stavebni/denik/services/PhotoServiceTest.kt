@@ -137,7 +137,7 @@ class PhotoServiceTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `uploadPhoto rejects image exceeding 8MP dimension limit`() {
+    fun `uploadPhoto rejects a PNG above the 16MP limit`() {
         runBlocking {
             val boss = createTestUser(role = Role.BOSS)
             val project = ProjectService.createProject(boss, ProjectDto(
@@ -147,15 +147,15 @@ class PhotoServiceTest : BaseIntegrationTest() {
             val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28")
             val reportId = UUID.fromString(report.id)
 
-            // 4000 x 2500 = 10,000,000 pixels (> 8MP)
-            val hugeImageBytes = createTestImageBytes(4000, 2500, "png")
+            // 4500 x 4000 = 18,000,000 pixels (a PNG is decoded in full by the JDK, so it gets the smaller limit of 16 MP)
+            val hugeImageBytes = createTestImageBytes(4500, 4000, "png")
 
             val ex = assertThrows<IllegalArgumentException> {
                 runBlocking {
                     PhotoService.uploadPhoto(boss, reportId, hugeImageBytes, "image/png", "huge_dims.png")
                 }
             }
-            assertTrue(ex.message!!.contains("8MP"))
+            assertTrue(ex.message!!.contains("16MP"), ex.message)
         }
     }
 

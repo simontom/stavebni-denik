@@ -20,6 +20,8 @@ import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.UUID
 
@@ -67,7 +69,8 @@ fun Application.photoRoutes() {
                                 mimeType = part.contentType?.toString() ?: "image/jpeg"
                                 // Never hold more than the limit (+1 byte, to notice an excess) in memory. The stream is
                                 // not closed here: closing it would cancel the multipart channel under the parser.
-                                val bytes = part.streamProvider().readNBytes(PhotoService.MAX_UPLOAD_BYTES + 1)
+                                // A slow sender makes this read wait: it must not be one of the few request threads that wait.
+                                val bytes = withContext(Dispatchers.IO) { part.streamProvider().readNBytes(PhotoService.MAX_UPLOAD_BYTES + 1) }
                                 if (bytes.size > PhotoService.MAX_UPLOAD_BYTES) throw IllegalArgumentException("File size exceeds 5MB limit")
                                 fileBytes = bytes
                             }
@@ -93,20 +96,19 @@ fun Application.photoRoutes() {
 
                 val tx = DatabaseFactory.dsl
                 val projectUuid = projectIdStr?.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "projectId") }
+                // The photo belongs to the entry the client names. No guessing ("the newest entry of the project" put photos
+                // on the wrong day), and a bare date needs the project it is in (dates repeat across projects).
+                val reportRef = reportIdStr?.trim().orEmpty()
+                if (reportRef.isEmpty()) throw IllegalArgumentException("Chybí reportId: fotografii lze přidat jen k uloženému záznamu")
+                val isUuid = runCatching { UUID.fromString(reportRef) }.isSuccess
+                if (!isUuid && projectUuid == null) throw IllegalArgumentException("Datum záznamu je nutné zadat spolu s projectId")
                 val reportUuid: UUID = try {
-                    when {
-                        !reportIdStr.isNullOrBlank() -> resolveReportId(tx, reportIdStr!!, projectUuid)
-                        projectUuid != null -> tx.select(DAILY_REPORTS.ID)
-                            .from(DAILY_REPORTS)
-                            .where(DAILY_REPORTS.PROJECTID.eq(projectUuid).and(DAILY_REPORTS.DELETEDAT.isNull))
-                            .orderBy(DAILY_REPORTS.DATE.desc())
-                            .limit(1)
-                            .fetchOne()?.value1()
-                            ?: throw IllegalArgumentException("No reports found for project $projectIdStr")
-                        else -> throw IllegalArgumentException("Missing reportId")
-                    }
-                } catch (e: Exception) {
-                    throw IllegalArgumentException("Invalid report reference: ${e.message}")
+                    resolveReportId(tx, reportRef, projectUuid)
+                } catch (e: NotFoundException) {
+                    throw e
+                } catch (e: IllegalArgumentException) {
+                    // Only the client's mistake is told; nothing the database or a library said is passed on.
+                    throw IllegalArgumentException("Neplatný odkaz na záznam")
                 }
                 ProjectAccess.requireReportAccess(tx, user, reportUuid)
 
@@ -161,6 +163,7 @@ private suspend fun ApplicationCall.respondPhoto(thumbnail: Boolean) {
         ?: throw NotFoundException("Fotka nenalezena")
 
     response.header(HttpHeaders.ContentType, "image/jpeg")
-    response.header(HttpHeaders.CacheControl, "private, max-age=86400")
+    // Evidence photos: the browser may keep one but has to ask again, so a logout or a lost membership takes effect.
+    response.header(HttpHeaders.CacheControl, "private, no-cache")
     respondFile(file.toFile())
 }
