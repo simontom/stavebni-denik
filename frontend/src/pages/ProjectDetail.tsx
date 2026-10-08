@@ -56,7 +56,8 @@ interface ReportItem {
   isSigned?: boolean;
 }
 
-const today = () => new Date().toISOString().split("T")[0];
+// The diary is kept in Czech time: between 00:00 and 02:00 in Prague UTC is still on the previous day.
+const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date());
 const formatDate = (iso?: string | null) => (iso ? iso.split("T")[0] : "");
 
 export const ProjectDetail: React.FC = () => {
