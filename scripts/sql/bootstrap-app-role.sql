@@ -52,7 +52,7 @@ BEGIN
     -- Since we use FOR UPDATE to prevent race conditions during audit hashing,
     -- we must leave UPDATE granted. Actual data mutation is prevented by the
     -- 'audit_log_no_update' trigger which aborts the transaction.
-    EXECUTE 'REVOKE DELETE ON "audit_log" FROM app';
+    EXECUTE 'REVOKE DELETE, TRUNCATE ON "audit_log" FROM app';
   END IF;
 END;
 $$;

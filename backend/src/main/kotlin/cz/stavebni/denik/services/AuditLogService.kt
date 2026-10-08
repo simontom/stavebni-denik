@@ -24,9 +24,9 @@ data class AuditEntryDto(
 /** Read side of the append-only audit log (admins only). */
 object AuditLogService {
 
-    fun verify(tx: DSLContext, actor: SessionUser): AuditVerifyResult {
+    fun verify(tx: DSLContext, actor: SessionUser, anchor: AuditAnchor? = null): AuditVerifyResult {
         assertCan(actor, Action.AuditVerify)
-        return AuditService.verifyChain(tx)
+        return AuditService.verifyChain(tx, anchor = anchor)
     }
 
     fun list(tx: DSLContext, actor: SessionUser, limit: Int = 200): List<AuditEntryDto> {
