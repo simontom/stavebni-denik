@@ -76,7 +76,7 @@ data class ResetPasswordResponse(
 
 object UserService {
 
-    private val NICKNAME_PATTERN = Regex("^[A-Za-z0-9._@-]{3,64}$")
+    internal val NICKNAME_PATTERN = Regex("^[A-Za-z0-9._@-]{3,64}$")
     private const val PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     private val random = SecureRandom()
 

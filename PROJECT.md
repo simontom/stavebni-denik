@@ -121,6 +121,20 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
 - `.github/workflows/ci.yml` — lint/build, integration, jOOQ drift check, E2E
 
+## First administrator and password recovery
+
+A fresh database has no users, so nobody can log in. Two operator commands run against the database from inside the application image (same `JDBC_URL`, `DB_USER`, `DB_PASSWORD` as the application; they migrate the schema if needed):
+
+```bash
+# first administrator (refused as soon as an active administrator exists)
+fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin alice 'Alice Novakova'"
+
+# the only administrator is locked out or forgot the password: new temporary password, all sessions end, a login lockout is lifted
+fly ssh console -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password alice"
+```
+
+Both print a generated password once, to standard output only (nothing else is printed there); it is stored only as an Argon2id hash, the account has to change it at the first login, and the audit log records the action without an acting user and without the password. `create-admin` makes the account a project manager (BOSS) with the administrator flag; further users are created in the application. Exit codes: `0` done, `1` refused (for example an administrator already exists), `2` wrong usage. Locally: `java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt …` after `./gradlew :backend:shadowJar`.
+
 ## Release gate
 
 This build is **not released for real diary data**. While that is true, the app refuses to start with `APP_ENV=production` unless `ALLOW_UNRELEASED_BUILD=true` is set (staging with test data only). The pull request that completes the list below removes that guard.
@@ -134,7 +148,7 @@ Before the first release:
 - **PDF export:** user text cannot inject typst code; timeouts; no blank-PDF fallback; required content.
 - **Uploads and requests:** size and dimension limits are checked before decoding.
 - **Legal model:** follows zákon 283/2021 Sb. § 166 and vyhláška 131/2024 Sb. (§ 10, příloha 12), confirmed with a lawyer.
-- **Operations:** separate database roles for migrations and runtime, backups with a tested restore, a way to create the first admin, GDPR paperwork.
+- **Operations:** separate database roles for migrations and runtime, backups with a tested restore, ~~a way to create the first admin~~ done (see above), GDPR paperwork.
 
 ## Follow-ups
 
