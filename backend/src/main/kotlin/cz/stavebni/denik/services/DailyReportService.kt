@@ -77,6 +77,8 @@ internal data class ReportSnapshot(
     val acknowledgedById: String?,
     val isLateEntry: Boolean = false,
     val lateEntryReason: String? = null,
+    /** The weather as readable text (see [WeatherData.describe]); no decimals in the audit snapshot. */
+    val weather: String? = null,
 )
 
 object DailyReportService {
@@ -91,6 +93,8 @@ object DailyReportService {
         val expectedUpdatedAt: OffsetDateTime? = null,
         /** Why an entry for an earlier day is only written now; required for such an entry, ignored for an on-time one. */
         val lateEntryReason: String? = null,
+        /** The weather as entered; null = not mentioned (keeps what is stored), an empty value clears it. */
+        val weather: WeatherData? = null,
     )
 
     private enum class WriteMode { CREATE_ONLY, SAVE }
@@ -129,10 +133,11 @@ object DailyReportService {
         workersByTrade: String = "[]",
         isControlDay: Boolean = false,
         constructionObj: String? = null,
-        lateEntryReason: String? = null
+        lateEntryReason: String? = null,
+        weather: WeatherData? = null
     ): DailyReportDto = write(
         user, projectId, date, WriteMode.CREATE_ONLY,
-        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason),
+        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason, weather = weather),
     )
 
     /**
@@ -151,6 +156,9 @@ object DailyReportService {
     private suspend fun write(user: SessionUser, projectId: UUID, date: String, mode: WriteMode, input: ReportInput): DailyReportDto {
         val parsedDate = Dates.parseLocalDate(date)
         val workers = input.workersByTrade?.let { JSONB.valueOf(it.ifBlank { "[]" }) }
+        // null = not mentioned; a mentioned but empty weather becomes "no weather".
+        val weatherMentioned = input.weather != null
+        val weather: WeatherData? = input.weather?.validated()
 
         return AuditService.auditedWrite(user, "report") { tx ->
             if (!tx.fetchExists(PROJECTS, PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))) {
@@ -184,6 +192,7 @@ object DailyReportService {
                     .set(DAILY_REPORTS.CONSTRUCTIONOBJ, input.constructionObj)
                     .set(DAILY_REPORTS.ISLATEENTRY, lateReason != null)
                     .set(DAILY_REPORTS.LATEENTRYREASON, lateReason)
+                    .set(DAILY_REPORTS.WEATHER, weather?.let { JSONB.valueOf(weatherJson.encodeToString(WeatherData.serializer(), it)) })
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
 
@@ -212,6 +221,10 @@ object DailyReportService {
                     .set(DAILY_REPORTS.WORKERSBYTRADE, workers ?: existing.workersbytrade)
                     .set(DAILY_REPORTS.ISCONTROLDAY, input.isControlDay ?: existing.iscontrolday)
                     .set(DAILY_REPORTS.CONSTRUCTIONOBJ, input.constructionObj ?: existing.constructionobj)
+                    .set(
+                        DAILY_REPORTS.WEATHER,
+                        if (weatherMentioned) weather?.let { JSONB.valueOf(weatherJson.encodeToString(WeatherData.serializer(), it)) } else existing.weather
+                    )
                     .set(DAILY_REPORTS.UPDATEDAT, OffsetDateTime.now())
                     .where(DAILY_REPORTS.ID.eq(existing.id).and(DAILY_REPORTS.LOCKEDAT.isNull))
                     .returning()
@@ -345,11 +358,19 @@ object DailyReportService {
             .forUpdate()
             .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
 
+    private val weatherJson = Json { ignoreUnknownKeys = true }
+
+    /** The weather stored on the row; the legacy placeholder `{}` and unreadable values count as "not stated". */
+    private fun weatherOf(record: DailyReportsRecord): WeatherData? =
+        record.weather?.data()?.let { raw ->
+            runCatching { weatherJson.decodeFromString(WeatherData.serializer(), raw) }.getOrNull()
+        }?.takeUnless { it.isEmpty() }
+
     private fun toDto(record: DailyReportsRecord, photos: List<PhotoDto>) = DailyReportDto(
         id = record.id.toString(),
         projectId = record.projectid.toString(),
         date = record.date.toString(),
-        weather = null,
+        weather = weatherOf(record),
         generalNotes = record.othernotes,
         isLocked = record.lockedat != null,
         workDescription = record.workdescription ?: "",
@@ -383,6 +404,7 @@ object DailyReportService {
             acknowledgedById = get(DAILY_REPORTS.ACKNOWLEDGEDBYID)?.toString(),
             isLateEntry = islateentry ?: false,
             lateEntryReason = lateentryreason,
+            weather = weatherOf(this)?.describe(),
         )
     )
 }
