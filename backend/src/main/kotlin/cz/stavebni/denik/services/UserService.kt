@@ -15,6 +15,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.Record
+import org.jooq.impl.DSL
 import java.security.SecureRandom
 import java.time.OffsetDateTime
 import java.util.UUID
@@ -177,7 +178,8 @@ object UserService {
             entityType = "user",
             entityId = nickname,
         ) { tx ->
-            if (tx.fetchExists(USERS, USERS.NICKNAME.eq(nickname))) {
+            // "alice" and "Alice" would be look-alike accounts in a legal record, and share one login lockout.
+            if (tx.fetchExists(USERS, DSL.lower(USERS.NICKNAME).eq(nickname.lowercase()))) {
                 throw IllegalStateException("Uživatel s přihlašovacím jménem $nickname již existuje")
             }
             val now = OffsetDateTime.now()

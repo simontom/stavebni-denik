@@ -34,6 +34,33 @@ class CrossSiteRoutesTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the guard does not depend on how the path is spelled`() = testApplication {
+        application { module() }
+
+        // The router percent-decodes a path before it matches a route, so these reach /api/auth/login while the raw
+        // text of the path does not start with /api/ (a guard that looked at the raw text would not see them).
+        val spellings = listOf("/%61pi/auth/login", "/%61%70%69/auth/login", "/api/%61uth/login")
+        for (path in spellings) {
+            val response = client.post(path) {
+                contentType(ContentType.Application.Json)
+                header("Sec-Fetch-Site", "cross-site")
+                setBody("""{"nickname":"nobody","password":"x"}""")
+            }
+            assertEquals(HttpStatusCode.Forbidden, response.status, "path $path")
+        }
+        // Control: from the same origin the very same spellings reach the login handler (wrong credentials -> 401),
+        // so the 403 above is the guard and not a routing miss.
+        for (path in spellings) {
+            val sameOrigin = client.post(path) {
+                contentType(ContentType.Application.Json)
+                header("Sec-Fetch-Site", "same-origin")
+                setBody("""{"nickname":"nobody","password":"x"}""")
+            }
+            assertEquals(HttpStatusCode.Unauthorized, sameOrigin.status, "path $path")
+        }
+    }
+
+    @Test
     fun `a forged request does not reach a route even with a valid session cookie`() = testApplication {
         application { module() }
         val user = createTestUser(role = Role.BOSS)
