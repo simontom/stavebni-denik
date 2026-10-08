@@ -300,6 +300,9 @@ object UserService {
 
         val issues = PasswordPolicy.issues(request.newPassword)
         require(issues.isEmpty()) { issues.joinToString(" ") }
+        require(!BreachedPasswordService.isBreached(request.newPassword)) {
+            "Toto heslo se objevilo v uniklých databázích hesel. Zvolte jiné."
+        }
         require(request.currentPassword.length <= PasswordPolicy.MAX_LENGTH) { "Stávající heslo není správné." }
 
         val currentHash = db.select(USERS.PASSWORDHASH)
@@ -323,6 +326,7 @@ object UserService {
         ) { tx ->
             tx.update(USERS)
                 .set(USERS.PASSWORDHASH, newHash)
+                .set(USERS.PASSWORDCHANGEDAT, OffsetDateTime.now())
                 .set(USERS.MUSTCHANGEPWD, false)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(actor.id))
@@ -350,6 +354,7 @@ object UserService {
         ) { tx ->
             val nickname = tx.update(USERS)
                 .set(USERS.PASSWORDHASH, hash)
+                .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
                 .set(USERS.MUSTCHANGEPWD, true)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))

@@ -69,6 +69,7 @@ object AdminBootstrapService {
         ) { tx ->
             val id = tx.update(USERS)
                 .set(USERS.PASSWORDHASH, hash)
+                .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
                 .set(USERS.MUSTCHANGEPWD, true)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.NICKNAME.eq(nick).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))
