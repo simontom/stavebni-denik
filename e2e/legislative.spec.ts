@@ -111,6 +111,11 @@ test.describe("Legislative Compliance", () => {
     await expect(page.getByText("SO: SO-101")).toBeVisible();
     const reportUrl = page.url();
 
+    // The report must be signed (and locked) before an investor can acknowledge it.
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
+    await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible();
+
     // 8. Log in as INVESTOR and acknowledge report
     await page.context().clearCookies();
     await page.goto("/login");

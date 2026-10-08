@@ -193,7 +193,7 @@ object PhotoService {
         }
     }
 
-    suspend fun listPhotos(tx: DSLContext, reportId: UUID): List<PhotoDto> {
+    fun listPhotos(tx: DSLContext, reportId: UUID): List<PhotoDto> {
         return tx.selectFrom(PHOTOS)
             .where(PHOTOS.REPORTID.eq(reportId))
             .and(PHOTOS.DELETEDAT.isNull)
