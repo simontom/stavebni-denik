@@ -6,26 +6,24 @@ import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UUIDSerializer
 import cz.stavebni.denik.domain.assertCan
+import cz.stavebni.denik.jooq.tables.records.PhotosRecord
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import kotlinx.serialization.Serializable
 import net.coobird.thumbnailator.Thumbnails
 import org.jooq.DSLContext
+import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.nio.file.Files
-import java.nio.file.Paths
+import java.io.IOException
 import java.time.OffsetDateTime
 import java.util.UUID
 import javax.imageio.ImageIO
-import kotlin.io.path.absolutePathString
 
 @Serializable
 data class PhotoDto(
     @Serializable(with = UUIDSerializer::class) val id: UUID,
     @Serializable(with = UUIDSerializer::class) val reportId: UUID,
-    val pathOriginal: String,
-    val pathThumb: String,
     val width: Int,
     val height: Int,
     val bytes: Int,
@@ -33,8 +31,50 @@ data class PhotoDto(
 )
 
 object PhotoService {
-    private const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5 MB
+    /** Largest accepted upload. The route reads at most this much (+1 byte, to notice an excess). */
+    const val MAX_UPLOAD_BYTES = 5 * 1024 * 1024 // 5 MB
     private const val MAX_PIXELS = 8_000_000L // 8 Megapixels
+    private const val MAX_SIDE_PIXELS = 12_000 // longest side; a 1 x 8,000,000 image stays within 8 MP
+
+    private class Encoded(val bytes: ByteArray, val width: Int, val height: Int)
+
+    /**
+     * Decodes an image, but only after its dimensions were read from the file *header* and checked.
+     * A tiny file can claim billions of pixels (a decompression bomb); decoding it first would
+     * allocate all of them. A bad header or a failing decoder is a client error, not a server error.
+     */
+    private fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
+        try {
+            ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
+                val readers = ImageIO.getImageReaders(stream)
+                if (!readers.hasNext()) throw IllegalArgumentException("Invalid or corrupted image data")
+                val reader = readers.next()
+                try {
+                    reader.setInput(stream, true, true)
+                    val width = reader.getWidth(0)
+                    val height = reader.getHeight(0)
+                    if (width <= 0 || height <= 0) throw IllegalArgumentException("Invalid or corrupted image data")
+                    if (width.toLong() * height.toLong() > MAX_PIXELS || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
+                        throw IllegalArgumentException("Image dimensions exceed 8MP limit")
+                    }
+                    return reader.read(0) ?: throw IllegalArgumentException("Invalid or corrupted image data")
+                } finally {
+                    reader.dispose()
+                }
+            }
+        } catch (e: IOException) {
+            throw IllegalArgumentException("Invalid or corrupted image data")
+        }
+    }
+
+    /** Scales down to fit [maxWidth] x [maxHeight] (never up) and encodes as a fresh JPEG without any metadata. */
+    private fun encodeJpeg(image: BufferedImage, maxWidth: Int, maxHeight: Int): Encoded {
+        val scale = minOf(1.0, maxWidth.toDouble() / image.width, maxHeight.toDouble() / image.height)
+        val resized = Thumbnails.of(image).scale(scale).asBufferedImage()
+        val out = ByteArrayOutputStream()
+        Thumbnails.of(resized).scale(1.0).outputFormat("jpg").outputQuality(0.85).toOutputStream(out)
+        return Encoded(out.toByteArray(), resized.width, resized.height)
+    }
 
     private fun isJpeg(bytes: ByteArray): Boolean {
         if (bytes.size < 3) return false
@@ -98,69 +138,48 @@ object PhotoService {
         
         assertCan(user, Action.PhotoUpload, Resource(isMember = true, isLocked = isLocked))
 
-        // 3. Pixel Count Check (max 8 Megapixels)
-        val img = ImageIO.read(ByteArrayInputStream(fileBytes))
-            ?: throw IllegalArgumentException("Invalid or corrupted image data")
-        if (img.width.toLong() * img.height.toLong() > MAX_PIXELS) {
-            throw IllegalArgumentException("Image dimensions exceed 8MP limit")
-        }
+        // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
+        //    the image is then decoded exactly once.
+        val image = decodeWithinLimits(fileBytes)
 
-        // 4. Re-encoding & sanitization (Airlock: never save raw unvalidated bytes to disk)
-        val cleanOrigStream = ByteArrayOutputStream()
-        Thumbnails.of(ByteArrayInputStream(fileBytes))
-            .size(1920, 1080)
-            .outputFormat("jpg")
-            .toOutputStream(cleanOrigStream)
-        val cleanOrigBytes = cleanOrigStream.toByteArray()
+        // 4. Re-encoding & sanitization (Airlock: never save raw unvalidated bytes to disk).
+        //    Both files are made from the one decoded image. They are fresh JPEGs without metadata.
+        val original = encodeJpeg(image, 1920, 1080)
+        val thumbnail = encodeJpeg(image, 400, 300)
 
-        val thumbStream = ByteArrayOutputStream()
-        Thumbnails.of(ByteArrayInputStream(fileBytes))
-            .size(400, 300)
-            .outputFormat("jpg")
-            .toOutputStream(thumbStream)
-        val processedThumbBytes = thumbStream.toByteArray()
+        val fileId = UUID.randomUUID()
+        val originalKey = PhotoStorage.keyFor(fileId, thumbnail = false)
+        val thumbKey = PhotoStorage.keyFor(fileId, thumbnail = true)
+        PhotoStorage.write(originalKey, original.bytes)
+        PhotoStorage.write(thumbKey, thumbnail.bytes)
 
-        val uploadDir = cz.stavebni.denik.config.AppConfig.uploadsDir.resolve("photos").apply { 
-            if (!Files.exists(this)) Files.createDirectories(this)
-        }
-        
-        val fileId = UUID.randomUUID().toString()
-        val originalPath = uploadDir.resolve("${fileId}_orig.jpg")
-        val thumbPath = uploadDir.resolve("${fileId}_thumb.jpg")
-        
-        // Write only sanitized re-encoded JPEG bytes
-        Files.write(originalPath, cleanOrigBytes)
-        Files.write(thumbPath, processedThumbBytes)
-        
-        return AuditService.auditedTransaction(
-            actor = user,
-            action = "photo.upload",
-            entityType = "photo",
-            entityId = ""
-        ) { tx ->
-            val photoId = UUID.randomUUID()
-            val record = tx.insertInto(PHOTOS)
-                .set(PHOTOS.ID, photoId)
-                .set(PHOTOS.REPORTID, reportId)
-                .set(PHOTOS.PATHORIGINAL, originalPath.absolutePathString())
-                .set(PHOTOS.PATHTHUMB, thumbPath.absolutePathString())
-                .set(PHOTOS.WIDTH, img.width.coerceAtMost(1920))
-                .set(PHOTOS.HEIGHT, img.height.coerceAtMost(1080))
-                .set(PHOTOS.BYTES, cleanOrigBytes.size)
-                .set(PHOTOS.UPLOADEDBYID, user.id)
-                .returning()
-                .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
-                
-            PhotoDto(
-                id = record.get(PHOTOS.ID)!!,
-                reportId = record.get(PHOTOS.REPORTID)!!,
-                pathOriginal = record.get(PHOTOS.PATHORIGINAL)!!,
-                pathThumb = record.get(PHOTOS.PATHTHUMB)!!,
-                width = record.get(PHOTOS.WIDTH)!!,
-                height = record.get(PHOTOS.HEIGHT)!!,
-                bytes = record.get(PHOTOS.BYTES)!!,
-                uploadedById = record.get(PHOTOS.UPLOADEDBYID)!!
-            )
+        try {
+            return AuditService.auditedTransaction(
+                actor = user,
+                action = "photo.upload",
+                entityType = "photo",
+                entityId = ""
+            ) { tx ->
+                val photoId = UUID.randomUUID()
+                val record = tx.insertInto(PHOTOS)
+                    .set(PHOTOS.ID, photoId)
+                    .set(PHOTOS.REPORTID, reportId)
+                    .set(PHOTOS.PATHORIGINAL, originalKey)
+                    .set(PHOTOS.PATHTHUMB, thumbKey)
+                    .set(PHOTOS.WIDTH, original.width)
+                    .set(PHOTOS.HEIGHT, original.height)
+                    .set(PHOTOS.BYTES, original.bytes.size)
+                    .set(PHOTOS.UPLOADEDBYID, user.id)
+                    .returning()
+                    .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
+
+                toDto(record)
+            }
+        } catch (e: Throwable) {
+            // No row was created, so no one will ever reference these files.
+            PhotoStorage.deleteQuietly(originalKey)
+            PhotoStorage.deleteQuietly(thumbKey)
+            throw e
         }
     }
 
@@ -198,17 +217,16 @@ object PhotoService {
             .where(PHOTOS.REPORTID.eq(reportId))
             .and(PHOTOS.DELETEDAT.isNull)
             .fetch()
-            .map { record ->
-                PhotoDto(
-                    id = record.get(PHOTOS.ID)!!,
-                    reportId = record.get(PHOTOS.REPORTID)!!,
-                    pathOriginal = record.get(PHOTOS.PATHORIGINAL)!!,
-                    pathThumb = record.get(PHOTOS.PATHTHUMB)!!,
-                    width = record.get(PHOTOS.WIDTH)!!,
-                    height = record.get(PHOTOS.HEIGHT)!!,
-                    bytes = record.get(PHOTOS.BYTES)!!,
-                    uploadedById = record.get(PHOTOS.UPLOADEDBYID)!!
-                )
-            }
+            .map { toDto(it) }
     }
+
+    /** The photo as the API shows it: no file paths, only what a client needs (the image is fetched by id). */
+    private fun toDto(record: PhotosRecord) = PhotoDto(
+        id = record.get(PHOTOS.ID)!!,
+        reportId = record.get(PHOTOS.REPORTID)!!,
+        width = record.get(PHOTOS.WIDTH)!!,
+        height = record.get(PHOTOS.HEIGHT)!!,
+        bytes = record.get(PHOTOS.BYTES)!!,
+        uploadedById = record.get(PHOTOS.UPLOADEDBYID)!!
+    )
 }

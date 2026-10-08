@@ -14,6 +14,8 @@ primary_region = "fra"
 [env]
   APP_ENV = "production"
   UPLOADS_DIR = "/data/uploads"
+  # Fly's proxy sets this header to the real client address (and overwrites any value a client sends).
+  CLIENT_IP_HEADER = "Fly-Client-IP"
 
 # Photos must survive deploys: fly volumes create stavebni_denik_data --region fra
 [mounts]
