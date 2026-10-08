@@ -41,16 +41,17 @@ docker compose down -v && docker compose up -d   # then start the backend again
 
 ## Runtime configuration (backend)
 
-| Variable                             | Default                                                                 | Notes                                                                                                                                            |
-| ------------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev` |                                                                                                                                                  |
-| `APP_ENV`                            | development                                                             | `production` makes `JWT_SECRET` mandatory and cookies `Secure`                                                                                   |
-| `JWT_SECRET`                         | random per process (dev only)                                           | required in production                                                                                                                           |
-| `ALLOW_UNRELEASED_BUILD`             | unset                                                                   | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only)                             |
-| `UPLOADS_DIR`                        | `./uploads`                                                             | photos in `<dir>/photos` (mount a volume in production)                                                                                          |
-| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                                                                                                          |
-| `CLIENT_IP_HEADER`                   | unset (TCP peer address)                                                | name of the header a trusted reverse proxy sets to the client address (`Fly-Client-IP` on Fly); only set it when every request passes that proxy |
-| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                                                                                                                 |
+| Variable                             | Default                                                                  | Notes                                                                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `JDBC_URL`, `DB_USER`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/stavebni_denik`, `denik`, `denik_dev`  |                                                                                                                                                  |
+| `APP_ENV`                            | development                                                              | `production` makes `JWT_SECRET` mandatory and cookies `Secure`                                                                                   |
+| `JWT_SECRET`                         | random per process (dev only)                                            | required in production                                                                                                                           |
+| `ALLOW_UNRELEASED_BUILD`             | unset                                                                    | `true` is required to start with `APP_ENV=production` until the release gate is passed (staging with test data only)                             |
+| `UPLOADS_DIR`                        | `./uploads`                                                              | photos in `<dir>/photos` (mount a volume in production)                                                                                          |
+| `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                          | comma separated; the SPA is same-origin                                                                                                          |
+| `PWNED_PASSWORDS_URL`                | on in production (`https://api.pwnedpasswords.com/range`), off elsewhere | range endpoint of the Pwned Passwords service; `off` disables the breached-password check                                                        |
+| `CLIENT_IP_HEADER`                   | unset (TCP peer address)                                                 | name of the header a trusted reverse proxy sets to the client address (`Fly-Client-IP` on Fly); only set it when every request passes that proxy |
+| `OPEN_METEO_BASE_URL`                | Open-Meteo                                                               | weather snapshot                                                                                                                                 |
 
 ## Sessions
 
@@ -68,6 +69,8 @@ Not done yet (see the Release gate): password change and reset, login rate limit
 - **Temporary passwords:** an account made by an administrator, and an account whose password an administrator reset, has `mustChangePwd`. Such a session may only call `POST /api/auth/change-password`; everything else answers `403` with `code: PASSWORD_CHANGE_REQUIRED` (the SPA then shows the change form). This is decided from the database on every request, so whoever handed out the password cannot go on acting as that user.
 - **Change:** needs the current password; wrong answers are limited to 5 per 15 minutes per user; all the user's other sessions end. **Reset** (administrators, `Action.UserPasswordReset`): new generated password shown once (`Cache-Control: no-store`), every session of the user ends, a login lockout of the account is lifted. Neither password nor hash is written to the audit log.
 - **Login limits** (table `rate_limit_attempts`, failures only): 30 failures per client address and 20 per account name within 15 minutes, then `429` with `Retry-After`; a successful login does not reset the counters. The address comes from `CLIENT_IP_HEADER` when it is configured, otherwise from the TCP peer; `X-Forwarded-For` and the request body are never trusted. A known name can therefore be locked for up to 15 minutes by someone else; an administrator reset lifts it.
+- **Breached passwords:** a new password is checked against the Pwned Passwords range API (`BreachedPasswordService`) and refused when it appears in a known breach. Only the first five hex characters of its SHA-1 leave the server (k-anonymity, with padding); the password is never sent. It fails open: if the service is unreachable, slow (2 s limit) or answers nonsense, the password is accepted and a warning is logged. Passwords generated by the application are not checked.
+- `users.passwordChangedAt` records when the user last _chose_ a password; a temporary password (new account, administrator or command-line reset) clears it.
 - Unknown, deactivated and deleted accounts take the same time as a wrong password and get the same answer. Argon2 runs off the request threads, at most 4 at a time.
 
 ## Request and upload limits
@@ -141,7 +144,7 @@ This build is **not released for real diary data**. While that is true, the app 
 
 Before the first release:
 
-- **Sessions:** ~~server-side revocation, password change and reset, login rate limiting~~ done. Still open: a breached-password check (HIBP, fail open) and an Origin / Sec-Fetch-Site check against cross-site requests (the cookie is SameSite=Lax only).
+- **Sessions:** ~~server-side revocation, password change and reset, login rate limiting, breached-password check, Origin / Sec-Fetch-Site check~~ done.
 - **Authorization:** project membership decided in one place; app admins do not get member rights implicitly.
 - **Signed reports:** cannot be signed twice or changed afterwards (also enforced in the database); corrections go through addenda.
 - **Audit log:** records what changed (entity ids, before/after), cannot be truncated, latest hash anchored outside the database; the nightly verifier runs against the Kotlin schema.
