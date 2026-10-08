@@ -100,6 +100,17 @@ Project-scoped endpoints require project membership. App admins can **read** eve
 - `GET/POST /reports/{reportId}/…` take a report id only; a bare date is `400` (a date is only unique within a project, so use the project-scoped route). A report id of another project is `404` through `/projects/{id}/reports/{reportId}`.
 - Every report change is written to the audit log in the same transaction, with the real report id and a before/after snapshot (`report.create`, `report.update`, `report.lock`, `report.acknowledge`).
 
+## Cross-site requests
+
+The session cookie is `SameSite=Lax`. In addition, `CrossSiteRequestGuard` refuses every state-changing request (anything but GET, HEAD, OPTIONS) under `/api/` that a browser makes on behalf of another site, with `403`:
+
+1. an `Origin` listed in `CORS_ALLOWED_ORIGINS` is accepted;
+2. otherwise `Sec-Fetch-Site` decides: `same-origin` and `none` pass, `same-site` and `cross-site` are refused;
+3. browsers without that header send `Origin` on every POST: its host has to equal the `Host` the request was sent to;
+4. with neither header (scripts, curl, tests) the request passes: only a browser can be tricked into a cross-site request.
+
+Behind the Vite dev proxy the page and the API are the same origin for the browser (`Sec-Fetch-Site: same-origin`), so nothing needs configuring.
+
 ## Code layout
 
 - `backend/src/main/kotlin/cz/stavebni/denik/` — application (config, db, domain, plugins, routes, services, util)

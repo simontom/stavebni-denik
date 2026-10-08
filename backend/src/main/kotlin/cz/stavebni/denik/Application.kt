@@ -20,6 +20,7 @@ import cz.stavebni.denik.routes.reportRoutes
 import cz.stavebni.denik.routes.photoRoutes
 import cz.stavebni.denik.routes.userRoutes
 import cz.stavebni.denik.routes.auditRoutes
+import cz.stavebni.denik.plugins.CrossSiteRequestGuard
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
@@ -65,6 +66,9 @@ fun Application.module() {
         allowCredentials = true
         exposeHeader(HttpHeaders.SetCookie)
     }
+
+    // Before any route runs: a state-changing request that another site makes through the user's browser is refused.
+    install(CrossSiteRequestGuard)
 
     // Nothing may make the server buffer an unbounded request body, not even before login. JSON
     // requests are small; a photo upload carries one file of at most 5 MB plus multipart framing.
