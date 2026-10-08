@@ -162,3 +162,99 @@ test("the weather is entered by hand, saved with the entry, shown again, and can
   await expect(page.locator('input[name="weatherCondition"]')).toHaveValue("");
   await expect(page.locator('input[name="weatherMin"]')).toHaveValue("");
 });
+
+test("two people opening the same empty day: the second save is refused, the first entry survives", async ({ browser, page, baseURL }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const reportUrl = `${projectUrl}/reports/${pragueDay(0)}`;
+  const save = (p: Page) => p.getByRole("button", { name: /vytvořit záznam/i });
+
+  // Both open the day while it is empty.
+  await page.goto(reportUrl);
+  await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
+  const other = await browser.newContext({ baseURL });
+  const pageB = await other.newPage();
+  await login(pageB);
+  await pageB.goto(reportUrl);
+  await expect(pageB.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
+
+  // A saves first.
+  await page.locator('textarea[name="workDescription"]').fill("Zápis osoby A");
+  const savedA = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await save(page).click();
+  expect((await savedA).ok()).toBeTruthy();
+
+  // B, who still sees an empty day, writes and saves: told, not silently replacing A.
+  await pageB.locator('textarea[name="workDescription"]').fill("Zápis osoby B");
+  await save(pageB).click();
+  await expect(pageB.getByRole("alert")).toContainText(/mezitím někdo založil/i, { timeout: 15_000 });
+  await pageB.getByRole("button", { name: /načíst aktuální verzi/i }).click();
+  await expect(pageB.locator('textarea[name="workDescription"]')).toHaveValue("Zápis osoby A", { timeout: 15_000 });
+  await other.close();
+});
+
+test("signing needs a saved entry, signs what was saved, and leaves a read-only form", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  await page.goto(`${projectUrl}/reports/${pragueDay(0)}`);
+  const description = page.locator('textarea[name="workDescription"]');
+  const sign = page.getByRole("button", { name: /podepsat a uzamknout/i });
+  await expect(description).toBeVisible({ timeout: 15_000 });
+
+  // Nothing saved yet: nothing to sign.
+  await expect(sign).toBeDisabled();
+
+  await description.fill("První verze");
+  const first = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  expect((await first).ok()).toBeTruthy();
+  await expect(sign).toBeEnabled();
+
+  // Unsaved changes: signing is blocked, so a signature never covers words that were not saved.
+  await description.fill("První verze, ale ještě neuloženo");
+  await expect(page.getByText(/neuložené změny/i).first()).toBeVisible();
+  await expect(sign).toBeDisabled();
+  const second = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  expect((await second).ok()).toBeTruthy();
+  await expect(sign).toBeEnabled();
+
+  // Sign: the page shows "Podepsáno", the form can no longer be edited and the save button is gone.
+  page.once("dialog", (d) => d.accept());
+  const signed = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/sign"));
+  await sign.click();
+  expect((await signed).ok()).toBeTruthy();
+  await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(description).toBeDisabled();
+  await expect(description).toHaveValue("První verze, ale ještě neuloženo");
+  await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toHaveCount(0);
+});
+
+test("worker rows keep every trade and a count of 0, and a trade without a count is not saved", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
+  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+
+  // A trade without a head count: refused in the form, nothing is sent.
+  await page.locator('textarea[name="workDescription"]').fill("Práce");
+  await page.locator('input[name="workerTrade"]').first().fill("Zedník");
+  await save().click();
+  await expect(page.getByText(/zadejte počet pracovníků/i)).toBeVisible();
+
+  // Two trades, one with a count of 0: both come back after a reload.
+  await page.locator('input[name="workerCount"]').first().fill("3");
+  await page.getByRole("button", { name: /přidat profesi/i }).click();
+  await page.locator('input[name="workerTrade"]').nth(1).fill("Tesař");
+  await page.locator('input[name="workerCount"]').nth(1).fill("0");
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await save().click();
+  expect((await saved).ok()).toBeTruthy();
+
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('input[name="workerTrade"]')).toHaveCount(2, { timeout: 15_000 });
+  await expect(page.locator('input[name="workerTrade"]').nth(1)).toHaveValue("Tesař");
+  await expect(page.locator('input[name="workerCount"]').nth(1)).toHaveValue("0");
+});
