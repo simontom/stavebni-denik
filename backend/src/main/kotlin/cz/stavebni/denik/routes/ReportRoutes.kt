@@ -36,11 +36,34 @@ data class CreateReportPayload(
     val signed: Boolean? = null,
     /** The `updatedAt` the client last saw; see [DailyReportService.ReportInput.expectedUpdatedAt]. */
     val expectedUpdatedAt: String? = null,
+    /** Set by a client that loaded the form for a day without an entry: refused (409 STALE_VERSION) if one exists by now. */
+    val expectNew: Boolean? = null,
     /** Required when a new entry is for a day before the previous working day (a late entry). */
     val lateEntryReason: String? = null,
     /** The weather, entered by hand; leave it out to keep what is stored, send an empty object to clear it. */
     val weather: cz.stavebni.denik.domain.WeatherData? = null
 )
+
+/** The optional body of a sign request: the version of the entry the signer was looking at. */
+@Serializable
+private data class SignPayload(val expectedUpdatedAt: String? = null)
+
+/**
+ * The version named by a sign request, or null when it names none (an empty body, or a client that does not send one).
+ * A body that is not valid JSON is a 400, like everywhere else.
+ */
+private suspend fun ApplicationCall.receiveSignedVersion(): OffsetDateTime? {
+    val text = receiveText()
+    if (text.isBlank()) return null
+    val payload = Json { ignoreUnknownKeys = true }.decodeFromString(SignPayload.serializer(), text)
+    return payload.expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
+        try {
+            OffsetDateTime.parse(it)
+        } catch (e: DateTimeParseException) {
+            throw IllegalArgumentException("Neplatná hodnota expectedUpdatedAt")
+        }
+    }
+}
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
     expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
@@ -84,7 +107,9 @@ private fun workersJson(payload: CreateReportPayload): String? {
     val trade = payload.workerTrade?.trim()
     if (trade == null) return null
     if (trade.isEmpty()) return "[]"
-    val count = payload.workerCount?.trim()?.toIntOrNull() ?: 1
+    val count = payload.workerCount?.trim()?.takeIf { it.isNotEmpty() }?.toIntOrNull()
+        ?: throw IllegalArgumentException("Zadejte počet pracovníků u profese '$trade' (celé číslo)")
+    require(count >= 0) { "Počet pracovníků u profese '$trade' nemůže být záporný" }
     // Built with kotlinx.serialization so user input is always escaped correctly.
     return Json.encodeToString(
         kotlinx.serialization.json.JsonArray.serializer(),
@@ -157,7 +182,8 @@ fun Application.reportRoutes() {
                                 constructionObj = payload.constructionObj,
                                 expectedUpdatedAt = payload.expectedInstant(),
                                 lateEntryReason = payload.lateEntryReason,
-                                weather = payload.weather
+                                weather = payload.weather,
+                                expectNew = payload.expectNew == true
                             )
                         )
                         call.respond(HttpStatusCode.OK, report)
@@ -169,7 +195,7 @@ fun Application.reportRoutes() {
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
                         ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
                         val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectId)
-                        DailyReportService.signReport(user, reportId)
+                        DailyReportService.signReport(user, reportId, call.receiveSignedVersion())
                         call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                     }
 
@@ -200,7 +226,7 @@ fun Application.reportRoutes() {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
-                    DailyReportService.signReport(user, reportId)
+                    DailyReportService.signReport(user, reportId, call.receiveSignedVersion())
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
                 }
 

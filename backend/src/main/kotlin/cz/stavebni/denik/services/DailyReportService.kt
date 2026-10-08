@@ -95,9 +95,35 @@ object DailyReportService {
         val lateEntryReason: String? = null,
         /** The weather as entered; null = not mentioned (keeps what is stored), an empty value clears it. */
         val weather: WeatherData? = null,
+        /**
+         * The client saw no entry for this day when it loaded the form. If one exists by now (somebody else created it), the
+         * save is stale: it must not silently replace that entry.
+         */
+        val expectNew: Boolean = false,
     )
 
     private enum class WriteMode { CREATE_ONLY, SAVE }
+
+    private val workersSerializer = kotlinx.serialization.builtins.ListSerializer(cz.stavebni.denik.domain.WorkerEntry.serializer())
+    private val workersJsonFormat = Json { ignoreUnknownKeys = false }
+
+    /**
+     * The workers list as stored: a list of {trade, count} with a named trade and a whole, non-negative head count. Nothing is
+     * invented (no default count) and nothing is silently dropped: anything else is a 400.
+     */
+    private fun validatedWorkers(raw: String): String {
+        val rows = try {
+            workersJsonFormat.decodeFromString(workersSerializer, raw.ifBlank { "[]" })
+        } catch (e: kotlinx.serialization.SerializationException) {
+            throw IllegalArgumentException("Seznam pracovníků není platný: každá položka má profesi a celý počet pracovníků")
+        }
+        require(rows.size <= 50) { "Seznam pracovníků může mít nejvýše 50 profesí" }
+        for (row in rows) {
+            require(row.trade.isNotBlank()) { "Každá profese v seznamu pracovníků musí mít název" }
+            require(row.count in 0..100_000) { "Počet pracovníků u profese '${row.trade.trim()}' musí být celé číslo od 0 do 100000" }
+        }
+        return workersJsonFormat.encodeToString(workersSerializer, rows.map { it.copy(trade = it.trade.trim()) })
+    }
 
     /** The clock behind "today" (Prague time); tests replace it. */
     @Volatile
@@ -155,7 +181,7 @@ object DailyReportService {
      */
     private suspend fun write(user: SessionUser, projectId: UUID, date: String, mode: WriteMode, input: ReportInput): DailyReportDto {
         val parsedDate = Dates.parseLocalDate(date)
-        val workers = input.workersByTrade?.let { JSONB.valueOf(it.ifBlank { "[]" }) }
+        val workers = input.workersByTrade?.let { JSONB.valueOf(validatedWorkers(it)) }
         // null = not mentioned; a mentioned but empty weather becomes "no weather".
         val weatherMentioned = input.weather != null
         val weather: WeatherData? = input.weather?.validated()
@@ -203,6 +229,9 @@ object DailyReportService {
                     after = created.toSnapshot(),
                 )
             } else {
+                if (input.expectNew) {
+                    throw StaleVersionException("Záznam pro tento den mezitím někdo založil. Načtěte stránku znovu, aby se jeho zápis nepřepsal.")
+                }
                 if (mode == WriteMode.CREATE_ONLY) {
                     throw ConflictException("Záznam pro tento den již existuje")
                 }
@@ -290,13 +319,17 @@ object DailyReportService {
      * under a row lock inside the transaction, and the update only matches an unlocked
      * row, so a second signature can neither overwrite the first signer nor the time.
      */
-    suspend fun lockReport(user: SessionUser, reportId: UUID) {
+    suspend fun lockReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) {
         AuditService.auditedWrite(user, "report") { tx ->
             val report = loadForUpdate(tx, reportId)
             val member = ProjectAccess.isMember(tx, user.id, report.projectid!!)
 
             if (!can(user, Action.ReportSign, Resource(isMember = member))) throw ForbiddenException(Action.ReportSign)
             if (report.lockedat != null) throw ConflictException("Záznam je již podepsán a uzamčen")
+            // A signature covers a version. A signer who names the version they saw is told when it is not the stored one.
+            if (expectedUpdatedAt != null && !report.updatedat!!.isEqual(expectedUpdatedAt)) {
+                throw StaleVersionException("Záznam se od načtení změnil. Načtěte jej znovu a zkontrolujte, co podepisujete.")
+            }
 
             val now = OffsetDateTime.now()
             val signed = tx.update(DAILY_REPORTS)
@@ -317,7 +350,8 @@ object DailyReportService {
         }
     }
 
-    suspend fun signReport(user: SessionUser, reportId: UUID) = lockReport(user, reportId)
+    suspend fun signReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) =
+        lockReport(user, reportId, expectedUpdatedAt)
 
     /**
      * Records that an inspector or investor has taken note of a report. Only a signed
