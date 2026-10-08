@@ -170,9 +170,8 @@ fun Application.reportRoutes() {
             route("/api/reports/{id}") {
                 get {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                    val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
                     val tx = DatabaseFactory.dsl
-                    val reportId = resolveReportId(tx, id, null)
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     val projectId = ProjectAccess.requireReportAccess(tx, user, reportId)
                     val report = DailyReportService.getReport(projectId, reportId.toString())
                         ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Report not found"))
@@ -181,8 +180,7 @@ fun Application.reportRoutes() {
 
                 post("/sign") {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                    val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
-                    val reportId = resolveReportId(DatabaseFactory.dsl, id, null)
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.signReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
@@ -190,8 +188,7 @@ fun Application.reportRoutes() {
 
                 post("/acknowledge") {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                    val id = call.parameters["id"] ?: throw IllegalArgumentException("Missing id")
-                    val reportId = resolveReportId(DatabaseFactory.dsl, id, null)
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.acknowledgeReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
