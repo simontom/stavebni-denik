@@ -6,6 +6,7 @@ import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.UnauthenticatedException
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
 
@@ -17,6 +18,7 @@ fun Application.configureStatusPages() {
                 is ForbiddenException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to (cause.message ?: "Forbidden")))
                 is NotFoundException -> call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "Not found")))
                 is ConflictException -> call.respond(HttpStatusCode.Conflict, mapOf("error" to (cause.message ?: "Conflict")))
+                is PayloadTooLargeException -> call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Požadavek je příliš velký"))
                 is SecurityException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to cause.message))
                 is IllegalArgumentException -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))
                 is IllegalStateException -> call.respond(HttpStatusCode.Conflict, mapOf("error" to cause.message))
