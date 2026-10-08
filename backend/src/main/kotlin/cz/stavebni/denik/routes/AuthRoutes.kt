@@ -4,6 +4,7 @@ import cz.stavebni.denik.config.AppConfig
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.services.JwtService
 import cz.stavebni.denik.services.PasswordService
+import cz.stavebni.denik.services.SessionService
 import cz.stavebni.denik.services.UserService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -12,8 +13,6 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import cz.stavebni.denik.domain.SessionUser
 import kotlinx.serialization.Serializable
-import java.time.Instant
-import java.time.temporal.ChronoUnit
 
 @Serializable
 data class LoginRequest(val nickname: String, val password: String)
@@ -39,24 +38,35 @@ fun Application.authRoutes() {
                 return@post
             }
 
-            // Create JWT token for 7 days
-            val token = JwtService.createToken(user, Instant.now().plus(7, ChronoUnit.DAYS))
-            
+            // A real server-side session: the token below only names it, and revoking the
+            // session (logout, deactivation, ...) ends the access at once.
+            val session = SessionService.create(DatabaseFactory.dsl, user.id)
+            val sessionUser = user.copy(sessionId = session.id)
+            val token = JwtService.createToken(sessionUser, session.expiresAt.toInstant())
+
             // Set HttpOnly cookie
             call.response.cookies.append(
                 name = "jwt",
                 value = token,
                 httpOnly = true,
                 path = "/",
-                maxAge = 7 * 24 * 60 * 60,
+                maxAge = SessionService.LIFETIME.seconds,
                 secure = AppConfig.isProduction,
                 extensions = mapOf("SameSite" to "Lax")
             )
 
-            call.respond(LoginResponse(status = "ok", user = user))
+            call.respond(LoginResponse(status = "ok", user = sessionUser))
         }
 
         post("/api/auth/logout") {
+            // Clearing the cookie is not enough: a copied token would stay valid. End the session itself.
+            val token = call.request.cookies["jwt"]
+                ?: call.request.headers[HttpHeaders.Authorization]?.removePrefix("Bearer ")?.trim()
+            token
+                ?.let { JwtService.verify(it) }
+                ?.let { JwtService.decodeUser(it) }
+                ?.let { SessionService.revoke(DatabaseFactory.dsl, it.sessionId) }
+
             call.response.cookies.append(
                 name = "jwt",
                 value = "",

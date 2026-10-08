@@ -50,6 +50,16 @@ docker compose down -v && docker compose up -d   # then start the backend again
 | `CORS_ALLOWED_ORIGINS`               | none (CORS off)                                                         | comma separated; the SPA is same-origin                                                                              |
 | `OPEN_METEO_BASE_URL`                | Open-Meteo                                                              | weather snapshot                                                                                                     |
 
+## Sessions
+
+Login creates a server-side session (table `sessions`, valid for 12 hours) and sets an HttpOnly cookie with a JWT that only _names_ the session and the user. Every request looks the session up and loads the user's current role and flags from the database. So:
+
+- logging out, deactivating or deleting a user, or changing a user's role or admin flag ends their sessions at once (the user has to log in again);
+- rights claimed inside a token are ignored, and a token whose session is revoked, expired or unknown is refused with `401`, even with a valid signature;
+- the application always keeps at least one active administrator: demoting, deactivating or deleting the last one answers `409`.
+
+Not done yet (see the Release gate): password change and reset, login rate limiting, and a cross-site request check.
+
 ## API overview (all under `/api`, JWT cookie auth unless noted)
 
 - `GET /health` (public)
