@@ -23,14 +23,17 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
         Action.ProjectListAll -> user.role == Role.BOSS
 
         // Reports
-        Action.ReportCreate -> user.role == Role.BOSS || (user.role == Role.WORKER && resource.isMember)
+        // Writing to a project's diary requires being a member of that project. App admins
+        // (isAdmin) may read every project but gain no write rights by being admins.
+        Action.ReportCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
         Action.ReportUpdate -> {
             if (resource.isLocked) return false
             if (user.role == Role.BOSS && resource.isMember) return true
             if (user.role == Role.WORKER && resource.isMember && resource.authorId == user.id) return true
             false
         }
-        Action.ReportSign -> user.role == Role.BOSS && resource.isMember
+        // A signed report is final: it cannot be signed a second time.
+        Action.ReportSign -> user.role == Role.BOSS && resource.isMember && !resource.isLocked
         Action.ReportAcknowledge -> (user.role == Role.INSPECTOR || user.role == Role.INVESTOR) && resource.isMember
         Action.ReportAddendumCreate -> (user.role == Role.BOSS || user.role == Role.WORKER) && resource.isMember
 

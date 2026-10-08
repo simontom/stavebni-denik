@@ -72,7 +72,14 @@ Not done yet (see the Release gate): password change and reset, login rate limit
 - Photos: `POST /photos/upload`, `GET /photos/{id}`, `GET /photos/{id}/thumb`
 - Audit log (admin): `GET /audit?limit=200`
 
-Project-scoped endpoints require project membership; app admins can open every project.
+Project-scoped endpoints require project membership. App admins can **read** every project, but being an admin gives no right to write: creating, overwriting, signing or acknowledging a report requires real membership of that project.
+
+### Daily reports: signing and acknowledging
+
+- `POST /projects/{id}/reports/{idOrDate}/sign` (and `POST /reports/{reportId}/sign`) signs and locks a report. Only a BOSS who is a member of the project may sign. A report is signed **exactly once**: a second request answers `409` and changes nothing (signer and time stay). A non-member gets `403`.
+- `POST …/acknowledge` records that an inspector or investor (a member) has taken note of the report. It only works on a **signed** report and only once; otherwise `409`.
+- `GET/POST /reports/{reportId}/…` take a report id only; a bare date is `400` (a date is only unique within a project, so use the project-scoped route). A report id of another project is `404` through `/projects/{id}/reports/{reportId}`.
+- Every report change is written to the audit log in the same transaction, with the real report id and a before/after snapshot (`report.create`, `report.update`, `report.lock`, `report.acknowledge`).
 
 ## Code layout
 
