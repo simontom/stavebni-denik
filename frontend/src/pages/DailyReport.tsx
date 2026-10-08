@@ -98,6 +98,8 @@ export const DailyReport: React.FC = () => {
   const dirty = savedKey !== null && formKey !== savedKey;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
+  // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
+  const canUploadPhoto = updatedAt !== null && !isSigned;
 
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -244,9 +246,10 @@ export const DailyReport: React.FC = () => {
 
     try {
       const formData = new FormData();
-      formData.append("photo", selectedFile);
+      // The fields that say where the photo belongs come before the file, so the server knows before it reads the file.
       if (reportId) formData.append("reportId", reportId);
       if (projectId) formData.append("projectId", projectId);
+      formData.append("photo", selectedFile);
 
       const res = await fetch("/api/photos/upload", {
         method: "POST",
@@ -573,17 +576,20 @@ export const DailyReport: React.FC = () => {
             id="photo-files"
             type="file"
             accept="image/*"
+            disabled={!canUploadPhoto}
             onChange={handleFileChange}
             className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
           />
           <button
             type="button"
-            disabled={!selectedFile}
+            disabled={!selectedFile || !canUploadPhoto}
             onClick={handleUploadPhoto}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
           >
             Nahrát fotky
           </button>
+          {updatedAt === null && <span className="text-xs text-amber-700">Fotky lze přidat po uložení záznamu.</span>}
+          {isSigned && <span className="text-xs text-gray-600">Záznam je uzamčen, fotky už nelze přidávat.</span>}
         </div>
 
         {photos.length > 0 && (

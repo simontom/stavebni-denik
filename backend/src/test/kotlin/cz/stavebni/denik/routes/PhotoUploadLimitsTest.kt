@@ -171,7 +171,7 @@ class PhotoUploadLimitsTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `an image whose header claims far more than 8 megapixels is rejected before it is decoded`() = testApplication {
+    fun `an image whose header claims far more pixels than allowed is rejected before it is decoded`() = testApplication {
         application { module() }
         val boss = createTestUser(role = Role.BOSS)
         val token = generateJwtToken(boss)
@@ -191,7 +191,7 @@ class PhotoUploadLimitsTest : BaseIntegrationTest() {
         ) { header(HttpHeaders.Authorization, "Bearer $token") }
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
-        assertTrue(response.bodyAsText().contains("8MP"), "got: ${response.bodyAsText()}")
+        assertTrue(response.bodyAsText().contains("MP limit"), "got: ${response.bodyAsText()}")
         assertEquals(0, dsl.selectCount().from(PHOTOS).fetchOne(0, Int::class.java))
         assertEquals(filesBefore, photoFiles(), "a rejected image must leave nothing on disk")
     }
