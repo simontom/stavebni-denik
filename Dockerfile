@@ -25,7 +25,7 @@ RUN gradle :backend:shadowJar --no-daemon -x test
 # native libargon2 through JNA, and on Alpine (musl libc) the JVM dies with SIGSEGV as soon as a
 # password is *hashed* (creating a user), while verifying one still works. The static typst binary
 # below runs on any libc.
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 # The archive is pinned by checksum. When TYPST_VERSION changes, update TYPST_SHA256 too (and the
 # same pair in .github/actions/install-typst/action.yml). typst publishes no checksums; this one was computed from
 # two independent downloads and matches the size GitHub lists for the asset.
