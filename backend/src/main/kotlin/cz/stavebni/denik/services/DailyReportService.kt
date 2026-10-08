@@ -67,12 +67,18 @@ internal data class ReportSnapshot(
 
 object DailyReportService {
 
+    /** What a save request mentions. A value that is `null` was not mentioned and leaves what is stored unchanged. */
+    class ReportInput(
+        val workDescription: String? = null,
+        val workersByTrade: String? = null,
+        val isControlDay: Boolean? = null,
+        val constructionObj: String? = null,
+    )
+
+    private enum class WriteMode { CREATE_ONLY, SAVE }
+
     /**
-     * Creates the report of a day, or overwrites it while it is still unsigned.
-     *
-     * Everything that depends on the current state (does the report exist, is it
-     * signed, is the caller really a member of the project) is decided inside the
-     * audited transaction, on a row locked `FOR UPDATE`.
+     * Creates the report of a day. A day that already has a report is a conflict (409), never an overwrite.
      */
     suspend fun createReport(
         user: SessionUser,
@@ -82,16 +88,35 @@ object DailyReportService {
         workersByTrade: String = "[]",
         isControlDay: Boolean = false,
         constructionObj: String? = null
-    ): DailyReportDto {
+    ): DailyReportDto = write(
+        user, projectId, date, WriteMode.CREATE_ONLY,
+        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj),
+    )
+
+    /**
+     * Saves the report of a day: creates it when there is none, otherwise changes the fields that [input]
+     * mentions while the report is still unsigned. What the request leaves out is kept, so an incomplete
+     * request can never blank an entry.
+     */
+    suspend fun saveReport(user: SessionUser, projectId: UUID, date: String, input: ReportInput): DailyReportDto =
+        write(user, projectId, date, WriteMode.SAVE, input)
+
+    /**
+     * Everything that depends on the current state (does the report exist, is it signed, is the caller
+     * really a member of the project, did the caller write it) is decided inside the audited transaction,
+     * on a row locked `FOR UPDATE`.
+     */
+    private suspend fun write(user: SessionUser, projectId: UUID, date: String, mode: WriteMode, input: ReportInput): DailyReportDto {
         val parsedDate = Dates.parseLocalDate(date)
-        val workers = JSONB.valueOf(workersByTrade.ifBlank { "[]" })
+        val workers = input.workersByTrade?.let { JSONB.valueOf(it.ifBlank { "[]" }) }
 
         return AuditService.auditedWrite(user, "report") { tx ->
             if (!tx.fetchExists(PROJECTS, PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))) {
                 throw NotFoundException("Projekt nenalezen")
             }
             // Real membership: an app admin who is not a member of the project may read it, not write to it.
-            assertCan(user, Action.ReportCreate, Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId)))
+            val isMember = ProjectAccess.isMember(tx, user.id, projectId)
+            assertCan(user, Action.ReportCreate, Resource(isMember = isMember))
 
             val existing = tx.selectFrom(DAILY_REPORTS)
                 .where(DAILY_REPORTS.PROJECTID.eq(projectId))
@@ -107,10 +132,10 @@ object DailyReportService {
                     .set(DAILY_REPORTS.AUTHORID, user.id)
                     .set(DAILY_REPORTS.DATE, parsedDate)
                     .set(DAILY_REPORTS.SEQUENCENUMBER, nextSeq)
-                    .set(DAILY_REPORTS.WORKERSBYTRADE, workers)
-                    .set(DAILY_REPORTS.WORKDESCRIPTION, workDescription)
-                    .set(DAILY_REPORTS.ISCONTROLDAY, isControlDay)
-                    .set(DAILY_REPORTS.CONSTRUCTIONOBJ, constructionObj)
+                    .set(DAILY_REPORTS.WORKERSBYTRADE, workers ?: JSONB.valueOf("[]"))
+                    .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: "")
+                    .set(DAILY_REPORTS.ISCONTROLDAY, input.isControlDay ?: false)
+                    .set(DAILY_REPORTS.CONSTRUCTIONOBJ, input.constructionObj)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
 
@@ -121,14 +146,20 @@ object DailyReportService {
                     after = created.toSnapshot(),
                 )
             } else {
+                if (mode == WriteMode.CREATE_ONLY) {
+                    throw ConflictException("Záznam pro tento den již existuje")
+                }
                 if (existing.lockedat != null) {
                     throw ConflictException("Záznam je podepsán a uzamčen, nelze jej měnit")
                 }
+                // A site manager of the project may correct any entry; anyone else only their own.
+                assertCan(user, Action.ReportUpdate, Resource(isMember = isMember, authorId = existing.authorid))
+
                 val updated = tx.update(DAILY_REPORTS)
-                    .set(DAILY_REPORTS.WORKDESCRIPTION, workDescription)
-                    .set(DAILY_REPORTS.WORKERSBYTRADE, workers)
-                    .set(DAILY_REPORTS.ISCONTROLDAY, isControlDay)
-                    .set(DAILY_REPORTS.CONSTRUCTIONOBJ, constructionObj)
+                    .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: existing.workdescription)
+                    .set(DAILY_REPORTS.WORKERSBYTRADE, workers ?: existing.workersbytrade)
+                    .set(DAILY_REPORTS.ISCONTROLDAY, input.isControlDay ?: existing.iscontrolday)
+                    .set(DAILY_REPORTS.CONSTRUCTIONOBJ, input.constructionObj ?: existing.constructionobj)
                     .set(DAILY_REPORTS.UPDATEDAT, OffsetDateTime.now())
                     .where(DAILY_REPORTS.ID.eq(existing.id).and(DAILY_REPORTS.LOCKEDAT.isNull))
                     .returning()

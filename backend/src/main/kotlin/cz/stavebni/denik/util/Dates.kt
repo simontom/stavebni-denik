@@ -1,7 +1,9 @@
 package cz.stavebni.denik.util
 
+import java.time.Clock
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 /**
@@ -12,6 +14,12 @@ import java.time.ZoneOffset
  * TIMESTAMPTZ at UTC midnight ([parse]).
  */
 object Dates {
+    /** The site diary is kept in Czech time: "today" is the day on a clock in Prague, not in UTC. */
+    val PRAGUE: ZoneId = ZoneId.of("Europe/Prague")
+
+    /** Today's calendar date in Prague. Between 00:00 and 02:00 local time UTC is still on the previous day. */
+    fun today(clock: Clock = Clock.system(PRAGUE)): LocalDate = LocalDate.now(clock.withZone(PRAGUE))
+
     /**
      * Accepts `YYYY-MM-DD` or a full ISO-8601 date-time; a time part is dropped, not
      * converted: the calendar day the client names is the day that is meant.

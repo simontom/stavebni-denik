@@ -20,7 +20,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jooq.DSLContext
-import java.time.LocalDate
 import java.util.UUID
 
 @Serializable
@@ -62,10 +61,12 @@ internal fun resolveReportId(tx: DSLContext, idOrDate: String, projectId: UUID?)
         ?: throw NotFoundException("Záznam nenalezen: $idOrDate")
 }
 
-private fun workersJson(payload: CreateReportPayload): String {
+/** The workers list the request describes, or null when it does not mention workers at all. */
+private fun workersJson(payload: CreateReportPayload): String? {
     if (!payload.workersByTrade.isNullOrBlank()) return payload.workersByTrade
     val trade = payload.workerTrade?.trim()
-    if (trade.isNullOrEmpty()) return "[]"
+    if (trade == null) return null
+    if (trade.isEmpty()) return "[]"
     val count = payload.workerCount?.trim()?.toIntOrNull() ?: 1
     // Built with kotlinx.serialization so user input is always escaped correctly.
     return Json.encodeToString(
@@ -78,13 +79,6 @@ private fun workersJson(payload: CreateReportPayload): String {
         }
     )
 }
-
-private suspend fun ApplicationCall.receivePayload(): CreateReportPayload =
-    try {
-        receive<CreateReportPayload>()
-    } catch (e: Exception) {
-        CreateReportPayload()
-    }
 
 fun Application.reportRoutes() {
     routing {
@@ -101,14 +95,14 @@ fun Application.reportRoutes() {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                     ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
-                    val payload = call.receivePayload()
+                    val payload = call.receive<CreateReportPayload>()
 
                     val report = DailyReportService.createReport(
                         user = user,
                         projectId = projectId,
-                        date = payload.date ?: LocalDate.now().toString(),
+                        date = payload.date ?: Dates.today().toString(),
                         workDescription = payload.workDescription ?: "",
-                        workersByTrade = workersJson(payload),
+                        workersByTrade = workersJson(payload) ?: "[]",
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj
                     )
@@ -131,16 +125,18 @@ fun Application.reportRoutes() {
                         val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
                         ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
-                        val payload = call.receivePayload()
+                        val payload = call.receive<CreateReportPayload>()
 
-                        val report = DailyReportService.createReport(
+                        val report = DailyReportService.saveReport(
                             user = user,
                             projectId = projectId,
                             date = payload.date ?: reportIdOrDate,
-                            workDescription = payload.workDescription ?: "",
-                            workersByTrade = workersJson(payload),
-                            isControlDay = payload.isControlDay ?: false,
-                            constructionObj = payload.constructionObj
+                            input = DailyReportService.ReportInput(
+                                workDescription = payload.workDescription,
+                                workersByTrade = workersJson(payload),
+                                isControlDay = payload.isControlDay,
+                                constructionObj = payload.constructionObj
+                            )
                         )
                         call.respond(HttpStatusCode.OK, report)
                     }
