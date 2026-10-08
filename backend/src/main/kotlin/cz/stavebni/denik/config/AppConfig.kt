@@ -74,6 +74,17 @@ object AppConfig {
     val clientIpHeader: String?
         get() = env("CLIENT_IP_HEADER")
 
+    /**
+     * Range endpoint of the Pwned Passwords service used to refuse passwords from known breaches
+     * (`PWNED_PASSWORDS_URL`; `off` or `none` disables it). Unset: on in production, off elsewhere, so
+     * development and tests never call out to the internet.
+     */
+    val pwnedPasswordsUrl: String?
+        get() = when (val value = env("PWNED_PASSWORDS_URL")) {
+            null -> if (isProduction) "https://api.pwnedpasswords.com/range" else null
+            else -> value.takeUnless { it.equals("off", ignoreCase = true) || it.equals("none", ignoreCase = true) }
+        }
+
     /** Directory with the built SPA (`frontend/dist`); served by Ktor when set. */
     val staticDir: String?
         get() = env("STATIC_DIR")
