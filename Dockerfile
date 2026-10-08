@@ -23,7 +23,7 @@ RUN gradle :backend:shadowJar --no-daemon -x test
 # --- 3. Runtime --------------------------------------------------------------
 FROM eclipse-temurin:21-jre-alpine
 # The archive is pinned by checksum. When TYPST_VERSION changes, update TYPST_SHA256 too (and the
-# same pair in .github/workflows/ci.yml). typst publishes no checksums; this one was computed from
+# same pair in .github/actions/install-typst/action.yml). typst publishes no checksums; this one was computed from
 # two independent downloads and matches the size GitHub lists for the asset.
 ARG TYPST_VERSION=0.13.1
 ARG TYPST_SHA256=7d214bfeffc2e585dc422d1a09d2b144969421281e8c7f5d784b65fc69b5673f

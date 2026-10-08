@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
 
@@ -98,5 +99,9 @@ test.describe("Full E2E flow", () => {
     await page.getByRole("button", { name: /stáhnout pdf/i }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/.*\.pdf/);
+
+    // The file is a real PDF made by the backend (typst), not just something with a .pdf name.
+    const downloaded = await download.path();
+    expect(fs.readFileSync(downloaded).subarray(0, 5).toString("latin1")).toBe("%PDF-");
   });
 });

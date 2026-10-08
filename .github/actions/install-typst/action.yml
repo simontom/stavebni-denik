@@ -1,0 +1,25 @@
+name: Install typst (pinned)
+description: >
+  Installs the typst release that renders the PDF exports, verified by SHA-256. The same version and
+  checksum are pinned in the Dockerfile; change them together. typst publishes no checksums (and GitHub
+  no digest for this release): the hash was computed from two independent downloads and the size matches
+  what GitHub lists for the asset, so it protects against later changes to the release, not against a
+  compromise before it was pinned.
+
+runs:
+  using: composite
+  steps:
+    - name: Download, verify and install typst
+      shell: bash
+      run: |
+        set -euo pipefail
+        TYPST_VERSION=0.13.1
+        TYPST_SHA256=7d214bfeffc2e585dc422d1a09d2b144969421281e8c7f5d784b65fc69b5673f
+        archive=typst-x86_64-unknown-linux-musl.tar.xz
+        curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/$archive"
+        echo "${TYPST_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
+        tar -xf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+        mkdir -p "$HOME/.local/bin"
+        mv "$RUNNER_TEMP/typst-x86_64-unknown-linux-musl/typst" "$HOME/.local/bin/typst"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        "$HOME/.local/bin/typst" --version

@@ -87,21 +87,9 @@ jobs:
           cache: gradle
 
       # typst renders the PDF exports. RealTypstPdfTest runs the real tool; REQUIRE_TYPST=1 below
-      # makes a missing typst a failure instead of a skip. Pinned by checksum (same pair as in the
-      # Dockerfile; typst publishes no checksums, so this one was computed from two downloads).
+      # makes a missing typst a failure instead of a skip.
       - name: Install typst (pinned)
-        run: |
-          set -euo pipefail
-          TYPST_VERSION=0.13.1
-          TYPST_SHA256=7d214bfeffc2e585dc422d1a09d2b144969421281e8c7f5d784b65fc69b5673f
-          archive=typst-x86_64-unknown-linux-musl.tar.xz
-          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/$archive"
-          echo "${TYPST_SHA256}  $RUNNER_TEMP/$archive" | sha256sum -c -
-          tar -xf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
-          mkdir -p "$HOME/.local/bin"
-          mv "$RUNNER_TEMP/typst-x86_64-unknown-linux-musl/typst" "$HOME/.local/bin/typst"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/typst" --version
+        uses: ./.github/actions/install-typst
 
       # Tests start their own postgres:18-alpine via Testcontainers.
       - name: Run Backend Integration Tests
@@ -229,6 +217,10 @@ jobs:
       # every non-local database.
       - name: Seed safety guard tests
         run: pnpm exec tsx --test scripts/dev/local-db-guard.test.ts
+
+      # The E2E flow downloads a real PDF, so the backend needs typst on its PATH.
+      - name: Install typst (pinned)
+        uses: ./.github/actions/install-typst
 
       - name: Make gradlew executable
         run: chmod +x gradlew
