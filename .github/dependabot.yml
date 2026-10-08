@@ -1,6 +1,71 @@
 version: 2
 updates:
-  # NPM dependencies (pnpm-managed) — weekly.
+  # The React SPA (frontend/, its own pnpm workspace) — weekly. This is what ships.
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Prague"
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    labels:
+      - "dependencies"
+    groups:
+      react:
+        patterns:
+          - "react"
+          - "react-dom"
+          - "react-router-dom"
+          - "@types/react"
+          - "@types/react-dom"
+      build-tools:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
+          - "typescript"
+          - "oxlint"
+      styling:
+        patterns:
+          - "tailwindcss"
+          - "@tailwindcss/*"
+          - "postcss"
+          - "autoprefixer"
+    ignore:
+      # Node typings follow the runtime of the image (node:22), not the newest major.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  # The Ktor backend (Gradle: root build and the backend/ module, plus the Gradle wrapper) — weekly.
+  # Versions kept in plain `val xVersion = "..."` lines of a Kotlin build script may not be seen by Dependabot;
+  # moving them into a version catalog would make every one of them visible.
+  - package-ecosystem: "gradle"
+    directories:
+      - "/"
+      - "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Prague"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
+    groups:
+      ktor:
+        patterns:
+          - "io.ktor:*"
+      jooq:
+        patterns:
+          - "org.jooq:*"
+      testcontainers:
+        patterns:
+          - "org.testcontainers:*"
+
+  # The legacy Next.js tree at the repository root (to be removed) — updates are switched off (limit 0);
+  # the entry stays so that security alerts can still be raised against it.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -52,7 +117,7 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # GitHub Actions — monthly.
+  # GitHub Actions — weekly.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -62,7 +127,7 @@ updates:
       - "dependencies"
       - "ci"
 
-  # Docker base images (Dockerfile) — monthly.
+  # Docker base images (Dockerfile) — weekly.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
