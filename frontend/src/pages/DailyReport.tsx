@@ -118,6 +118,8 @@ export const DailyReport: React.FC = () => {
   // Signing asks for the password again; what a signature covers can be checked afterwards.
   const [entryId, setEntryId] = useState<string | null>(null);
   const [signatureHash, setSignatureHash] = useState<string | null>(null);
+  // The number of the entry in the diary, given when it is signed.
+  const [sequenceNumber, setSequenceNumber] = useState<number | null>(null);
   const [showSign, setShowSign] = useState(false);
   const [signPassword, setSignPassword] = useState("");
   const [signError, setSignError] = useState("");
@@ -206,6 +208,7 @@ export const DailyReport: React.FC = () => {
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setEntryId(typeof data.id === "string" ? data.id : null);
           setSignatureHash(typeof data.signatureHash === "string" ? data.signatureHash : null);
+          setSequenceNumber(typeof data.sequenceNumber === "number" ? data.sequenceNumber : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setIsSigned(Boolean(data.isSigned || data.isLocked));
           setAcknowledgements(Array.isArray(data.acknowledgements) ? (data.acknowledgements as Acknowledgement[]) : []);
@@ -364,6 +367,7 @@ export const DailyReport: React.FC = () => {
         if (reloaded) {
           setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
           setSignatureHash(typeof reloaded.signatureHash === "string" ? reloaded.signatureHash : null);
+          setSequenceNumber(typeof reloaded.sequenceNumber === "number" ? reloaded.sequenceNumber : null);
         }
       } else {
         const body = await res.json().catch(() => null);
@@ -439,6 +443,7 @@ export const DailyReport: React.FC = () => {
             {constructionObj && <span className="rounded bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">SO: {constructionObj}</span>}
             {isLateEntry && <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Pozdní zápis</span>}
             {isSigned && <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno</span>}
+            {sequenceNumber !== null && <span className="rounded bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800">Záznam č. {sequenceNumber}</span>}
             {acknowledgements.map((a) => (
               <span key={a.userId} className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                 Seznámil(a) se: {a.name} ({a.role === "INVESTOR" ? "stavebník" : "dozor"})

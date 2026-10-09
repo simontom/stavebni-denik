@@ -18,7 +18,7 @@
   }
 }
 
-= Denní záznam stavby č. #d.sequenceNumber
+= Denní záznam stavby #if d.sequenceNumber != none [č. #d.sequenceNumber] else [(rozpracovaný, zatím bez čísla)]
 
 #table(
   columns: (auto, 1fr),

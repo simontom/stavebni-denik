@@ -19,8 +19,15 @@ class CsvExportServiceTest : BaseIntegrationTest() {
         ))
         val projectId = UUID.fromString(project.id)
 
-        // Create two reports
+        // Two reports. The number of an entry is given when it is signed (decision D11), so the first is signed through
+        // the service (number 1) and the second is stored as an entry that was signed as number 2.
         val r1 = DailyReportService.createReport(boss, projectId, "2026-09-27")
+        dsl.update(DAILY_REPORTS)
+            .set(DAILY_REPORTS.WORKDESCRIPTION, "Vykopove prace pro kanalizaci \"usek A\"")
+            .where(DAILY_REPORTS.ID.eq(UUID.fromString(r1.id)))
+            .execute()
+        DailyReportService.signReport(boss, UUID.fromString(r1.id))
+
         val r2Id = UUID.randomUUID()
         dsl.insertInto(DAILY_REPORTS)
             .set(DAILY_REPORTS.ID, r2Id)
@@ -28,13 +35,9 @@ class CsvExportServiceTest : BaseIntegrationTest() {
             .set(DAILY_REPORTS.AUTHORID, boss.id)
             .set(DAILY_REPORTS.DATE, java.time.LocalDate.parse("2026-09-28"))
             .set(DAILY_REPORTS.SEQUENCENUMBER, 2)
+            .set(DAILY_REPORTS.LOCKEDAT, java.time.OffsetDateTime.now())
             .set(DAILY_REPORTS.WORKERSBYTRADE, org.jooq.JSONB.valueOf("[]"))
             .set(DAILY_REPORTS.WORKDESCRIPTION, "Betonaz podkladniho betonu")
-            .execute()
-
-        dsl.update(DAILY_REPORTS)
-            .set(DAILY_REPORTS.WORKDESCRIPTION, "Vykopove prace pro kanalizaci \"usek A\"")
-            .where(DAILY_REPORTS.ID.eq(UUID.fromString(r1.id)))
             .execute()
 
         val csv = CsvExportService.exportReportsCsv(dsl, projectId)

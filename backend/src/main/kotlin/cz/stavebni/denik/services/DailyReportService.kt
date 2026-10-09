@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.jooq.DSLContext
 import org.jooq.JSONB
+import org.jooq.impl.DSL
 import java.time.Clock
 import java.time.LocalDate
 import java.time.OffsetDateTime
@@ -40,6 +41,8 @@ data class DailyReportDto(
     val isControlDay: Boolean = false,
     val constructionObj: String? = null,
     val isSigned: Boolean = false,
+    /** The number of the entry in the diary, given when it is signed (decision D11); null while it is a draft. */
+    val sequenceNumber: Int? = null,
     /** Somebody has taken note of the signed entry; who and when is in [acknowledgements]. */
     val isAcknowledged: Boolean = false,
     /** Each party that has taken note of the signed entry (technical supervision, author's supervision, the client, ...), oldest first. */
@@ -80,7 +83,7 @@ internal data class ReportSnapshot(
     val id: String,
     val projectId: String,
     val date: String,
-    val sequenceNumber: Int,
+    val sequenceNumber: Int? = null,
     val authorId: String,
     val workDescription: String,
     val workersByTrade: String,
@@ -222,12 +225,10 @@ object DailyReportService {
                     throw StaleVersionException("Záznam, který upravujete, už neexistuje. Načtěte stránku znovu.")
                 }
                 val lateReason = lateReasonFor(parsedDate, input.lateEntryReason)
-                val nextSeq = tx.fetchCount(DAILY_REPORTS, DAILY_REPORTS.PROJECTID.eq(projectId)) + 1
                 val created = tx.insertInto(DAILY_REPORTS)
                     .set(DAILY_REPORTS.PROJECTID, projectId)
                     .set(DAILY_REPORTS.AUTHORID, user.id)
                     .set(DAILY_REPORTS.DATE, parsedDate)
-                    .set(DAILY_REPORTS.SEQUENCENUMBER, nextSeq)
                     .set(DAILY_REPORTS.WORKERSBYTRADE, workers ?: JSONB.valueOf("[]"))
                     .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: "")
                     .set(DAILY_REPORTS.ISCONTROLDAY, input.isControlDay ?: false)
@@ -371,10 +372,22 @@ object DailyReportService {
             // A signer of a diary has a ČKAIT number (decision D2). Checked here, in the transaction, on the stored value.
             requireQualifiedSigner(tx, user)
 
+            val before = report.toSnapshot()
+
+            // The number is given now (decision D11): the next one of the project, so the signed entries are numbered one
+            // after another without gaps however many drafts came and went. We hold the audit lock, so nobody else is
+            // signing; the database checks the number as well (V13). It is part of what the signature covers, so it is set
+            // on the entry before the hash is computed.
+            val number = (tx.select(DSL.max(DAILY_REPORTS.SEQUENCENUMBER)).from(DAILY_REPORTS)
+                .where(DAILY_REPORTS.PROJECTID.eq(report.projectid!!))
+                .fetchOne(0, Int::class.javaObjectType) ?: 0) + 1
+            report.set(DAILY_REPORTS.SEQUENCENUMBER, number)
+
             // Milliseconds: what the hash covers is exactly what is stored and read back.
             val now = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
             val signatureHash = ReportSignature.hash(tx, report, now, user.id)
             val signed = tx.update(DAILY_REPORTS)
+                .set(DAILY_REPORTS.SEQUENCENUMBER, number)
                 .set(DAILY_REPORTS.LOCKEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDBYID, user.id)
@@ -387,7 +400,7 @@ object DailyReportService {
                 result = Unit,
                 action = "report.lock",
                 entityId = reportId.toString(),
-                before = report.toSnapshot(),
+                before = before,
                 after = signed.toSnapshot(),
             )
         }
@@ -496,6 +509,7 @@ object DailyReportService {
         weather = weatherOf(record),
         generalNotes = record.othernotes,
         isLocked = record.lockedat != null,
+        sequenceNumber = record.get(DAILY_REPORTS.SEQUENCENUMBER),
         workDescription = record.workdescription ?: "",
         workersByTrade = record.workersbytrade?.data() ?: "[]",
         isControlDay = record.iscontrolday ?: false,
@@ -517,7 +531,7 @@ object DailyReportService {
             id = id.toString(),
             projectId = projectid.toString(),
             date = date.toString(),
-            sequenceNumber = get(DAILY_REPORTS.SEQUENCENUMBER)!!,
+            sequenceNumber = get(DAILY_REPORTS.SEQUENCENUMBER),
             authorId = get(DAILY_REPORTS.AUTHORID).toString(),
             workDescription = workdescription ?: "",
             workersByTrade = workersbytrade?.data() ?: "[]",

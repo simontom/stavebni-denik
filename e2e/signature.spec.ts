@@ -52,12 +52,15 @@ test("signing asks for the password, a wrong one signs nothing, and the signatur
   await expect(dialog.getByRole("alert")).toContainText(/heslo není správné/i, { timeout: 15_000 });
   await expect(page.getByRole("dialog", { name: /přihlášení vypršelo/i })).toHaveCount(0);
   await expect(page.getByText("Podepsáno", { exact: true })).toHaveCount(0);
+  // A draft has no number: it is given at signing, so the sequence of signed entries has no gaps.
+  await expect(page.getByText(/Záznam č\. \d/)).toHaveCount(0);
 
   // The right one signs and locks.
   await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
   await dialog.getByRole("button", { name: "Podepsat", exact: true }).click();
   await expect(dialog).toBeHidden({ timeout: 15_000 });
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Záznam č. 1", { exact: true })).toBeVisible({ timeout: 15_000 });
 
   // The page shows what the signature covers and can check it against the entry as it is now.
   await expect(page.getByText(/Otisk obsahu \(SHA-256\)/)).toBeVisible({ timeout: 15_000 });

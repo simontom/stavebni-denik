@@ -63,6 +63,28 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `a draft says it has no number yet and a signed entry shows its number`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Číslo záznamu", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val report = UUID.fromString(DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Zápis").id)
+
+        val draft = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(draft.contains("zatím bez čísla"), draft)
+
+        // The number is given at signing (decision D11).
+        DailyReportService.signReport(boss, report)
+        val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(signed.contains("č. 1"), signed)
+        assertFalse(signed.contains("zatím bez čísla"), signed)
+    }
+
+    @Test
     fun `a late entry says so in the PDF, with its reason (hostile text stays text)`() = runBlocking {
         val boss = createTestUser(role = Role.BOSS)
         val project = ProjectService.createProject(
