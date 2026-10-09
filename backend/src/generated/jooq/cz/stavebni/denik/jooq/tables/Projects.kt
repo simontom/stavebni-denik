@@ -207,6 +207,21 @@ open class Projects(
      */
     val DELETEDAT: TableField<ProjectsRecord, OffsetDateTime?> = createField(DSL.name("deletedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
+    /**
+     * The column <code>public.projects.permitDate</code>.
+     */
+    val PERMITDATE: TableField<ProjectsRecord, OffsetDateTime?> = createField(DSL.name("permitDate"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
+
+    /**
+     * The column <code>public.projects.subcontractors</code>.
+     */
+    val SUBCONTRACTORS: TableField<ProjectsRecord, String?> = createField(DSL.name("subcontractors"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.projects.supportingDocuments</code>.
+     */
+    val SUPPORTINGDOCUMENTS: TableField<ProjectsRecord, String?> = createField(DSL.name("supportingDocuments"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<ProjectsRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<ProjectsRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<ProjectsRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)

@@ -85,6 +85,15 @@ internal data class ReportPdfData(
     val projectName: String,
     val address: String,
     val date: String,
+    /**
+     * The identification of the diary (příloha 12, part A) as entered about the project NOW: the entry PDF is made on request
+     * and prints the project as it stands when it is made. Only what has a value.
+     */
+    val projectInfo: List<LabeledPdf> = emptyList(),
+    /** The firms of the subcontractors, one per line; empty when none were entered. */
+    val subcontractors: String = "",
+    /** The documents the diary refers to, one per line; empty when none were entered. */
+    val supportingDocuments: String = "",
     /** Null while the entry is a draft: the number is given at signing (decision D11). */
     val sequenceNumber: Int?,
     val weather: String,
@@ -108,6 +117,9 @@ internal data class ReportPdfData(
     /** Who took note of the signed entry ("Name (role)"), with the time, oldest first. */
     val acknowledgements: List<AcknowledgementPdf> = emptyList(),
 )
+
+@Serializable
+internal data class LabeledPdf(val label: String, val value: String)
 
 @Serializable
 internal data class WorkerPdf(val trade: String, val count: Int, val names: String)
@@ -165,6 +177,25 @@ object PdfExportService {
         }
     }
 
+    /** The identification of the diary as labelled rows; a row without a value is left out. A number and its date share a row. */
+    private fun projectInfoOf(project: org.jooq.Record): List<LabeledPdf> {
+        fun text(value: String?) = value?.trim().orEmpty()
+        fun numbered(number: String?, date: java.time.OffsetDateTime?): String =
+            listOfNotNull(text(number).ifEmpty { null }, cz.stavebni.denik.util.Dates.format(date)?.let { "ze dne $it" }).joinToString(" ")
+        return listOf(
+            "Katastrální území" to text(project.get(PROJECTS.CADASTRALAREA)),
+            "Parcelní čísla" to text(project.get(PROJECTS.PARCELNUMBERS)),
+            "Stavebník" to text(project.get(PROJECTS.BUILDER)),
+            "Zhotovitel" to text(project.get(PROJECTS.CONTRACTOR)),
+            "Projektant" to text(project.get(PROJECTS.DESIGNERNAME)),
+            "Povolení" to numbered(project.get(PROJECTS.PERMITNUMBER), project.get(PROJECTS.PERMITDATE)),
+            "Technický dozor stavebníka" to text(project.get(PROJECTS.TDSNAME)),
+            "Koordinátor BOZP" to text(project.get(PROJECTS.BOZPNAME)),
+            "Smlouva" to numbered(project.get(PROJECTS.CONTRACTNUMBER), project.get(PROJECTS.CONTRACTDATE)),
+            "Projektová dokumentace" to numbered(project.get(PROJECTS.DESIGNDOCVERSION), project.get(PROJECTS.DESIGNDOCDATE)),
+        ).filter { it.second.isNotEmpty() }.map { LabeledPdf(it.first, it.second) }
+    }
+
     private fun loadData(tx: DSLContext, reportId: UUID): ReportPdfData {
         val report = tx.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
@@ -177,6 +208,9 @@ object PdfExportService {
         return ReportPdfData(
             projectName = project.get(PROJECTS.NAME) ?: "",
             address = project.get(PROJECTS.ADDRESS) ?: "",
+            projectInfo = projectInfoOf(project),
+            subcontractors = project.get(PROJECTS.SUBCONTRACTORS)?.trim().orEmpty(),
+            supportingDocuments = project.get(PROJECTS.SUPPORTINGDOCUMENTS)?.trim().orEmpty(),
             date = report.get(DAILY_REPORTS.DATE).toString(),
             sequenceNumber = report.get(DAILY_REPORTS.SEQUENCENUMBER),
             weather = report.get(DAILY_REPORTS.WEATHER)?.data()

@@ -43,6 +43,14 @@ fun Application.projectRoutes() {
                         call.respond(ProjectService.getProject(DatabaseFactory.dsl, user, projectId))
                     }
 
+                    // The manager of the project changes what is entered about it; the audit row keeps both versions.
+                    put {
+                        val user = call.sessionUser()
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
+                        val req = call.receive<ProjectDto>()
+                        call.respond(ProjectService.updateProject(user, projectId, req))
+                    }
+
                     // --- Project members ---------------------------------------------
                     route("/members") {
                         get {

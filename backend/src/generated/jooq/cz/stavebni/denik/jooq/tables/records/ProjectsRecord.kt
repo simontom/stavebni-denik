@@ -115,6 +115,18 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
         set(value): Unit = set(23, value)
         get(): OffsetDateTime? = get(23) as OffsetDateTime?
 
+    open var permitdate: OffsetDateTime?
+        set(value): Unit = set(24, value)
+        get(): OffsetDateTime? = get(24) as OffsetDateTime?
+
+    open var subcontractors: String?
+        set(value): Unit = set(25, value)
+        get(): String? = get(25) as String?
+
+    open var supportingdocuments: String?
+        set(value): Unit = set(26, value)
+        get(): String? = get(26) as String?
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -124,7 +136,7 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
     /**
      * Create a detached, initialised ProjectsRecord
      */
-    constructor(id: UUID? = null, name: String? = null, address: String? = null, cadastralarea: String? = null, parcelnumbers: String? = null, permitnumber: String? = null, builder: String? = null, contractor: String? = null, sitemanagerid: UUID? = null, tdsname: String? = null, bozpname: String? = null, designername: String? = null, contractnumber: String? = null, contractdate: OffsetDateTime? = null, designdocversion: String? = null, designdocdate: OffsetDateTime? = null, gpslat: Double? = null, gpslon: Double? = null, startedat: OffsetDateTime? = null, endedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, name: String? = null, address: String? = null, cadastralarea: String? = null, parcelnumbers: String? = null, permitnumber: String? = null, builder: String? = null, contractor: String? = null, sitemanagerid: UUID? = null, tdsname: String? = null, bozpname: String? = null, designername: String? = null, contractnumber: String? = null, contractdate: OffsetDateTime? = null, designdocversion: String? = null, designdocdate: OffsetDateTime? = null, gpslat: Double? = null, gpslon: Double? = null, startedat: OffsetDateTime? = null, endedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, permitdate: OffsetDateTime? = null, subcontractors: String? = null, supportingdocuments: String? = null): this() {
         this.id = id
         this.name = name
         this.address = address
@@ -149,6 +161,9 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
         this.updatedat = updatedat
         this.createdbyid = createdbyid
         this.deletedat = deletedat
+        this.permitdate = permitdate
+        this.subcontractors = subcontractors
+        this.supportingdocuments = supportingdocuments
         resetTouchedOnNotNull()
     }
 }
