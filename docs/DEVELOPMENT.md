@@ -55,6 +55,8 @@ pnpm test:seed-guard                              # zkouška pojistky, že seed 
 pnpm test:e2e                                     # spustí si Vite sám, backend musí běžet na :8080
 ```
 
+Stejnou sadu spustí CI i **proti sestavenému produkčnímu obrazu** (`scripts/ci/e2e-image.sh`: obraz s `APP_ENV=production`, role databáze bez vlastnictví, schéma migrované vlastníkem, SPA servírovaná Ktorem). Lokálně: `docker build -t stavebni-denik:e2e .` a potom `IMAGE=stavebni-denik:e2e E2E_PG_PORT=55436 bash scripts/ci/e2e-image.sh` (potřebuje Docker a volný port 8080).
+
 E2E seed (`scripts/dev/e2e-prepare.ts`) zakládá účty `e2e-admin` a `e2e-investor` přímo v databázi a odmítne pracovat s čímkoli jiným než s databází na tomto počítači (`DATABASE_URL`, výchozí je lokální compose databáze). Test `full-flow` stahuje PDF, takže potřebuje `typst`; bez něj selže právě tam.
 
 ## Databáze a jOOQ

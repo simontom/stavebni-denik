@@ -462,3 +462,66 @@ jobs:
             echo '```'
             echo "### tail"; echo '```'; tail -n 60 /tmp/docker.log; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e-image:
+    name: E2E tests against the built image (production mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build image (no push)
+        run: |
+          set -o pipefail
+          docker build --progress=plain -t stavebni-denik:e2e . 2>&1 | tee /tmp/docker-e2e.log
+
+      # The same suite as the e2e job, but against what is deployed: the image in production mode, as the database
+      # role that owns nothing, with the schema migrated by the owner (scripts/ci/e2e-image.sh).
+      - name: Run Playwright against the image
+        timeout-minutes: 12
+        env:
+          IMAGE: stavebni-denik:e2e
+        run: |
+          set -o pipefail
+          bash scripts/ci/e2e-image.sh 2>&1 | tee /tmp/playwright-image.log
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Playwright against the image"
+            echo '```'
+            grep -nE "✘|✓|passed|failed|flaky|Error:|Timeout|expect\(|at .*spec\.ts" /tmp/playwright-image.log | head -100 || true
+            echo '```'
+            echo "### Application log (errors)"; echo '```'
+            grep -nE "ERROR|WARN|Exception|Caused by" /tmp/e2e-image-app.log | head -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-image
+          path: |
+            playwright-report/
+            test-results/
+            /tmp/e2e-image-app.log
+            /tmp/playwright-image.log
+          retention-days: 14
