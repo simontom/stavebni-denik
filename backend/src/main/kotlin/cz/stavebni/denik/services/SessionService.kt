@@ -42,6 +42,39 @@ object SessionService {
         return Created(id, expiresAt)
     }
 
+    /** What [openAfterPasswordCheck] decided. */
+    sealed interface Opened {
+        class Session(val created: Created) : Opened
+
+        /** The password was changed or reset (or the account switched off) after it was checked: it no longer counts. */
+        data object CredentialsChanged : Opened
+
+        /** The password is a temporary one that was never used in time. */
+        data object PasswordExpired : Opened
+    }
+
+    /**
+     * Opens a session for a user whose password [verifiedHash] was just checked, unless that password has stopped
+     * being the right one in the meantime. The check ran outside any transaction; a reset or a change by the user that
+     * ends all sessions could land between it and the session insert, and a login that carried on regardless would
+     * leave a live session behind a password nobody has any more. The user row is locked, so a reset either finishes
+     * first (the hash differs here, no session) or waits until this session exists (and then ends it).
+     */
+    fun openAfterPasswordCheck(db: DSLContext, userId: UUID, verifiedHash: String): Opened =
+        db.transactionResult { cfg ->
+            val tx = DSL.using(cfg)
+            val row = tx.select(USERS.PASSWORDHASH, USERS.PASSWORDEXPIRESAT)
+                .from(USERS)
+                .where(USERS.ID.eq(userId).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne()
+            when {
+                row == null || row.get(USERS.PASSWORDHASH) != verifiedHash -> Opened.CredentialsChanged
+                row.get(USERS.PASSWORDEXPIRESAT)?.isBefore(OffsetDateTime.now()) == true -> Opened.PasswordExpired
+                else -> Opened.Session(create(tx, userId))
+            }
+        }
+
     /**
      * The *current* user behind a session, or null when the session is unknown, belongs to
      * another user, is revoked or expired, or the user is deactivated or deleted.

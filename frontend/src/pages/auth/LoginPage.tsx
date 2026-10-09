@@ -29,6 +29,9 @@ export function LoginPage() {
         throw new Error(body?.error ?? "Příliš mnoho pokusů. Zkuste to později.");
       }
       if (!response.ok) {
+        // A temporary password that was not used in time: only a correct password gets this answer.
+        const body = (await response.json().catch(() => null)) as { error?: string; code?: string } | null;
+        if (response.status === 401 && body?.code === "PASSWORD_EXPIRED" && body.error) throw new Error(body.error);
         throw new Error("Neplatné přihlašovací jméno nebo heslo");
       }
 

@@ -288,7 +288,7 @@ export const AdminUsers: React.FC = () => {
               <div className="space-y-4">
                 <div className="rounded border border-green-200 bg-green-50 p-4 text-sm text-green-900">
                   <p className="font-semibold">Uživatel byl úspěšně vytvořen!</p>
-                  <p className="mt-1">Předejte tyto údaje uživateli pro jeho první přihlášení:</p>
+                  <p className="mt-1">Předejte tyto údaje uživateli pro jeho první přihlášení. Heslo platí 7 dní; pak je nutné vygenerovat nové.</p>
                   <div className="mt-3 space-y-1 rounded border border-green-300 bg-white p-2 font-mono text-xs">
                     <div>
                       <strong>Uživatel:</strong> {newNickname}
@@ -315,7 +315,7 @@ export const AdminUsers: React.FC = () => {
           <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-bold text-gray-900">Heslo bylo obnoveno</h3>
             <div className="rounded border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-              <p>Předejte tyto údaje uživateli. Při přihlášení si zvolí vlastní heslo.</p>
+              <p>Předejte tyto údaje uživateli. Při přihlášení si zvolí vlastní heslo. Dočasné heslo platí 7 dní.</p>
               <div className="mt-3 space-y-1 rounded border border-green-300 bg-white p-2 font-mono text-xs">
                 <div>
                   <strong>Uživatel:</strong> {resetResult.nickname}
