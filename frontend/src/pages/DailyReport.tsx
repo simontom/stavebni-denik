@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Addenda } from "../components/Addenda";
 import { api, apiFetch, setUnsavedWork } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
@@ -94,6 +95,8 @@ export const DailyReport: React.FC = () => {
   const [isControlDay, setIsControlDay] = useState<boolean>(false);
   const [constructionObj, setConstructionObj] = useState<string>("");
   const [isSigned, setIsSigned] = useState<boolean>(false);
+  // The id of the stored entry (the addenda of a signed entry are addressed by it).
+  const [entryId, setEntryId] = useState<string | null>(null);
   const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
   // The version of the entry as this form last saw it (null for a day without an entry). Sent back on save, so a
   // second person's changes are not overwritten without anybody noticing.
@@ -172,6 +175,7 @@ export const DailyReport: React.FC = () => {
           setWeatherMax(loaded.weatherMax);
           setLateEntryReason(loaded.lateEntryReason);
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
+          setEntryId(typeof data.id === "string" ? data.id : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setIsSigned(Boolean(data.isSigned || data.isLocked));
           setIsAcknowledged(Boolean(data.isAcknowledged));
@@ -623,6 +627,13 @@ export const DailyReport: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Addenda: how a signed entry is corrected or completed */}
+      {isSigned && entryId && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <Addenda entryId={entryId} canWrite={myRole === "BOSS" || myRole === "WORKER"} />
+        </div>
+      )}
 
       {/* Section 3: Sign & Lock */}
       {!isInvestor && (

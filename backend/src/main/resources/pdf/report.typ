@@ -42,3 +42,16 @@
 == Popis prací
 
 #plain(d.workDescription)
+
+// Addenda: corrections and additions to the signed entry, each with its author and time. They are not part of the signed text.
+#if d.addenda.len() > 0 [
+  == Dodatky
+
+  #for a in d.addenda [
+    *#plain(a.author)*, #a.at (UTC)
+
+    #plain(a.text)
+
+    #v(0.6em)
+  ]
+]

@@ -91,7 +91,12 @@ internal data class ReportPdfData(
     val isSigned: Boolean,
     val isLateEntry: Boolean,
     val lateEntryReason: String,
+    /** The addenda of a signed entry, oldest first. */
+    val addenda: List<AddendumPdf> = emptyList(),
 )
+
+@Serializable
+internal data class AddendumPdf(val author: String, val at: String, val text: String)
 
 object PdfExportService {
     private val log = LoggerFactory.getLogger(PdfExportService::class.java)
@@ -155,6 +160,13 @@ object PdfExportService {
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
+            addenda = tx.select(USERS.DISPLAYNAME, ADDENDA.CREATEDAT, ADDENDA.TEXT)
+                .from(ADDENDA)
+                .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))
+                .where(ADDENDA.REPORTID.eq(reportId))
+                .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
+                .fetch()
+                .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") },
         )
     }
 
