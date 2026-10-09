@@ -46,6 +46,7 @@ object AdminBootstrapService {
                 .set(USERS.ISADMIN, true)
                 .set(USERS.ISACTIVE, true)
                 .set(USERS.MUSTCHANGEPWD, true)
+                .set(USERS.PASSWORDEXPIRESAT, now.plus(UserService.TEMPORARY_PASSWORD_LIFETIME))
                 .set(USERS.CREATEDAT, now)
                 .set(USERS.UPDATEDAT, now)
                 .execute()
@@ -71,6 +72,7 @@ object AdminBootstrapService {
             val id = tx.update(USERS)
                 .set(USERS.PASSWORDHASH, hash)
                 .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
+                .set(USERS.PASSWORDEXPIRESAT, OffsetDateTime.now().plus(UserService.TEMPORARY_PASSWORD_LIFETIME))
                 .set(USERS.MUSTCHANGEPWD, true)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.NICKNAME.eq(nick).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))

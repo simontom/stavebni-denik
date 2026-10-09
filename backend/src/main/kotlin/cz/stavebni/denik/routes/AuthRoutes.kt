@@ -40,15 +40,17 @@ fun Application.authRoutes() {
             }
 
             val db = DatabaseFactory.dsl
-            val ip = call.clientIp()
+            val ip = RateLimiter.addressKey(call.clientIp())
             val userKey = UserService.loginKey(nickname)
 
-            // Too many failures from this address or against this name: refuse before any password work is done.
-            val wait = listOfNotNull(
-                RateLimiter.retryAfter(db, RateLimiter.Rules.LOGIN_IP, ip),
-                RateLimiter.retryAfter(db, RateLimiter.Rules.LOGIN_USER, userKey),
-            ).maxOrNull()
-            if (wait != null) {
+            // The attempt is reserved first: too many failures from this address (an IPv6 client counts as its /64) or
+            // against this name refuse the request before any password work is done. A reservation stays on record
+            // unless the login succeeds, so requests that arrive at the same moment cannot all slip under the limit.
+            val reservation = RateLimiter.reserve(
+                db,
+                listOf(RateLimiter.Rules.LOGIN_IP to ip, RateLimiter.Rules.LOGIN_USER to userKey),
+            )
+            reservation.refusedFor?.let { wait ->
                 throw TooManyRequestsException(
                     wait.seconds,
                     "Příliš mnoho neúspěšných pokusů o přihlášení. Zkuste to znovu za ${RateLimiter.describeWait(wait)}."
@@ -60,15 +62,29 @@ fun Application.authRoutes() {
             val passwordOk = if (hash == null) PasswordService.verifyAgainstNobody(req.password) else PasswordService.verifyAsync(hash, req.password)
             val user = if (passwordOk) UserService.findUserByNickname(db, nickname) else null
             if (user == null) {
-                RateLimiter.recordFailure(db, RateLimiter.Rules.LOGIN_IP, ip)
-                RateLimiter.recordFailure(db, RateLimiter.Rules.LOGIN_USER, userKey)
                 call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid credentials"))
                 return@post
             }
 
-            // A real server-side session: the token below only names it, and revoking the
-            // session (logout, deactivation, ...) ends the access at once.
-            val session = SessionService.create(db, user.id)
+            // A real server-side session: the token below only names it, and revoking the session (logout,
+            // deactivation, ...) ends the access at once. It is opened only if this is still the user's password.
+            val session = when (val opened = SessionService.openAfterPasswordCheck(db, user.id, hash!!)) {
+                is SessionService.Opened.Session -> opened.created
+                SessionService.Opened.CredentialsChanged -> {
+                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid credentials"))
+                    return@post
+                }
+                SessionService.Opened.PasswordExpired -> {
+                    // Only a correct password gets here, so saying so reveals nothing to someone who does not have it.
+                    call.respond(
+                        HttpStatusCode.Unauthorized,
+                        mapOf("error" to "Dočasné heslo vypršelo. Požádejte správce o nové.", "code" to "PASSWORD_EXPIRED")
+                    )
+                    return@post
+                }
+            }
+            // The password was right: this attempt was not a failure.
+            RateLimiter.release(db, reservation)
             val sessionUser = user.copy(sessionId = session.id)
             val token = JwtService.createToken(sessionUser, session.expiresAt.toInstant())
 
