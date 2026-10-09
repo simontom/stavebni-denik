@@ -112,7 +112,7 @@ open class DailyReports(
     /**
      * The column <code>public.daily_reports.sequenceNumber</code>.
      */
-    val SEQUENCENUMBER: TableField<DailyReportsRecord, Int?> = createField(DSL.name("sequenceNumber"), SQLDataType.INTEGER.nullable(false), this, "")
+    val SEQUENCENUMBER: TableField<DailyReportsRecord, Int?> = createField(DSL.name("sequenceNumber"), SQLDataType.INTEGER, this, "")
 
     /**
      * The column <code>public.daily_reports.date</code>.
@@ -408,7 +408,8 @@ open class DailyReports(
     val users: UsersPath
         get(): UsersPath = reportAcknowledgements().users()
     override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
-        Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true)
+        Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true),
+        Internal.createCheck(this, DSL.name("daily_reports_signed_has_number"), "(((\"lockedAt\" IS NULL) OR (\"sequenceNumber\" IS NOT NULL)))", true)
     )
     override fun `as`(alias: String): DailyReports = DailyReports(DSL.name(alias), this)
     override fun `as`(alias: Name): DailyReports = DailyReports(alias, this)
