@@ -48,11 +48,13 @@ docker network create e2e-img-net >/dev/null
 docker run -d --name e2e-img-pg --network e2e-img-net -p "$pg_port:5432" \
   -e POSTGRES_DB=stavebni_denik -e POSTGRES_USER=denik -e POSTGRES_PASSWORD="$owner_password" \
   postgres:18-alpine >/dev/null
+# Over TCP (-h 127.0.0.1), not the socket: while the image initialises, a temporary server answers on the socket only and
+# then restarts, so a socket check can pass just before the database goes away for a moment.
 for _ in $(seq 1 30); do
-  docker exec e2e-img-pg pg_isready -U denik -d stavebni_denik >/dev/null 2>&1 && break
+  docker exec e2e-img-pg pg_isready -h 127.0.0.1 -U denik -d stavebni_denik >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec e2e-img-pg pg_isready -U denik -d stavebni_denik >/dev/null
+docker exec e2e-img-pg pg_isready -h 127.0.0.1 -U denik -d stavebni_denik >/dev/null
 
 # The application's own role, then the migration as the owner, which also gives that role its privileges.
 docker exec -i e2e-img-pg psql -U denik -d stavebni_denik -v ON_ERROR_STOP=1 -v app_password="$app_password" \
