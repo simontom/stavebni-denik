@@ -4,6 +4,7 @@ import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.services.AdminBootstrapService
 import cz.stavebni.denik.services.AuditAnchor
 import cz.stavebni.denik.services.AuditService
+import cz.stavebni.denik.services.ReportSignature
 import ch.qos.logback.classic.Level
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
@@ -17,6 +18,11 @@ import kotlin.system.exitProcess
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password <nickname>
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
+ *
+ * `verify-signatures` hashes every signed entry again and every photo file under UPLOADS_DIR, and compares them with what
+ * was recorded when the entry was signed and the photo uploaded. It reads only. It is what a restore from a backup runs to
+ * prove that nothing signed has changed; exit 1 when something no longer matches.
  *
  * The two audit commands only read: they do not migrate the schema, so they work with a read-only database role and
  * can run from a scheduler against a database that a newer or older version of the application owns.
@@ -66,7 +72,8 @@ object AdminCli {
   create-admin <nickname> <displayName>   create the first administrator (only while there is none)
   reset-password <nickname>               give an active user a new temporary password
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
-  audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut"""
+  audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
+  verify-signatures                       hash every signed entry and photo file again and compare with what was recorded"""
 
     /** Whether [args] name a command with the right number of arguments. */
     fun hasValidShape(args: List<String>): Boolean =
@@ -74,12 +81,13 @@ object AdminCli {
             "create-admin" -> args.size == 3
             "reset-password" -> args.size == 2
             "audit-head" -> args.size == 1
+            "verify-signatures" -> args.size == 1
             "audit-verify" -> args.size == 1 || (args.size == 2 && AuditAnchor.parse(args[1]) != null)
             else -> false
         }
 
     /** The commands that only read: they never change the schema or any row. */
-    fun readsOnly(args: List<String>): Boolean = args.firstOrNull() in setOf("audit-head", "audit-verify")
+    fun readsOnly(args: List<String>): Boolean = args.firstOrNull() in setOf("audit-head", "audit-verify", "verify-signatures")
 
     /**
      * [connect] opens the database; [run] then carries the command out. Anything unexpected on the way (a refused
@@ -122,6 +130,17 @@ object AdminCli {
                     !result.ok -> { err("Audit log BROKEN: ${result.reason}"); 1 }
                     head == null -> { err("The audit log is empty."); 1 }
                     else -> { out(head.toString()); 0 }
+                }
+            }
+            "verify-signatures" -> {
+                if (args.size != 1) return usage()
+                val result = ReportSignature.checkAll(DatabaseFactory.dsl)
+                if (result.ok) {
+                    out("Signatures OK: ${result.signed} signed entries" + if (result.withoutHash > 0) " (${result.withoutHash} signed before hashes existed: nothing to compare)." else ".")
+                    0
+                } else {
+                    result.problems.forEach { err("Signature BROKEN: $it") }
+                    1
                 }
             }
             "audit-verify" -> {

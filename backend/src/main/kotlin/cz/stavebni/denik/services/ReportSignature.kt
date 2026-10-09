@@ -140,6 +140,37 @@ object ReportSignature {
         )
     }
 
+    /** The result of checking every signed entry of the database. */
+    class AllResult(
+        val signed: Int,
+        /** Signed entries that carry no recorded hash (signed before hashes existed): nothing to compare, not a failure. */
+        val withoutHash: Int,
+        /** Entries whose content no longer hashes to what was recorded, or whose photo files no longer match. */
+        val problems: List<String>,
+    ) {
+        val ok: Boolean get() = problems.isEmpty()
+    }
+
+    /**
+     * Checks every signed entry: its content against the recorded hash and its photo files against the hashes recorded at
+     * upload. This is what a backup restore, or a nightly check, runs to prove that nothing signed has changed.
+     */
+    fun checkAll(tx: DSLContext): AllResult {
+        val ids = tx.select(DAILY_REPORTS.ID).from(DAILY_REPORTS)
+            .where(DAILY_REPORTS.LOCKEDAT.isNotNull.and(DAILY_REPORTS.DELETEDAT.isNull))
+            .orderBy(DAILY_REPORTS.DATE.asc(), DAILY_REPORTS.ID.asc())
+            .fetch(DAILY_REPORTS.ID).filterNotNull()
+        var withoutHash = 0
+        val problems = mutableListOf<String>()
+        for (id in ids) {
+            val check = check(tx, id)
+            if (check.signatureHash == null) withoutHash++
+            if (check.contentMatches == false) problems += "entry $id: the content no longer matches the signature"
+            if (check.photoFilesMatch == false) problems += "entry $id: a photo file no longer matches its recorded hash"
+        }
+        return AllResult(signed = ids.size, withoutHash = withoutHash, problems = problems)
+    }
+
     private fun fileMatches(storageKey: String, expectedSha256: String): Boolean {
         val path = PhotoStorage.resolve(storageKey) ?: return false
         return try {
