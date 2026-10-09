@@ -99,13 +99,35 @@ Login creates a server-side session (table `sessions`, valid for 12 hours) and s
 - Photos: `POST /photos/upload`, `GET /photos/{id}`, `GET /photos/{id}/thumb`
 - Audit log (admin): `GET /audit?limit=200`
 
+### Roles: what a person may do follows their role in the project
+
+A person has **two kinds of role**, and they do different things:
+
+- the **role in a project** (`project_members.role`: BOSS = stavbyvedoucí / project manager, WORKER, INSPECTOR, INVESTOR) decides **everything they may do inside that project**: the same person can be the manager of one project and an ordinary worker in another. It is passed to every permission decision (`Resource.role`) and read from the database inside the transaction, so a changed role applies to the very next request. The API shows it as `myRole` on a project (null for an administrator who is not a member), and the SPA offers actions by it;
+- the **global role** of the account (`users.role`) is the role a person usually has: it is the default offered when adding them to a project, and it decides **who may create a project** (global BOSS, because the creator becomes the project's manager). It gives no right inside a project.
+- the **administrator flag** is independent of both: it opens user administration and the audit log, lets the person read every project, and is the audited way in (below). It gives no write right in a project.
+
+What each project role may do (the matrix is pinned by `RbacTest`):
+
+|                                       | BOSS                       | WORKER | INSPECTOR | INVESTOR |
+| ------------------------------------- | -------------------------- | ------ | --------- | -------- |
+| write a report / add a photo          | yes                        | yes    | no        | no       |
+| correct a report                      | any                        | own    | no        | no       |
+| sign a report                         | yes                        | no     | no        | no       |
+| delete a photo                        | yes                        | no     | no        | no       |
+| acknowledge a signed report           | no                         | no     | yes       | yes      |
+| sign a site handover protocol         | yes                        | yes    | yes       | yes      |
+| manage members and authorized persons | yes (and an administrator) | no     | no        | no       |
+
+**Members.** Only the project's manager, or an application administrator as the audited way in (decision D1), may add a member or change a role. Nobody changes their own role (an administrator who joined as a worker cannot promote themselves afterwards). The project's **site manager** (`projects.siteManagerId`) can be neither removed nor given another role, and a project is never left without a manager. The role of a membership has **no database default** (migration V7): a forgotten column must not make someone a manager who may sign the diary.
+
 Project-scoped endpoints require project membership. App admins can **read** every project, but being an admin gives no right to write: creating, overwriting, signing or acknowledging a report, uploading or removing a photo, and creating, changing, deleting or signing a site handover protocol all require real membership of that project. The membership is judged inside the transaction, on rows locked `FOR UPDATE`, never assumed. **Joining a project as an administrator is the audited way in** (decision D1): a project manager of the project, or an administrator, may add members (an administrator adds themselves), and the audit row names the project, the user and the role before and after. An administrator cannot change their own role (they could otherwise make themselves a project manager and then a member of any project); changing someone's role or administrator flag ends their sessions and is audited with before and after, and fixing a display name does not log anyone out.
 
 **Signed records are immutable in the database too** (migration V5, triggers that compare the whole row): a signed daily report cannot be changed or deleted (only the acknowledgement can still be added), photos cannot be added to, changed on or removed from a signed report, and a signed handover protocol cannot be changed or deleted. The application checks all of this first; a photo whose processing was still running when the report was signed is refused at insert time, not given to the signed record. The audit rows of photos, handovers, authorised persons and members carry the entity id and before/after snapshots (a photo's row holds the SHA-256 of both stored files).
 
 ### Daily reports: signing and acknowledging
 
-- `POST /projects/{id}/reports/{idOrDate}/sign` (and `POST /reports/{reportId}/sign`) signs and locks a report. Only a BOSS who is a member of the project may sign. A report is signed **exactly once**: a second request answers `409` and changes nothing (signer and time stay). A non-member gets `403`.
+- `POST /projects/{id}/reports/{idOrDate}/sign` (and `POST /reports/{reportId}/sign`) signs and locks a report. Only a member whose role **in that project** is BOSS may sign (a global BOSS who is only a worker here may not). A report is signed **exactly once**: a second request answers `409` and changes nothing (signer and time stay). A non-member gets `403`.
 - `POST …/acknowledge` records that an inspector or investor (a member) has taken note of the report. It only works on a **signed** report and only once; otherwise `409`.
 - `GET/POST /reports/{reportId}/…` take a report id only; a bare date is `400` (a date is only unique within a project, so use the project-scoped route). A report id of another project is `404` through `/projects/{id}/reports/{reportId}`.
 - Every report change is written to the audit log in the same transaction, with the real report id and a before/after snapshot (`report.create`, `report.update`, `report.lock`, `report.acknowledge`).
@@ -182,5 +204,7 @@ Before the first release:
 
 ## Follow-ups
 
+- `RemarkService`, `VisitService` and `MaterialService` have **no routes and no UI** (only their tests use them). They follow the project role now, but they do not write audit rows or take the in-transaction locks the other services do. Before any route is added they must go through `AuditService.auditedWrite`; or delete them if the legal model (příloha 12) does not need them.
+- Only users with a ČKAIT number should be able to hold the BOSS role of a project (decision D2); today any member can be made BOSS by a project manager or an administrator, audited.
 - Retire the legacy Next.js/Prisma tree (`src/`, `prisma/`, `test/`, root `package.json`): first replace the E2E seed (`scripts/dev/e2e-prepare.ts`), which still depends on it; `scripts/verify-audit.ts` is then dead too.
 - Update the docs that still describe the old stack (`README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DEPLOYMENT.md`, the CI gates in `AGENTS.md`).

@@ -1,10 +1,13 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
+import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.serialization.Serializable
@@ -57,9 +60,31 @@ object ProjectMemberService {
             }
     }
 
-    /** Adds a member or changes the role of an existing one. */
+    /**
+     * A project always keeps its site manager as a manager: the signature of the diary is theirs. Removing them or
+     * giving them another role would leave nobody who may sign, so neither is done here.
+     */
+    private fun requireSiteManagerStaysManager(tx: DSLContext, projectId: UUID, userId: UUID, newRole: Role?) {
+        val siteManagerId = tx.select(PROJECTS.SITEMANAGERID).from(PROJECTS).where(PROJECTS.ID.eq(projectId)).fetchOne(PROJECTS.SITEMANAGERID)
+        if (siteManagerId == userId && newRole != Role.BOSS) {
+            throw ConflictException("Stavbyvedoucí musí zůstat členem projektu s rolí vedoucího (BOSS)")
+        }
+    }
+
+    /** Whether the project still has a manager when [excluding] is left out of it. */
+    private fun anotherManagerExists(tx: DSLContext, projectId: UUID, excluding: UUID): Boolean =
+        tx.fetchExists(
+            PROJECT_MEMBERS,
+            PROJECT_MEMBERS.PROJECTID.eq(projectId)
+                .and(PROJECT_MEMBERS.USERID.ne(excluding))
+                .and(PROJECT_MEMBERS.ROLE.eq(DbRole.BOSS))
+        )
+
+    /**
+     * Adds a member or changes the role of an existing one. Who may: a manager of the project (the role they hold *in
+     * this project*), or an application administrator as the audited way in. Nobody changes their own role.
+     */
     suspend fun addMember(actor: SessionUser, projectId: UUID, req: AddMemberRequest): List<ProjectMemberDto> {
-        assertCan(actor, Action.ProjectMemberManage)
         val userId = ProjectAccess.parseId(req.userId, "userId")
         val role = Role.entries.firstOrNull { it.name == req.role.trim().uppercase() }
             ?: throw IllegalArgumentException("Neznámá role: ${req.role}")
@@ -67,7 +92,8 @@ object ProjectMemberService {
         // Who may do this: a project manager of the project, or an app administrator as the audited way in (decision D1).
         // Either way the audit row names the project, the user and the role before and after.
         AuditService.auditedWrite(actor, "project") { tx ->
-            ProjectAccess.requireAccess(tx, actor, projectId)
+            val actorRole = ProjectAccess.requireAccess(tx, actor, projectId)
+            assertCan(actor, Action.ProjectMemberManage, Resource(role = actorRole))
             val userExists = tx.fetchExists(
                 USERS,
                 USERS.ID.eq(userId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true))
@@ -77,6 +103,14 @@ object ProjectMemberService {
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
                 .forUpdate()
                 .fetchOne(PROJECT_MEMBERS.ROLE)
+
+            if (before != null && userId == actor.id) {
+                throw ConflictException("Vlastní roli v projektu nelze měnit")
+            }
+            requireSiteManagerStaysManager(tx, projectId, userId, role)
+            if (before == DbRole.BOSS && role != Role.BOSS && !anotherManagerExists(tx, projectId, userId)) {
+                throw ConflictException("Projekt musí mít alespoň jednoho vedoucího (BOSS)")
+            }
 
             tx.insertInto(PROJECT_MEMBERS)
                 .set(PROJECT_MEMBERS.PROJECTID, projectId)
@@ -99,13 +133,17 @@ object ProjectMemberService {
     }
 
     suspend fun removeMember(actor: SessionUser, projectId: UUID, userId: UUID) {
-        assertCan(actor, Action.ProjectMemberManage)
         AuditService.auditedWrite(actor, "project") { tx ->
-            ProjectAccess.requireAccess(tx, actor, projectId)
+            val actorRole = ProjectAccess.requireAccess(tx, actor, projectId)
+            assertCan(actor, Action.ProjectMemberManage, Resource(role = actorRole))
             val before = tx.select(PROJECT_MEMBERS.ROLE).from(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
                 .forUpdate()
                 .fetchOne(PROJECT_MEMBERS.ROLE) ?: throw NotFoundException("Člen projektu nenalezen")
+            requireSiteManagerStaysManager(tx, projectId, userId, newRole = null)
+            if (before == DbRole.BOSS && !anotherManagerExists(tx, projectId, userId)) {
+                throw ConflictException("Projekt musí mít alespoň jednoho vedoucího (BOSS)")
+            }
             tx.deleteFrom(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
                 .execute()

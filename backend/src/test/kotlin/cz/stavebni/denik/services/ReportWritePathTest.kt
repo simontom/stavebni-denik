@@ -42,13 +42,6 @@ class ReportWritePathTest : BaseIntegrationTest() {
         return UUID.fromString(project.id)
     }
 
-    private fun addMember(projectId: UUID, user: SessionUser) {
-        dsl.insertInto(PROJECT_MEMBERS)
-            .set(PROJECT_MEMBERS.PROJECTID, projectId)
-            .set(PROJECT_MEMBERS.USERID, user.id)
-            .execute()
-    }
-
     private fun report(id: String) =
         dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(id))).fetchOne()!!
 

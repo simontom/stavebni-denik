@@ -85,6 +85,22 @@ abstract class BaseIntegrationTest {
         }
     }
 
+    /**
+     * Makes [user] a member of the project in [role] (by default the role of their account). The role of a membership
+     * has no database default: what someone may do in a project follows it.
+     */
+    fun addMember(projectId: UUID, user: SessionUser, role: Role = user.role) {
+        val dbRole = cz.stavebni.denik.jooq.enums.Role.valueOf(role.name)
+        dsl.insertInto(PROJECT_MEMBERS)
+            .set(PROJECT_MEMBERS.PROJECTID, projectId)
+            .set(PROJECT_MEMBERS.USERID, user.id)
+            .set(PROJECT_MEMBERS.ROLE, dbRole)
+            .onConflict(PROJECT_MEMBERS.PROJECTID, PROJECT_MEMBERS.USERID)
+            .doUpdate()
+            .set(PROJECT_MEMBERS.ROLE, dbRole)
+            .execute()
+    }
+
     fun createTestUser(
         nickname: String = "user_${UUID.randomUUID().toString().substring(0, 8)}",
         displayName: String = "Test User",

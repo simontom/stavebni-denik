@@ -30,15 +30,11 @@ object MaterialService {
             .where(DAILY_REPORTS.ID.eq(reportId))
             .fetchOne() ?: throw IllegalArgumentException("Report not found")
 
-        val projectId = report.value1()
+        val projectId = report.value1()!!
         val isLocked = report.value2() != null
 
-        val isMember = tx.selectCount()
-            .from(PROJECT_MEMBERS)
-            .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(user.id)))
-            .fetchOne(0, Int::class.java) ?: 0 > 0
-
-        return Resource(isMember = isMember || user.isAdmin, isLocked = isLocked)
+        // The role in this project decides (an administrator who is not a member has none and cannot write).
+        return Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = isLocked)
     }
 
     private fun getResourceForMaterial(tx: DSLContext, user: SessionUser, materialId: UUID): Resource {

@@ -31,13 +31,6 @@ class ReportSigningRoutesTest : BaseIntegrationTest() {
         return UUID.fromString(project.id)
     }
 
-    private fun addMember(projectId: UUID, user: SessionUser) {
-        dsl.insertInto(PROJECT_MEMBERS)
-            .set(PROJECT_MEMBERS.PROJECTID, projectId)
-            .set(PROJECT_MEMBERS.USERID, user.id)
-            .execute()
-    }
-
     private suspend fun ApplicationTestBuilder.post(path: String, user: SessionUser): HttpResponse =
         client.post(path) {
             header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}")
