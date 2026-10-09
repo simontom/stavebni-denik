@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { currentUser } from "../lib/api";
+import { api } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
 interface PhotoItem {
@@ -63,9 +63,24 @@ const keyOf = (v: FormValues): string => JSON.stringify(v);
 export const DailyReport: React.FC = () => {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
-  // User role: investors and inspectors acknowledge, builders write and sign.
-  const me = currentUser();
-  const isInvestor = me?.role === "INVESTOR" || me?.role === "INSPECTOR";
+  // The role in THIS project decides what the page offers: investors and inspectors acknowledge, builders write and sign.
+  // (The server decides in the end; this only keeps the page from offering what would be refused.)
+  const [myRole, setMyRole] = useState<string | null>(null);
+  const isInvestor = myRole === "INVESTOR" || myRole === "INSPECTOR";
+  useEffect(() => {
+    if (!projectId) return;
+    let ignore = false;
+    api<{ myRole?: string | null }>(`/api/projects/${projectId}`)
+      .then((p) => {
+        if (!ignore) setMyRole(p.myRole ?? null);
+      })
+      .catch(() => {
+        if (!ignore) setMyRole(null);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [projectId]);
   const [error, setError] = useState("");
 
   // Report state

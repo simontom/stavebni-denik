@@ -48,7 +48,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
             )
         )
         val projectId = UUID.fromString(project.id)
-        dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, projectId).set(PROJECT_MEMBERS.USERID, worker.id).execute()
+        addMember(projectId, worker)
         return Site(boss, worker, projectId)
     }
 
@@ -158,7 +158,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         val s = site()
         val id = UUID.fromString(SiteHandoverService.createHandover(s.boss, handoverDto(s.projectId)).id)
         val second = createTestUser(role = Role.BOSS)
-        dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, s.projectId).set(PROJECT_MEMBERS.USERID, second.id).execute()
+        addMember(s.projectId, second)
 
         val results = coroutineScope {
             listOf(s.boss, second).map { signer -> async(Dispatchers.IO) { runCatching { SiteHandoverService.signHandover(signer, id) } } }.awaitAll()

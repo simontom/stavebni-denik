@@ -185,7 +185,7 @@ object PhotoService {
             .fetchOne() ?: throw IllegalArgumentException("Report not found")
         assertCan(
             user, Action.PhotoUpload,
-            Resource(isMember = ProjectAccess.isMember(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
+            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
         )
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
@@ -227,7 +227,7 @@ object PhotoService {
                 val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
                 assertCan(
                     user, Action.PhotoUpload,
-                    Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+                    Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
                 )
 
                 val record = tx.insertInto(PHOTOS)
@@ -282,7 +282,7 @@ object PhotoService {
             val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
             assertCan(
                 user, Action.PhotoDelete,
-                Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+                Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
             )
 
             val now = OffsetDateTime.now()

@@ -35,6 +35,8 @@ data class ProjectDto(
     val designDocVersion: String? = null,
     /** YYYY-MM-DD */
     val designDocDate: String? = null,
+    /** The role the requesting user holds in this project (BOSS, WORKER, INSPECTOR, INVESTOR); null for an administrator who is not a member. Set by the server, ignored in requests. */
+    val myRole: String? = null,
 )
 
 object ProjectService {
@@ -52,16 +54,25 @@ object ProjectService {
                 .orderBy(PROJECTS.CREATEDAT.desc())
                 .fetch()
         }
-        return records.map { toDto(it) }
+        val roles = rolesOf(tx, user.id)
+        return records.map { toDto(it, roles[it.get(PROJECTS.ID)]) }
     }
 
+    /** The role of [userId] in every project they are a member of. */
+    private fun rolesOf(tx: DSLContext, userId: UUID): Map<UUID, DbRole> =
+        tx.select(PROJECT_MEMBERS.PROJECTID, PROJECT_MEMBERS.ROLE)
+            .from(PROJECT_MEMBERS)
+            .where(PROJECT_MEMBERS.USERID.eq(userId))
+            .fetch()
+            .associate { it.get(PROJECT_MEMBERS.PROJECTID)!! to it.get(PROJECT_MEMBERS.ROLE)!! }
+
     fun getProject(tx: DSLContext, user: SessionUser, projectId: UUID): ProjectDto {
-        ProjectAccess.requireAccess(tx, user, projectId)
+        val role = ProjectAccess.requireAccess(tx, user, projectId)
         val record = tx.select(PROJECTS.asterisk())
             .from(PROJECTS)
             .where(PROJECTS.ID.eq(projectId))
             .fetchOne() ?: throw cz.stavebni.denik.domain.NotFoundException("Projekt nenalezen")
-        return toDto(record)
+        return toDto(record, role?.let { DbRole.valueOf(it.name) })
     }
 
     suspend fun createProject(user: SessionUser, data: ProjectDto): ProjectDto {
@@ -120,13 +131,14 @@ object ProjectService {
                     .execute()
             }
 
-            toDto(record)
+            // The creator is a manager of the project they create (creating one needs the global role BOSS).
+            toDto(record, DbRole.valueOf(user.role.name))
         }
     }
 
     private fun String?.blankToNull(): String? = this?.trim()?.ifEmpty { null }
 
-    private fun toDto(r: Record): ProjectDto = ProjectDto(
+    private fun toDto(r: Record, myRole: DbRole?): ProjectDto = ProjectDto(
         id = r.get(PROJECTS.ID).toString(),
         name = r.get(PROJECTS.NAME)!!,
         address = r.get(PROJECTS.ADDRESS)!!,
@@ -143,5 +155,6 @@ object ProjectService {
         contractDate = Dates.format(r.get(PROJECTS.CONTRACTDATE)),
         designDocVersion = r.get(PROJECTS.DESIGNDOCVERSION),
         designDocDate = Dates.format(r.get(PROJECTS.DESIGNDOCDATE)),
+        myRole = myRole?.name,
     )
 }

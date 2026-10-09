@@ -62,10 +62,7 @@ class DailyReportServiceTest : BaseIntegrationTest() {
             val projectId = UUID.fromString(project.id)
 
             // Add worker to project
-            dsl.insertInto(PROJECT_MEMBERS)
-                .set(PROJECT_MEMBERS.PROJECTID, projectId)
-                .set(PROJECT_MEMBERS.USERID, worker.id)
-                .execute()
+            addMember(projectId, worker)
 
             val report = DailyReportService.createReport(boss, projectId, "2026-09-28")
             val reportId = UUID.fromString(report.id)

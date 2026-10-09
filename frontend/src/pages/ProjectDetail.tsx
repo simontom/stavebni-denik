@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -46,6 +46,8 @@ interface ProjectData {
   builder: string;
   contractor: string;
   siteManagerId: string;
+  /** The role the signed-in user holds in this project; null for an administrator who is not a member. */
+  myRole?: string | null;
   permitNumber?: string | null;
   contractNumber?: string | null;
   contractDate?: string | null;
@@ -99,6 +101,8 @@ export const ProjectDetail: React.FC = () => {
   // Members
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  // Members and authorized persons are managed by the project's manager (the role held in THIS project) or an administrator.
+  const canManage = project?.myRole === "BOSS" || Boolean(currentUser()?.isAdmin);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("INVESTOR");
   const [showUserDropdown, setShowUserDropdown] = useState(false);
@@ -604,9 +608,11 @@ export const ProjectDetail: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">Seznam pověřených osob</h2>
-              <button type="button" onClick={openPersonModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-                Přidat osobu
-              </button>
+              {canManage && (
+                <button type="button" onClick={openPersonModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+                  Přidat osobu
+                </button>
+              )}
             </div>
 
             {showPersonModal && (
@@ -677,7 +683,8 @@ export const ProjectDetail: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-xl font-semibold text-gray-900">Členové projektu</h2>
 
-            <div className="mb-6 flex flex-wrap items-center gap-4">
+            {!canManage && <p className="mb-4 text-sm text-gray-500">Členy projektu spravuje stavbyvedoucí projektu.</p>}
+            <div className={canManage ? "mb-6 flex flex-wrap items-center gap-4" : "hidden"}>
               {/* User select trigger */}
               <div className="relative">
                 <button
@@ -700,6 +707,8 @@ export const ProjectDetail: React.FC = () => {
                         aria-selected={selectedUserId === u.id}
                         onClick={() => {
                           setSelectedUserId(u.id);
+                          // The person's own role is the default; the role in this project can be set to another.
+                          if (ROLE_LABELS[u.role]) setSelectedRole(u.role);
                           setShowUserDropdown(false);
                         }}
                         className="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-100"
