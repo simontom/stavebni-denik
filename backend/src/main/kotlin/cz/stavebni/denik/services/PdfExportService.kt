@@ -1,9 +1,10 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.jooq.tables.references.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -27,6 +28,9 @@ class PdfExportException(message: String, cause: Throwable? = null) : RuntimeExc
 
 /** typst cannot be started at all (for example it is not installed). */
 class PdfUnavailableException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/** Both render slots stayed taken for the whole waiting time: the caller is told to come back, not kept waiting. */
+class PdfBusyException : RuntimeException("PDF export is busy")
 
 class PdfDocument(val fileName: String, val bytes: ByteArray)
 
@@ -98,6 +102,13 @@ object PdfExportService {
     /** At most two PDFs are rendered at the same time; the others wait. */
     private val slots = Semaphore(2)
 
+    /**
+     * How long a request waits for a free slot before it is refused with [PdfBusyException] (503). A render takes up to
+     * 20 s, so an unbounded queue would hold request threads and browsers for minutes while everyone retries.
+     */
+    @Volatile
+    var queueWait: Duration = Duration.ofSeconds(10)
+
     /** The fixed template. It contains no user text (see the comment in the file). */
     internal val template: String by lazy {
         PdfExportService::class.java.getResourceAsStream("/pdf/report.typ")!!
@@ -108,19 +119,29 @@ object PdfExportService {
 
     suspend fun generateReportPdf(tx: DSLContext, reportId: UUID): PdfDocument {
         val data = loadData(tx, reportId)
-        return slots.withPermit {
-            withContext(Dispatchers.IO) { render(data, reportId) }
+        // The flag is set inside the timed block and read outside it: a timeout that fires just after the permit was
+        // granted must not lose track of the permit.
+        var acquired = false
+        withTimeoutOrNull(queueWait.toMillis()) {
+            slots.acquire()
+            acquired = true
+        }
+        if (!acquired) throw PdfBusyException()
+        try {
+            return withContext(Dispatchers.IO) { render(data, reportId) }
+        } finally {
+            slots.release()
         }
     }
 
     private fun loadData(tx: DSLContext, reportId: UUID): ReportPdfData {
         val report = tx.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
-            .fetchOne() ?: throw IllegalArgumentException("Report not found")
+            .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
 
         val project = tx.selectFrom(PROJECTS)
             .where(PROJECTS.ID.eq(report.get(DAILY_REPORTS.PROJECTID)))
-            .fetchOne() ?: throw IllegalArgumentException("Project not found")
+            .fetchOne() ?: throw NotFoundException("Projekt nenalezen")
 
         return ReportPdfData(
             projectName = project.get(PROJECTS.NAME) ?: "",
