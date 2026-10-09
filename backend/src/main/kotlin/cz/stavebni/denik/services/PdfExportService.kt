@@ -98,7 +98,12 @@ internal data class ReportPdfData(
     val signatureHash: String,
     /** The addenda of a signed entry, oldest first. */
     val addenda: List<AddendumPdf> = emptyList(),
+    /** The entries of other parties, oldest first. */
+    val remarks: List<RemarkPdf> = emptyList(),
 )
+
+@Serializable
+internal data class RemarkPdf(val author: String, val onBehalfOf: String, val at: String, val text: String)
 
 @Serializable
 internal data class AddendumPdf(val author: String, val at: String, val text: String)
@@ -178,6 +183,13 @@ object PdfExportService {
                 .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
                 .fetch()
                 .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") },
+            remarks = tx.select(USERS.DISPLAYNAME, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
+                .from(REMARKS)
+                .join(USERS).on(USERS.ID.eq(REMARKS.AUTHORID))
+                .where(REMARKS.REPORTID.eq(reportId))
+                .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
+                .fetch()
+                .map { RemarkPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(REMARKS.EXTERNALAUTHOR) ?: "", it.get(REMARKS.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(REMARKS.TEXT) ?: "") },
         )
     }
 

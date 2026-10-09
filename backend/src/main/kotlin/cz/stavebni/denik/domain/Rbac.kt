@@ -55,14 +55,9 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
         Action.PhotoUpload -> isBossOrWorker && !resource.isLocked
         Action.PhotoDelete -> isBoss && !resource.isLocked
 
-        Action.RemarkCreate -> role != null && !resource.isLocked
-        Action.RemarkUpdate,
-        Action.RemarkDelete -> {
-            if (resource.isLocked) return false
-            if (isBoss) return true
-            if (role != null && resource.authorId == user.id) return true
-            false
-        }
+        // Entries of other parties are made also after the day's entry was signed (insert-only): the lock does not matter.
+        // A worker's place is the daily entry; the manager records for outside parties (authorities, people without an account).
+        Action.RemarkCreate -> isBoss || role == Role.INSPECTOR || role == Role.INVESTOR
 
         Action.MaterialCreate -> isBossOrWorker && !resource.isLocked
         Action.MaterialUpdate,
