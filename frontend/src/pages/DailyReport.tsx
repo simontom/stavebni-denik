@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
+import { Addenda } from "../components/Addenda";
 import { api, apiFetch, setUnsavedWork } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
@@ -709,6 +710,13 @@ export const DailyReport: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Addenda: how a signed entry is corrected or completed */}
+      {isSigned && entryId && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+          <Addenda entryId={entryId} canWrite={myRole === "BOSS" || myRole === "WORKER"} />
+        </div>
+      )}
 
       {showSign && (
         <div role="dialog" aria-modal="true" aria-labelledby="sign-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

@@ -5,6 +5,8 @@ import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
+import cz.stavebni.denik.services.AddendumService
+import cz.stavebni.denik.services.CreateAddendumRequest
 import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.ProjectAccess
 import cz.stavebni.denik.services.ReportSignature
@@ -265,6 +267,21 @@ fun Application.reportRoutes() {
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.acknowledgeReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+                }
+
+                // Addenda: how a signed entry is corrected or completed (append-only).
+                get("/addenda") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    call.respond(AddendumService.list(DatabaseFactory.dsl, user, reportId))
+                }
+
+                post("/addenda") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
+                    val request = call.receive<CreateAddendumRequest>()
+                    call.respond(HttpStatusCode.Created, AddendumService.create(user, reportId, request))
                 }
             }
         }

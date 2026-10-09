@@ -96,7 +96,12 @@ internal data class ReportPdfData(
     val signedAt: String,
     /** SHA-256 of the entry's content at signing (see ReportSignature); empty for an unsigned entry. */
     val signatureHash: String,
+    /** The addenda of a signed entry, oldest first. */
+    val addenda: List<AddendumPdf> = emptyList(),
 )
+
+@Serializable
+internal data class AddendumPdf(val author: String, val at: String, val text: String)
 
 object PdfExportService {
     private val log = LoggerFactory.getLogger(PdfExportService::class.java)
@@ -166,6 +171,13 @@ object PdfExportService {
             } ?: "",
             signedAt = report.get(DAILY_REPORTS.SIGNEDAT)?.let { AuditHash.formatTs(it) } ?: "",
             signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
+            addenda = tx.select(USERS.DISPLAYNAME, ADDENDA.CREATEDAT, ADDENDA.TEXT)
+                .from(ADDENDA)
+                .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))
+                .where(ADDENDA.REPORTID.eq(reportId))
+                .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
+                .fetch()
+                .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") },
         )
     }
 
