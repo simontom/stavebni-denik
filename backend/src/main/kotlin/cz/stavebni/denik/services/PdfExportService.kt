@@ -91,6 +91,11 @@ internal data class ReportPdfData(
     val isSigned: Boolean,
     val isLateEntry: Boolean,
     val lateEntryReason: String,
+    /** Who signed ("Name, ČKAIT 123") and when; empty while the entry is not signed. */
+    val signedBy: String,
+    val signedAt: String,
+    /** SHA-256 of the entry's content at signing (see ReportSignature); empty for an unsigned entry. */
+    val signatureHash: String,
     /** The addenda of a signed entry, oldest first. */
     val addenda: List<AddendumPdf> = emptyList(),
 )
@@ -160,6 +165,12 @@ object PdfExportService {
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
+            signedBy = report.get(DAILY_REPORTS.SIGNEDBYID)?.let { id ->
+                tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(id)).fetchOne()
+                    ?.let { u -> listOfNotNull(u.get(USERS.DISPLAYNAME), u.get(USERS.CKAITNUMBER)?.takeIf { it.isNotBlank() }?.let { "ČKAIT $it" }).joinToString(", ") }
+            } ?: "",
+            signedAt = report.get(DAILY_REPORTS.SIGNEDAT)?.let { AuditHash.formatTs(it) } ?: "",
+            signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
             addenda = tx.select(USERS.DISPLAYNAME, ADDENDA.CREATEDAT, ADDENDA.TEXT)
                 .from(ADDENDA)
                 .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))

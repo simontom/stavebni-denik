@@ -145,6 +145,10 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         set(value): Unit = set(30, value)
         get(): String? = get(30) as String?
 
+    open var signaturehash: String?
+        set(value): Unit = set(31, value)
+        get(): String? = get(31) as String?
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -154,7 +158,7 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
     /**
      * Create a detached, initialised DailyReportsRecord
      */
-    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, acknowledgedat: OffsetDateTime? = null, acknowledgedbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null): this() {
+    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, acknowledgedat: OffsetDateTime? = null, acknowledgedbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null, signaturehash: String? = null): this() {
         this.id = id
         this.projectid = projectid
         this.sequencenumber = sequencenumber
@@ -186,6 +190,7 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         this.deletedat = deletedat
         this.islateentry = islateentry
         this.lateentryreason = lateentryreason
+        this.signaturehash = signaturehash
         resetTouchedOnNotNull()
     }
 }

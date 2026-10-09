@@ -96,7 +96,7 @@ class ReportRoutesTest : BaseIntegrationTest() {
         val signResponse = client.post("/api/projects/${project.id}/reports/2026-09-29/sign") {
             header(HttpHeaders.Authorization, "Bearer $token")
             contentType(ContentType.Application.Json)
-            setBody(mapOf("signed" to true))
+            setBody("""{"signed":true,"password":"Password123!"}""")
         }
         assertEquals(HttpStatusCode.OK, signResponse.status)
 

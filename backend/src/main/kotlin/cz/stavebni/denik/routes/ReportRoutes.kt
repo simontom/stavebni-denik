@@ -9,6 +9,8 @@ import cz.stavebni.denik.services.AddendumService
 import cz.stavebni.denik.services.CreateAddendumRequest
 import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.ReportSignature
+import cz.stavebni.denik.services.SigningGuard
 import cz.stavebni.denik.util.Dates
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -46,25 +48,40 @@ data class CreateReportPayload(
     val weather: cz.stavebni.denik.domain.WeatherData? = null
 )
 
-/** The optional body of a sign request: the version of the entry the signer was looking at. */
-@Serializable
-private data class SignPayload(val expectedUpdatedAt: String? = null)
-
 /**
- * The version named by a sign request, or null when it names none (an empty body, or a client that does not send one).
- * A body that is not valid JSON is a 400, like everywhere else.
+ * The body of a sign request: the version of the entry the signer was looking at (optional) and the signer's password
+ * (required: signing asks for it again, decision D8).
  */
-private suspend fun ApplicationCall.receiveSignedVersion(): OffsetDateTime? {
+@Serializable
+private data class SignPayload(val expectedUpdatedAt: String? = null, val password: String? = null)
+
+private class SignRequest(val expectedUpdatedAt: OffsetDateTime?, val password: String?)
+
+/** The sign request's body. A body that is not valid JSON is a 400, like everywhere else. */
+private suspend fun ApplicationCall.receiveSignRequest(): SignRequest {
     val text = receiveText()
-    if (text.isBlank()) return null
+    if (text.isBlank()) return SignRequest(null, null)
     val payload = Json { ignoreUnknownKeys = true }.decodeFromString(SignPayload.serializer(), text)
-    return payload.expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
+    val version = payload.expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
         try {
             OffsetDateTime.parse(it)
         } catch (e: DateTimeParseException) {
             throw IllegalArgumentException("Neplatná hodnota expectedUpdatedAt")
         }
     }
+    return SignRequest(version, payload.password)
+}
+
+/**
+ * Signs entry [reportId] for [user]: first whether they may sign it at all (so that someone who cannot is told so rather than
+ * asked for a password), then the password, then the signature in one transaction with the audit row.
+ */
+private suspend fun ApplicationCall.signReport(user: SessionUser, reportId: UUID) {
+    val request = receiveSignRequest()
+    DailyReportService.checkMaySign(user, reportId)
+    SigningGuard.confirmPassword(user, request.password)
+    DailyReportService.signReport(user, reportId, request.expectedUpdatedAt)
+    respond(HttpStatusCode.OK, mapOf("status" to "ok"))
 }
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
@@ -203,8 +220,7 @@ fun Application.reportRoutes() {
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
                         ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
                         val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectId)
-                        DailyReportService.signReport(user, reportId, call.receiveSignedVersion())
-                        call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+                        call.signReport(user, reportId)
                     }
 
                     post("/acknowledge") {
@@ -234,8 +250,15 @@ fun Application.reportRoutes() {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
-                    DailyReportService.signReport(user, reportId, call.receiveSignedVersion())
-                    call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+                    call.signReport(user, reportId)
+                }
+
+                // Who signed, and whether the entry and its photos are still what was signed.
+                get("/signature") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
+                    call.respond(ReportSignature.check(DatabaseFactory.dsl, reportId))
                 }
 
                 post("/acknowledge") {

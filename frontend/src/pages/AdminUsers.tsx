@@ -8,6 +8,8 @@ interface User {
   role: string;
   isAdmin: boolean;
   isActive: boolean;
+  /** Professional authorization (ČKAIT); a person who manages a project or signs its diary needs one. */
+  ckaitNumber?: string | null;
 }
 
 interface CreateUserResponse {
@@ -26,6 +28,7 @@ export const AdminUsers: React.FC = () => {
   const [newNickname, setNewNickname] = useState("");
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newRole, setNewRole] = useState("WORKER");
+  const [newCkait, setNewCkait] = useState("");
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [createError, setCreateError] = useState("");
 
@@ -36,6 +39,7 @@ export const AdminUsers: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editRole, setEditRole] = useState("WORKER");
+  const [editCkait, setEditCkait] = useState("");
 
   useEffect(() => {
     let ignore = false;
@@ -60,6 +64,7 @@ export const AdminUsers: React.FC = () => {
     setNewNickname("");
     setNewDisplayName("");
     setNewRole("WORKER");
+    setNewCkait("");
     setGeneratedPassword("");
     setCreateError("");
     setCreateStep("form");
@@ -72,7 +77,7 @@ export const AdminUsers: React.FC = () => {
     try {
       const created = await api<CreateUserResponse>("/api/users", {
         method: "POST",
-        body: json({ nickname: newNickname, displayName: newDisplayName, role: newRole }),
+        body: json({ nickname: newNickname, displayName: newDisplayName, role: newRole, ckaitNumber: newCkait }),
       });
       setGeneratedPassword(created.initialPassword);
       setUsers((prev) => [...prev, created.user].sort((a, b) => a.nickname.localeCompare(b.nickname)));
@@ -94,6 +99,7 @@ export const AdminUsers: React.FC = () => {
     setEditingUser(user);
     setEditDisplayName(user.displayName);
     setEditRole(user.role);
+    setEditCkait(user.ckaitNumber ?? "");
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -102,7 +108,7 @@ export const AdminUsers: React.FC = () => {
     try {
       const updated = await api<User>(`/api/users/${editingUser.id}`, {
         method: "PATCH",
-        body: json({ displayName: editDisplayName, role: editRole }),
+        body: json({ displayName: editDisplayName, role: editRole, ckaitNumber: editCkait }),
       });
       replaceUser(updated);
       setEditingUser(null);
@@ -204,6 +210,7 @@ export const AdminUsers: React.FC = () => {
                 <td className="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
                   {ROLE_LABELS[user.role] ?? user.role}
                   {user.isAdmin && <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">admin</span>}
+                  {user.ckaitNumber && <span className="ml-2 text-xs text-gray-500">ČKAIT {user.ckaitNumber}</span>}
                 </td>
                 <td className="px-6 py-4 text-sm whitespace-nowrap">
                   {user.isActive ? (
@@ -274,6 +281,19 @@ export const AdminUsers: React.FC = () => {
                     Role
                   </label>
                   {roleSelect(newRole, setNewRole, "new-role")}
+                </div>
+                <div>
+                  <label htmlFor="new-ckait" className="mb-1 block text-sm font-medium text-gray-700">
+                    Číslo ČKAIT (vedoucí projektu a podepisující)
+                  </label>
+                  <input
+                    id="new-ckait"
+                    name="ckaitNumber"
+                    type="text"
+                    value={newCkait}
+                    onChange={(e) => setNewCkait(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                  />
                 </div>
                 <div className="flex justify-end gap-2 border-t pt-2">
                   <button type="button" onClick={() => setShowCreateModal(false)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
@@ -364,6 +384,18 @@ export const AdminUsers: React.FC = () => {
                   Role
                 </label>
                 {roleSelect(editRole, setEditRole, "edit-role")}
+              </div>
+              <div>
+                <label htmlFor="edit-ckait" className="mb-1 block text-sm font-medium text-gray-700">
+                  Číslo ČKAIT (vedoucí projektu a podepisující)
+                </label>
+                <input
+                  id="edit-ckait"
+                  type="text"
+                  value={editCkait}
+                  onChange={(e) => setEditCkait(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                />
               </div>
               <div className="flex justify-end gap-2 border-t pt-2">
                 <button type="button" onClick={() => setEditingUser(null)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">

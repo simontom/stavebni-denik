@@ -61,6 +61,17 @@ const EMPTY_FORM: FormValues = {
 /** The form as one string: compared with the state it was loaded or last saved in, to know about unsaved changes. */
 const keyOf = (v: FormValues): string => JSON.stringify(v);
 
+/** What GET /api/reports/{id}/signature answers. */
+interface SignatureCheck {
+  signed: boolean;
+  signedByName?: string | null;
+  signerCkaitNumber?: string | null;
+  signatureHash?: string | null;
+  /** The content hashed again equals the recorded hash; null when there is nothing to compare with. */
+  contentMatches: boolean | null;
+  photoFilesMatch: boolean | null;
+}
+
 export const DailyReport: React.FC = () => {
   const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
 
@@ -95,8 +106,14 @@ export const DailyReport: React.FC = () => {
   const [isControlDay, setIsControlDay] = useState<boolean>(false);
   const [constructionObj, setConstructionObj] = useState<string>("");
   const [isSigned, setIsSigned] = useState<boolean>(false);
-  // The id of the stored entry (the addenda of a signed entry are addressed by it).
+  // Signing asks for the password again; what a signature covers can be checked afterwards.
   const [entryId, setEntryId] = useState<string | null>(null);
+  const [signatureHash, setSignatureHash] = useState<string | null>(null);
+  const [showSign, setShowSign] = useState(false);
+  const [signPassword, setSignPassword] = useState("");
+  const [signError, setSignError] = useState("");
+  const [signing, setSigning] = useState(false);
+  const [signatureCheck, setSignatureCheck] = useState<SignatureCheck | null>(null);
   const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
   // The version of the entry as this form last saw it (null for a day without an entry). Sent back on save, so a
   // second person's changes are not overwritten without anybody noticing.
@@ -176,6 +193,7 @@ export const DailyReport: React.FC = () => {
           setLateEntryReason(loaded.lateEntryReason);
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setEntryId(typeof data.id === "string" ? data.id : null);
+          setSignatureHash(typeof data.signatureHash === "string" ? data.signatureHash : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setIsSigned(Boolean(data.isSigned || data.isLocked));
           setIsAcknowledged(Boolean(data.isAcknowledged));
@@ -300,32 +318,68 @@ export const DailyReport: React.FC = () => {
     }
   };
 
-  const handleSignAndLock = async () => {
-    // A signature covers the stored version. Unsaved text on the screen would not be part of it, and the page would say
-    // "signed" above words that were never signed.
+  /** Opens the signing dialog. A signature covers the stored version, so unsaved text must be saved first. */
+  const handleSignAndLock = () => {
+    // Unsaved text on the screen would not be part of the signature, and the page would say "signed" above words that were never signed.
     if (dirty) return setError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
     if (updatedAt === null) return setError("Záznam ještě není uložen. Nejdřív jej uložte.");
-    if (!window.confirm("Opravdu chcete denní záznam podepsat a uzamknout?")) return;
+    setSignPassword("");
+    setSignError("");
+    setShowSign(true);
+  };
 
+  const handleConfirmSign = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (signing) return;
+    setSigning(true);
+    setSignError("");
     try {
       const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signed: true, expectedUpdatedAt: updatedAt }),
+        body: JSON.stringify({ expectedUpdatedAt: updatedAt, password: signPassword }),
       });
       if (res.ok) {
+        setShowSign(false);
+        setSignPassword("");
         setIsSigned(true);
         setConflict(false);
         setError("");
+        // The hash and the signer are known to the server now: take them from there.
+        const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (reloaded) {
+          setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
+          setSignatureHash(typeof reloaded.signatureHash === "string" ? reloaded.signatureHash : null);
+        }
       } else {
         const body = await res.json().catch(() => null);
-        // Somebody changed the entry after it was loaded here: what the signer sees is not what would be signed.
-        setConflict(res.status === 409 && body?.code === "STALE_VERSION");
-        setError(body?.error || "Záznam se nepodařilo podepsat");
+        if (res.status === 409 && body?.code === "STALE_VERSION") {
+          // Somebody changed the entry after it was loaded here: what the signer sees is not what would be signed.
+          setShowSign(false);
+          setConflict(true);
+          setError(body?.error || "Záznam se mezitím změnil");
+        } else {
+          // A wrong password, a missing ČKAIT number, too many attempts: said in the dialog, which stays open.
+          setSignError(body?.error || "Záznam se nepodařilo podepsat");
+        }
       }
     } catch (err) {
-      console.error("Failed to sign report:", err);
-      setError("Záznam se nepodařilo podepsat");
+      setSignError(err instanceof Error ? err.message : "Záznam se nepodařilo podepsat");
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  const handleCheckSignature = async () => {
+    if (!entryId) return;
+    try {
+      const res = await apiFetch(`/api/reports/${entryId}/signature`);
+      if (!res.ok) throw new Error("Podpis se nepodařilo ověřit");
+      setSignatureCheck((await res.json()) as SignatureCheck);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Podpis se nepodařilo ověřit");
     }
   };
 
@@ -575,7 +629,36 @@ export const DailyReport: React.FC = () => {
           </fieldset>
 
           {isSigned ? (
-            <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam je podepsán a uzamčen. Opravy se vedou formou dodatků.</p>
+            <div className="mt-6 space-y-2 border-t border-gray-200 pt-4 text-sm text-gray-600">
+              <p>Záznam je podepsán a uzamčen. Opravy se vedou formou dodatků.</p>
+              {signatureHash && (
+                <p className="break-all">
+                  Otisk obsahu (SHA-256): <span className="font-mono text-xs">{signatureHash}</span>
+                </p>
+              )}
+              {entryId && (
+                <button
+                  type="button"
+                  onClick={() => void handleCheckSignature()}
+                  className="rounded border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Ověřit podpis
+                </button>
+              )}
+              {signatureCheck && (
+                <div role="status" className={signatureCheck.contentMatches === false || signatureCheck.photoFilesMatch === false ? "text-red-700" : "text-green-700"}>
+                  {signatureCheck.signedByName
+                    ? `Podepsal ${signatureCheck.signedByName}${signatureCheck.signerCkaitNumber ? `, ČKAIT ${signatureCheck.signerCkaitNumber}` : ""}. `
+                    : ""}
+                  {signatureCheck.contentMatches === null
+                    ? "Záznam byl podepsán dříve, než se otisk začal ukládat: není s čím porovnat."
+                    : signatureCheck.contentMatches
+                      ? "Obsah odpovídá podpisu."
+                      : "POZOR: obsah záznamu se po podpisu změnil."}{" "}
+                  {signatureCheck.photoFilesMatch === false ? "POZOR: soubor fotografie se po podpisu změnil." : ""}
+                </div>
+              )}
+            </div>
           ) : (
             <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
               {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
@@ -635,8 +718,52 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
 
-      {/* Section 3: Sign & Lock */}
-      {!isInvestor && (
+      {showSign && (
+        <div role="dialog" aria-modal="true" aria-labelledby="sign-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form onSubmit={(e) => void handleConfirmSign(e)} className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
+            <h2 id="sign-title" className="text-lg font-bold text-gray-900">
+              Podepsat a uzamknout záznam
+            </h2>
+            <p className="text-sm text-gray-600">
+              Podepisujete uloženou verzi záznamu ze dne {reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.
+            </p>
+            <div>
+              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-gray-700">
+                Heslo
+              </label>
+              <input
+                id="sign-password"
+                type="password"
+                autoComplete="current-password"
+                autoFocus
+                value={signPassword}
+                onChange={(e) => setSignPassword(e.target.value)}
+                className="w-full rounded border border-gray-300 p-2 text-sm"
+              />
+            </div>
+            {signError && (
+              <div role="alert" className="text-sm text-red-600">
+                {signError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 border-t pt-3">
+              <button type="button" onClick={() => setShowSign(false)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                Zrušit
+              </button>
+              <button
+                type="submit"
+                disabled={signing || signPassword.length === 0}
+                className="rounded bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Podepsat
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Section 3: Sign & Lock (the manager of this project signs) */}
+      {myRole === "BOSS" && (
         <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <div>
             <h3 className="font-semibold text-gray-900">Uzamčení a podpis denního záznamu</h3>
