@@ -1,6 +1,7 @@
 package cz.stavebni.denik.cli
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.services.AccessLogService
 import cz.stavebni.denik.services.AdminBootstrapService
 import cz.stavebni.denik.services.AuditAnchor
 import cz.stavebni.denik.services.AuditService
@@ -20,6 +21,11 @@ import kotlin.system.exitProcess
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records
+ *
+ * `prune-access-records` deletes the addresses and user agents kept with audit rows and the sign-in log once they are older
+ * than twelve months (decision D7; the database refuses to delete anything younger). Run it regularly: the retention is a
+ * promise made in the privacy notice.
  *
  * `verify-signatures` hashes every signed entry again and every photo file under UPLOADS_DIR, and compares them with what
  * was recorded when the entry was signed and the photo uploaded. It reads only. It is what a restore from a backup runs to
@@ -89,7 +95,8 @@ object AdminCli {
   reset-password <nickname>               give an active user a new temporary password
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
   audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
-  verify-signatures                       hash every signed entry and photo file again and compare with what was recorded"""
+  verify-signatures                       hash every signed entry and photo file again and compare with what was recorded
+  prune-access-records                    delete addresses and user agents older than twelve months (sign-in log, audit request context)"""
 
     /** Whether [args] name a command with the right number of arguments. */
     fun hasValidShape(args: List<String>): Boolean =
@@ -99,6 +106,7 @@ object AdminCli {
             "reset-password" -> args.size == 2
             "audit-head" -> args.size == 1
             "verify-signatures" -> args.size == 1
+            "prune-access-records" -> args.size == 1
             "audit-verify" -> args.size == 1 || (args.size == 2 && AuditAnchor.parse(args[1]) != null)
             else -> false
         }
@@ -152,6 +160,12 @@ object AdminCli {
                     head == null -> { err("The audit log is empty."); 1 }
                     else -> { out(head.toString()); 0 }
                 }
+            }
+            "prune-access-records" -> {
+                if (args.size != 1) return usage()
+                val pruned = AccessLogService.prune(DatabaseFactory.dsl)
+                out("Pruned ${pruned.accessLog} sign-in log rows and ${pruned.auditRequestContext} audit request records older than ${AccessLogService.RETENTION_MONTHS} months.")
+                0
             }
             "verify-signatures" -> {
                 if (args.size != 1) return usage()

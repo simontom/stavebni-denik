@@ -5,8 +5,10 @@
 package cz.stavebni.denik.jooq.keys
 
 
+import cz.stavebni.denik.jooq.tables.AccessLog
 import cz.stavebni.denik.jooq.tables.Addenda
 import cz.stavebni.denik.jooq.tables.AuditLog
+import cz.stavebni.denik.jooq.tables.AuditRequestContext
 import cz.stavebni.denik.jooq.tables.AuthorizedPersons
 import cz.stavebni.denik.jooq.tables.DailyReports
 import cz.stavebni.denik.jooq.tables.MaterialNeeds
@@ -21,8 +23,10 @@ import cz.stavebni.denik.jooq.tables.Sessions
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
 import cz.stavebni.denik.jooq.tables.Visits
+import cz.stavebni.denik.jooq.tables.records.AccessLogRecord
 import cz.stavebni.denik.jooq.tables.records.AddendaRecord
 import cz.stavebni.denik.jooq.tables.records.AuditLogRecord
+import cz.stavebni.denik.jooq.tables.records.AuditRequestContextRecord
 import cz.stavebni.denik.jooq.tables.records.AuthorizedPersonsRecord
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
 import cz.stavebni.denik.jooq.tables.records.MaterialNeedsRecord
@@ -50,8 +54,10 @@ import org.jooq.impl.QOM.ForeignKeyRule
 // UNIQUE and PRIMARY KEY definitions
 // -------------------------------------------------------------------------
 
+val ACCESS_LOG_PKEY: UniqueKey<AccessLogRecord> = Internal.createUniqueKey(AccessLog.ACCESS_LOG, DSL.name("access_log_pkey"), arrayOf(AccessLog.ACCESS_LOG.ID), true)
 val ADDENDA_PKEY: UniqueKey<AddendaRecord> = Internal.createUniqueKey(Addenda.ADDENDA, DSL.name("addenda_pkey"), arrayOf(Addenda.ADDENDA.ID), true)
 val AUDIT_LOG_PKEY: UniqueKey<AuditLogRecord> = Internal.createUniqueKey(AuditLog.AUDIT_LOG, DSL.name("audit_log_pkey"), arrayOf(AuditLog.AUDIT_LOG.ID), true)
+val AUDIT_REQUEST_CONTEXT_PKEY: UniqueKey<AuditRequestContextRecord> = Internal.createUniqueKey(AuditRequestContext.AUDIT_REQUEST_CONTEXT, DSL.name("audit_request_context_pkey"), arrayOf(AuditRequestContext.AUDIT_REQUEST_CONTEXT.AUDIT_ID), true)
 val AUTHORIZED_PERSONS_PKEY: UniqueKey<AuthorizedPersonsRecord> = Internal.createUniqueKey(AuthorizedPersons.AUTHORIZED_PERSONS, DSL.name("authorized_persons_pkey"), arrayOf(AuthorizedPersons.AUTHORIZED_PERSONS.ID), true)
 val DAILY_REPORTS_PKEY: UniqueKey<DailyReportsRecord> = Internal.createUniqueKey(DailyReports.DAILY_REPORTS, DSL.name("daily_reports_pkey"), arrayOf(DailyReports.DAILY_REPORTS.ID), true)
 val MATERIAL_NEEDS_PKEY: UniqueKey<MaterialNeedsRecord> = Internal.createUniqueKey(MaterialNeeds.MATERIAL_NEEDS, DSL.name("material_needs_pkey"), arrayOf(MaterialNeeds.MATERIAL_NEEDS.ID), true)

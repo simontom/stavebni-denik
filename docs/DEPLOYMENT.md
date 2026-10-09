@@ -85,6 +85,16 @@ RESTORE_UPLOADS_DIR=/data/uploads-obnova APP_JAR=backend-all.jar \
 
 **Zatím není nastavené:** pravidelné spouštění záloh, kopie mimo stroj a pravidelné zkušební obnovy nad produkčními daty. Je to provozní krok, který čeká na produkční databázi; bez něj skutečná data nepouštějte.
 
+## Uchovávání IP adres a user agentů
+
+IP adresa a user agent požadavku jsou osobní údaje, proto **nejsou součástí hashe audit logu** (řetěz je trvalý a nejde mazat). Ukládají se do postranních tabulek `audit_request_context` (k řádkům audit logu) a `access_log` (přihlášení, neúspěšná přihlášení a odhlášení; není součástí právního řetězu) a uchovávají se **12 měsíců**. Databáze odmítne takový řádek změnit nebo smazat dřív; starší maže příkaz:
+
+```bash
+fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records"
+```
+
+**Spouštějte ho pravidelně** (např. týdně): lhůta je slib v zásadách ochrany osobních údajů. Pravidelné spouštění zatím není nastavené (čeká na produkční infrastrukturu, stejně jako zálohy). Zálohy obsahují tyto tabulky také, takže se na ně vztahuje stejná lhůta: zálohy starší než 12 měsíců je třeba mazat.
+
 ## Aktualizace
 
 ```bash
