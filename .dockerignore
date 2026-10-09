@@ -21,7 +21,6 @@
 **/.gradle
 .kotlin
 **/.kotlin
-.next
 coverage
 test-results
 playwright-report
@@ -48,9 +47,14 @@ gradle-8.10/
 docs/
 graft/
 e2e/
-test/
-src/
-prisma/
+scripts/
+playwright.config.ts
+tsconfig.json
+package.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+.husky/
+.github/
 README.md
 AGENTS.md
 CLAUDE.md

@@ -9,7 +9,7 @@
 - **Testing**:
   - Backend: JUnit 5, Testcontainers `postgres:18-alpine`, Ktor `testApplication`, WireMock / MockEngine. Tests use a fake typst; `RealTypstPdfTest` runs the real tool and is skipped when typst is not installed (CI installs it and sets `REQUIRE_TYPST=1`, which turns a missing typst into a failure).
   - E2E: Playwright against the live stack (Ktor on :8080, Vite dev server on :5173 proxying `/api`).
-- **Legacy** (being retired, not built by CI): Next.js + Prisma app in `src/`, `prisma/`, `test/`, and the scripts under `scripts/` that use it.
+- **Repository root**: only the Playwright suite (`e2e/`, `playwright.config.ts`, `scripts/dev/e2e-prepare.ts`) and the commit hooks (husky, lint-staged, prettier) live in the root `package.json`. The former Next.js + Prisma application was removed (2026-10-09); it is in the git history if anything is needed from it.
 
 ## jOOQ code generation
 
@@ -161,9 +161,10 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `backend/src/generated/jooq/` — generated jOOQ sources (committed)
 - `backend/src/test/kotlin/cz/stavebni/denik/` — integration tests
 - `frontend/src/` — React SPA (`lib/api.ts` is the API client)
-- `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
+- `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users (it refuses any database that is not on this machine, `local-db-guard.ts`); `pnpm typecheck` checks the E2E code
+- `docs/DEVELOPMENT.md`, `docs/DEPLOYMENT.md` — how to run, test and deploy; `README.md` — overview and quick start (Czech)
 - `.github/workflows/ci.yml` — lint/build, integration (with real typst), jOOQ drift check, Docker image build + boot test (release gate, security headers, non-root user, volume ownership), E2E
-- `.github/dependabot.yml` — weekly update pull requests: **minor and patch updates only**, one grouped pull request each for `frontend/` (npm/pnpm), the Gradle build (read from the root, which follows `settings.gradle.kts` into `backend/`), GitHub Actions and the Docker base images. Major versions (a framework, Kotlin, Gradle, the JDK or Node image) are updated by hand: a first version of this file named `backend/` as a second Gradle directory and allowed majors, and produced 13 pull requests at once, many of them duplicates or jumps (Node 26, JDK 25, Gradle 9) that the project is not ready for. The legacy root npm tree is switched off (limit 0). Versions kept in plain `val xVersion = "…"` lines of the Kotlin build scripts may not be seen by Dependabot (a version catalog would fix that).
+- `.github/dependabot.yml` — weekly update pull requests: **minor and patch updates only**, one grouped pull request each for `frontend/` (npm/pnpm), the Gradle build (read from the root, which follows `settings.gradle.kts` into `backend/`), GitHub Actions and the Docker base images. Major versions (a framework, Kotlin, Gradle, the JDK or Node image) are updated by hand: a first version of this file named `backend/` as a second Gradle directory and allowed majors, and produced 13 pull requests at once, many of them duplicates or jumps (Node 26, JDK 25, Gradle 9) that the project is not ready for. The root (the Playwright suite and the commit hooks) gets one grouped minor/patch pull request as well. Versions kept in plain `val xVersion = "…"` lines of the Kotlin build scripts may not be seen by Dependabot (a version catalog would fix that).
 
 ## Audit log
 
@@ -209,5 +210,4 @@ Before the first release:
 
 - `RemarkService`, `VisitService` and `MaterialService` have **no routes and no UI** (only their tests use them). They follow the project role now, but they do not write audit rows or take the in-transaction locks the other services do. Before any route is added they must go through `AuditService.auditedWrite`; or delete them if the legal model (příloha 12) does not need them.
 - Only users with a ČKAIT number should be able to hold the BOSS role of a project (decision D2); today any member can be made BOSS by a project manager or an administrator, audited.
-- Retire the legacy Next.js/Prisma tree (`src/`, `prisma/`, `test/`, root `package.json`): first replace the E2E seed (`scripts/dev/e2e-prepare.ts`), which still depends on it; `scripts/verify-audit.ts` is then dead too.
-- Update the docs that still describe the old stack (`README.md`, `docs/ARCHITECTURE.md`, `docs/SECURITY.md`, `docs/DEPLOYMENT.md`, the CI gates in `AGENTS.md`).
+- **Backups do not exist yet.** Back up the database (including `audit_log`) and `/data/uploads/photos`, and prove a restore before real data. `scripts/backup.sh` is an old restic script that is not in the image and has no test since the legacy suite was removed.
