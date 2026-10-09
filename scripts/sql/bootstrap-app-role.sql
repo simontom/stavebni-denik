@@ -1,60 +1,34 @@
 -- ===========================================================================
--- Bootstrap script for the unprivileged `app` role used by the running
--- application. Run this ONCE as a Postgres superuser BEFORE the first deploy.
--- NOT WIRED IN YET (PROJECT.md, decision D5: separate roles for migrations and for the
--- running application): today the application connects as one role and Flyway migrates
--- with it. Migrations V1 and V2 already revoke UPDATE/DELETE/TRUNCATE on audit_log from a
--- role named `app` when it exists.
+-- Creates the role the RUNNING application connects as (decision D5).
 --
--- Why a separate role?
---   The migrator role must keep DDL + DML on every table. The runtime
---   role, however, must be unable to DELETE rows in `audit_log`.
---   (It retains UPDATE privilege only to allow SELECT ... FOR UPDATE row locks;
---   actual updates are blocked by the audit_log_no_update trigger).
---   Splitting the two enforces that property at the Postgres level —
---   any future bug or compromised app secret cannot tamper with the
---   audit chain.
+-- Run ONCE per database, as a PostgreSQL superuser or the database owner, before the first `migrate`:
 --
--- Production setup outline (Fly Postgres):
---   1. Connect as the postgres superuser.
---   2. Edit the password placeholder below.
---   3. Run this file.
---   4. Set JDBC_URL / DB_USER / DB_PASSWORD on the app to use `app`.
---   5. Deploy — Flyway runs the migrations with the same connection
---      because the `app` role still has CREATE on the schema.
+--     psql -v ON_ERROR_STOP=1 -v app_password="$APP_DB_PASSWORD" -d stavebni_denik -f scripts/sql/bootstrap-app-role.sql
+--
+-- Then, with the OWNER's credentials (never the application's):
+--
+--     DB_MIGRATE_USER=<owner> DB_MIGRATE_PASSWORD=<...> DB_APP_ROLE=app JDBC_URL=<...> \
+--       java -cp backend-all.jar cz.stavebni.denik.cli.AdminCliKt migrate
+--
+-- `migrate` creates and updates the schema as the owner, then gives this role data access and nothing more
+-- (db/grants/app-role.sql): it cannot create or drop a table, switch a trigger off, truncate anything, or change the audit
+-- log. The application is configured with JDBC_URL, DB_USER=app and DB_PASSWORD; it never holds the owner's password and,
+-- in production, never migrates (it refuses to start when the schema is not current).
+--
+-- Why: a role that owns the tables can disable the triggers that make the audit chain, the signed records and the
+-- append-only tables tamper-resistant, so anybody who stole the application's password could rewrite history. With this
+-- split those protections bind the application's own role.
 -- ===========================================================================
 
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app') THEN
-    EXECUTE format('CREATE ROLE app LOGIN PASSWORD %L', current_setting('app.password', true));
-  END IF;
-END;
-$$;
+-- The role: can log in and connect, owns nothing, cannot create roles or databases.
+SELECT format('CREATE ROLE app LOGIN PASSWORD %L NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', :'app_password')
+ WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app')
+\gexec
 
--- Default privileges on tables created later by migrations.
-DO $$
-BEGIN
-  EXECUTE format('GRANT CONNECT ON DATABASE %I TO app', current_database());
-END;
-$$;
-GRANT USAGE, CREATE ON SCHEMA public TO app;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO app;
+-- A role that already exists gets the new password (running the script again rotates it).
+SELECT format('ALTER ROLE app PASSWORD %L', :'app_password')
+ WHERE EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app')
+\gexec
 
--- If audit_log already exists, lock it down right away.
-DO $$
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'audit_log') THEN
-    -- Postgres requires UPDATE privilege to use SELECT ... FOR UPDATE (row locking).
-    -- Since we use FOR UPDATE to prevent race conditions during audit hashing,
-    -- we must leave UPDATE granted. Actual data mutation is prevented by the
-    -- 'audit_log_no_update' trigger which aborts the transaction.
-    EXECUTE 'REVOKE DELETE, TRUNCATE ON "audit_log" FROM app';
-  END IF;
-END;
-$$;
+SELECT format('GRANT CONNECT ON DATABASE %I TO app', current_database())
+\gexec
