@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
+import { Remarks } from "../components/Remarks";
 import { api, apiFetch, setUnsavedWork } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
@@ -710,6 +711,13 @@ export const DailyReport: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Entries of other parties (supervision, the client, authorities): also on a signed entry */}
+      {entryId && (
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm empty:hidden">
+          <Remarks entryId={entryId} role={myRole} />
+        </div>
+      )}
 
       {/* Addenda: how a signed entry is corrected or completed */}
       {isSigned && entryId && (

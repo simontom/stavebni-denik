@@ -72,3 +72,20 @@
     #v(0.6em)
   ]
 ]
+
+// Entries of other parties (supervision, the client, authorities): each says who wrote it, and for an outside party who recorded it.
+#if d.remarks.len() > 0 [
+  == Zápisy dalších osob
+
+  #for r in d.remarks [
+    #if r.onBehalfOf != "" [
+      *#plain(r.onBehalfOf)* (zapsal #plain(r.author)), #r.at (UTC)
+    ] else [
+      *#plain(r.author)*, #r.at (UTC)
+    ]
+
+    #plain(r.text)
+
+    #v(0.6em)
+  ]
+]
