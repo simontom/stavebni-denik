@@ -369,7 +369,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `GET report pdf for non-existent report returns 400 Bad Request`() = testApplication {
+    fun `GET report pdf for non-existent report returns 404 Not Found`() = testApplication {
         application { module() }
 
         val boss = createTestUser(role = Role.BOSS)
@@ -379,6 +379,6 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
             header(HttpHeaders.Authorization, "Bearer $token")
         }
 
-        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals(HttpStatusCode.NotFound, response.status)
     }
 }
