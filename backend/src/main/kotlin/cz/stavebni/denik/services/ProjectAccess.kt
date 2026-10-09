@@ -8,6 +8,7 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
+import cz.stavebni.denik.jooq.tables.references.USERS
 import org.jooq.DSLContext
 import java.util.UUID
 
@@ -18,6 +19,10 @@ import java.util.UUID
  * role they hold **in that project** (see [roleIn]), not their global role.
  */
 object ProjectAccess {
+
+    /** Whether the person's account carries a ČKAIT number (the professional authorization of a site manager, decision D2). */
+    fun hasCkaitNumber(tx: DSLContext, userId: UUID): Boolean =
+        !tx.select(USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(userId)).fetchOne(USERS.CKAITNUMBER).isNullOrBlank()
 
     /** The role [userId] holds in the project, or null when they are not a member. */
     fun roleIn(tx: DSLContext, userId: UUID, projectId: UUID): Role? =

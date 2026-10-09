@@ -40,7 +40,7 @@ class ProjectRoleRoutesTest : BaseIntegrationTest() {
         return UUID.fromString(project.id)
     }
 
-    private suspend fun ApplicationTestBuilder.call(method: HttpMethod, path: String, user: SessionUser, body: String = "{}"): HttpResponse =
+    private suspend fun ApplicationTestBuilder.call(method: HttpMethod, path: String, user: SessionUser, body: String = """{"password":"Password123!"}"""): HttpResponse =
         client.request(path) {
             this.method = method
             header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}")
@@ -95,7 +95,8 @@ class ProjectRoleRoutesTest : BaseIntegrationTest() {
     fun `a global worker who manages a project can sign and manage it, but cannot create projects`() = testApplication {
         application { module() }
         val boss = createTestUser(nickname = "boss", role = Role.BOSS)
-        val promoted = createTestUser(nickname = "promoted", role = Role.WORKER)
+        // A global worker who is made a manager of one project: to sign there they need a ČKAIT number (decision D2).
+        val promoted = createTestUser(nickname = "promoted", role = Role.WORKER, ckaitNumber = "0054321")
         val newcomer = createTestUser(nickname = "newcomer", role = Role.WORKER)
         val p = project(boss, "P")
         addMember(p, promoted, Role.BOSS)

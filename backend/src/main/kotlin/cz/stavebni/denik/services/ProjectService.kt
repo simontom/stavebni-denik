@@ -86,6 +86,13 @@ object ProjectService {
             entityType = "project",
             entityId = ""
         ) { tx ->
+            // The site manager signs the diary and the creator becomes a manager of the project: both hold a ČKAIT number (decision D2).
+            if (!ProjectAccess.hasCkaitNumber(tx, siteManagerId)) {
+                throw IllegalArgumentException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+            }
+            if (!ProjectAccess.hasCkaitNumber(tx, user.id)) {
+                throw IllegalArgumentException("Zakladatel projektu se stává jeho vedoucím a musí mít číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
+            }
             val record = tx.insertInto(PROJECTS)
                 .set(PROJECTS.NAME, data.name.trim())
                 .set(PROJECTS.ADDRESS, data.address)

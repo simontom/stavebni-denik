@@ -253,6 +253,11 @@ open class DailyReports(
      */
     val LATEENTRYREASON: TableField<DailyReportsRecord, String?> = createField(DSL.name("lateEntryReason"), SQLDataType.CLOB, this, "")
 
+    /**
+     * The column <code>public.daily_reports.signatureHash</code>.
+     */
+    val SIGNATUREHASH: TableField<DailyReportsRecord, String?> = createField(DSL.name("signatureHash"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)

@@ -238,6 +238,9 @@ object PhotoService {
                     .set(PHOTOS.WIDTH, original.width)
                     .set(PHOTOS.HEIGHT, original.height)
                     .set(PHOTOS.BYTES, original.bytes.size)
+                    // What a signature of the entry covers: the hash of each stored file, as it was when it was stored.
+                    .set(PHOTOS.SHA256, sha256(original.bytes))
+                    .set(PHOTOS.THUMBSHA256, sha256(thumbnail.bytes))
                     .set(PHOTOS.UPLOADEDBYID, user.id)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
