@@ -196,6 +196,12 @@ object ReportSignature {
         val problems = mutableListOf<String>()
         for (id in ids) {
             val check = check(tx, id)
+            // Selected because it is locked, but check() found no signer or no time of signing: an entry that cannot be
+            // checked is not one that has "nothing to compare".
+            if (!check.signed) {
+                problems += "entry $id: it is locked but has no signer or no time of signing, so its signature cannot be checked"
+                continue
+            }
             if (check.signatureHash == null && (check.signatureFormat ?: 1) < 2) withoutHash++
             if (check.signatureHash == null && (check.signatureFormat ?: 1) >= 2) {
                 problems += "entry $id: signed in format ${check.signatureFormat} but its signature hash is missing"

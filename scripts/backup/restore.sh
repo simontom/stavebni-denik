@@ -100,8 +100,8 @@ if [ -n "${APP_JAR:-}" ]; then
   cli() { java -cp "$APP_JAR" cz.stavebni.denik.cli.AdminCliKt "$@"; }
   # A backup from an older version of the application has an older schema, and the checks below are the code of THIS version:
   # the restored copy is brought up to date first (what an operator does after a real restore anyway; for a backup of this
-  # version it changes nothing). A backup of a NEWER schema cannot be migrated and fails here, which is the right answer.
-  DB_MIGRATE_USER="$PGUSER" DB_MIGRATE_PASSWORD="$PGPASSWORD" cli migrate     || fail "the restored database could not be migrated to the schema of this version of the application"
+  # version it changes nothing). A backup of a NEWER schema is refused by \`migrate\` (it names the versions this jar does not know) and fails here, which is the right answer.
+  DB_MIGRATE_USER="$PGUSER" DB_MIGRATE_PASSWORD="$PGPASSWORD" cli migrate     || fail "the restored database could not be migrated to the schema of this version of the application (a backup of a NEWER version needs that version's jar)"
   if [ -n "$anchor" ]; then
     cli audit-verify "$anchor" || fail "the audit chain does not verify against the anchor $anchor"
   else

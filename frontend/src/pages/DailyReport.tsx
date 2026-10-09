@@ -137,6 +137,11 @@ export const DailyReport: React.FC = () => {
       ignore = true;
     };
   }, [projectId]);
+  /** Shows a message and brings it into view, also when it is the same text as the last one (a repeated failed attempt). */
+  const showError = (message: string) => {
+    setError(message);
+    setErrorTick((tick) => tick + 1);
+  };
   const [error, setError] = useState("");
 
   // Report state
@@ -171,6 +176,7 @@ export const DailyReport: React.FC = () => {
   const [conflict, setConflict] = useState<boolean>(false);
   // The form is long: an error shown at its top is brought into view, wherever the person pressed Save.
   const errorBox = useRef<HTMLDivElement | null>(null);
+  const [errorTick, setErrorTick] = useState(0);
   // A new entry for a day before the previous working day is a late entry (decision D10) and needs a reason.
   // The server decides; this only decides what the form shows. An existing entry shows what was recorded.
   // The weather is entered by hand (decision D12). Empty fields mean "not stated".
@@ -185,7 +191,7 @@ export const DailyReport: React.FC = () => {
   const dirty = savedKey !== null && formKey !== savedKey;
   useEffect(() => {
     if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  }, [error]);
+  }, [error, errorTick]);
   // Tell the session dialog: after a lapsed session the page must keep what was typed (no reload, no redirect).
   useEffect(() => {
     setUnsavedWork(dirty);
@@ -293,12 +299,12 @@ export const DailyReport: React.FC = () => {
     // A trade needs a name and a whole head count (0 is allowed); a row left completely empty is simply not a trade.
     const rows = workers.filter((r) => r.trade.trim() !== "" || r.count.trim() !== "" || r.names.trim() !== "");
     for (const r of rows) {
-      if (r.trade.trim() === "") return setError("Doplňte název profese u zadaného počtu pracovníků");
-      if (!/^\d{1,6}$/.test(r.count.trim())) return setError(`Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
+      if (r.trade.trim() === "") return showError("Doplňte název profese u zadaného počtu pracovníků");
+      if (!/^\d{1,6}$/.test(r.count.trim())) return showError(`Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
     }
     for (const field of DETAIL_FIELDS) {
       if ((details[field.key] ?? "").length > MAX_DETAIL_CHARS) {
-        return setError(`Pole "${field.label}" může mít nejvýše ${MAX_DETAIL_CHARS} znaků (teď ${details[field.key].length})`);
+        return showError(`Pole "${field.label}" může mít nejvýše ${MAX_DETAIL_CHARS} znaků (teď ${details[field.key].length})`);
       }
     }
     const submittedKey = formKey;
@@ -344,11 +350,11 @@ export const DailyReport: React.FC = () => {
         const body = await res.json().catch(() => null);
         // Somebody else saved this entry after it was loaded here: offer to load their version.
         setConflict(res.status === 409 && body?.code === "STALE_VERSION");
-        setError(body?.error || "Záznam se nepodařilo uložit");
+        showError(body?.error || "Záznam se nepodařilo uložit");
       }
     } catch (err) {
       console.error("Failed to create report:", err);
-      setError("Záznam se nepodařilo uložit");
+      showError("Záznam se nepodařilo uložit");
     }
   };
 
@@ -389,15 +395,15 @@ export const DailyReport: React.FC = () => {
       setSelectedFile(null);
     } catch (err) {
       console.error("Photo upload error:", err);
-      setError(err instanceof Error ? err.message : "Nahrání fotky se nezdařilo");
+      showError(err instanceof Error ? err.message : "Nahrání fotky se nezdařilo");
     }
   };
 
   /** Opens the signing dialog. A signature covers the stored version, so unsaved text must be saved first. */
   const handleSignAndLock = () => {
     // Unsaved text on the screen would not be part of the signature, and the page would say "signed" above words that were never signed.
-    if (dirty) return setError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
-    if (updatedAt === null) return setError("Záznam ještě není uložen. Nejdřív jej uložte.");
+    if (dirty) return showError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
+    if (updatedAt === null) return showError("Záznam ještě není uložen. Nejdřív jej uložte.");
     setSignPassword("");
     setSignError("");
     setShowSign(true);
@@ -435,7 +441,7 @@ export const DailyReport: React.FC = () => {
           // Somebody changed the entry after it was loaded here: what the signer sees is not what would be signed.
           setShowSign(false);
           setConflict(true);
-          setError(body?.error || "Záznam se mezitím změnil");
+          showError(body?.error || "Záznam se mezitím změnil");
         } else {
           // A wrong password, a missing ČKAIT number, too many attempts: said in the dialog, which stays open.
           setSignError(body?.error || "Záznam se nepodařilo podepsat");
@@ -455,7 +461,7 @@ export const DailyReport: React.FC = () => {
       if (!res.ok) throw new Error("Podpis se nepodařilo ověřit");
       setSignatureCheck((await res.json()) as SignatureCheck);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Podpis se nepodařilo ověřit");
+      showError(err instanceof Error ? err.message : "Podpis se nepodařilo ověřit");
     }
   };
 
@@ -476,11 +482,11 @@ export const DailyReport: React.FC = () => {
         if (reloaded && Array.isArray(reloaded.acknowledgements)) setAcknowledgements(reloaded.acknowledgements as Acknowledgement[]);
         setError("");
       } else {
-        setError(await readError(res, "Záznam se nepodařilo potvrdit"));
+        showError(await readError(res, "Záznam se nepodařilo potvrdit"));
       }
     } catch (err) {
       console.error("Failed to acknowledge report:", err);
-      setError("Záznam se nepodařilo potvrdit");
+      showError("Záznam se nepodařilo potvrdit");
     }
   };
 

@@ -7,8 +7,10 @@ import org.jooq.TableField
 /**
  * The text fields of a daily entry that the vyhláška asks for besides the day's work and the people on site
  * (vyhláška 131/2024 Sb., příloha 12, part B). One list drives everything that touches them: what a request may mention,
- * the limits, what is stored, what the audit snapshot and the signature cover, and what the PDF prints, so a field cannot be
- * added to one place and forgotten in another.
+ * the limits, what is stored, what the audit snapshot contains, and what the PDF prints, so a field cannot be added to one
+ * place and forgotten in another. The one thing that does NOT follow this list is the signature: each signature format covers
+ * a frozen list of keys (ReportSignature.FORMAT_2_DETAIL_KEYS), so a field added here is not signed until a new format covers
+ * it (GoldenSignatureTest fails until then).
  *
  * The wording of the labels is **provisional**: it was written from a summary of the annex, not from its official text, and
  * has to be checked against the Sbírka zákonů and confirmed with a lawyer (PROJECT.md, "What an entry says").
@@ -16,7 +18,7 @@ import org.jooq.TableField
 object EntryDetails {
     class Field(val key: String, val label: String, val column: TableField<DailyReportsRecord, String?>)
 
-    /** In the order they are shown. The keys are the API's and are part of what the signature covers: never rename one. */
+    /** In the order they are shown. The keys are the API's and are part of what signatures of format 2 cover: never rename or remove one. */
     val FIELDS: List<Field> = listOf(
         Field("materials", "Dodávky a uskladnění materiálu a zařízení", DAILY_REPORTS.MATERIALSIN),
         Field("machinery", "Použité stroje a mechanizace", DAILY_REPORTS.MACHINERY),

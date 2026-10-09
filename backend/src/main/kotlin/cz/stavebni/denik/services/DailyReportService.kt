@@ -157,6 +157,8 @@ object DailyReportService {
             for (name in row.names) {
                 require(name.isNotBlank()) { "Jméno pracovníka u profese '${row.trade.trim()}' nesmí být prázdné" }
                 EntryDetails.requireNoNul(name, "Jméno pracovníka")
+                // The form and the PDF separate names with a semicolon: a name that holds one would read as two people.
+                require(!name.contains(';')) { "Jméno pracovníka nesmí obsahovat středník (odděluje jména)" }
                 require(name.trim().length <= MAX_NAME_CHARS) { "Jméno pracovníka může mít nejvýše $MAX_NAME_CHARS znaků" }
             }
         }

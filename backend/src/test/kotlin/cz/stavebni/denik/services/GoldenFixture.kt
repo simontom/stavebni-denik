@@ -16,6 +16,10 @@ internal object GoldenFixture {
     val projectId: UUID = UUID.fromString("22222222-2222-4222-8222-222222222222")
     val entryId: UUID = UUID.fromString("33333333-3333-4333-8333-333333333333")
     val photoId: UUID = UUID.fromString("44444444-4444-4444-8444-444444444444")
+    /** Inserted AFTER [photoId] but sorts before it: the signature lists photos by id, not in the order of the table. */
+    val firstPhotoId: UUID = UUID.fromString("00000000-0000-4000-8000-000000000001")
+    /** A photo that was removed: not part of what is signed. */
+    val deletedPhotoId: UUID = UUID.fromString("55555555-5555-4555-8555-555555555555")
     const val SIGNED_AT = "2026-09-28 10:15:30.123+00"
 
     /**
@@ -34,16 +38,27 @@ internal object GoldenFixture {
         )
         dsl.execute(
             """insert into daily_reports (id, "projectId", date, "authorId", "constructionObj", "isControlDay", "workersByTrade",
-                                          "workDescription", weather)
+                                          "workDescription", weather, "isLateEntry", "lateEntryReason")
                values ('$entryId', '$projectId', '2026-09-28', '$signerId', 'SO 01', true,
                        '[{"trade":"Betonáři","count":3},{"trade":"Zedníci","count":2}]'::jsonb,
                        'Betonáž stropu' || chr(10) || 'Druhý řádek',
-                       '{"tempMin":8.5,"tempMax":15.0,"condition":"zataženo"}'::jsonb)"""
+                       '{"tempMin":8.5,"tempMax":15.0,"condition":"zataženo"}'::jsonb,
+                       true, 'Deník byl na jiné stavbě')"""
         )
         dsl.execute(
             """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256")
                values ('$photoId', '$entryId', 'photos/golden.jpg', 'photos/golden-thumb.jpg', 800, 600, 1000, '$signerId',
                        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')"""
+        )
+        dsl.execute(
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256")
+               values ('$firstPhotoId', '$entryId', 'photos/golden-0.jpg', 'photos/golden-0-thumb.jpg', 800, 600, 1000, '$signerId',
+                       'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')"""
+        )
+        dsl.execute(
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256", "deletedAt")
+               values ('$deletedPhotoId', '$entryId', 'photos/golden-x.jpg', 'photos/golden-x-thumb.jpg', 800, 600, 1000, '$signerId',
+                       'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', now())"""
         )
         // Signed: the first entry of the project, so its number is 1 (V13).
         dsl.execute(
