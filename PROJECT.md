@@ -62,6 +62,7 @@ Login creates a server-side session (table `sessions`, valid for 12 hours) and s
 - logging out, deactivating or deleting a user, or changing a user's role or admin flag ends their sessions at once (the user has to log in again);
 - rights claimed inside a token are ignored, and a token whose session is revoked, expired or unknown is refused with `401`, even with a valid signature;
 - the application always keeps at least one active administrator: demoting, deactivating or deleting the last one answers `409`.
+- **In the SPA** every call to the API goes through `apiFetch` (`lib/api.ts`). A `401` does not throw the person to the login page, because that loses what they typed: it raises a window event, and `SessionExpiredDialog` (mounted in `AppLayout`) offers to sign in again in place. The page underneath is untouched, so a half-written entry stays in its form and the person repeats the action (saving, signing). A page that has unsaved work says so (`setUnsavedWork`); a page that merely failed to load (a refused `GET`, nothing typed) is reloaded after signing in. The dialog signs in the **same account only** (the name is fixed), so the page never continues under another person; if the new session needs a password change it goes to that form. Covered by `e2e/session-expiry.spec.ts`.
 
 ## Passwords and login limits
 
