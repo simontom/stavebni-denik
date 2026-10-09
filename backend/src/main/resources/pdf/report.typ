@@ -42,3 +42,20 @@
 == Popis prací
 
 #plain(d.workDescription)
+
+// The signature: who signed, when, and the hash of the content that was signed (it can be checked in the application).
+#if d.isSigned [
+  == Podpis
+
+  #table(
+    columns: (auto, 1fr),
+    stroke: none,
+    [*Podepsal:*], [#plain(d.signedBy)],
+    [*Čas podpisu (UTC):*], [#d.signedAt],
+    ..if d.signatureHash != "" {
+      ([*Otisk obsahu (SHA-256):*], [#text(font: "DejaVu Sans Mono", size: 8pt)[#d.signatureHash]])
+    } else {
+      ()
+    },
+  )
+]

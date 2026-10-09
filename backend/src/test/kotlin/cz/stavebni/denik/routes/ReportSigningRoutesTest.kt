@@ -35,7 +35,8 @@ class ReportSigningRoutesTest : BaseIntegrationTest() {
         client.post(path) {
             header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}")
             contentType(ContentType.Application.Json)
-            setBody("{}")
+            // Signing asks for the password again; the other POSTs of this file ignore the field.
+            setBody("""{"password":"Password123!"}""")
         }
 
     private suspend fun ApplicationTestBuilder.get(path: String, user: SessionUser): HttpResponse =

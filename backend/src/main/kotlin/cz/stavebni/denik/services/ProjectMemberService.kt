@@ -99,6 +99,10 @@ object ProjectMemberService {
                 USERS.ID.eq(userId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true))
             )
             if (!userExists) throw NotFoundException("Uživatel nenalezen")
+            // The manager of a project signs its diary, and a signer has a ČKAIT number (decision D2).
+            if (role == Role.BOSS && !ProjectAccess.hasCkaitNumber(tx, userId)) {
+                throw ConflictException("Vedoucí projektu (BOSS) musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+            }
             val before = tx.select(PROJECT_MEMBERS.ROLE).from(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
                 .forUpdate()

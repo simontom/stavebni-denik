@@ -3,6 +3,7 @@ package cz.stavebni.denik.plugins
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.SignerNotQualifiedException
 import cz.stavebni.denik.domain.StaleVersionException
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
@@ -23,6 +24,7 @@ fun Application.configureStatusPages() {
                 is UnauthenticatedException -> call.respond(HttpStatusCode.Unauthorized, mapOf("error" to (cause.message ?: "Unauthenticated")))
                 // The exception names the denied action for the logs; the client only learns that it is not allowed.
                 is ForbiddenException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Nemáte oprávnění k této akci"))
+                is SignerNotQualifiedException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to cause.message, "code" to "SIGNER_NOT_QUALIFIED"))
                 is NotFoundException -> call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "Not found")))
                 is TooManyRequestsException -> {
                     call.response.header(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())

@@ -6,6 +6,7 @@ import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.SignerNotQualifiedException
 import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.StaleVersionException
@@ -48,6 +49,10 @@ data class DailyReportDto(
      * `expectedUpdatedAt`: the save is refused (409) when somebody else changed the entry in between.
      */
     val updatedAt: String? = null,
+    /** When the entry was signed (ISO-8601), or null. */
+    val signedAt: String? = null,
+    /** SHA-256 of the entry's content at signing (see [ReportSignature]); null while unsigned. */
+    val signatureHash: String? = null,
     val photos: List<PhotoDto> = emptyList()
 )
 
@@ -79,6 +84,8 @@ internal data class ReportSnapshot(
     val lateEntryReason: String? = null,
     /** The weather as readable text (see [WeatherData.describe]); no decimals in the audit snapshot. */
     val weather: String? = null,
+    /** SHA-256 of the content at signing (see [ReportSignature]). */
+    val signatureHash: String? = null,
 )
 
 object DailyReportService {
@@ -351,11 +358,17 @@ object DailyReportService {
                 throw StaleVersionException("Záznam se od načtení změnil. Načtěte jej znovu a zkontrolujte, co podepisujete.")
             }
 
-            val now = OffsetDateTime.now()
+            // A signer of a diary has a ČKAIT number (decision D2). Checked here, in the transaction, on the stored value.
+            requireQualifiedSigner(tx, user)
+
+            // Milliseconds: what the hash covers is exactly what is stored and read back.
+            val now = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
+            val signatureHash = ReportSignature.hash(tx, report, now, user.id)
             val signed = tx.update(DAILY_REPORTS)
                 .set(DAILY_REPORTS.LOCKEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDBYID, user.id)
+                .set(DAILY_REPORTS.SIGNATUREHASH, signatureHash)
                 .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.LOCKEDAT.isNull))
                 .returning()
                 .fetchOne() ?: throw ConflictException("Záznam je již podepsán a uzamčen")
@@ -372,6 +385,29 @@ object DailyReportService {
 
     suspend fun signReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) =
         lockReport(user, reportId, expectedUpdatedAt)
+
+    /**
+     * Whether [user] may sign this entry at all (role in its project, not yet signed, qualified), without locking or changing
+     * anything. The routes ask this before they ask for the password, so a person who cannot sign is told so instead of
+     * being asked to prove who they are.
+     */
+    fun checkMaySign(user: SessionUser, reportId: UUID) {
+        val tx = DatabaseFactory.dsl
+        val report = tx.selectFrom(DAILY_REPORTS)
+            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
+            .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
+        val role = ProjectAccess.roleIn(tx, user.id, report.projectid!!)
+        if (!can(user, Action.ReportSign, Resource(role = role))) throw ForbiddenException(Action.ReportSign)
+        if (report.lockedat != null) throw ConflictException("Záznam je již podepsán a uzamčen")
+        requireQualifiedSigner(tx, user)
+    }
+
+    private fun requireQualifiedSigner(tx: DSLContext, user: SessionUser) {
+        val ckait = tx.select(USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(user.id)).fetchOne(USERS.CKAITNUMBER)
+        if (ckait.isNullOrBlank()) {
+            throw SignerNotQualifiedException("K podpisu záznamu je nutné číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
+        }
+    }
 
     /**
      * Records that an inspector or investor has taken note of a report. Only a signed
@@ -436,6 +472,8 @@ object DailyReportService {
         isLateEntry = record.islateentry ?: false,
         lateEntryReason = record.lateentryreason,
         updatedAt = record.updatedat?.toString(),
+        signedAt = record.signedat?.toString(),
+        signatureHash = record.get(DAILY_REPORTS.SIGNATUREHASH),
         photos = photos
     )
 
@@ -459,6 +497,7 @@ object DailyReportService {
             isLateEntry = islateentry ?: false,
             lateEntryReason = lateentryreason,
             weather = weatherOf(this)?.describe(),
+            signatureHash = get(DAILY_REPORTS.SIGNATUREHASH),
         )
     )
 }

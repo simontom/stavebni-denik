@@ -80,10 +80,13 @@ test.describe("Full E2E flow", () => {
     await expect(page.locator('img[alt^="Fotka"]').first()).toBeVisible({ timeout: 15_000 });
 
     // 5. Sign and lock
-    page.once("dialog", (dialog) => dialog.accept());
-    const signResponse = page.waitForResponse((resp) => resp.request().method() === "POST" && resp.url().includes("/reports/"));
+    // Signing asks for the password again, in a dialog.
     await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
-    await signResponse;
+    const signDialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+    await signDialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+    const signResponse = page.waitForResponse((resp) => resp.request().method() === "POST" && resp.url().includes("/sign"));
+    await signDialog.getByRole("button", { name: "Podepsat", exact: true }).click();
+    expect((await signResponse).ok()).toBeTruthy();
     await page.goto(reportUrl);
 
     // Verify lock badge

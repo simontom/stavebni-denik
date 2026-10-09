@@ -220,9 +220,11 @@ test("signing needs a saved entry, signs what was saved, and leaves a read-only 
   await expect(sign).toBeEnabled();
 
   // Sign: the page shows "Podepsáno", the form can no longer be edited and the save button is gone.
-  page.once("dialog", (d) => d.accept());
-  const signed = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/sign"));
   await sign.click();
+  const signDialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+  await signDialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+  const signed = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/sign"));
+  await signDialog.getByRole("button", { name: "Podepsat", exact: true }).click();
   expect((await signed).ok()).toBeTruthy();
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(description).toBeDisabled();

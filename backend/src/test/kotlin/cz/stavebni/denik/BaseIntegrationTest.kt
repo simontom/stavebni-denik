@@ -106,7 +106,9 @@ abstract class BaseIntegrationTest {
         displayName: String = "Test User",
         role: Role = Role.BOSS,
         isAdmin: Boolean = false,
-        rawPassword: String = "Password123!"
+        rawPassword: String = "Password123!",
+        /** A project manager signs diaries and so has a ČKAIT number (decision D2); other roles do not. */
+        ckaitNumber: String? = if (role == Role.BOSS) "0012345" else null,
     ): SessionUser {
         val userId = UUID.randomUUID()
         val pwdHash = PasswordService.hash(rawPassword)
@@ -121,6 +123,7 @@ abstract class BaseIntegrationTest {
             .set(USERS.ISADMIN, isAdmin)
             .set(USERS.ISACTIVE, true)
             .set(USERS.MUSTCHANGEPWD, false)
+            .set(USERS.CKAITNUMBER, ckaitNumber)
             .set(USERS.CREATEDAT, now)
             .set(USERS.UPDATEDAT, now)
             .execute()
