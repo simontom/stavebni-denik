@@ -1,6 +1,9 @@
 version: 2
 updates:
-  # The React SPA (frontend/, its own pnpm workspace) — weekly. This is what ships.
+  # Minor and patch updates only, one pull request per ecosystem per week: a major version of a framework, a Gradle,
+  # Kotlin or JDK image is a decision (and a migration), not a Monday-morning pull request. Majors are updated by hand.
+
+  # The React SPA (frontend/, its own pnpm workspace). This is what ships.
   - package-ecosystem: "npm"
     directory: "/frontend"
     schedule:
@@ -8,61 +11,45 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Prague"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     versioning-strategy: increase
     labels:
       - "dependencies"
     groups:
-      react:
+      frontend:
         patterns:
-          - "react"
-          - "react-dom"
-          - "react-router-dom"
-          - "@types/react"
-          - "@types/react-dom"
-      build-tools:
-        patterns:
-          - "vite"
-          - "@vitejs/*"
-          - "typescript"
-          - "oxlint"
-      styling:
-        patterns:
-          - "tailwindcss"
-          - "@tailwindcss/*"
-          - "postcss"
-          - "autoprefixer"
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
-      # Node typings follow the runtime of the image (node:22), not the newest major.
-      - dependency-name: "@types/node"
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # The Ktor backend (Gradle: root build and the backend/ module, plus the Gradle wrapper) — weekly.
-  # Versions kept in plain `val xVersion = "..."` lines of a Kotlin build script may not be seen by Dependabot;
-  # moving them into a version catalog would make every one of them visible.
+  # The Ktor backend. Dependabot reads the whole Gradle build from the root (it follows settings.gradle.kts into
+  # backend/); naming backend/ as well made every update arrive twice. Versions kept in plain `val xVersion = "..."`
+  # lines of a Kotlin build script may not be seen by Dependabot; a version catalog would make every one of them visible.
   - package-ecosystem: "gradle"
-    directories:
-      - "/"
-      - "/backend"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "07:00"
       timezone: "Europe/Prague"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
       - "backend"
     groups:
-      ktor:
+      backend:
         patterns:
-          - "io.ktor:*"
-      jooq:
-        patterns:
-          - "org.jooq:*"
-      testcontainers:
-        patterns:
-          - "org.testcontainers:*"
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # The legacy Next.js tree at the repository root (to be removed) — updates are switched off (limit 0);
   # the entry stays so that security alerts can still be raised against it.
@@ -117,22 +104,30 @@ updates:
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
 
-  # GitHub Actions — weekly.
+  # GitHub Actions: one pull request for all of them (a new major of an action is the normal way it updates).
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     labels:
       - "dependencies"
       - "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
 
-  # Docker base images (Dockerfile) — weekly.
+  # Docker base images (Dockerfile). The Dockerfile pins node, Gradle and the JRE by major version on purpose (JDK 21 is
+  # the supported runtime and the Kotlin build targets it), so only updates inside that major are wanted.
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 1
     labels:
       - "dependencies"
       - "docker"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
