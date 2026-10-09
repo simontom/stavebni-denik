@@ -137,7 +137,7 @@ Behind the Vite dev proxy the page and the API are the same origin for the brows
 - `frontend/src/` — React SPA (`lib/api.ts` is the API client)
 - `e2e/` — Playwright specs; `scripts/dev/e2e-prepare.ts` seeds E2E users
 - `.github/workflows/ci.yml` — lint/build, integration (with real typst), jOOQ drift check, Docker image build + boot test (release gate, security headers, non-root user, volume ownership), E2E
-- `.github/dependabot.yml` — weekly update pull requests for `frontend/` (npm/pnpm), the Gradle build (root and `backend/`), GitHub Actions and the Docker base images; the legacy root npm tree is switched off. Versions kept in plain `val xVersion = "…"` lines of the Kotlin build scripts may not be seen by Dependabot (a version catalog would fix that).
+- `.github/dependabot.yml` — weekly update pull requests: **minor and patch updates only**, one grouped pull request each for `frontend/` (npm/pnpm), the Gradle build (read from the root, which follows `settings.gradle.kts` into `backend/`), GitHub Actions and the Docker base images. Major versions (a framework, Kotlin, Gradle, the JDK or Node image) are updated by hand: a first version of this file named `backend/` as a second Gradle directory and allowed majors, and produced 13 pull requests at once, many of them duplicates or jumps (Node 26, JDK 25, Gradle 9) that the project is not ready for. The legacy root npm tree is switched off (limit 0). Versions kept in plain `val xVersion = "…"` lines of the Kotlin build scripts may not be seen by Dependabot (a version catalog would fix that).
 
 ## Audit log
 
