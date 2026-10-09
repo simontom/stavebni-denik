@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
-import { Dashboard } from "./pages/Dashboard";
 import { ProjectList } from "./pages/projects/ProjectList";
 import { NewProject } from "./pages/projects/NewProject";
 import { ProjectDetail } from "./pages/ProjectDetail";
@@ -32,14 +31,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           element={
             <AppLayout>
               <ChangePasswordPage />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/dashboard"
-          element={
-            <AppLayout>
-              <Dashboard />
             </AppLayout>
           }
         />
