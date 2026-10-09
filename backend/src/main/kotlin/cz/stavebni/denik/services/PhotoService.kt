@@ -308,6 +308,17 @@ object PhotoService {
             .map { toDto(it) }
     }
 
+    /** The photos of many reports in ONE query (a list of reports must not ask once per report), keyed by report. */
+    fun listPhotosForReports(tx: DSLContext, reportIds: Collection<UUID>): Map<UUID, List<PhotoDto>> {
+        if (reportIds.isEmpty()) return emptyMap()
+        return tx.selectFrom(PHOTOS)
+            .where(PHOTOS.REPORTID.`in`(reportIds))
+            .and(PHOTOS.DELETEDAT.isNull)
+            .orderBy(PHOTOS.CREATEDAT.asc(), PHOTOS.ID.asc())
+            .fetch()
+            .groupBy({ it.get(PHOTOS.REPORTID)!! }, { toDto(it) })
+    }
+
     /** The photo as the API shows it: no file paths, only what a client needs (the image is fetched by id). */
     private fun toDto(record: PhotosRecord) = PhotoDto(
         id = record.get(PHOTOS.ID)!!,

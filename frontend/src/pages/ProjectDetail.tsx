@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, apiFetch, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -26,6 +26,9 @@ interface AuthorizedPerson {
   authorization?: string | null;
   revokedAt?: string | null;
 }
+
+/** How many entries one request asks for (the server's default page; its maximum is 1000). */
+const REPORT_PAGE_SIZE = 400;
 
 interface ProjectMember {
   userId: string;
@@ -75,6 +78,8 @@ export const ProjectDetail: React.FC = () => {
 
   // Reports
   const [reports, setReports] = useState<ReportItem[]>([]);
+  // The server sends the entries a page at a time (newest day first); a full page means there may be older ones.
+  const [hasMoreReports, setHasMoreReports] = useState(false);
   const [newReportDate, setNewReportDate] = useState(today());
 
   // Handovers
@@ -110,7 +115,7 @@ export const ProjectDetail: React.FC = () => {
     let ignore = false;
     Promise.all([
       api<ProjectData>(`/api/projects/${id}`),
-      api<ReportItem[]>(`/api/projects/${id}/reports`),
+      api<ReportItem[]>(`/api/projects/${id}/reports?limit=${REPORT_PAGE_SIZE}`),
       api<Handover[]>(`/api/projects/${id}/handovers`),
       api<AuthorizedPerson[]>(`/api/projects/${id}/authorized-persons`),
       api<ProjectMember[]>(`/api/projects/${id}/members`),
@@ -119,6 +124,7 @@ export const ProjectDetail: React.FC = () => {
         if (ignore) return;
         setProject(p);
         setReports(r);
+        setHasMoreReports(r.length >= REPORT_PAGE_SIZE);
         setHandovers(h);
         setAuthorizedPersons(ap);
         setMembers(m);
@@ -142,14 +148,25 @@ export const ProjectDetail: React.FC = () => {
       .catch(() => setUserOptions([]));
   }, []);
 
-  const handleDownloadPdf = async () => {
-    const target = reports[0];
+  const handleLoadOlderReports = async () => {
+    try {
+      const older = await api<ReportItem[]>(`/api/projects/${id}/reports?limit=${REPORT_PAGE_SIZE}&offset=${reports.length}`);
+      setReports((current) => [...current, ...older]);
+      setHasMoreReports(older.length >= REPORT_PAGE_SIZE);
+    } catch (err) {
+      fail(err, "Starší záznamy se nepodařilo načíst");
+    }
+  };
+
+  /** The PDF of one entry; without an argument, of the newest one. */
+  const handleDownloadPdf = async (entry?: ReportItem) => {
+    const target = entry ?? reports[0];
     if (!target) {
       setError("Projekt zatím nemá žádný denní záznam");
       return;
     }
     try {
-      const res = await fetch(`/api/reports/${target.id}/pdf`);
+      const res = await apiFetch(`/api/reports/${target.id}/pdf`);
       if (!res.ok) {
         // Show the server's own explanation (for example "Export do PDF není na serveru dostupný").
         let message = "Chyba při stahování PDF";
@@ -410,11 +427,32 @@ export const ProjectDetail: React.FC = () => {
                     <span className="mr-3 font-semibold text-indigo-600">{r.date}</span>
                     <span className="text-sm text-gray-700">{r.workDescription || "Denní záznam stavebních prací"}</span>
                   </div>
-                  <Link to={`/projects/${id}/reports/${r.date}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-900">
-                    Zobrazit záznam →
-                  </Link>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadPdf(r)}
+                      aria-label={`Stáhnout PDF záznamu z ${r.date}`}
+                      className="text-sm text-gray-600 underline hover:text-gray-900"
+                    >
+                      PDF
+                    </button>
+                    <Link to={`/projects/${id}/reports/${r.date}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-900">
+                      Zobrazit záznam →
+                    </Link>
+                  </div>
                 </div>
               ))}
+              {hasMoreReports && (
+                <div className="pt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleLoadOlderReports()}
+                    className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Načíst starší záznamy
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

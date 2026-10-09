@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api } from "../lib/api";
+import { api, apiFetch, setUnsavedWork } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
 interface PhotoItem {
@@ -111,6 +111,11 @@ export const DailyReport: React.FC = () => {
   const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason });
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const dirty = savedKey !== null && formKey !== savedKey;
+  // Tell the session dialog: after a lapsed session the page must keep what was typed (no reload, no redirect).
+  useEffect(() => {
+    setUnsavedWork(dirty);
+    return () => setUnsavedWork(false);
+  }, [dirty]);
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -123,7 +128,7 @@ export const DailyReport: React.FC = () => {
   useEffect(() => {
     let ignore = false;
     if (projectId && reportId) {
-      fetch(`/api/projects/${projectId}/reports/${reportId}`)
+      apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
         .then((res) => {
           if (res.ok) return res.json();
           if (res.status === 404) return null; // no entry for this day yet: an empty form is right
@@ -209,7 +214,7 @@ export const DailyReport: React.FC = () => {
     const submittedKey = formKey;
 
     try {
-      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}`, {
+      const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -266,7 +271,7 @@ export const DailyReport: React.FC = () => {
       if (projectId) formData.append("projectId", projectId);
       formData.append("photo", selectedFile);
 
-      const res = await fetch("/api/photos/upload", {
+      const res = await apiFetch("/api/photos/upload", {
         method: "POST",
         body: formData,
       });
@@ -299,7 +304,7 @@ export const DailyReport: React.FC = () => {
     if (!window.confirm("Opravdu chcete denní záznam podepsat a uzamknout?")) return;
 
     try {
-      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
+      const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signed: true, expectedUpdatedAt: updatedAt }),
@@ -324,7 +329,7 @@ export const DailyReport: React.FC = () => {
     if (!window.confirm("Potvrdit seznámení se záznamem?")) return;
 
     try {
-      const res = await fetch(`/api/projects/${projectId}/reports/${reportId}/acknowledge`, {
+      const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}/acknowledge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ acknowledged: true }),

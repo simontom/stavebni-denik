@@ -270,18 +270,38 @@ object DailyReportService {
         }
     }
 
-    suspend fun getReports(projectId: UUID): List<DailyReportDto> {
-        val tx = DatabaseFactory.dsl
-        val records = tx.selectFrom(DAILY_REPORTS)
-            .where(DAILY_REPORTS.PROJECTID.eq(projectId))
-            .and(DAILY_REPORTS.DELETEDAT.isNull)
-            .orderBy(DAILY_REPORTS.DATE.desc())
-            .fetch()
+    /** A page of the project's entries, newest day first, and how many entries the project has. */
+    class ReportPage(val reports: List<DailyReportDto>, val total: Int)
 
-        return records.mapNotNull { record ->
-            val reportId = record.id ?: return@mapNotNull null
-            toDto(record, PhotoService.listPhotos(tx, reportId))
-        }
+    const val DEFAULT_PAGE_SIZE = 400
+    const val MAX_PAGE_SIZE = 1000
+
+    /**
+     * One page of a project's entries: at most [limit] (1 to [MAX_PAGE_SIZE]) starting at [offset], newest day first.
+     * A diary grows by an entry a day for years, so the list must never be "everything", and the photos of the page
+     * come in one query, not one per entry.
+     */
+    suspend fun getReports(projectId: UUID, limit: Int = DEFAULT_PAGE_SIZE, offset: Int = 0): ReportPage {
+        require(limit in 1..MAX_PAGE_SIZE) { "limit musí být 1 až $MAX_PAGE_SIZE" }
+        require(offset >= 0) { "offset nesmí být záporný" }
+        val tx = DatabaseFactory.dsl
+        val live = DAILY_REPORTS.PROJECTID.eq(projectId).and(DAILY_REPORTS.DELETEDAT.isNull)
+        val records = tx.selectFrom(DAILY_REPORTS)
+            .where(live)
+            .orderBy(DAILY_REPORTS.DATE.desc(), DAILY_REPORTS.ID.desc())
+            .limit(limit)
+            .offset(offset)
+            .fetch()
+        val total = tx.fetchCount(DAILY_REPORTS, live)
+
+        val photos = PhotoService.listPhotosForReports(tx, records.mapNotNull { it.id })
+        return ReportPage(
+            reports = records.mapNotNull { record ->
+                val reportId = record.id ?: return@mapNotNull null
+                toDto(record, photos[reportId].orEmpty())
+            },
+            total = total,
+        )
     }
 
     /**

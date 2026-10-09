@@ -130,7 +130,13 @@ fun Application.reportRoutes() {
                     val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                     val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                     ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
-                    call.respond(DailyReportService.getReports(projectId))
+                    val limit = call.request.queryParameters["limit"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("limit musí být celé číslo") }
+                        ?: DailyReportService.DEFAULT_PAGE_SIZE
+                    val offset = call.request.queryParameters["offset"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("offset musí být celé číslo") } ?: 0
+                    val page = DailyReportService.getReports(projectId, limit, offset)
+                    // The body stays a plain list; how many entries the project has in all is in a header.
+                    call.response.header("X-Total-Count", page.total.toString())
+                    call.respond(page.reports)
                 }
 
                 post {

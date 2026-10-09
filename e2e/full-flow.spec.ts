@@ -92,11 +92,11 @@ test.describe("Full E2E flow", () => {
     // 6. PDF export
     // Go back to project page records tab
     await page.goto(`${projectUrl}?tab=reports`);
-    await expect(page.getByRole("button", { name: /stáhnout pdf/i })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: "Stáhnout PDF", exact: true })).toBeVisible({ timeout: 15_000 });
 
     // Trigger PDF download
     const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
-    await page.getByRole("button", { name: /stáhnout pdf/i }).click();
+    await page.getByRole("button", { name: "Stáhnout PDF", exact: true }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/.*\.pdf/);
 
