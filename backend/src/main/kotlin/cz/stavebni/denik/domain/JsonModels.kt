@@ -75,10 +75,3 @@ data class MeterState(
     val serialNumber: String = "",
     val state: String = ""
 )
-
-@Serializable
-data class NotificationPayload(
-    val projectId: String? = null,
-    val message: String,
-    val actionUrl: String? = null
-)
