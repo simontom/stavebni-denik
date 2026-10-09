@@ -209,6 +209,9 @@ jobs:
           cd frontend
           pnpm install --frozen-lockfile
 
+      - name: Type-check the E2E code
+        run: pnpm typecheck
+
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 

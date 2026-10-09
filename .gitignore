@@ -13,9 +13,10 @@
 # testing
 /coverage
 
-# next.js
+# build output (a local Next.js build of the retired app may still be on a developer machine)
 /.next/
 /out/
+next-env.d.ts
 
 # production
 /build
@@ -35,15 +36,8 @@ yarn-error.log*
 .env.*
 !.env.example
 
-# vercel
-.vercel
-
 # typescript
 *.tsbuildinfo
-next-env.d.ts
-
-# Prisma generated client (re-generated on every install / build).
-/src/generated/prisma
 
 # Local dev volume (photos, PDF exports, audit-verify log).
 /data

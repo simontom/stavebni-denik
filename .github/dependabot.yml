@@ -51,8 +51,7 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
-  # The legacy Next.js tree at the repository root (to be removed) — updates are switched off (limit 0);
-  # the entry stays so that security alerts can still be raised against it.
+  # The repository root: the Playwright suite and the commit hooks.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
@@ -60,48 +59,19 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "Europe/Prague"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 1
     versioning-strategy: increase
     labels:
       - "dependencies"
     groups:
-      # Group ecosystem updates so we don't get 30 PRs for a single
-      # React minor bump.
-      react:
+      tooling:
         patterns:
-          - "react"
-          - "react-dom"
-          - "@types/react"
-          - "@types/react-dom"
-      next:
-        patterns:
-          - "next"
-          - "@next/*"
-          - "eslint-config-next"
-      prisma:
-        patterns:
-          - "prisma"
-          - "@prisma/*"
-      types:
-        patterns:
-          - "@types/*"
-      eslint:
-        patterns:
-          - "eslint"
-          - "eslint-*"
-          - "@eslint/*"
-      vitest:
-        patterns:
-          - "vitest"
-          - "@vitest/*"
-      playwright:
-        patterns:
-          - "playwright"
-          - "@playwright/*"
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
-      # Pin Node typings to ambient runtime (node-20+ compatible) — major
-      # bumps tend to break Prisma's runtime type imports.
-      - dependency-name: "@types/node"
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
   # GitHub Actions: one pull request for all of them (a new major of an action is the normal way it updates).

@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
+# NOT IN USE. This is an older restic script: it is not part of the Docker image, its test went with the retired
+# Next.js suite, and no restore from it was ever exercised. It is only a starting point for the backup work
+# (see PROJECT.md, Follow-ups): back up the database (including audit_log) and /data/uploads/photos, then PROVE a restore.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Nightly backup for stavební deník.
 #
 # Captures the full evidentiary state of the diary:

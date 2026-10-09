@@ -1,8 +1,10 @@
 -- ===========================================================================
 -- Bootstrap script for the unprivileged `app` role used by the running
--- Next.js application. Run this ONCE as a Postgres superuser BEFORE
--- the first `prisma migrate deploy` — afterwards Prisma migrations will
--- handle further GRANT/REVOKE statements.
+-- application. Run this ONCE as a Postgres superuser BEFORE the first deploy.
+-- NOT WIRED IN YET (PROJECT.md, decision D5: separate roles for migrations and for the
+-- running application): today the application connects as one role and Flyway migrates
+-- with it. Migrations V1 and V2 already revoke UPDATE/DELETE/TRUNCATE on audit_log from a
+-- role named `app` when it exists.
 --
 -- Why a separate role?
 --   The migrator role must keep DDL + DML on every table. The runtime
@@ -17,8 +19,8 @@
 --   1. Connect as the postgres superuser.
 --   2. Edit the password placeholder below.
 --   3. Run this file.
---   4. Set DATABASE_URL on the app to use `app:<password>@host/db`.
---   5. Deploy — Prisma migrations are run with the same connection
+--   4. Set JDBC_URL / DB_USER / DB_PASSWORD on the app to use `app`.
+--   5. Deploy — Flyway runs the migrations with the same connection
 --      because the `app` role still has CREATE on the schema.
 -- ===========================================================================
 
