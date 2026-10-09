@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { Remarks } from "../components/Remarks";
-import { api, apiFetch, setUnsavedWork } from "../lib/api";
+import { api, apiFetch, currentUser, setUnsavedWork } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 
 interface PhotoItem {
@@ -62,6 +62,14 @@ const EMPTY_FORM: FormValues = {
 /** The form as one string: compared with the state it was loaded or last saved in, to know about unsaved changes. */
 const keyOf = (v: FormValues): string => JSON.stringify(v);
 
+/** One party's acknowledgement of the signed entry, as the server lists it. */
+interface Acknowledgement {
+  userId: string;
+  name: string;
+  role: string;
+  at: string;
+}
+
 /** What GET /api/reports/{id}/signature answers. */
 interface SignatureCheck {
   signed: boolean;
@@ -115,7 +123,10 @@ export const DailyReport: React.FC = () => {
   const [signError, setSignError] = useState("");
   const [signing, setSigning] = useState(false);
   const [signatureCheck, setSignatureCheck] = useState<SignatureCheck | null>(null);
-  const [isAcknowledged, setIsAcknowledged] = useState<boolean>(false);
+  // Each party that took note of the signed entry (technical supervision, author's supervision, the client, ...).
+  const [acknowledgements, setAcknowledgements] = useState<Acknowledgement[]>([]);
+  const meId = currentUser()?.id;
+  const iAcknowledged = acknowledgements.some((a) => a.userId === meId);
   // The version of the entry as this form last saw it (null for a day without an entry). Sent back on save, so a
   // second person's changes are not overwritten without anybody noticing.
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -197,7 +208,7 @@ export const DailyReport: React.FC = () => {
           setSignatureHash(typeof data.signatureHash === "string" ? data.signatureHash : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setIsSigned(Boolean(data.isSigned || data.isLocked));
-          setIsAcknowledged(Boolean(data.isAcknowledged));
+          setAcknowledgements(Array.isArray(data.acknowledgements) ? (data.acknowledgements as Acknowledgement[]) : []);
           setSavedKey(keyOf(loaded));
           if (Array.isArray(data.photos) && data.photos.length > 0) {
             setPhotos(
@@ -394,7 +405,11 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({ acknowledged: true }),
       });
       if (res.ok) {
-        setIsAcknowledged(true);
+        // Take the list from the server: it knows the others, and the order.
+        const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (reloaded && Array.isArray(reloaded.acknowledgements)) setAcknowledgements(reloaded.acknowledgements as Acknowledgement[]);
         setError("");
       } else {
         setError(await readError(res, "Záznam se nepodařilo potvrdit"));
@@ -424,12 +439,16 @@ export const DailyReport: React.FC = () => {
             {constructionObj && <span className="rounded bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">SO: {constructionObj}</span>}
             {isLateEntry && <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Pozdní zápis</span>}
             {isSigned && <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno</span>}
-            {isAcknowledged && <span className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Potvrzeno investorem</span>}
+            {acknowledgements.map((a) => (
+              <span key={a.userId} className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                Seznámil(a) se: {a.name} ({a.role === "INVESTOR" ? "stavebník" : "dozor"})
+              </span>
+            ))}
           </div>
         </div>
 
         {/* Investor Acknowledgment Button: only a signed (locked) report can be acknowledged */}
-        {isInvestor && isSigned && !isAcknowledged && (
+        {isInvestor && isSigned && !iAcknowledged && (
           <div className="mt-4 flex justify-end border-t border-gray-200 pt-4">
             <button type="button" onClick={handleAcknowledge} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
               Potvrdit seznámení

@@ -15,6 +15,7 @@ import cz.stavebni.denik.jooq.tables.ProjectMembers
 import cz.stavebni.denik.jooq.tables.Projects
 import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
+import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
@@ -97,6 +98,11 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
     val REMARKS: Remarks get() = Remarks.REMARKS
 
     /**
+     * The table <code>public.report_acknowledgements</code>.
+     */
+    val REPORT_ACKNOWLEDGEMENTS: ReportAcknowledgements get() = ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS
+
+    /**
      * The table <code>public.sessions</code>.
      */
     val SESSIONS: Sessions get() = Sessions.SESSIONS
@@ -130,6 +136,7 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
         Projects.PROJECTS,
         RateLimitAttempts.RATE_LIMIT_ATTEMPTS,
         Remarks.REMARKS,
+        ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS,
         Sessions.SESSIONS,
         SiteHandovers.SITE_HANDOVERS,
         Users.USERS,

@@ -113,41 +113,33 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         set(value): Unit = set(22, value)
         get(): OffsetDateTime? = get(22) as OffsetDateTime?
 
-    open var acknowledgedat: OffsetDateTime?
+    open var createdat: OffsetDateTime?
         set(value): Unit = set(23, value)
         get(): OffsetDateTime? = get(23) as OffsetDateTime?
 
-    open var acknowledgedbyid: UUID?
-        set(value): Unit = set(24, value)
-        get(): UUID? = get(24) as UUID?
-
-    open var createdat: OffsetDateTime?
-        set(value): Unit = set(25, value)
-        get(): OffsetDateTime? = get(25) as OffsetDateTime?
-
     open var updatedat: OffsetDateTime?
+        set(value): Unit = set(24, value)
+        get(): OffsetDateTime? = get(24) as OffsetDateTime?
+
+    open var createdbyid: UUID?
+        set(value): Unit = set(25, value)
+        get(): UUID? = get(25) as UUID?
+
+    open var deletedat: OffsetDateTime?
         set(value): Unit = set(26, value)
         get(): OffsetDateTime? = get(26) as OffsetDateTime?
 
-    open var createdbyid: UUID?
-        set(value): Unit = set(27, value)
-        get(): UUID? = get(27) as UUID?
-
-    open var deletedat: OffsetDateTime?
-        set(value): Unit = set(28, value)
-        get(): OffsetDateTime? = get(28) as OffsetDateTime?
-
     open var islateentry: Boolean?
-        set(value): Unit = set(29, value)
-        get(): Boolean? = get(29) as Boolean?
+        set(value): Unit = set(27, value)
+        get(): Boolean? = get(27) as Boolean?
 
     open var lateentryreason: String?
-        set(value): Unit = set(30, value)
-        get(): String? = get(30) as String?
+        set(value): Unit = set(28, value)
+        get(): String? = get(28) as String?
 
     open var signaturehash: String?
-        set(value): Unit = set(31, value)
-        get(): String? = get(31) as String?
+        set(value): Unit = set(29, value)
+        get(): String? = get(29) as String?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -158,7 +150,7 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
     /**
      * Create a detached, initialised DailyReportsRecord
      */
-    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, acknowledgedat: OffsetDateTime? = null, acknowledgedbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null, signaturehash: String? = null): this() {
+    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null, signaturehash: String? = null): this() {
         this.id = id
         this.projectid = projectid
         this.sequencenumber = sequencenumber
@@ -182,8 +174,6 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         this.signedat = signedat
         this.signedbyid = signedbyid
         this.lockedat = lockedat
-        this.acknowledgedat = acknowledgedat
-        this.acknowledgedbyid = acknowledgedbyid
         this.createdat = createdat
         this.updatedat = updatedat
         this.createdbyid = createdbyid

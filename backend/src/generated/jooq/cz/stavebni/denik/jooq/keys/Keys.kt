@@ -16,6 +16,7 @@ import cz.stavebni.denik.jooq.tables.ProjectMembers
 import cz.stavebni.denik.jooq.tables.Projects
 import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
+import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
@@ -31,6 +32,7 @@ import cz.stavebni.denik.jooq.tables.records.ProjectMembersRecord
 import cz.stavebni.denik.jooq.tables.records.ProjectsRecord
 import cz.stavebni.denik.jooq.tables.records.RateLimitAttemptsRecord
 import cz.stavebni.denik.jooq.tables.records.RemarksRecord
+import cz.stavebni.denik.jooq.tables.records.ReportAcknowledgementsRecord
 import cz.stavebni.denik.jooq.tables.records.SessionsRecord
 import cz.stavebni.denik.jooq.tables.records.SiteHandoversRecord
 import cz.stavebni.denik.jooq.tables.records.UsersRecord
@@ -59,6 +61,8 @@ val PROJECT_MEMBERS_PKEY: UniqueKey<ProjectMembersRecord> = Internal.createUniqu
 val PROJECTS_PKEY: UniqueKey<ProjectsRecord> = Internal.createUniqueKey(Projects.PROJECTS, DSL.name("projects_pkey"), arrayOf(Projects.PROJECTS.ID), true)
 val RATE_LIMIT_ATTEMPTS_PKEY: UniqueKey<RateLimitAttemptsRecord> = Internal.createUniqueKey(RateLimitAttempts.RATE_LIMIT_ATTEMPTS, DSL.name("rate_limit_attempts_pkey"), arrayOf(RateLimitAttempts.RATE_LIMIT_ATTEMPTS.ID), true)
 val REMARKS_PKEY: UniqueKey<RemarksRecord> = Internal.createUniqueKey(Remarks.REMARKS, DSL.name("remarks_pkey"), arrayOf(Remarks.REMARKS.ID), true)
+val REPORT_ACKNOWLEDGEMENTS_PKEY: UniqueKey<ReportAcknowledgementsRecord> = Internal.createUniqueKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_pkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.ID), true)
+val REPORT_ACKNOWLEDGEMENTS_REPORT_USER_KEY: UniqueKey<ReportAcknowledgementsRecord> = Internal.createUniqueKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_report_user_key"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.REPORTID, ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.USERID), true)
 val SESSIONS_PKEY: UniqueKey<SessionsRecord> = Internal.createUniqueKey(Sessions.SESSIONS, DSL.name("sessions_pkey"), arrayOf(Sessions.SESSIONS.ID), true)
 val SITE_HANDOVERS_PKEY: UniqueKey<SiteHandoversRecord> = Internal.createUniqueKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_pkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.ID), true)
 val USERS_PKEY: UniqueKey<UsersRecord> = Internal.createUniqueKey(Users.USERS, DSL.name("users_pkey"), arrayOf(Users.USERS.ID), true)
@@ -71,7 +75,6 @@ val VISITS_PKEY: UniqueKey<VisitsRecord> = Internal.createUniqueKey(Visits.VISIT
 val ADDENDA__ADDENDA_AUTHORID_FKEY: ForeignKey<AddendaRecord, UsersRecord> = Internal.createForeignKey(Addenda.ADDENDA, DSL.name("addenda_authorId_fkey"), arrayOf(Addenda.ADDENDA.AUTHORID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val ADDENDA__ADDENDA_REPORTID_FKEY: ForeignKey<AddendaRecord, DailyReportsRecord> = Internal.createForeignKey(Addenda.ADDENDA, DSL.name("addenda_reportId_fkey"), arrayOf(Addenda.ADDENDA.REPORTID), cz.stavebni.denik.jooq.keys.DAILY_REPORTS_PKEY, arrayOf(DailyReports.DAILY_REPORTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val AUTHORIZED_PERSONS__AUTHORIZED_PERSONS_PROJECTID_FKEY: ForeignKey<AuthorizedPersonsRecord, ProjectsRecord> = Internal.createForeignKey(AuthorizedPersons.AUTHORIZED_PERSONS, DSL.name("authorized_persons_projectId_fkey"), arrayOf(AuthorizedPersons.AUTHORIZED_PERSONS.PROJECTID), cz.stavebni.denik.jooq.keys.PROJECTS_PKEY, arrayOf(Projects.PROJECTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
-val DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY: ForeignKey<DailyReportsRecord, UsersRecord> = Internal.createForeignKey(DailyReports.DAILY_REPORTS, DSL.name("daily_reports_acknowledgedById_fkey"), arrayOf(DailyReports.DAILY_REPORTS.ACKNOWLEDGEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.SET_NULL, ForeignKeyRule.CASCADE)
 val DAILY_REPORTS__DAILY_REPORTS_AUTHORID_FKEY: ForeignKey<DailyReportsRecord, UsersRecord> = Internal.createForeignKey(DailyReports.DAILY_REPORTS, DSL.name("daily_reports_authorId_fkey"), arrayOf(DailyReports.DAILY_REPORTS.AUTHORID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val DAILY_REPORTS__DAILY_REPORTS_PROJECTID_FKEY: ForeignKey<DailyReportsRecord, ProjectsRecord> = Internal.createForeignKey(DailyReports.DAILY_REPORTS, DSL.name("daily_reports_projectId_fkey"), arrayOf(DailyReports.DAILY_REPORTS.PROJECTID), cz.stavebni.denik.jooq.keys.PROJECTS_PKEY, arrayOf(Projects.PROJECTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val DAILY_REPORTS__DAILY_REPORTS_SIGNEDBYID_FKEY: ForeignKey<DailyReportsRecord, UsersRecord> = Internal.createForeignKey(DailyReports.DAILY_REPORTS, DSL.name("daily_reports_signedById_fkey"), arrayOf(DailyReports.DAILY_REPORTS.SIGNEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.SET_NULL, ForeignKeyRule.CASCADE)
@@ -84,6 +87,8 @@ val PROJECT_MEMBERS__PROJECT_MEMBERS_USERID_FKEY: ForeignKey<ProjectMembersRecor
 val PROJECTS__PROJECTS_SITEMANAGERID_FKEY: ForeignKey<ProjectsRecord, UsersRecord> = Internal.createForeignKey(Projects.PROJECTS, DSL.name("projects_siteManagerId_fkey"), arrayOf(Projects.PROJECTS.SITEMANAGERID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val REMARKS__REMARKS_AUTHORID_FKEY: ForeignKey<RemarksRecord, UsersRecord> = Internal.createForeignKey(Remarks.REMARKS, DSL.name("remarks_authorId_fkey"), arrayOf(Remarks.REMARKS.AUTHORID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val REMARKS__REMARKS_REPORTID_FKEY: ForeignKey<RemarksRecord, DailyReportsRecord> = Internal.createForeignKey(Remarks.REMARKS, DSL.name("remarks_reportId_fkey"), arrayOf(Remarks.REMARKS.REPORTID), cz.stavebni.denik.jooq.keys.DAILY_REPORTS_PKEY, arrayOf(DailyReports.DAILY_REPORTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
+val REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_REPORTID_FKEY: ForeignKey<ReportAcknowledgementsRecord, DailyReportsRecord> = Internal.createForeignKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_reportId_fkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.REPORTID), cz.stavebni.denik.jooq.keys.DAILY_REPORTS_PKEY, arrayOf(DailyReports.DAILY_REPORTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.NO_ACTION)
+val REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY: ForeignKey<ReportAcknowledgementsRecord, UsersRecord> = Internal.createForeignKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_userId_fkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.USERID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.NO_ACTION)
 val SESSIONS__SESSIONS_USERID_FKEY: ForeignKey<SessionsRecord, UsersRecord> = Internal.createForeignKey(Sessions.SESSIONS, DSL.name("sessions_userId_fkey"), arrayOf(Sessions.SESSIONS.USERID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.CASCADE, ForeignKeyRule.CASCADE)
 val SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY: ForeignKey<SiteHandoversRecord, UsersRecord> = Internal.createForeignKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_createdById_fkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.CREATEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.SET_NULL, ForeignKeyRule.CASCADE)
 val SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY: ForeignKey<SiteHandoversRecord, ProjectsRecord> = Internal.createForeignKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_projectId_fkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.PROJECTID), cz.stavebni.denik.jooq.keys.PROJECTS_PKEY, arrayOf(Projects.PROJECTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)

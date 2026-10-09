@@ -11,19 +11,20 @@ import cz.stavebni.denik.jooq.indexes.DAILY_REPORTS_PROJECTID_DATE_KEY
 import cz.stavebni.denik.jooq.indexes.DAILY_REPORTS_PROJECTID_SEQUENCENUMBER_KEY
 import cz.stavebni.denik.jooq.keys.ADDENDA__ADDENDA_REPORTID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS_PKEY
-import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_AUTHORID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_PROJECTID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.MATERIAL_NEEDS__MATERIAL_NEEDS_REPORTID_FKEY
 import cz.stavebni.denik.jooq.keys.PHOTOS__PHOTOS_REPORTID_FKEY
 import cz.stavebni.denik.jooq.keys.REMARKS__REMARKS_REPORTID_FKEY
+import cz.stavebni.denik.jooq.keys.REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_REPORTID_FKEY
 import cz.stavebni.denik.jooq.keys.VISITS__VISITS_REPORTID_FKEY
 import cz.stavebni.denik.jooq.tables.Addenda.AddendaPath
 import cz.stavebni.denik.jooq.tables.MaterialNeeds.MaterialNeedsPath
 import cz.stavebni.denik.jooq.tables.Photos.PhotosPath
 import cz.stavebni.denik.jooq.tables.Projects.ProjectsPath
 import cz.stavebni.denik.jooq.tables.Remarks.RemarksPath
+import cz.stavebni.denik.jooq.tables.ReportAcknowledgements.ReportAcknowledgementsPath
 import cz.stavebni.denik.jooq.tables.Users.UsersPath
 import cz.stavebni.denik.jooq.tables.Visits.VisitsPath
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
@@ -214,16 +215,6 @@ open class DailyReports(
     val LOCKEDAT: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("lockedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
     /**
-     * The column <code>public.daily_reports.acknowledgedAt</code>.
-     */
-    val ACKNOWLEDGEDAT: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("acknowledgedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
-
-    /**
-     * The column <code>public.daily_reports.acknowledgedById</code>.
-     */
-    val ACKNOWLEDGEDBYID: TableField<DailyReportsRecord, UUID?> = createField(DSL.name("acknowledgedById"), SQLDataType.UUID, this, "")
-
-    /**
      * The column <code>public.daily_reports.createdAt</code>.
      */
     val CREATEDAT: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("createdAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("CURRENT_TIMESTAMP"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "")
@@ -292,14 +283,7 @@ open class DailyReports(
     override fun getSchema(): Schema? = if (aliased()) null else Public.PUBLIC
     override fun getIndexes(): List<Index> = listOf(DAILY_REPORTS_AUTHORID_IDX, DAILY_REPORTS_DELETEDAT_IDX, DAILY_REPORTS_PROJECTID_DATE_KEY, DAILY_REPORTS_PROJECTID_SEQUENCENUMBER_KEY)
     override fun getPrimaryKey(): UniqueKey<DailyReportsRecord> = DAILY_REPORTS_PKEY
-    override fun getReferences(): List<ForeignKey<DailyReportsRecord, *>> = listOf(DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY, DAILY_REPORTS__DAILY_REPORTS_AUTHORID_FKEY, DAILY_REPORTS__DAILY_REPORTS_PROJECTID_FKEY, DAILY_REPORTS__DAILY_REPORTS_SIGNEDBYID_FKEY)
-
-    /**
-     * Get the implicit join path to the <code>public.users</code> table, via
-     * the <code>daily_reports_acknowledgedById_fkey</code> key.
-     */
-    fun dailyReportsAcknowledgedbyidFkey(): UsersPath = dailyReportsAcknowledgedbyidFkey
-    val dailyReportsAcknowledgedbyidFkey: UsersPath by lazy { UsersPath(this, DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY, null) }
+    override fun getReferences(): List<ForeignKey<DailyReportsRecord, *>> = listOf(DAILY_REPORTS__DAILY_REPORTS_AUTHORID_FKEY, DAILY_REPORTS__DAILY_REPORTS_PROJECTID_FKEY, DAILY_REPORTS__DAILY_REPORTS_SIGNEDBYID_FKEY)
 
     /**
      * Get the implicit join path to the <code>public.users</code> table, via
@@ -385,6 +369,22 @@ open class DailyReports(
     val remarks: RemarksPath
         get(): RemarksPath = remarks()
 
+    private lateinit var _reportAcknowledgements: ReportAcknowledgementsPath
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.report_acknowledgements</code> table
+     */
+    fun reportAcknowledgements(): ReportAcknowledgementsPath {
+        if (!this::_reportAcknowledgements.isInitialized)
+            _reportAcknowledgements = ReportAcknowledgementsPath(this, null, REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_REPORTID_FKEY.inverseKey)
+
+        return _reportAcknowledgements;
+    }
+
+    val reportAcknowledgements: ReportAcknowledgementsPath
+        get(): ReportAcknowledgementsPath = reportAcknowledgements()
+
     private lateinit var _visits: VisitsPath
 
     /**
@@ -400,6 +400,13 @@ open class DailyReports(
 
     val visits: VisitsPath
         get(): VisitsPath = visits()
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.users</code>
+     * table
+     */
+    val users: UsersPath
+        get(): UsersPath = reportAcknowledgements().users()
     override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
         Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true)
     )
