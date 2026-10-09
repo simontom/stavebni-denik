@@ -191,8 +191,8 @@ object DailyReportService {
                 throw NotFoundException("Projekt nenalezen")
             }
             // Real membership: an app admin who is not a member of the project may read it, not write to it.
-            val isMember = ProjectAccess.isMember(tx, user.id, projectId)
-            assertCan(user, Action.ReportCreate, Resource(isMember = isMember))
+            val role = ProjectAccess.roleIn(tx, user.id, projectId)
+            assertCan(user, Action.ReportCreate, Resource(role = role))
 
             val existing = tx.selectFrom(DAILY_REPORTS)
                 .where(DAILY_REPORTS.PROJECTID.eq(projectId))
@@ -239,7 +239,7 @@ object DailyReportService {
                     throw ConflictException("Záznam je podepsán a uzamčen, nelze jej měnit")
                 }
                 // A site manager of the project may correct any entry; anyone else only their own.
-                assertCan(user, Action.ReportUpdate, Resource(isMember = isMember, authorId = existing.authorid))
+                assertCan(user, Action.ReportUpdate, Resource(role = role, authorId = existing.authorid))
                 // The row is locked, so this is an atomic compare-and-set: whoever saved first wins, the other is told.
                 if (input.expectedUpdatedAt != null && !existing.updatedat!!.isEqual(input.expectedUpdatedAt)) {
                     throw StaleVersionException("Záznam mezitím změnil někdo jiný. Načtěte jej znovu, aby se jeho změny neztratily.")
@@ -322,9 +322,9 @@ object DailyReportService {
     suspend fun lockReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) {
         AuditService.auditedWrite(user, "report") { tx ->
             val report = loadForUpdate(tx, reportId)
-            val member = ProjectAccess.isMember(tx, user.id, report.projectid!!)
+            val role = ProjectAccess.roleIn(tx, user.id, report.projectid!!)
 
-            if (!can(user, Action.ReportSign, Resource(isMember = member))) throw ForbiddenException(Action.ReportSign)
+            if (!can(user, Action.ReportSign, Resource(role = role))) throw ForbiddenException(Action.ReportSign)
             if (report.lockedat != null) throw ConflictException("Záznam je již podepsán a uzamčen")
             // A signature covers a version. A signer who names the version they saw is told when it is not the stored one.
             if (expectedUpdatedAt != null && !report.updatedat!!.isEqual(expectedUpdatedAt)) {
@@ -361,9 +361,9 @@ object DailyReportService {
     suspend fun acknowledgeReport(user: SessionUser, reportId: UUID) {
         AuditService.auditedWrite(user, "report") { tx ->
             val report = loadForUpdate(tx, reportId)
-            val member = ProjectAccess.isMember(tx, user.id, report.projectid!!)
+            val role = ProjectAccess.roleIn(tx, user.id, report.projectid!!)
 
-            if (!can(user, Action.ReportAcknowledge, Resource(isMember = member))) {
+            if (!can(user, Action.ReportAcknowledge, Resource(role = role))) {
                 throw ForbiddenException(Action.ReportAcknowledge)
             }
             if (report.lockedat == null) throw ConflictException("Záznam ještě není podepsán")
