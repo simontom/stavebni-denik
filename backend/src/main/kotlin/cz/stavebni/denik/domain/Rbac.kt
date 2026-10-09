@@ -102,13 +102,3 @@ fun assertCan(user: SessionUser, action: Action, resource: Resource = Resource()
         throw ForbiddenException(action)
     }
 }
-
-fun canAccessProject(user: SessionUser, isMember: Boolean): Boolean {
-    if (user.role == Role.BOSS && user.isAdmin) return true
-    return isMember
-}
-
-// Keep this strictly for prompt compliance if needed
-fun canAccessProject(role: Role, isMember: Boolean): Boolean {
-    return isMember
-}
