@@ -27,12 +27,15 @@ dir="$(cd "$dir" && pwd)"
 
 log() { printf '[backup %s] %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
-# pg <command> [args...]: from the local client, or from a container when PG_DOCKER_IMAGE is set.
 # The directory as Docker sees it: Git Bash on Windows needs the Windows path (pwd -W) for a volume mount.
 docker_dir="$(cd "$dir" && { pwd -W 2>/dev/null || pwd; })"
+# On Linux the container writes as the caller, so the backup is not left owned by root (Docker Desktop maps this itself).
+user_args=()
+[ "$(uname -s)" = "Linux" ] && user_args=(--user "$(id -u):$(id -g)")
+# pg <command> [args...]: from the local client, or from a container when PG_DOCKER_IMAGE is set.
 pg() {
   if [ -n "${PG_DOCKER_IMAGE:-}" ]; then
-    docker run --rm -i --network host -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE \
+    docker run --rm -i ${user_args[@]+"${user_args[@]}"} --network host -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE \
       -v "$docker_dir:/backup" "$PG_DOCKER_IMAGE" "$@"
   else
     "$@"

@@ -64,7 +64,26 @@ fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik
 
 ## Zálohy
 
-**Zatím nejsou nastavené.** Pokud databáze nemá vlastní zálohování a obnovu, je to první věc, kterou je potřeba před skutečnými daty vyřešit: zálohovat je nutné databázi (včetně `audit_log`) i svazek `/data/uploads/photos`, a obnovu je nutné vyzkoušet. Soubor `scripts/backup.sh` je starší skript s restic, **není součástí obrazu a není otestovaný**; je jen výchozí bod.
+Zálohu dělá `scripts/backup/backup.sh`, obnovu `scripts/backup/restore.sh` a `scripts/backup/drill.sh` obojí vyzkouší, **včetně toho, co musí obnova odmítnout**. CI ho spouští po E2E testech nad daty, která testy nechaly (podepsané záznamy, fotky, dodatky). Záloha, kterou nikdo nikdy neobnovil, je jen naděje; podrobnosti jsou v „Backups and the restore drill“ v `PROJECT.md`.
+
+```bash
+# záloha: adresář denik-<čas UTC>/ (db.dump, photos.tar.gz, manifest.json, SHA256SUMS)
+BACKUP_ROOT=/mnt/zalohy UPLOADS_DIR=/data/uploads \
+  PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=stavebni_denik \
+  scripts/backup/backup.sh
+
+# obnova: do PRÁZDNÉ databáze a prázdného adresáře (nic nepřepíše); s APP_JAR ověří i řetěz auditu a podpisy
+RESTORE_UPLOADS_DIR=/data/uploads-obnova APP_JAR=backend-all.jar \
+  PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=stavebni_denik_obnova \
+  scripts/backup/restore.sh /mnt/zalohy/denik-20261009T120000Z
+```
+
+- Skript záloh na konci vypíše **hlavu audit řetězu** (`<id>:<hash>`): zapište ji mimo databázi, je to kotva pro `audit-verify` (viz výše).
+- Obnova skončí „restore drill passed“, jen když sedí kontrolní součty záloh, `pg_restore` proběhne bez chyby, **každý soubor fotky odpovídá hashi zaznamenanému při nahrání**, řetěz auditu je neporušený a obsahuje řádek z manifestu a `verify-signatures` potvrdí, že podepsané záznamy jsou, jak byly podepsány. Po skutečné obnově spusťte `scripts/sql/bootstrap-app-role.sql` a příkaz `migrate` (krok 4), aby aplikační role dostala oprávnění, a teprve potom spusťte aplikaci.
+- Záloha obsahuje osobní údaje i samotný důkazní materiál: kopírujte ji na **šifrované úložiště, ze kterého stroj aplikace nemůže mazat** (restic, age + objektové úložiště…); skript to nedělá.
+- Je-li lokální `pg_dump` starší než server, nastavte `PG_DOCKER_IMAGE=postgres:18-alpine` (skripty pak pouští klienta z kontejneru).
+
+**Zatím není nastavené:** pravidelné spouštění záloh, kopie mimo stroj a pravidelné zkušební obnovy nad produkčními daty. Je to provozní krok, který čeká na produkční databázi; bez něj skutečná data nepouštějte.
 
 ## Aktualizace
 

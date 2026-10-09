@@ -255,6 +255,25 @@ jobs:
           set -o pipefail
           pnpm exec playwright test 2>&1 | tee /tmp/playwright.log
 
+      # Backs up the database and photos the tests just created (real signed entries, addenda, acknowledgements), restores
+      # them into an empty database and verifies the result (photo hashes, audit chain against the anchor, signatures),
+      # then shows that the restore refuses a non-empty target, a damaged backup and a replaced photo.
+      - name: Backup and restore drill
+        timeout-minutes: 5
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: denik
+          PGPASSWORD: denik_dev
+          PGDATABASE: stavebni_denik
+          PG_DOCKER_IMAGE: postgres:18-alpine
+          UPLOADS_DIR: backend/uploads
+          DRILL_DIR: ${{ runner.temp }}/restore-drill
+        run: |
+          set -o pipefail
+          ./gradlew :backend:shadowJar -q --console=plain
+          APP_JAR="$PWD/backend/build/libs/backend-all.jar" bash scripts/backup/drill.sh 2>&1 | tee /tmp/restore-drill.log
+
       - name: E2E summary
         if: ${{ !cancelled() }}
         run: |
@@ -289,6 +308,7 @@ jobs:
             /tmp/backend.log
             /tmp/playwright.log
             /tmp/gradle-assemble.log
+            /tmp/restore-drill.log
           retention-days: 14
 
   docker:
