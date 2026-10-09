@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, apiFetch, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -149,7 +149,7 @@ export const ProjectDetail: React.FC = () => {
       return;
     }
     try {
-      const res = await fetch(`/api/reports/${target.id}/pdf`);
+      const res = await apiFetch(`/api/reports/${target.id}/pdf`);
       if (!res.ok) {
         // Show the server's own explanation (for example "Export do PDF není na serveru dostupný").
         let message = "Chyba při stahování PDF";
