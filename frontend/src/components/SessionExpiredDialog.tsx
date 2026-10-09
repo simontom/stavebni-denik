@@ -4,8 +4,8 @@ import { currentUser, hasUnsavedWork, SESSION_EXPIRED_EVENT, type SessionUser } 
 
 /**
  * Shown when the server ends the session while a page is open. The page underneath keeps its state (a half-written
- * entry stays in its form); signing in again here continues where the person was. If somebody else signs in, nothing of
- * the previous person's page is kept.
+ * entry stays in its form); signing in again here continues where the person was. Only the same account can sign in here (the
+ * name is fixed), so a page never carries on under somebody else.
  */
 export function SessionExpiredDialog() {
   const navigate = useNavigate();
