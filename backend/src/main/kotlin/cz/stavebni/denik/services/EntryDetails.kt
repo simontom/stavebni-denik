@@ -10,8 +10,8 @@ import org.jooq.TableField
  * the limits, what is stored, what the audit snapshot and the signature cover, and what the PDF prints, so a field cannot be
  * added to one place and forgotten in another.
  *
- * The wording of the labels follows the vyhláška as closely as its text allows and is to be confirmed with a lawyer
- * (PROJECT.md, "Legal model").
+ * The wording of the labels is **provisional**: it was written from a summary of the annex, not from its official text, and
+ * has to be checked against the Sbírka zákonů and confirmed with a lawyer (PROJECT.md, "What an entry says").
  */
 object EntryDetails {
     class Field(val key: String, val label: String, val column: TableField<DailyReportsRecord, String?>)
@@ -42,8 +42,14 @@ object EntryDetails {
         mentioned.entries.associate { (key, text) ->
             val field = byKey[key] ?: throw IllegalArgumentException("Neznámé pole záznamu: '${key.take(40)}'")
             require(text.length <= MAX_CHARS) { "Pole '${field.label}' může mít nejvýše $MAX_CHARS znaků" }
+            requireNoNul(text, "Pole '${field.label}'")
             field to text.trim().takeIf { it.isNotEmpty() }
         }
+
+    /** PostgreSQL cannot store the NUL character in text; saying so is a 400, not an error from the database (a 500). */
+    fun requireNoNul(text: String, what: String) {
+        require(!text.contains('\u0000')) { "$what obsahuje nepovolený znak (NUL)" }
+    }
 
     /** The stored value of every field of [record], in the order of [FIELDS]; null when it is empty. */
     fun valuesOf(record: DailyReportsRecord): List<Pair<Field, String?>> =

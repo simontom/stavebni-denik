@@ -144,8 +144,11 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val saved = save(boss, projectId, details = mapOf("materials" to "Cement"), workers = """[{"trade":"Zedníci","count":1,"names":["Jan Novák"]}]""")
         val id = UUID.fromString(saved.id)
+        // The format is a property of the signature, not of the row: a draft is in format 1 until it is signed ...
+        assertEquals(1.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
         DailyReportService.signReport(boss, id)
 
+        // ... and signing moves it to the current one, before the hash is made.
         assertEquals(2.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
         assertEquals(true, ReportSignature.check(dsl, id).contentMatches)
 
@@ -191,10 +194,11 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val saved = save(boss, projectId)
 
-        assertThrows<org.jooq.exception.DataAccessException> {
+        val refused = assertThrows<org.jooq.exception.DataAccessException> {
             dsl.execute("""update daily_reports set "signatureFormat" = 3 where id = ?""", UUID.fromString(saved.id))
         }
-        assertEquals(2.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT), "a new entry starts in the current format")
+        assertEquals("23514", refused.sqlState(), "check_violation")
+        assertEquals(1.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT), "a new entry starts in format 1: signing sets the format")
     }
 
     // --- what is printed ------------------------------------------------------------------
@@ -210,7 +214,9 @@ class EntryDetailsTest : BaseIntegrationTest() {
         )
 
         var data = ""
-        PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->
+        var typst = ""
+        PdfExportService.compiler = TypstCompiler { dir, typstFile, pdfFile ->
+            typst = typstFile.readText()
             data = File(dir, "data.json").readText()
             pdfFile.writeBytes(MINIMAL_PDF)
         }
@@ -219,7 +225,8 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val json = Json.parseToJsonElement(data).jsonObject
         val worker = json["workers"]!!.jsonArray.single().jsonObject
         assertEquals("Zedníci", worker["trade"]!!.jsonPrimitive.content)
-        assertEquals("Jan Novák, Petr Svoboda", worker["names"]!!.jsonPrimitive.content)
+        // Separated by semicolons, because a name can have a comma in it ("Ing. Jan Novák, Ph.D.").
+        assertEquals("Jan Novák; Petr Svoboda", worker["names"]!!.jsonPrimitive.content)
         // In the fixed order of the fields, only those with a text; the text is data, never part of the template.
         val details = json["details"]!!.jsonArray.map { it.jsonObject["label"]!!.jsonPrimitive.content to it.jsonObject["text"]!!.jsonPrimitive.content }
         assertEquals(
@@ -229,6 +236,71 @@ class EntryDetailsTest : BaseIntegrationTest() {
             ),
             details,
         )
-        assertFalse(PdfExportService.template.contains("panic"))
+        assertEquals(PdfExportService.template, typst, "main.typ given to typst is exactly the fixed template")
+        assertFalse(typst.contains("panic"), "the text of a field never becomes part of the typst source")
+    }
+
+    // --- the rest of what the docs claim ------------------------------------------------------------
+
+    @Test
+    fun `a signed entry refuses a change of the new columns and of its format, with check_violation`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+        val saved = save(boss, projectId, details = mapOf("dustMeasures" to "Kropení"))
+        val id = UUID.fromString(saved.id)
+        DailyReportService.signReport(boss, id)
+
+        for (statement in listOf(
+            """update daily_reports set "dustMeasures" = 'Jiné' where id = ?""",
+            """update daily_reports set "accessibilityMeasures" = 'Jiné' where id = ?""",
+            """update daily_reports set "signatureFormat" = 1 where id = ?""",
+        )) {
+            val refused = assertThrows<org.jooq.exception.DataAccessException>(statement) { dsl.execute(statement, id) }
+            assertEquals("23514", refused.sqlState(), statement)
+        }
+        assertEquals("Kropení", record(saved.id).get(DAILY_REPORTS.DUSTMEASURES))
+        assertEquals(2.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
+    }
+
+    @Test
+    fun `the audit rows of an update and of the signature carry the fields`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+        val saved = save(boss, projectId, details = mapOf("materials" to "Cement"))
+        save(boss, projectId, details = mapOf("materials" to "Písek"))
+        DailyReportService.signReport(boss, UUID.fromString(saved.id))
+
+        fun json(action: String, column: org.jooq.TableField<*, org.jooq.JSONB?>) =
+            dsl.select(column).from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq(action)).fetchSingle().get(0, org.jooq.JSONB::class.java)!!.data()
+
+        val update = json("report.update", AUDIT_LOG.AFTER)
+        assertTrue(update.contains("Písek"), update)
+        assertTrue(json("report.update", AUDIT_LOG.BEFORE).contains("Cement"))
+        // Signing keeps what was there on both sides of the audit row.
+        assertTrue(json("report.lock", AUDIT_LOG.BEFORE).contains("Písek"))
+        assertTrue(json("report.lock", AUDIT_LOG.AFTER).contains("Písek"))
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `a NUL character in a field, a trade or a name is refused with a message, not stored`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+
+        assertThrows<IllegalArgumentException> { save(boss, projectId, details = mapOf("materials" to "Beton\u0000")) }
+        assertThrows<IllegalArgumentException> { save(boss, projectId, workers = """[{"trade":"Zed\u0000ník","count":1}]""") }
+        assertThrows<IllegalArgumentException> { save(boss, projectId, workers = """[{"trade":"Zedník","count":1,"names":["Jan\u0000"]}]""") }
+        assertEquals(0, dsl.fetchCount(DAILY_REPORTS))
+    }
+
+    @Test
+    fun `names at the limits are accepted, a hundred characters and as many names as workers`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+        val longName = "x".repeat(100)
+
+        val saved = save(boss, projectId, workers = """[{"trade":"Zedníci","count":2,"names":["$longName","B"]}]""")
+
+        assertTrue(saved.workersByTrade.contains(longName))
     }
 }

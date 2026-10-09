@@ -191,7 +191,7 @@ object PdfExportService {
                         )
                     }.getOrNull()
                 }
-                ?.map { WorkerPdf(it.trade, it.count, it.names.joinToString(", ")) }
+                ?.map { WorkerPdf(it.trade, it.count, it.names.joinToString("; ")) }
                 .orEmpty(),
             details = EntryDetails.valuesOf(report).mapNotNull { (field, text) -> text?.let { DetailPdf(field.label, it) } },
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,

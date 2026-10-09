@@ -34,6 +34,8 @@ data class SignatureCheckDto(
     val signerCkaitNumber: String? = null,
     /** SHA-256 recorded when the entry was signed; null for an entry that is not signed (or was signed before hashes existed). */
     val signatureHash: String? = null,
+    /** Which fields the signature covers (see [ReportSignature.CURRENT_FORMAT]); null for an entry that is not signed. */
+    val signatureFormat: Int? = null,
     /** The content hashed again now equals the recorded hash. Null when there is no recorded hash to compare with. */
     val contentMatches: Boolean? = null,
     /** The photo files on disk still hash to what was recorded at upload. Null when no photo has a recorded hash. */
@@ -62,6 +64,15 @@ object ReportSignature {
      * entry says which one it was signed in (`signatureFormat`), so what was signed before a field existed still verifies.
      */
     const val CURRENT_FORMAT = 2
+
+    /**
+     * The fields of [EntryDetails] that format 2 covers, **frozen**. Format 2 must mean the same thing forever: a signature
+     * made today has to verify in ten years, so it cannot follow the live list of fields. Adding a field to [EntryDetails]
+     * means a format 3 that covers it (and a test, EntryDetailsTest, fails until that is done); removing or renaming a key
+     * would break every signature of format 2 and must not be done.
+     */
+    internal val FORMAT_2_DETAIL_KEYS: List<String> =
+        listOf("materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "otherNotes")
 
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -102,7 +113,16 @@ object ReportSignature {
             put("signedById", signedById.toString())
             put("photos", JsonArray(photos))
             if (format >= 2) {
-                put("details", buildJsonObject { EntryDetails.valuesOf(report).forEach { (field, text) -> put(field.key, text) } })
+                val fields = EntryDetails.FIELDS.associateBy { it.key }
+                put(
+                    "details",
+                    buildJsonObject {
+                        FORMAT_2_DETAIL_KEYS.forEach { key ->
+                            val field = checkNotNull(fields[key]) { "the field '$key' is covered by signature format 2 and cannot be removed" }
+                            put(key, report.get(field.column)?.takeIf { it.isNotBlank() })
+                        }
+                    },
+                )
             }
         }
     }
@@ -123,6 +143,7 @@ object ReportSignature {
         }
         val signer = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(signerId)).fetchOne()
         val recorded = report.get(DAILY_REPORTS.SIGNATUREHASH)
+        val format = report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() ?: 1
 
         val photoRows = tx.select(PHOTOS.PATHORIGINAL, PHOTOS.PATHTHUMB, PHOTOS.SHA256, PHOTOS.THUMBSHA256)
             .from(PHOTOS)
@@ -142,7 +163,10 @@ object ReportSignature {
             signedByName = signer?.get(USERS.DISPLAYNAME),
             signerCkaitNumber = signer?.get(USERS.CKAITNUMBER),
             signatureHash = recorded,
-            contentMatches = recorded?.let { it == hash(tx, report, signedAt, signerId) },
+            signatureFormat = format,
+            // Format 1 includes entries signed before hashes existed, which have nothing to compare. From format 2 on every
+            // signature has a hash, so a missing one means it was removed: that is a mismatch, not "nothing to compare".
+            contentMatches = if (recorded == null) (if (format >= 2) false else null) else recorded == hash(tx, report, signedAt, signerId),
             photoFilesMatch = filesMatch,
             checkedAt = now,
         )
@@ -172,8 +196,12 @@ object ReportSignature {
         val problems = mutableListOf<String>()
         for (id in ids) {
             val check = check(tx, id)
-            if (check.signatureHash == null) withoutHash++
-            if (check.contentMatches == false) problems += "entry $id: the content no longer matches the signature"
+            if (check.signatureHash == null && (check.signatureFormat ?: 1) < 2) withoutHash++
+            if (check.signatureHash == null && (check.signatureFormat ?: 1) >= 2) {
+                problems += "entry $id: signed in format ${check.signatureFormat} but its signature hash is missing"
+            } else if (check.contentMatches == false) {
+                problems += "entry $id: the content no longer matches the signature"
+            }
             if (check.photoFilesMatch == false) problems += "entry $id: a photo file no longer matches its recorded hash"
         }
         return AllResult(signed = ids.size, withoutHash = withoutHash, problems = problems)

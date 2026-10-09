@@ -177,7 +177,8 @@ fun Application.reportRoutes() {
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj,
                         lateEntryReason = payload.lateEntryReason,
-                        weather = payload.weather
+                        weather = payload.weather,
+                        details = payload.details,
                     )
                     call.respond(HttpStatusCode.Created, report)
                 }

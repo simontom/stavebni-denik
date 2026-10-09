@@ -89,7 +89,7 @@ class RealTypstPdfTest : BaseIntegrationTest() {
 
         assertTrue(text.contains("Pracovníci na stavbě"), text)
         assertTrue(text.contains("Betonáři"), text)
-        assertTrue(text.contains("Jan Novák, Petr Svoboda"), text)
+        assertTrue(text.contains("Jan Novák; Petr Svoboda"), text)
         assertTrue(text.contains("Dodávky a uskladnění materiálu a zařízení"), text)
         assertTrue(text.contains("Beton C25/30"), text)
         assertTrue(text.contains("#panic(\"X\")"), "markup in a field is printed as it was typed: $text")

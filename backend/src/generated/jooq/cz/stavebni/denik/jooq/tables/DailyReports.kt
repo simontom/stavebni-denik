@@ -262,7 +262,7 @@ open class DailyReports(
     /**
      * The column <code>public.daily_reports.signatureFormat</code>.
      */
-    val SIGNATUREFORMAT: TableField<DailyReportsRecord, Short?> = createField(DSL.name("signatureFormat"), SQLDataType.SMALLINT.nullable(false).defaultValue(DSL.field(DSL.raw("2"), SQLDataType.SMALLINT)), this, "")
+    val SIGNATUREFORMAT: TableField<DailyReportsRecord, Short?> = createField(DSL.name("signatureFormat"), SQLDataType.SMALLINT.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.SMALLINT)), this, "")
 
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)

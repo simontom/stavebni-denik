@@ -272,7 +272,7 @@ test("the fields the vyhláška asks for and the names of the people on site are
   await page.locator('textarea[name="workDescription"]').fill("Betonáž stropu");
   await page.locator('input[name="workerTrade"]').first().fill("Betonář");
   await page.locator('input[name="workerCount"]').first().fill("3");
-  await page.getByLabel("Jména pracovníků 1").fill("Jan Novák, Petr Svoboda");
+  await page.getByLabel("Jména pracovníků 1").fill("Ing. Jan Novák, Ph.D.; Petr Svoboda");
   await page.getByLabel("Dodávky a uskladnění materiálu a zařízení").fill("Beton C25/30, 12 m3");
   await page.getByLabel("Použité stroje a mechanizace").fill("Autodomíchávač, čerpadlo");
   await page.getByLabel("Opatření proti prašnosti").fill("Kropení povrchů");
@@ -284,7 +284,7 @@ test("the fields the vyhláška asks for and the names of the people on site are
 
   // Everything is stored: a reload shows it again.
   await page.goto(`${projectUrl}/reports/${day}`);
-  await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Jan Novák, Petr Svoboda", { timeout: 15_000 });
+  await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Ing. Jan Novák, Ph.D.; Petr Svoboda", { timeout: 15_000 });
   await expect(page.getByLabel("Dodávky a uskladnění materiálu a zařízení")).toHaveValue("Beton C25/30, 12 m3");
   await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("Autodomíchávač, čerpadlo");
   await expect(page.getByLabel("Opatření proti prašnosti")).toHaveValue("Kropení povrchů");
@@ -294,7 +294,7 @@ test("the fields the vyhláška asks for and the names of the people on site are
 
   // A field is cleared by emptying it; more names than workers is refused with a message.
   await page.getByLabel("Použité stroje a mechanizace").fill("");
-  await page.getByLabel("Jména pracovníků 1").fill("A, B, C, D");
+  await page.getByLabel("Jména pracovníků 1").fill("A; B; C; D");
   await save().click();
   await expect(page.getByText(/více jmen/i)).toBeVisible({ timeout: 15_000 });
   await page.getByLabel("Jména pracovníků 1").fill("Jan Novák");

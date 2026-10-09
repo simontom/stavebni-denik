@@ -150,11 +150,13 @@ object DailyReportService {
         require(rows.size <= 50) { "Seznam pracovníků může mít nejvýše 50 profesí" }
         for (row in rows) {
             require(row.trade.isNotBlank()) { "Každá profese v seznamu pracovníků musí mít název" }
+            EntryDetails.requireNoNul(row.trade, "Název profese")
             require(row.count in 0..100_000) { "Počet pracovníků u profese '${row.trade.trim()}' musí být celé číslo od 0 do 100000" }
             require(row.names.size <= row.count) { "U profese '${row.trade.trim()}' je uvedeno více jmen (${row.names.size}) než pracovníků (${row.count})" }
             require(row.names.size <= MAX_NAMES_PER_TRADE) { "U profese '${row.trade.trim()}' lze uvést nejvýše $MAX_NAMES_PER_TRADE jmen" }
             for (name in row.names) {
                 require(name.isNotBlank()) { "Jméno pracovníka u profese '${row.trade.trim()}' nesmí být prázdné" }
+                EntryDetails.requireNoNul(name, "Jméno pracovníka")
                 require(name.trim().length <= MAX_NAME_CHARS) { "Jméno pracovníka může mít nejvýše $MAX_NAME_CHARS znaků" }
             }
         }
@@ -199,10 +201,11 @@ object DailyReportService {
         isControlDay: Boolean = false,
         constructionObj: String? = null,
         lateEntryReason: String? = null,
-        weather: WeatherData? = null
+        weather: WeatherData? = null,
+        details: Map<String, String>? = null,
     ): DailyReportDto = write(
         user, projectId, date, WriteMode.CREATE_ONLY,
-        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason, weather = weather),
+        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason, weather = weather, details = details),
     )
 
     /**

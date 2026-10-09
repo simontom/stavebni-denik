@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { Remarks } from "../components/Remarks";
@@ -34,7 +34,7 @@ const temperature = (value: string): number | undefined => {
 interface WorkerRow {
   trade: string;
   count: string;
-  /** The names of the people of this trade, separated by commas (the vyhláška asks for them; optional). */
+  /** The names of the people of this trade, separated by semicolons (the vyhláška asks for them; optional). */
   names: string;
 }
 
@@ -56,12 +56,18 @@ const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[] = [
 type Details = Record<string, string>;
 const emptyDetails = (): Details => Object.fromEntries(DETAIL_FIELDS.map((d) => [d.key, ""]));
 
-/** "Jan Novák, Petr Svoboda" as the list the server expects; blanks are left out. */
+/**
+ * "Jan Novák; Petr Svoboda" as the list the server expects; blanks are left out. Names are separated by semicolons, not
+ * commas: a name often has a comma in it ("Ing. Jan Novák, Ph.D.").
+ */
 const namesOf = (text: string): string[] =>
   text
-    .split(/[,\n;]/)
+    .split(";")
     .map((n) => n.trim())
     .filter((n) => n !== "");
+
+/** The longest text of one field, as the server accepts it (EntryDetails.MAX_CHARS). */
+const MAX_DETAIL_CHARS = 5000;
 
 /** Everything the user can edit on the form. */
 interface FormValues {
@@ -163,6 +169,8 @@ export const DailyReport: React.FC = () => {
   // second person's changes are not overwritten without anybody noticing.
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [conflict, setConflict] = useState<boolean>(false);
+  // The form is long: an error shown at its top is brought into view, wherever the person pressed Save.
+  const errorBox = useRef<HTMLDivElement | null>(null);
   // A new entry for a day before the previous working day is a late entry (decision D10) and needs a reason.
   // The server decides; this only decides what the form shows. An existing entry shows what was recorded.
   // The weather is entered by hand (decision D12). Empty fields mean "not stated".
@@ -175,6 +183,9 @@ export const DailyReport: React.FC = () => {
   const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details });
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const dirty = savedKey !== null && formKey !== savedKey;
+  useEffect(() => {
+    if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, [error]);
   // Tell the session dialog: after a lapsed session the page must keep what was typed (no reload, no redirect).
   useEffect(() => {
     setUnsavedWork(dirty);
@@ -212,7 +223,7 @@ export const DailyReport: React.FC = () => {
               loadedWorkers = trades.map((t: { trade?: unknown; count?: unknown; names?: unknown }) => ({
                 trade: typeof t.trade === "string" ? t.trade : "",
                 count: typeof t.count === "number" ? String(t.count) : "",
-                names: Array.isArray(t.names) ? t.names.filter((n): n is string => typeof n === "string").join(", ") : "",
+                names: Array.isArray(t.names) ? t.names.filter((n): n is string => typeof n === "string").join("; ") : "",
               }));
             }
           } catch {
@@ -284,6 +295,11 @@ export const DailyReport: React.FC = () => {
     for (const r of rows) {
       if (r.trade.trim() === "") return setError("Doplňte název profese u zadaného počtu pracovníků");
       if (!/^\d{1,6}$/.test(r.count.trim())) return setError(`Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
+    }
+    for (const field of DETAIL_FIELDS) {
+      if ((details[field.key] ?? "").length > MAX_DETAIL_CHARS) {
+        return setError(`Pole "${field.label}" může mít nejvýše ${MAX_DETAIL_CHARS} znaků (teď ${details[field.key].length})`);
+      }
     }
     const submittedKey = formKey;
 
@@ -507,7 +523,7 @@ export const DailyReport: React.FC = () => {
       </div>
 
       {error && (
-        <div role="alert" className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
+        <div ref={errorBox} role="alert" className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
           {error}
           {conflict && (
             <div className="mt-2">
@@ -607,7 +623,7 @@ export const DailyReport: React.FC = () => {
                       value={row.names}
                       onChange={(e) => updateWorker(index, { names: e.target.value })}
                       className="w-full rounded-md border border-gray-300 p-2 text-sm md:col-span-3"
-                      placeholder="Jména pracovníků, oddělená čárkou (volitelné)"
+                      placeholder="Jména pracovníků, oddělená středníkem (volitelné)"
                     />
                   </div>
                 ))}
@@ -692,10 +708,14 @@ export const DailyReport: React.FC = () => {
                       value={details[field.key] ?? ""}
                       onChange={(e) => updateDetail(field.key, e.target.value)}
                       rows={2}
-                      maxLength={5000}
                       className="w-full rounded-md border border-gray-300 p-2 text-sm"
                       placeholder={field.placeholder}
                     />
+                    {(details[field.key] ?? "").length > MAX_DETAIL_CHARS * 0.9 && (
+                      <p className={`mt-1 text-xs ${(details[field.key] ?? "").length > MAX_DETAIL_CHARS ? "font-semibold text-red-700" : "text-gray-600"}`}>
+                        {(details[field.key] ?? "").length} / {MAX_DETAIL_CHARS} znaků
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
