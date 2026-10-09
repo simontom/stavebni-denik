@@ -159,23 +159,6 @@ class RbacTest {
     }
 
     @Test
-    fun `visit delete permissions`() {
-        val someone = testUser()
-
-        // a manager always
-        assertTrue(can(someone, Action.VisitDelete, Resource(role = boss, authorId = UUID.randomUUID())))
-        assertTrue(can(someone, Action.VisitDelete, Resource(role = boss, authorId = someone.id)))
-
-        // anyone else only if they wrote it
-        assertTrue(can(someone, Action.VisitDelete, Resource(role = worker, authorId = someone.id)))
-        assertFalse(can(someone, Action.VisitDelete, Resource(role = worker, authorId = UUID.randomUUID())))
-
-        // a non-member never
-        assertFalse(can(someone, Action.VisitDelete, Resource(role = null)))
-        assertFalse(can(someone, Action.VisitDelete, Resource(role = null, authorId = someone.id)))
-    }
-
-    @Test
     fun `members and authorized persons are managed by the manager of the project or an administrator`() {
         val plain = testUser(role = Role.BOSS)
         val admin = testUser(role = Role.WORKER, isAdmin = true)
@@ -225,13 +208,6 @@ class RbacTest {
         assertEquals("Y----", row(Action.PhotoDelete))
         assertEquals("Y-YY-", row(Action.RemarkCreate))
         assertEquals("Y-YY-", row(Action.RemarkCreate, locked = true), "entries of other parties are also made on a signed entry")
-        assertEquals("YY---", row(Action.MaterialCreate))
-        assertEquals("Y----", row(Action.MaterialUpdate))
-        assertEquals("YY---", row(Action.MaterialUpdate, authored = true))
-        assertEquals("YY---", row(Action.MaterialResolve))
-        assertEquals("YYY--", row(Action.VisitCreate))
-        assertEquals("Y----", row(Action.VisitDelete))
-        assertEquals("YYYY-", row(Action.VisitDelete, authored = true))
         assertEquals("YY---", row(Action.SiteHandoverCreate))
         assertEquals("Y----", row(Action.SiteHandoverUpdate))
         assertEquals("YY---", row(Action.SiteHandoverUpdate, authored = true))

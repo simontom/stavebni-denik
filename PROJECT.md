@@ -246,6 +246,6 @@ Before the first release:
 
 ## Follow-ups
 
-- `VisitService` and `MaterialService` have **no routes and no UI** (only their tests use them). They follow the project role now, but they do not write audit rows or take the in-transaction locks the other services do. Before any route is added they must go through `AuditService.auditedWrite`; or delete them if the legal model (příloha 12) does not need them. (`RemarkService` was rewritten as the audited, append-only entries of other parties.)
+- **Materials and visits do not exist.** The unreachable `VisitService` and `MaterialService` (no routes, no UI, no audit rows, none of the in-transaction locks) and their permissions were removed; the tables (`material_needs`, `visits`) are still in the schema. Decision D6 puts them after go-live; when they come back they are written on the audited path (`AuditService.auditedWrite`, project role, locks) from the start, not revived from the old code.
 - Only users with a ČKAIT number should be able to hold the BOSS role of a project (decision D2); today any member can be made BOSS by a project manager or an administrator, audited.
 - **Backups are not scheduled and not copied off the machine.** The scripts and the restore drill exist and run in CI (see "Backups and the restore drill"); what is missing is a schedule, an encrypted off-site copy that the application's machine cannot delete from, and a periodic drill against production data. All of it needs the production infrastructure.

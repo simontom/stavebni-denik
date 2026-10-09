@@ -25,18 +25,11 @@ sealed interface Action {
     data object ReportAcknowledge : Action
     data object ReportAddendumCreate : Action
     
-    // Photos, remarks, materials, visits
+    // Photos and entries of other parties
     data object PhotoUpload : Action
     data object PhotoDelete : Action
     /** An entry of another party (technical supervision, the client, an authority via the manager). Entries are never changed or deleted. */
     data object RemarkCreate : Action
-    data object MaterialCreate : Action
-    data object MaterialUpdate : Action
-    data object MaterialDelete : Action
-    data object MaterialResolve : Action
-    data object VisitCreate : Action
-    data object VisitUpdate : Action
-    data object VisitDelete : Action
     
     // Site Handovers
     data object SiteHandoverCreate : Action
