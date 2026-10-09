@@ -71,7 +71,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     // --- the database ---------------------------------------------------------------------------
 
     @Test
-    fun `the database refuses to change, delete or add photos to a signed report, except for the acknowledgement`() = runBlocking<Unit> {
+    fun `the database refuses to change, delete or add photos to a signed report, whatever column`() = runBlocking<Unit> {
         val s = site()
         val report = DailyReportService.createReport(s.boss, s.projectId, "2026-09-28", workDescription = "Původní")
         val reportId = UUID.fromString(report.id)
@@ -96,8 +96,9 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         assertThrows<DataAccessException> { dsl.update(PHOTOS).set(PHOTOS.DELETEDAT, OffsetDateTime.now()).where(PHOTOS.ID.eq(photo.id)).execute() }
         assertThrows<DataAccessException> { dsl.deleteFrom(PHOTOS).where(PHOTOS.ID.eq(photo.id)).execute() }
 
-        // What is still allowed: the acknowledgement.
-        dsl.update(DAILY_REPORTS).set(DAILY_REPORTS.ACKNOWLEDGEDAT, OffsetDateTime.now()).where(DAILY_REPORTS.ID.eq(reportId)).execute()
+        // Not even the updated-at stamp may move: since V11 a signed daily report is immutable as a whole (the acknowledgements
+        // live in a table of their own).
+        assertThrows<DataAccessException> { dsl.update(DAILY_REPORTS).set(DAILY_REPORTS.UPDATEDAT, OffsetDateTime.now()).where(DAILY_REPORTS.ID.eq(reportId)).execute() }
 
         val row = dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(reportId)).fetchOne()!!
         assertEquals("Upraveno", row.workdescription)

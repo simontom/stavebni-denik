@@ -16,6 +16,7 @@ import cz.stavebni.denik.jooq.tables.ProjectMembers
 import cz.stavebni.denik.jooq.tables.Projects
 import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
+import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
@@ -77,6 +78,11 @@ val RATE_LIMIT_ATTEMPTS: RateLimitAttempts = RateLimitAttempts.RATE_LIMIT_ATTEMP
  * The table <code>public.remarks</code>.
  */
 val REMARKS: Remarks = Remarks.REMARKS
+
+/**
+ * The table <code>public.report_acknowledgements</code>.
+ */
+val REPORT_ACKNOWLEDGEMENTS: ReportAcknowledgements = ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS
 
 /**
  * The table <code>public.sessions</code>.

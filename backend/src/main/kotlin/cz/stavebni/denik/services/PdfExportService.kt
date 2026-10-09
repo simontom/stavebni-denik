@@ -100,7 +100,12 @@ internal data class ReportPdfData(
     val addenda: List<AddendumPdf> = emptyList(),
     /** The entries of other parties, oldest first. */
     val remarks: List<RemarkPdf> = emptyList(),
+    /** Who took note of the signed entry ("Name (role)"), with the time, oldest first. */
+    val acknowledgements: List<AcknowledgementPdf> = emptyList(),
 )
+
+@Serializable
+internal data class AcknowledgementPdf(val who: String, val at: String)
 
 @Serializable
 internal data class RemarkPdf(val author: String, val onBehalfOf: String, val at: String, val text: String)
@@ -183,6 +188,16 @@ object PdfExportService {
                 .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
                 .fetch()
                 .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") },
+            acknowledgements = tx.select(USERS.DISPLAYNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+                .from(REPORT_ACKNOWLEDGEMENTS)
+                .join(USERS).on(USERS.ID.eq(REPORT_ACKNOWLEDGEMENTS.USERID))
+                .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(reportId))
+                .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc(), REPORT_ACKNOWLEDGEMENTS.ID.asc())
+                .fetch()
+                .map {
+                    val role = if (it.get(REPORT_ACKNOWLEDGEMENTS.ROLE) == cz.stavebni.denik.jooq.enums.Role.INVESTOR) "stavebník" else "dozor"
+                    AcknowledgementPdf("${it.get(USERS.DISPLAYNAME) ?: ""} ($role)", it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "")
+                },
             remarks = tx.select(USERS.DISPLAYNAME, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
                 .from(REMARKS)
                 .join(USERS).on(USERS.ID.eq(REMARKS.AUTHORID))

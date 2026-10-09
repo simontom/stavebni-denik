@@ -9,6 +9,7 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
+import cz.stavebni.denik.jooq.tables.references.REPORT_ACKNOWLEDGEMENTS
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -151,8 +152,14 @@ class ReportWritePathTest : BaseIntegrationTest() {
 
     // --- acknowledging ----------------------------------------------------------------------
 
+    private fun acknowledgedBy(reportId: String): List<UUID> =
+        dsl.select(REPORT_ACKNOWLEDGEMENTS.USERID).from(REPORT_ACKNOWLEDGEMENTS)
+            .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(UUID.fromString(reportId)))
+            .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc())
+            .fetch(REPORT_ACKNOWLEDGEMENTS.USERID).filterNotNull()
+
     @Test
-    fun `a report can only be acknowledged after it is signed, and only once`() = runBlocking {
+    fun `a report can only be acknowledged after it is signed, each person once, and several parties may`() = runBlocking {
         val boss = createTestUser(role = Role.BOSS)
         val inspector = createTestUser(role = Role.INSPECTOR)
         val investor = createTestUser(role = Role.INVESTOR)
@@ -163,18 +170,22 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val reportId = UUID.fromString(created.id)
 
         assertThrows<ConflictException> { DailyReportService.acknowledgeReport(inspector, reportId) }
-        assertNull(report(created.id).acknowledgedat, "an unsigned report must not be acknowledgeable")
+        assertTrue(acknowledgedBy(created.id).isEmpty(), "an unsigned report must not be acknowledgeable")
 
         DailyReportService.lockReport(boss, reportId)
         DailyReportService.acknowledgeReport(inspector, reportId)
-        val acknowledged = report(created.id)
-        assertEquals(inspector.id, acknowledged.get(DAILY_REPORTS.ACKNOWLEDGEDBYID))
+        assertEquals(listOf(inspector.id), acknowledgedBy(created.id))
 
-        assertThrows<ConflictException> { DailyReportService.acknowledgeReport(investor, reportId) }
-        val unchanged = report(created.id)
-        assertEquals(inspector.id, unchanged.get(DAILY_REPORTS.ACKNOWLEDGEDBYID), "the first acknowledgement stays")
-        assertEquals(acknowledged.acknowledgedat, unchanged.acknowledgedat)
-        assertEquals(1, auditRows("report.acknowledge").size)
+        // The same person does not acknowledge twice; the first record stays as it is.
+        val firstAt = dsl.select(REPORT_ACKNOWLEDGEMENTS.CREATEDAT).from(REPORT_ACKNOWLEDGEMENTS).fetchOne(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+        assertThrows<ConflictException> { DailyReportService.acknowledgeReport(inspector, reportId) }
+        assertEquals(listOf(inspector.id), acknowledgedBy(created.id))
+        assertEquals(firstAt, dsl.select(REPORT_ACKNOWLEDGEMENTS.CREATEDAT).from(REPORT_ACKNOWLEDGEMENTS).fetchOne(REPORT_ACKNOWLEDGEMENTS.CREATEDAT))
+
+        // Another party may: the client's acknowledgement is its own record.
+        DailyReportService.acknowledgeReport(investor, reportId)
+        assertEquals(listOf(inspector.id, investor.id), acknowledgedBy(created.id))
+        assertEquals(2, auditRows("report.acknowledge").size)
     }
 
     @Test
@@ -188,7 +199,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
 
         assertThrows<ForbiddenException> { DailyReportService.acknowledgeReport(adminInspector, reportId) }
 
-        assertNull(report(created.id).acknowledgedat)
+        assertTrue(acknowledgedBy(created.id).isEmpty())
     }
 
     // --- creating and overwriting -----------------------------------------------------------

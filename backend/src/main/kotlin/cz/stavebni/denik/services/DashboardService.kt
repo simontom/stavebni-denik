@@ -29,19 +29,23 @@ object DashboardService {
                 .fetchOne(0, Int::class.java) ?: 0
         }
         
+        // Signed, and nobody has taken note of it yet.
+        val notAcknowledged = DSL.notExists(
+            DSL.selectOne().from(REPORT_ACKNOWLEDGEMENTS).where(REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(DAILY_REPORTS.ID))
+        )
         val unacknowledgedReports = if (!user.isAdmin) {
             tx.select(DSL.count())
                 .from(DAILY_REPORTS)
                 .join(PROJECT_MEMBERS)
                 .on(DAILY_REPORTS.PROJECTID.eq(PROJECT_MEMBERS.PROJECTID))
                 .where(PROJECT_MEMBERS.USERID.eq(user.id))
-                .and(DAILY_REPORTS.ACKNOWLEDGEDBYID.isNull)
+                .and(notAcknowledged)
                 .and(DAILY_REPORTS.SIGNEDBYID.isNotNull)
                 .fetchOne(0, Int::class.java) ?: 0
         } else {
             tx.select(DSL.count())
                 .from(DAILY_REPORTS)
-                .where(DAILY_REPORTS.ACKNOWLEDGEDBYID.isNull)
+                .where(notAcknowledged)
                 .and(DAILY_REPORTS.SIGNEDBYID.isNotNull)
                 .fetchOne(0, Int::class.java) ?: 0
         }
