@@ -32,6 +32,8 @@ java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt aud
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
 ```
 
+Příkaz `migrate` (s údaji vlastníka databáze) migruje schéma a nastaví roli aplikace; lokálně ho nepotřebujete, backend migruje při startu. V produkci je to naopak: aplikace schéma nemigruje a běží pod rolí, která nic nevlastní (viz `PROJECT.md`, „Database roles“).
+
 Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head` a `audit-verify` jen čtou (nemigrují schéma). Návratové kódy jsou v `PROJECT.md`.
 
 ## Testy

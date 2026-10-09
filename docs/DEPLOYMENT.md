@@ -19,14 +19,23 @@ fly volumes create stavebni_denik_data --region fra --size 3 --app stavebni-deni
 # 2. PostgreSQL 18 (schéma používá uuidv7(), starší verze nestačí).
 #    Libovolná spravovaná nebo vlastní databáze dosažitelná z aplikace.
 
-# 3. Tajemství (nikdy se necommitují)
+# 3. Dvě databázové role. Vlastník (owner) schéma vytváří a mění, role "app" jen čte a zapisuje data.
+#    Aplikace dostane jen heslo role "app"; heslo vlastníka na Fly nikdy není.
+psql -v ON_ERROR_STOP=1 -v app_password="<heslo pro app>" -d stavebni_denik -f scripts/sql/bootstrap-app-role.sql   # jako superuser / vlastník
+
+# 4. Schéma se migruje PŘED nasazením, s údaji vlastníka, z vašeho počítače nebo z CI (ne z aplikace):
+DB_MIGRATE_USER=<owner> DB_MIGRATE_PASSWORD=<heslo vlastníka> DB_APP_ROLE=app \
+JDBC_URL="jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require" \
+  java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt migrate     # po ./gradlew :backend:shadowJar
+
+# 5. Tajemství aplikace (nikdy se necommitují)
 fly secrets set --app stavebni-denik \
   JWT_SECRET="$(openssl rand -base64 32)" \
   JDBC_URL="jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require" \
-  DB_USER="<uživatel>" DB_PASSWORD="<heslo>" \
+  DB_USER="app" DB_PASSWORD="<heslo pro app>" \
   ALLOW_UNRELEASED_BUILD=true          # jen pro testovací data, dokud není sestavení uvolněné
 
-# 4. Nasazení
+# 6. Nasazení
 fly deploy --app stavebni-denik
 ```
 
@@ -64,4 +73,6 @@ git checkout main && git pull
 fly deploy --app stavebni-denik
 ```
 
-Flyway doplní schéma při startu. Před nasazením migrace zkontrolujte, že běžící verze s novým schématem funguje (migrace se nevracejí zpět).
+V produkci aplikace **schéma sama nemigruje** (`MIGRATE_ON_START` je tam ve výchozím stavu vypnuté): pokud schéma není aktuální, odmítne nastartovat s hláškou „the database schema is out of date ... run the migrate command“. Postup je proto: `migrate` s údaji vlastníka (jako v kroku 4), potom `fly deploy`. Migrace se nevracejí zpět, takže před nasazením zkontrolujte, že předchozí verze aplikace s novým schématem funguje (nasazení a migrace se překrývají jen na dobu startu).
+
+**Jednodušší, slabší varianta pro testovací data:** jedna role, `MIGRATE_ON_START=true` a `DB_USER` = vlastník. Funguje, ale aplikace pak vlastní tabulky a kdo získá její heslo, může vypnout triggery, které chrání záznamy (viz „Database roles“ v `PROJECT.md`). Pro skutečná data ji nepoužívejte.

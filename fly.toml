@@ -6,7 +6,9 @@ primary_region = "fra"
 
 # Secrets (set once, never commit):
 #   fly secrets set JWT_SECRET=$(openssl rand -base64 32) \
-#     JDBC_URL=jdbc:postgresql://<host>:5432/stavebni_denik DB_USER=... DB_PASSWORD=...
+#     JDBC_URL=jdbc:postgresql://<host>:5432/stavebni_denik DB_USER=app DB_PASSWORD=...
+# DB_USER is the application's own role, which owns nothing; the owner's password is NOT a Fly secret. In production the app does
+# not migrate: run the `migrate` command with the owner role before `fly deploy` (docs/DEPLOYMENT.md, PROJECT.md "Database roles").
 # The database must be PostgreSQL 18 (schema uses uuidv7()).
 # This build is not released for real diary data yet: in production mode the app
 # refuses to start unless `fly secrets set ALLOW_UNRELEASED_BUILD=true` is set

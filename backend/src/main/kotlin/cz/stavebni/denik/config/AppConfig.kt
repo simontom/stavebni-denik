@@ -29,6 +29,16 @@ object AppConfig {
         get() = env("APP_ENV")?.lowercase() == "production"
 
     /**
+     * Whether the application migrates the schema itself when it starts. On by default for development and tests
+     * (one role does everything). **Off by default in production**: there the schema is migrated by the `migrate` command
+     * with an owner role, and the application runs under a role that owns nothing and only checks that the schema is
+     * current. `MIGRATE_ON_START=true` in production is the simple one-role setup: it works, but the application's own role
+     * then owns the tables and can switch off the triggers that protect the records (see PROJECT.md, "Database roles").
+     */
+    val migrateOnStart: Boolean
+        get() = env("MIGRATE_ON_START")?.lowercase()?.let { it == "true" } ?: !isProduction
+
+    /**
      * Deliberate opt-in for running this build with `APP_ENV=production`.
      *
      * The application is not released for real diary data yet (PROJECT.md,
