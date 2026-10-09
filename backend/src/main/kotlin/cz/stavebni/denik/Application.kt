@@ -22,6 +22,7 @@ import cz.stavebni.denik.routes.userRoutes
 import cz.stavebni.denik.routes.auditRoutes
 import cz.stavebni.denik.plugins.CrossSiteRequestGuard
 import cz.stavebni.denik.plugins.configureSecurity
+import cz.stavebni.denik.plugins.configureRequestContext
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
 import kotlinx.serialization.json.Json
@@ -106,6 +107,7 @@ fun Application.module() {
     }
 
     configureSecurityHeaders()
+    configureRequestContext()
     configureSecurity()
     configureStatusPages()
 

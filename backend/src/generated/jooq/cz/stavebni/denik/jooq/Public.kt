@@ -4,8 +4,10 @@
 package cz.stavebni.denik.jooq
 
 
+import cz.stavebni.denik.jooq.tables.AccessLog
 import cz.stavebni.denik.jooq.tables.Addenda
 import cz.stavebni.denik.jooq.tables.AuditLog
+import cz.stavebni.denik.jooq.tables.AuditRequestContext
 import cz.stavebni.denik.jooq.tables.AuthorizedPersons
 import cz.stavebni.denik.jooq.tables.DailyReports
 import cz.stavebni.denik.jooq.tables.MaterialNeeds
@@ -43,6 +45,11 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
     }
 
     /**
+     * The table <code>public.access_log</code>.
+     */
+    val ACCESS_LOG: AccessLog get() = AccessLog.ACCESS_LOG
+
+    /**
      * The table <code>public.addenda</code>.
      */
     val ADDENDA: Addenda get() = Addenda.ADDENDA
@@ -51,6 +58,11 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
      * The table <code>public.audit_log</code>.
      */
     val AUDIT_LOG: AuditLog get() = AuditLog.AUDIT_LOG
+
+    /**
+     * The table <code>public.audit_request_context</code>.
+     */
+    val AUDIT_REQUEST_CONTEXT: AuditRequestContext get() = AuditRequestContext.AUDIT_REQUEST_CONTEXT
 
     /**
      * The table <code>public.authorized_persons</code>.
@@ -125,8 +137,10 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
     override fun getCatalog(): Catalog = DefaultCatalog.DEFAULT_CATALOG
 
     override fun getTables(): List<Table<*>> = listOf(
+        AccessLog.ACCESS_LOG,
         Addenda.ADDENDA,
         AuditLog.AUDIT_LOG,
+        AuditRequestContext.AUDIT_REQUEST_CONTEXT,
         AuthorizedPersons.AUTHORIZED_PERSONS,
         DailyReports.DAILY_REPORTS,
         MaterialNeeds.MATERIAL_NEEDS,

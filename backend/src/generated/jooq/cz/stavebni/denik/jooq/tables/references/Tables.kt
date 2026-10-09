@@ -5,8 +5,10 @@
 package cz.stavebni.denik.jooq.tables.references
 
 
+import cz.stavebni.denik.jooq.tables.AccessLog
 import cz.stavebni.denik.jooq.tables.Addenda
 import cz.stavebni.denik.jooq.tables.AuditLog
+import cz.stavebni.denik.jooq.tables.AuditRequestContext
 import cz.stavebni.denik.jooq.tables.AuthorizedPersons
 import cz.stavebni.denik.jooq.tables.DailyReports
 import cz.stavebni.denik.jooq.tables.MaterialNeeds
@@ -25,6 +27,11 @@ import cz.stavebni.denik.jooq.tables.Visits
 
 
 /**
+ * The table <code>public.access_log</code>.
+ */
+val ACCESS_LOG: AccessLog = AccessLog.ACCESS_LOG
+
+/**
  * The table <code>public.addenda</code>.
  */
 val ADDENDA: Addenda = Addenda.ADDENDA
@@ -33,6 +40,11 @@ val ADDENDA: Addenda = Addenda.ADDENDA
  * The table <code>public.audit_log</code>.
  */
 val AUDIT_LOG: AuditLog = AuditLog.AUDIT_LOG
+
+/**
+ * The table <code>public.audit_request_context</code>.
+ */
+val AUDIT_REQUEST_CONTEXT: AuditRequestContext = AuditRequestContext.AUDIT_REQUEST_CONTEXT
 
 /**
  * The table <code>public.authorized_persons</code>.
