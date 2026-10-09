@@ -318,7 +318,8 @@ jobs:
       - name: Boot image against PostgreSQL 18
         run: |
           set -euo pipefail
-          DB_PASSWORD="$(openssl rand -hex 16)"
+          DB_PASSWORD="$(openssl rand -hex 16)"       # the owner of the database (migrates)
+          APP_DB_PASSWORD="$(openssl rand -hex 16)"   # the role the application runs as (data access only)
           JWT_SECRET="$(openssl rand -base64 32)"
 
           cleanup() {
@@ -342,6 +343,11 @@ jobs:
             sleep 1
           done
 
+          # The application's own database role: it owns nothing (decision D5).
+          docker exec -i smoke-pg psql -U denik -d stavebni_denik -v ON_ERROR_STOP=1 -v app_password="$APP_DB_PASSWORD" \
+            < scripts/sql/bootstrap-app-role.sql >/dev/null
+          echo "application role created"
+
           # An unreleased build must refuse to start in production mode unless the
           # operator opts in explicitly (the guard runs before the database is used).
           if docker run --rm -e APP_ENV=production -e JWT_SECRET="$JWT_SECRET" \
@@ -352,12 +358,30 @@ jobs:
           grep -q 'ALLOW_UNRELEASED_BUILD' /tmp/release-guard.log
           echo "release guard refuses an unreleased production start"
 
+          # In production the application does not migrate: on a database nobody has migrated it refuses to start.
+          if docker run --rm --network smoke-net -e APP_ENV=production -e ALLOW_UNRELEASED_BUILD=true -e JWT_SECRET="$JWT_SECRET" \
+              -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik -e DB_USER=app -e DB_PASSWORD="$APP_DB_PASSWORD" \
+              stavebni-denik:ci > /tmp/stale-schema.log 2>&1; then
+            echo "::error::the image started in production mode on a schema that was never migrated"
+            exit 1
+          fi
+          grep -q 'out of date' /tmp/stale-schema.log
+          echo "an unmigrated schema stops the application"
+
+          # The owner migrates and gives the application's role data access, from outside the application's machine.
+          docker run --rm --network smoke-net -e APP_ENV=production \
+            -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
+            -e DB_MIGRATE_USER=denik -e DB_MIGRATE_PASSWORD="$DB_PASSWORD" -e DB_APP_ROLE=app \
+            stavebni-denik:ci java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt migrate | tee /tmp/migrate.log
+          grep -q 'migrated' /tmp/migrate.log
+
           # /data is a fresh volume, owned by root like a Fly volume is: the entrypoint has to hand it to the app user.
+          # The application runs as the database role that owns nothing.
           docker volume create smoke-data >/dev/null
           docker run -d --name smoke-app --network smoke-net -p 8080:8080 -v smoke-data:/data \
             -e APP_ENV=production -e ALLOW_UNRELEASED_BUILD=true -e JWT_SECRET="$JWT_SECRET" \
             -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
-            -e DB_USER=denik -e DB_PASSWORD="$DB_PASSWORD" \
+            -e DB_USER=app -e DB_PASSWORD="$APP_DB_PASSWORD" \
             stavebni-denik:ci >/dev/null
 
           for i in $(seq 1 60); do
@@ -375,6 +399,21 @@ jobs:
           owner="$(docker exec smoke-app stat -c %U /data/uploads)"
           echo "owner of /data/uploads: $owner"
           [ "$owner" = "app" ]
+
+          # It really connects as that role, and that role cannot change the structure or switch a guard off.
+          connected="$(docker exec smoke-pg psql -U denik -d stavebni_denik -tAc "select count(*) from pg_stat_activity where usename = 'app'")"
+          echo "connections of the application's role: $connected"
+          [ "$connected" -ge 1 ]
+          as_app() { docker exec -e PGPASSWORD="$APP_DB_PASSWORD" smoke-pg psql -h localhost -U app -d stavebni_denik -v ON_ERROR_STOP=1 -c "$1" >/dev/null 2>&1; }
+          for statement in 'create table intruder (a int)' 'alter table audit_log disable trigger all' \
+              'alter table daily_reports disable trigger daily_reports_locked_immutable' 'truncate audit_log' 'delete from audit_log'; do
+            if as_app "$statement"; then
+              echo "::error::the application's database role was able to: $statement"
+              exit 1
+            fi
+          done
+          as_app 'select count(*) from users'
+          echo "the application's role has data access and nothing else"
 
           # Every Flyway migration in the repo must have been applied.
           expected="$(ls backend/src/main/resources/db/migration/V*.sql | wc -l)"
