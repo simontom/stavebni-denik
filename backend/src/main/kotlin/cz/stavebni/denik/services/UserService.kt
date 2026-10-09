@@ -17,6 +17,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.Record
 import org.jooq.impl.DSL
 import java.security.SecureRandom
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.util.UUID
 import cz.stavebni.denik.jooq.enums.Role as DbRole
@@ -93,6 +94,9 @@ internal data class UserSnapshot(
 object UserService {
 
     internal val NICKNAME_PATTERN = Regex("^[A-Za-z0-9._@-]{3,64}$")
+    /** How long a generated password (new account, administrator reset) works if it is never used. */
+    val TEMPORARY_PASSWORD_LIFETIME: Duration = Duration.ofDays(7)
+
     private const val PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
     private val random = SecureRandom()
 
@@ -191,6 +195,7 @@ object UserService {
                 .set(USERS.ISADMIN, req.isAdmin)
                 .set(USERS.ISACTIVE, true)
                 .set(USERS.MUSTCHANGEPWD, true)
+                .set(USERS.PASSWORDEXPIRESAT, now.plus(TEMPORARY_PASSWORD_LIFETIME))
                 .set(USERS.CKAITNUMBER, req.ckaitNumber?.trim()?.ifEmpty { null })
                 .set(USERS.CREATEDBYID, actor.id)
                 .set(USERS.CREATEDAT, now)
@@ -330,27 +335,37 @@ object UserService {
      */
     suspend fun changeOwnPassword(actor: SessionUser, request: ChangePasswordRequest) {
         val db = DatabaseFactory.dsl
-        val key = actor.id.toString()
-        RateLimiter.retryAfter(db, RateLimiter.Rules.PASSWORD_CHANGE, key)?.let {
+        // The attempt is reserved before the password is looked at and given back when it was right, so wrong answers
+        // that arrive at the same moment cannot all slip under the limit.
+        val reservation = RateLimiter.reserve(db, listOf(RateLimiter.Rules.PASSWORD_CHANGE to actor.id.toString()))
+        reservation.refusedFor?.let {
             throw TooManyRequestsException(it.seconds, "Příliš mnoho pokusů o změnu hesla. Zkuste to znovu za ${RateLimiter.describeWait(it)}.")
         }
 
-        val issues = PasswordPolicy.issues(request.newPassword)
-        require(issues.isEmpty()) { issues.joinToString(" ") }
-        require(!BreachedPasswordService.isBreached(request.newPassword)) {
-            "Toto heslo se objevilo v uniklých databázích hesel. Zvolte jiné."
-        }
-        require(request.currentPassword.length <= PasswordPolicy.MAX_LENGTH) { "Stávající heslo není správné." }
+        // A request that is refused before the current password is compared is not a guess: it does not count.
+        val currentHash: String
+        try {
+            val issues = PasswordPolicy.issues(request.newPassword)
+            require(issues.isEmpty()) { issues.joinToString(" ") }
+            require(!BreachedPasswordService.isBreached(request.newPassword)) {
+                "Toto heslo se objevilo v uniklých databázích hesel. Zvolte jiné."
+            }
+            require(request.currentPassword.length <= PasswordPolicy.MAX_LENGTH) { "Stávající heslo není správné." }
 
-        val currentHash = db.select(USERS.PASSWORDHASH)
-            .from(USERS)
-            .where(USERS.ID.eq(actor.id).and(USERS.DELETEDAT.isNull))
-            .fetchOne(USERS.PASSWORDHASH)
-            ?: throw NotFoundException("Uživatel nenalezen")
+            currentHash = db.select(USERS.PASSWORDHASH)
+                .from(USERS)
+                .where(USERS.ID.eq(actor.id).and(USERS.DELETEDAT.isNull))
+                .fetchOne(USERS.PASSWORDHASH)
+                ?: throw NotFoundException("Uživatel nenalezen")
+        } catch (e: Exception) {
+            RateLimiter.release(db, reservation)
+            throw e
+        }
         if (!PasswordService.verifyAsync(currentHash, request.currentPassword)) {
-            RateLimiter.recordFailure(db, RateLimiter.Rules.PASSWORD_CHANGE, key)
+            // The reserved attempt stays: it was a wrong guess.
             throw IllegalArgumentException("Stávající heslo není správné.")
         }
+        RateLimiter.release(db, reservation)
         require(request.newPassword != request.currentPassword) { "Nové heslo musí být jiné než stávající." }
 
         val newHash = PasswordService.hashAsync(request.newPassword)
@@ -361,9 +376,22 @@ object UserService {
             entityType = "user",
             entityId = actor.id.toString(),
         ) { tx ->
+            // The password was checked a moment ago, outside this transaction. If an administrator reset it (or the
+            // user changed it elsewhere) in between, this change was made on the strength of a password that no
+            // longer exists: it must not overwrite the newer one.
+            val stored = tx.select(USERS.PASSWORDHASH)
+                .from(USERS)
+                .where(USERS.ID.eq(actor.id).and(USERS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne(USERS.PASSWORDHASH)
+                ?: throw NotFoundException("Uživatel nenalezen")
+            if (stored != currentHash) {
+                throw IllegalStateException("Heslo bylo mezitím změněno. Přihlaste se znovu a zkuste to znovu.")
+            }
             tx.update(USERS)
                 .set(USERS.PASSWORDHASH, newHash)
                 .set(USERS.PASSWORDCHANGEDAT, OffsetDateTime.now())
+                .setNull(USERS.PASSWORDEXPIRESAT)
                 .set(USERS.MUSTCHANGEPWD, false)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(actor.id))
@@ -392,6 +420,7 @@ object UserService {
             val nickname = tx.update(USERS)
                 .set(USERS.PASSWORDHASH, hash)
                 .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
+                .set(USERS.PASSWORDEXPIRESAT, OffsetDateTime.now().plus(TEMPORARY_PASSWORD_LIFETIME))
                 .set(USERS.MUSTCHANGEPWD, true)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))

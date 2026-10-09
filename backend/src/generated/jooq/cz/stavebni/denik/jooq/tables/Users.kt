@@ -171,6 +171,11 @@ open class Users(
      */
     val PASSWORDCHANGEDAT: TableField<UsersRecord, OffsetDateTime?> = createField(DSL.name("passwordChangedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
+    /**
+     * The column <code>public.users.passwordExpiresAt</code>.
+     */
+    val PASSWORDEXPIRESAT: TableField<UsersRecord, OffsetDateTime?> = createField(DSL.name("passwordExpiresAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
+
     private constructor(alias: Name, aliased: Table<UsersRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<UsersRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<UsersRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)

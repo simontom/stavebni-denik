@@ -112,7 +112,7 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
     fun `a reset lifts a login lockout of the account`() = runBlocking {
         createTestUser(nickname = "locked_admin", role = Role.BOSS, isAdmin = true)
         val rule = RateLimiter.Rules.LOGIN_USER
-        repeat(rule.maxFailures) { RateLimiter.recordFailure(dsl, rule, UserService.loginKey("locked_admin")) }
+        repeat(rule.maxFailures) { RateLimiter.reserve(dsl, listOf(rule to UserService.loginKey("locked_admin"))) }
         assertNotNull(RateLimiter.retryAfter(dsl, rule, UserService.loginKey("locked_admin")), "the account is locked")
 
         AdminBootstrapService.resetPassword("locked_admin")

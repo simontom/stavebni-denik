@@ -76,6 +76,10 @@ open class UsersRecord() : UpdatableRecordImpl<UsersRecord>(Users.USERS) {
         set(value): Unit = set(13, value)
         get(): OffsetDateTime? = get(13) as OffsetDateTime?
 
+    open var passwordexpiresat: OffsetDateTime?
+        set(value): Unit = set(14, value)
+        get(): OffsetDateTime? = get(14) as OffsetDateTime?
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -85,7 +89,7 @@ open class UsersRecord() : UpdatableRecordImpl<UsersRecord>(Users.USERS) {
     /**
      * Create a detached, initialised UsersRecord
      */
-    constructor(id: UUID? = null, nickname: String? = null, displayname: String? = null, passwordhash: String? = null, role: Role? = null, ckaitnumber: String? = null, isadmin: Boolean? = null, isactive: Boolean? = null, mustchangepwd: Boolean? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, passwordchangedat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, nickname: String? = null, displayname: String? = null, passwordhash: String? = null, role: Role? = null, ckaitnumber: String? = null, isadmin: Boolean? = null, isactive: Boolean? = null, mustchangepwd: Boolean? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, passwordchangedat: OffsetDateTime? = null, passwordexpiresat: OffsetDateTime? = null): this() {
         this.id = id
         this.nickname = nickname
         this.displayname = displayname
@@ -100,6 +104,7 @@ open class UsersRecord() : UpdatableRecordImpl<UsersRecord>(Users.USERS) {
         this.createdbyid = createdbyid
         this.deletedat = deletedat
         this.passwordchangedat = passwordchangedat
+        this.passwordexpiresat = passwordexpiresat
         resetTouchedOnNotNull()
     }
 }
