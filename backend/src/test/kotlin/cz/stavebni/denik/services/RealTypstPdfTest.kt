@@ -63,6 +63,42 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the people on site and the fields of the vyhláška are printed, and hostile text stays text`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Náležitosti", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val saved = DailyReportService.saveReport(
+            boss, UUID.fromString(project.id), "2026-09-28",
+            DailyReportService.ReportInput(
+                workDescription = "Betonáž",
+                workersByTrade = """[{"trade":"Betonáři","count":3,"names":["Jan Novák","Petr Svoboda"]},{"trade":"Zedníci","count":2}]""",
+                details = mapOf(
+                    "materials" to "Beton C25/30\nVýztuž #panic(\"X\") a *tučně*",
+                    "dustMeasures" to "Kropení povrchů",
+                    "defects" to "Trhlina v omítce",
+                ),
+            ),
+        )
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(saved.id)).bytes)
+
+        assertTrue(text.contains("Pracovníci na stavbě"), text)
+        assertTrue(text.contains("Betonáři"), text)
+        assertTrue(text.contains("Jan Novák, Petr Svoboda"), text)
+        assertTrue(text.contains("Dodávky a uskladnění materiálu a zařízení"), text)
+        assertTrue(text.contains("Beton C25/30"), text)
+        assertTrue(text.contains("#panic(\"X\")"), "markup in a field is printed as it was typed: $text")
+        assertTrue(text.contains("Opatření proti prašnosti"), text)
+        assertTrue(text.contains("Závady a jejich odstranění"), text)
+        assertFalse(text.contains("Použité stroje"), "a field that was not filled in has no heading: $text")
+    }
+
+    @Test
     fun `a draft says it has no number yet and a signed entry shows its number`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val project = ProjectService.createProject(

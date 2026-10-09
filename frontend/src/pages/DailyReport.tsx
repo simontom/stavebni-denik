@@ -34,7 +34,34 @@ const temperature = (value: string): number | undefined => {
 interface WorkerRow {
   trade: string;
   count: string;
+  /** The names of the people of this trade, separated by commas (the vyhláška asks for them; optional). */
+  names: string;
 }
+
+/**
+ * The text fields a daily entry has besides the day's work (vyhláška 131/2024 Sb., příloha 12, part B). The keys and the
+ * order are those of the server (EntryDetails.kt); the labels are the same.
+ */
+const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[] = [
+  { key: "materials", label: "Dodávky a uskladnění materiálu a zařízení", placeholder: "Co bylo dodáno, uskladněno nebo zabudováno" },
+  { key: "machinery", label: "Použité stroje a mechanizace", placeholder: "Stroje a mechanizace nasazené v tento den" },
+  { key: "testsAndChecks", label: "Zkoušky, měření a kontroly", placeholder: "Provedené zkoušky, měření a kontroly a jejich výsledek" },
+  { key: "safetyNotes", label: "Bezpečnost práce, ochrana životního prostředí a poučení", placeholder: "Poučení pracovníků, bezpečnostní a environmentální opatření" },
+  { key: "dustMeasures", label: "Opatření proti prašnosti", placeholder: "Např. kropení, zakrytí, čištění komunikací" },
+  { key: "accessibilityMeasures", label: "Opatření pro zajištění přístupnosti", placeholder: "Např. zachování přístupu k okolním objektům" },
+  { key: "defects", label: "Závady a jejich odstranění", placeholder: "Zjištěné závady a způsob jejich odstranění" },
+  { key: "otherNotes", label: "Ostatní zápisy", placeholder: "Další skutečnosti rozhodné pro stavbu" },
+];
+
+type Details = Record<string, string>;
+const emptyDetails = (): Details => Object.fromEntries(DETAIL_FIELDS.map((d) => [d.key, ""]));
+
+/** "Jan Novák, Petr Svoboda" as the list the server expects; blanks are left out. */
+const namesOf = (text: string): string[] =>
+  text
+    .split(/[,\n;]/)
+    .map((n) => n.trim())
+    .filter((n) => n !== "");
 
 /** Everything the user can edit on the form. */
 interface FormValues {
@@ -46,17 +73,19 @@ interface FormValues {
   weatherMin: string;
   weatherMax: string;
   lateEntryReason: string;
+  details: Details;
 }
 
 const EMPTY_FORM: FormValues = {
   workDescription: "",
-  workers: [{ trade: "", count: "" }],
+  workers: [{ trade: "", count: "", names: "" }],
   isControlDay: false,
   constructionObj: "",
   weatherCondition: "",
   weatherMin: "",
   weatherMax: "",
   lateEntryReason: "",
+  details: emptyDetails(),
 };
 
 /** The form as one string: compared with the state it was loaded or last saved in, to know about unsaved changes. */
@@ -108,7 +137,8 @@ export const DailyReport: React.FC = () => {
   // A new entry starts empty: invented defaults would end up in a legal record if nobody noticed them.
   const [workDescription, setWorkDescription] = useState<string>("");
   // One row per trade. The head count is entered, never defaulted: an invented number would end up in a legal record.
-  const [workers, setWorkers] = useState<WorkerRow[]>([{ trade: "", count: "" }]);
+  const [workers, setWorkers] = useState<WorkerRow[]>([{ trade: "", count: "", names: "" }]);
+  const [details, setDetails] = useState<Details>(emptyDetails());
   // Saving is only possible once it is known whether the day already has an entry: an unloaded form
   // must never be saved over an entry that exists.
   const [loadState, setLoadState] = useState<"loading" | "ready" | "failed">("loading");
@@ -142,7 +172,7 @@ export const DailyReport: React.FC = () => {
   const [lateEntryReason, setLateEntryReason] = useState<string>("");
   const [isLateEntry, setIsLateEntry] = useState<boolean>(false);
   // What the form holds, as one string: compared with the state it was loaded or last saved in to know about unsaved changes.
-  const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason });
+  const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details });
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const dirty = savedKey !== null && formKey !== savedKey;
   // Tell the session dialog: after a lapsed session the page must keep what was typed (no reload, no redirect).
@@ -179,9 +209,10 @@ export const DailyReport: React.FC = () => {
           try {
             const trades = typeof data.workersByTrade === "string" ? JSON.parse(data.workersByTrade) : data.workersByTrade;
             if (Array.isArray(trades) && trades.length > 0) {
-              loadedWorkers = trades.map((t: { trade?: unknown; count?: unknown }) => ({
+              loadedWorkers = trades.map((t: { trade?: unknown; count?: unknown; names?: unknown }) => ({
                 trade: typeof t.trade === "string" ? t.trade : "",
                 count: typeof t.count === "number" ? String(t.count) : "",
+                names: Array.isArray(t.names) ? t.names.filter((n): n is string => typeof n === "string").join(", ") : "",
               }));
             }
           } catch {
@@ -196,8 +227,13 @@ export const DailyReport: React.FC = () => {
             weatherMin: typeof data.weather?.tempMin === "number" ? String(data.weather.tempMin) : "",
             weatherMax: typeof data.weather?.tempMax === "number" ? String(data.weather.tempMax) : "",
             lateEntryReason: typeof data.lateEntryReason === "string" ? data.lateEntryReason : "",
+            details: {
+              ...emptyDetails(),
+              ...Object.fromEntries(Object.entries((data.details ?? {}) as Record<string, unknown>).filter(([k, v]) => k in emptyDetails() && typeof v === "string")),
+            } as Details,
           };
           setWorkDescription(loaded.workDescription);
+          setDetails(loaded.details);
           setWorkers(loaded.workers);
           setIsControlDay(loaded.isControlDay);
           setConstructionObj(loaded.constructionObj);
@@ -235,7 +271,8 @@ export const DailyReport: React.FC = () => {
   }, [projectId, reportId]);
 
   const updateWorker = (index: number, patch: Partial<WorkerRow>) => setWorkers((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
-  const addWorker = () => setWorkers((rows) => [...rows, { trade: "", count: "" }]);
+  const addWorker = () => setWorkers((rows) => [...rows, { trade: "", count: "", names: "" }]);
+  const updateDetail = (key: string, value: string) => setDetails((current) => ({ ...current, [key]: value }));
   const removeWorker = (index: number) => setWorkers((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== index) : rows));
 
   const handleCreateReport = async (e: React.FormEvent) => {
@@ -243,7 +280,7 @@ export const DailyReport: React.FC = () => {
     if (loadState !== "ready" || isFuture || isSigned) return;
 
     // A trade needs a name and a whole head count (0 is allowed); a row left completely empty is simply not a trade.
-    const rows = workers.filter((r) => r.trade.trim() !== "" || r.count.trim() !== "");
+    const rows = workers.filter((r) => r.trade.trim() !== "" || r.count.trim() !== "" || r.names.trim() !== "");
     for (const r of rows) {
       if (r.trade.trim() === "") return setError("Doplňte název profese u zadaného počtu pracovníků");
       if (!/^\d{1,6}$/.test(r.count.trim())) return setError(`Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
@@ -257,7 +294,14 @@ export const DailyReport: React.FC = () => {
         body: JSON.stringify({
           date: reportId,
           workDescription,
-          workersByTrade: JSON.stringify(rows.map((r) => ({ trade: r.trade.trim(), count: Number(r.count.trim()) }))),
+          workersByTrade: JSON.stringify(
+            rows.map((r) => {
+              const names = namesOf(r.names);
+              return { trade: r.trade.trim(), count: Number(r.count.trim()), ...(names.length > 0 ? { names } : {}) };
+            }),
+          ),
+          // Always sent, every field: what the form shows is what is stored (an empty text clears the field).
+          details,
           isControlDay,
           constructionObj,
           // A saved entry is changed only if nobody else changed it; a day that looked empty only if nobody created it meanwhile.
@@ -556,6 +600,15 @@ export const DailyReport: React.FC = () => {
                     ) : (
                       <span />
                     )}
+                    <input
+                      name="workerNames"
+                      type="text"
+                      aria-label={`Jména pracovníků ${index + 1}`}
+                      value={row.names}
+                      onChange={(e) => updateWorker(index, { names: e.target.value })}
+                      className="w-full rounded-md border border-gray-300 p-2 text-sm md:col-span-3"
+                      placeholder="Jména pracovníků, oddělená čárkou (volitelné)"
+                    />
                   </div>
                 ))}
               </div>
@@ -621,6 +674,30 @@ export const DailyReport: React.FC = () => {
                     className="w-full rounded-md border border-gray-300 p-2"
                   />
                 </div>
+              </div>
+            </div>
+
+            {/* The other fields the vyhláška asks a daily entry to say */}
+            <div>
+              <div className="mb-1 block text-sm font-medium text-gray-700">Další zápisy</div>
+              <div className="space-y-3">
+                {DETAIL_FIELDS.map((field) => (
+                  <div key={field.key}>
+                    <label htmlFor={`detail-${field.key}`} className="mb-1 block text-xs text-gray-600">
+                      {field.label}
+                    </label>
+                    <textarea
+                      id={`detail-${field.key}`}
+                      name={`detail-${field.key}`}
+                      value={details[field.key] ?? ""}
+                      onChange={(e) => updateDetail(field.key, e.target.value)}
+                      rows={2}
+                      maxLength={5000}
+                      className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                      placeholder={field.placeholder}
+                    />
+                  </div>
+                ))}
               </div>
             </div>
 

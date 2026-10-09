@@ -57,7 +57,11 @@ data class SignatureCheckDto(
 object ReportSignature {
 
     /** Bump when the covered content changes: old signatures keep verifying under the version they were made with. */
-    private const val FORMAT = 1
+    /**
+     * The format new signatures are made in. 1 is the entry without the fields of [EntryDetails]; 2 covers them too. An
+     * entry says which one it was signed in (`signatureFormat`), so what was signed before a field existed still verifies.
+     */
+    const val CURRENT_FORMAT = 2
 
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -67,6 +71,7 @@ object ReportSignature {
 
     /** The covered content, as the entry [report] stands (signedAt and signedById included). */
     internal fun content(tx: DSLContext, report: DailyReportsRecord, signedAt: OffsetDateTime, signedById: UUID): JsonObject {
+        val format = report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() ?: 1
         val photos = tx.selectFrom(PHOTOS)
             .where(PHOTOS.REPORTID.eq(report.id!!).and(PHOTOS.DELETEDAT.isNull))
             .fetch()
@@ -80,7 +85,7 @@ object ReportSignature {
             }
             .sortedBy { (it["id"] as JsonPrimitive).content }
         return buildJsonObject {
-            put("format", FORMAT)
+            put("format", format)
             put("id", report.id.toString())
             put("projectId", report.projectid.toString())
             put("date", report.date.toString())
@@ -96,6 +101,9 @@ object ReportSignature {
             put("signedAt", AuditHash.formatTs(signedAt))
             put("signedById", signedById.toString())
             put("photos", JsonArray(photos))
+            if (format >= 2) {
+                put("details", buildJsonObject { EntryDetails.valuesOf(report).forEach { (field, text) -> put(field.key, text) } })
+            }
         }
     }
 

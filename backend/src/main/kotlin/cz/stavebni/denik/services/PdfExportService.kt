@@ -89,6 +89,10 @@ internal data class ReportPdfData(
     val sequenceNumber: Int?,
     val weather: String,
     val workDescription: String,
+    /** The people on site by trade (the vyhláška asks for their names); empty when none were entered. */
+    val workers: List<WorkerPdf> = emptyList(),
+    /** The fields of [EntryDetails] that have a text, in their fixed order, with the label of the vyhláška. */
+    val details: List<DetailPdf> = emptyList(),
     val isSigned: Boolean,
     val isLateEntry: Boolean,
     val lateEntryReason: String,
@@ -104,6 +108,12 @@ internal data class ReportPdfData(
     /** Who took note of the signed entry ("Name (role)"), with the time, oldest first. */
     val acknowledgements: List<AcknowledgementPdf> = emptyList(),
 )
+
+@Serializable
+internal data class WorkerPdf(val trade: String, val count: Int, val names: String)
+
+@Serializable
+internal data class DetailPdf(val label: String, val text: String)
 
 @Serializable
 internal data class AcknowledgementPdf(val who: String, val at: String)
@@ -173,6 +183,17 @@ object PdfExportService {
                 ?.let { raw -> runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(cz.stavebni.denik.domain.WeatherData.serializer(), raw) }.getOrNull() }
                 ?.takeUnless { it.isEmpty() }?.describe() ?: "Neuvedeno",
             workDescription = report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "",
+            workers = report.get(DAILY_REPORTS.WORKERSBYTRADE)?.data()
+                ?.let { raw ->
+                    runCatching {
+                        Json { ignoreUnknownKeys = true }.decodeFromString(
+                            kotlinx.serialization.builtins.ListSerializer(cz.stavebni.denik.domain.WorkerEntry.serializer()), raw
+                        )
+                    }.getOrNull()
+                }
+                ?.map { WorkerPdf(it.trade, it.count, it.names.joinToString(", ")) }
+                .orEmpty(),
+            details = EntryDetails.valuesOf(report).mapNotNull { (field, text) -> text?.let { DetailPdf(field.label, it) } },
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
