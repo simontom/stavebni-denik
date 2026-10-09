@@ -60,6 +60,15 @@
   )
 ]
 
+// Who took note of the signed entry.
+#if d.acknowledgements.len() > 0 [
+  == Seznámení se záznamem
+
+  #for a in d.acknowledgements [
+    - #plain(a.who), #a.at (UTC)
+  ]
+]
+
 // Addenda: corrections and additions to the signed entry, each with its author and time. They are not part of the signed text.
 #if d.addenda.len() > 0 [
   == Dodatky

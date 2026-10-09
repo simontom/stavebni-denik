@@ -40,7 +40,10 @@ data class DailyReportDto(
     val isControlDay: Boolean = false,
     val constructionObj: String? = null,
     val isSigned: Boolean = false,
+    /** Somebody has taken note of the signed entry; who and when is in [acknowledgements]. */
     val isAcknowledged: Boolean = false,
+    /** Each party that has taken note of the signed entry (technical supervision, author's supervision, the client, ...), oldest first. */
+    val acknowledgements: List<AcknowledgementDto> = emptyList(),
     /** An entry for a day earlier than today and the previous working day (decision D10); it carries the author's reason. */
     val isLateEntry: Boolean = false,
     val lateEntryReason: String? = null,
@@ -55,6 +58,14 @@ data class DailyReportDto(
     val signatureHash: String? = null,
     val photos: List<PhotoDto> = emptyList()
 )
+
+/** One party's acknowledgement of a signed entry. */
+@Serializable
+data class AcknowledgementDto(val userId: String, val name: String, val role: String, val at: String)
+
+/** What the audit log keeps of one acknowledgement. */
+@Serializable
+internal data class AcknowledgementSnapshot(val id: String, val reportId: String, val projectId: String, val userId: String, val role: String)
 
 /**
  * What the audit log keeps of a report before and after a change.
@@ -78,8 +89,6 @@ internal data class ReportSnapshot(
     val signedAt: String?,
     val signedById: String?,
     val lockedAt: String?,
-    val acknowledgedAt: String?,
-    val acknowledgedById: String?,
     val isLateEntry: Boolean = false,
     val lateEntryReason: String? = null,
     /** The weather as readable text (see [WeatherData.describe]); no decimals in the audit snapshot. */
@@ -267,7 +276,7 @@ object DailyReportService {
                     .fetchOne() ?: throw ConflictException("Záznam je podepsán a uzamčen, nelze jej měnit")
 
                 Audited(
-                    result = toDto(updated, PhotoService.listPhotos(tx, updated.id!!)),
+                    result = toDto(updated, PhotoService.listPhotos(tx, updated.id!!), acknowledgementsOf(tx, listOf(updated.id!!))[updated.id!!].orEmpty()),
                     action = "report.update",
                     entityId = updated.id.toString(),
                     before = existing.toSnapshot(),
@@ -302,10 +311,11 @@ object DailyReportService {
         val total = tx.fetchCount(DAILY_REPORTS, live)
 
         val photos = PhotoService.listPhotosForReports(tx, records.mapNotNull { it.id })
+        val acknowledgements = acknowledgementsOf(tx, records.mapNotNull { it.id })
         return ReportPage(
             reports = records.mapNotNull { record ->
                 val reportId = record.id ?: return@mapNotNull null
-                toDto(record, photos[reportId].orEmpty())
+                toDto(record, photos[reportId].orEmpty(), acknowledgements[reportId].orEmpty())
             },
             total = total,
         )
@@ -338,7 +348,7 @@ object DailyReportService {
         } ?: return null
 
         val reportId = record.id ?: return null
-        return toDto(record, PhotoService.listPhotos(tx, reportId))
+        return toDto(record, PhotoService.listPhotos(tx, reportId), acknowledgementsOf(tx, listOf(reportId))[reportId].orEmpty())
     }
 
     /**
@@ -410,9 +420,9 @@ object DailyReportService {
     }
 
     /**
-     * Records that an inspector or investor has taken note of a report. Only a signed
-     * (locked) report can be acknowledged, and only once: a later acknowledgement must
-     * not replace who acknowledged it and when.
+     * Records that an inspector or investor has taken note of a signed report. **Every** such member does so on their own
+     * behalf and **once**: the technical supervision, the author's supervision and the client are each on record, and a
+     * second acknowledgement by the same person is refused instead of replacing the first.
      */
     suspend fun acknowledgeReport(user: SessionUser, reportId: UUID) {
         AuditService.auditedWrite(user, "report") { tx ->
@@ -423,23 +433,46 @@ object DailyReportService {
                 throw ForbiddenException(Action.ReportAcknowledge)
             }
             if (report.lockedat == null) throw ConflictException("Záznam ještě není podepsán")
-            if (report.acknowledgedat != null) throw ConflictException("Záznam již byl potvrzen")
+            if (tx.fetchExists(REPORT_ACKNOWLEDGEMENTS, REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(reportId).and(REPORT_ACKNOWLEDGEMENTS.USERID.eq(user.id)))) {
+                throw ConflictException("Se záznamem jste se již seznámil(a)")
+            }
 
-            val acknowledged = tx.update(DAILY_REPORTS)
-                .set(DAILY_REPORTS.ACKNOWLEDGEDAT, OffsetDateTime.now())
-                .set(DAILY_REPORTS.ACKNOWLEDGEDBYID, user.id)
-                .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.ACKNOWLEDGEDAT.isNull))
+            val inserted = tx.insertInto(REPORT_ACKNOWLEDGEMENTS)
+                .set(REPORT_ACKNOWLEDGEMENTS.REPORTID, reportId)
+                .set(REPORT_ACKNOWLEDGEMENTS.USERID, user.id)
+                .set(REPORT_ACKNOWLEDGEMENTS.ROLE, cz.stavebni.denik.jooq.enums.Role.valueOf(role!!.name))
                 .returning()
-                .fetchOne() ?: throw ConflictException("Záznam již byl potvrzen")
+                .fetchOne() ?: throw IllegalStateException("Potvrzení se nepodařilo uložit")
 
             Audited(
                 result = Unit,
                 action = "report.acknowledge",
                 entityId = reportId.toString(),
-                before = report.toSnapshot(),
-                after = acknowledged.toSnapshot(),
+                after = Json.encodeToJsonElement(
+                    AcknowledgementSnapshot.serializer(),
+                    AcknowledgementSnapshot(inserted.get(REPORT_ACKNOWLEDGEMENTS.ID).toString(), reportId.toString(), report.projectid.toString(), user.id.toString(), role.name),
+                ),
             )
         }
+    }
+
+    /** The acknowledgements of many entries in one query, keyed by entry, oldest first. */
+    private fun acknowledgementsOf(tx: DSLContext, reportIds: Collection<UUID>): Map<UUID, List<AcknowledgementDto>> {
+        if (reportIds.isEmpty()) return emptyMap()
+        return tx.select(REPORT_ACKNOWLEDGEMENTS.REPORTID, REPORT_ACKNOWLEDGEMENTS.USERID, USERS.DISPLAYNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+            .from(REPORT_ACKNOWLEDGEMENTS)
+            .join(USERS).on(USERS.ID.eq(REPORT_ACKNOWLEDGEMENTS.USERID))
+            .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.`in`(reportIds))
+            .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc(), REPORT_ACKNOWLEDGEMENTS.ID.asc())
+            .fetch()
+            .groupBy({ it.get(REPORT_ACKNOWLEDGEMENTS.REPORTID)!! }) {
+                AcknowledgementDto(
+                    userId = it.get(REPORT_ACKNOWLEDGEMENTS.USERID).toString(),
+                    name = it.get(USERS.DISPLAYNAME) ?: "",
+                    role = it.get(REPORT_ACKNOWLEDGEMENTS.ROLE)!!.name,
+                    at = it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT).toString(),
+                )
+            }
     }
 
     private fun loadForUpdate(tx: DSLContext, reportId: UUID): DailyReportsRecord =
@@ -456,7 +489,7 @@ object DailyReportService {
             runCatching { weatherJson.decodeFromString(WeatherData.serializer(), raw) }.getOrNull()
         }?.takeUnless { it.isEmpty() }
 
-    private fun toDto(record: DailyReportsRecord, photos: List<PhotoDto>) = DailyReportDto(
+    private fun toDto(record: DailyReportsRecord, photos: List<PhotoDto>, acknowledgements: List<AcknowledgementDto> = emptyList()) = DailyReportDto(
         id = record.id.toString(),
         projectId = record.projectid.toString(),
         date = record.date.toString(),
@@ -468,7 +501,8 @@ object DailyReportService {
         isControlDay = record.iscontrolday ?: false,
         constructionObj = record.constructionobj,
         isSigned = record.signedat != null,
-        isAcknowledged = record.acknowledgedat != null,
+        isAcknowledged = acknowledgements.isNotEmpty(),
+        acknowledgements = acknowledgements,
         isLateEntry = record.islateentry ?: false,
         lateEntryReason = record.lateentryreason,
         updatedAt = record.updatedat?.toString(),
@@ -492,8 +526,6 @@ object DailyReportService {
             signedAt = signedat?.toString(),
             signedById = get(DAILY_REPORTS.SIGNEDBYID)?.toString(),
             lockedAt = lockedat?.toString(),
-            acknowledgedAt = acknowledgedat?.toString(),
-            acknowledgedById = get(DAILY_REPORTS.ACKNOWLEDGEDBYID)?.toString(),
             isLateEntry = islateentry ?: false,
             lateEntryReason = lateentryreason,
             weather = weatherOf(this)?.describe(),
