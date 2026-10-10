@@ -9,6 +9,28 @@ async function login(page: Page) {
   await expect(page).not.toHaveURL(/\/login/, { timeout: 15_000 });
 }
 
+/**
+ * A call to the API made from inside the page, so that it carries the session exactly as the SPA does. (The session cookie of the
+ * production build is Secure, and Playwright's own request client does not send a Secure cookie over http://localhost, which a
+ * browser does.)
+ */
+async function api(page: Page, method: string, path: string, body?: unknown) {
+  const answer = await page.evaluate(
+    async ({ method, path, body }) => {
+      const res = await fetch(path, {
+        method,
+        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        credentials: "same-origin",
+      });
+      return { ok: res.ok, status: res.status, text: await res.text() };
+    },
+    { method, path, body },
+  );
+  expect(answer.ok, `${method} ${path} -> ${answer.status} ${answer.text}`).toBeTruthy();
+  return JSON.parse(answer.text);
+}
+
 test("the manager of a project replaces its site manager with another manager of it", async ({ page }) => {
   test.setTimeout(90_000);
   await login(page);
@@ -30,13 +52,9 @@ test("the manager of a project replaces its site manager with another manager of
   // A second manager with a ČKAIT number, who is a manager of the project (set up through the API).
   const stamp = Date.now();
   const deputyName = `Zástupce ${stamp}`;
-  const created = await page.request.post("/api/users", {
-    data: { nickname: `e2e-deputy-${stamp}`, displayName: deputyName, role: "BOSS", ckaitNumber: "0012345" },
-  });
-  expect(created.ok(), await created.text()).toBeTruthy();
-  const deputyId = (await created.json()).user.id as string;
-  const added = await page.request.post(`/api/projects/${projectId}/members`, { data: { userId: deputyId, role: "BOSS" } });
-  expect(added.ok(), await added.text()).toBeTruthy();
+  const created = await api(page, "POST", "/api/users", { nickname: `e2e-deputy-${stamp}`, displayName: deputyName, role: "BOSS", ckaitNumber: "0012345" });
+  const deputyId = created.user.id as string;
+  await api(page, "POST", `/api/projects/${projectId}/members`, { userId: deputyId, role: "BOSS" });
 
   await page.goto(`/projects/${projectId}`);
   await expect(page.getByText("Hlavní stavbyvedoucí:")).toBeVisible({ timeout: 15_000 });
@@ -50,7 +68,7 @@ test("the manager of a project replaces its site manager with another manager of
   // The page names the new site manager, and the previous one is no longer offered a change to themselves.
   await expect(page.getByText(deputyName).first()).toBeVisible({ timeout: 15_000 });
   await expect(page.getByLabel(/nový stavbyvedoucí/i)).toHaveCount(0);
-  const project = await (await page.request.get(`/api/projects/${projectId}`)).json();
+  const project = await api(page, "GET", `/api/projects/${projectId}`);
   expect(project.siteManagerId).toBe(deputyId);
 
   // The members tab marks who the site manager is: the new one, in the row of the new one.
