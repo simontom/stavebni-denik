@@ -11,6 +11,7 @@ import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectMemberService
 import cz.stavebni.denik.services.ProjectService
 import cz.stavebni.denik.services.SiteHandoverDto
+import cz.stavebni.denik.services.SiteManagerChangeRequest
 import cz.stavebni.denik.services.SiteHandoverService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -49,6 +50,14 @@ fun Application.projectRoutes() {
                         val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val req = call.receive<ProjectDto>()
                         call.respond(ProjectService.updateProject(user, projectId, req))
+                    }
+
+                    // The manager of the project replaces its site manager; the audit row names both persons and the reason.
+                    put("/site-manager") {
+                        val user = call.sessionUser()
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
+                        val req = call.receive<SiteManagerChangeRequest>()
+                        call.respond(ProjectService.changeSiteManager(user, projectId, req))
                     }
 
                     // --- Project members ---------------------------------------------
