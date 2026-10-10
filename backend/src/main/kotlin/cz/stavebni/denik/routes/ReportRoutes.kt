@@ -47,7 +47,9 @@ data class CreateReportPayload(
     /** Required when a new entry is for a day before the previous working day (a late entry). */
     val lateEntryReason: String? = null,
     /** The weather, entered by hand; leave it out to keep what is stored, send an empty object to clear it. */
-    val weather: cz.stavebni.denik.domain.WeatherData? = null
+    val weather: cz.stavebni.denik.domain.WeatherData? = null,
+    /** The text fields of [cz.stavebni.denik.services.EntryDetails] by key; leave a key out to keep what is stored, send an empty text to clear it. */
+    val details: Map<String, String>? = null
 )
 
 /**
@@ -175,7 +177,8 @@ fun Application.reportRoutes() {
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj,
                         lateEntryReason = payload.lateEntryReason,
-                        weather = payload.weather
+                        weather = payload.weather,
+                        details = payload.details,
                     )
                     call.respond(HttpStatusCode.Created, report)
                 }
@@ -210,6 +213,7 @@ fun Application.reportRoutes() {
                                 expectedUpdatedAt = payload.expectedInstant(),
                                 lateEntryReason = payload.lateEntryReason,
                                 weather = payload.weather,
+                                details = payload.details,
                                 expectNew = payload.expectNew == true
                             )
                         )

@@ -78,6 +78,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -118,6 +121,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -167,24 +173,26 @@ jobs:
     timeout-minutes: 25
     needs: [lint_build]
 
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: stavebni_denik
-          POSTGRES_USER: denik
-          POSTGRES_PASSWORD: denik_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -h 127.0.0.1 -U denik -d stavebni_denik"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
+
+      # A step, not a service container: service containers are pulled before the first step runs, so the mirror above
+      # could not help them.
+      - name: Start PostgreSQL 18
+        run: |
+          docker run -d --name e2e-postgres -p 5432:5432 \
+            -e POSTGRES_DB=stavebni_denik -e POSTGRES_USER=denik -e POSTGRES_PASSWORD=denik_dev \
+            postgres:18-alpine >/dev/null
+          # Over TCP: while the image initialises, a temporary server answers on the socket only (see the Docker job).
+          for i in $(seq 1 60); do
+            docker exec e2e-postgres pg_isready -h 127.0.0.1 -U denik -d stavebni_denik >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec e2e-postgres pg_isready -h 127.0.0.1 -U denik -d stavebni_denik
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -333,6 +341,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
 
       # The image build uses the committed jOOQ sources and needs no JDK or
       # database on the runner.
@@ -488,6 +499,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
 
       - name: Setup Node
         uses: actions/setup-node@v5

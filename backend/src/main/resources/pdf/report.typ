@@ -39,9 +39,27 @@
 
 #plain(d.weather)
 
+#if d.workers.len() > 0 [
+  == Pracovníci na stavbě
+
+  #table(
+    columns: (auto, auto, 1fr),
+    stroke: none,
+    [*Profese*], [*Počet*], [*Jména*],
+    ..d.workers.map(w => (plain(w.trade), [#w.count], plain(w.names))).flatten(),
+  )
+]
+
 == Popis prací
 
 #plain(d.workDescription)
+
+// The other fields the vyhláška asks for (labels are fixed in the application, the text is plain content).
+#for x in d.details [
+  == #x.label
+
+  #plain(x.text)
+]
 
 // The signature: who signed, when, and the hash of the content that was signed (it can be checked in the application).
 #if d.isSigned [
