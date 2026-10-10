@@ -60,7 +60,18 @@ fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik
 fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify 1234:ab12…"
 ```
 
-`audit-verify` skončí kódem `0` (řetěz je v pořádku), `1` (poškozený nebo useknutý) nebo `3` (kontrolu nešlo provést). Pravidelné spouštění a zaznamenávání hlavy zatím není automatické: workflow `.github/workflows/audit-verify.yml` spouští kontrolu každou noc, ale **selže, dokud nejsou nastavená tajemství** `AUDIT_JDBC_URL`, `AUDIT_DB_USER`, `AUDIT_DB_PASSWORD` (a databáze dosažitelná z GitHubu); do té doby ho lze v záložce Actions vypnout.
+`audit-verify` skončí kódem `0` (řetěz je v pořádku), `1` (poškozený nebo useknutý) nebo `3` (kontrolu nešlo provést). Hlavu zaznamenává každou noc workflow `.github/workflows/audit-anchor.yml` (skript `scripts/audit/record-anchor.sh`): ověří řetěz proti poslední zaznamenané hlavě, zapíše novou hlavu do **soukromého repozitáře** a nechá ji časově orazítkovat nezávislou autoritou (RFC 3161). Když kterákoli kontrola selže, nic se nezapíše a běh skončí chybou. **Selže také, dokud není nastavené**, aby nikdo nevěřil, že se řetěz hlídá, když se nehlídá; do té doby ho lze v záložce Actions vypnout.
+
+Jednorázové nastavení (dělá člověk, ne kód):
+
+1. Vytvořte **soukromý repozitář** pro kotvy (např. `stavebni-denik-audit-anchors`) a pravidlo větve, které zakazuje force-push a mazání.
+2. Od provozovatele autority (výchozí je `https://freetsa.org/tsr`) získejte její certifikát, **porovnejte otisk s druhým zdrojem** a commitněte ho do repozitáře kotev jako `tsa/ca.pem` (a `tsa/tsa.pem`, pokud ho token nenese). Certifikát se nikdy nestahuje při každém běhu: token ověřený certifikátem stáhnutým při běhu nic nedokazuje.
+3. V hlavním repozitáři nastavte tajemství `AUDIT_JDBC_URL`, `AUDIT_DB_USER` (role, která smí jen `SELECT` z `audit_log`), `AUDIT_DB_PASSWORD` a `AUDIT_ANCHOR_TOKEN` (token s právem zápisu jen do repozitáře kotev) a proměnnou `AUDIT_ANCHOR_REPO` (`vlastnik/nazev`); volitelně `AUDIT_TSA_URL`. Databáze musí být dosažitelná z GitHubu.
+4. Spusťte workflow ručně (`workflow_dispatch`); první běh zapíše první kotvu (useknutý konec lze poznat až od ní).
+
+Co kotvy nechrání: zápisy po poslední kotvě (až den, déle po neúspěšné noci). Workflow také **nepozná, že přestal běžet**: neúspěšná noc pošle upozornění, ale GitHub plánované workflowy v repozitáři bez aktivity po 60 dnech potichu vypne. Stáří nejnovějšího záznamu `anchors/anchor-….txt` proto hlídejte něčím mimo toto workflow (externí monitor, ruční kontrola). Když autorita vymění certifikát, přidejte nový do `tsa/ca.pem` (lze spojit víc certifikátů); staré tokeny se ověřují k času svého vydání.
+
+Později lze kotvu ověřit nezávisle na databázi: `openssl ts -verify -data anchors/anchor-….txt -in anchors/anchor-….tsr -CAfile tsa/ca.pem` dokazuje, že záznam existoval v daném čase, a `audit-verify <hlava>` dokazuje, že databáze ten řádek stále obsahuje beze změny.
 
 ## Zálohy
 
