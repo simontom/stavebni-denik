@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, apiFetch, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -48,6 +48,8 @@ interface ProjectData {
   siteManagerId: string;
   /** The role the signed-in user holds in this project; null for an administrator who is not a member. */
   myRole?: string | null;
+  /** The version of the project; sent back when it is changed. */
+  updatedAt?: string | null;
   permitNumber?: string | null;
   permitDate?: string | null;
   designerName?: string | null;
@@ -113,6 +115,16 @@ export const ProjectDetail: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState("INVESTOR");
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+
+  // Replacing the site manager (stavbyvedoucí): the manager of the project names another manager of it.
+  const [showSiteManager, setShowSiteManager] = useState(false);
+  const [newSiteManagerId, setNewSiteManagerId] = useState("");
+  const [siteManagerReason, setSiteManagerReason] = useState("");
+  const [changingSiteManager, setChangingSiteManager] = useState(false);
+  // What went wrong with the change, shown next to the form (the page banner may be out of sight), and whether the cause is a
+  // version that is out of date, which a reload of the project and its members mends.
+  const [siteManagerError, setSiteManagerError] = useState("");
+  const [siteManagerStale, setSiteManagerStale] = useState(false);
 
   const fail = (err: unknown, fallback: string) => setError(err instanceof Error ? err.message : fallback);
 
@@ -289,6 +301,51 @@ export const ProjectDetail: React.FC = () => {
 
   const selectedUser = userOptions.find((u) => u.id === selectedUserId);
 
+  const siteManagerName = members.find((m) => m.userId === project?.siteManagerId)?.displayName;
+  // Whoever can sign: a manager (role BOSS) of this project other than the present site manager. The server checks the rest
+  // (an active user holding a ČKAIT number).
+  const siteManagerCandidates = members.filter((m) => m.role === "BOSS" && m.userId !== project?.siteManagerId);
+
+  /** The project and its members again, after the change found them out of date. */
+  const reloadForSiteManager = async () => {
+    if (!id) return;
+    try {
+      const [p, m] = await Promise.all([api<ProjectData>(`/api/projects/${id}`), api<ProjectMember[]>(`/api/projects/${id}/members`)]);
+      setProject(p);
+      setMembers(m);
+      setNewSiteManagerId("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
+    } catch (err) {
+      setSiteManagerError(err instanceof Error ? err.message : "Údaje se nepodařilo načíst znovu");
+    }
+  };
+
+  const changeSiteManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !project || !newSiteManagerId || changingSiteManager) return;
+    setChangingSiteManager(true);
+    setSiteManagerError("");
+    try {
+      const updated = await api<ProjectData>(`/api/projects/${id}/site-manager`, {
+        method: "PUT",
+        body: json({ siteManagerId: newSiteManagerId, reason: siteManagerReason.trim() || null, updatedAt: project.updatedAt ?? null }),
+      });
+      setProject(updated);
+      setShowSiteManager(false);
+      setNewSiteManagerId("");
+      setSiteManagerReason("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
+      setError("");
+    } catch (err) {
+      setSiteManagerError(err instanceof Error ? err.message : "Stavbyvedoucího se nepodařilo změnit");
+      setSiteManagerStale(err instanceof ApiError && err.code === "STALE_VERSION");
+    } finally {
+      setChangingSiteManager(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-center text-gray-500">Načítání detailu projektu...</div>;
   if (!project) return <div className="p-8 text-center text-red-600">{error || "Projekt nenalezen"}</div>;
 
@@ -349,6 +406,84 @@ export const ProjectDetail: React.FC = () => {
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold">Informace o stavbě</h2>
           <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+            <div className="md:col-span-2">
+              <span className="text-gray-500">Hlavní stavbyvedoucí:</span>
+              <p className="font-medium text-gray-900">{siteManagerName || "-"}</p>
+              {project.myRole === "BOSS" && siteManagerCandidates.length > 0 && !showSiteManager && (
+                <button type="button" onClick={() => setShowSiteManager(true)} className="mt-1 text-sm text-indigo-600 hover:underline">
+                  Změnit stavbyvedoucího
+                </button>
+              )}
+              {project.myRole === "BOSS" && siteManagerCandidates.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Stavbyvedoucího lze změnit na jiného vedoucího (BOSS) tohoto projektu s číslem ČKAIT. Nejdřív ho přidejte v záložce Členové.
+                </p>
+              )}
+              {showSiteManager && (
+                <form onSubmit={changeSiteManager} className="mt-2 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
+                  <label htmlFor="newSiteManager" className="block text-xs text-gray-600">
+                    Nový stavbyvedoucí (vedoucí tohoto projektu s číslem ČKAIT)
+                  </label>
+                  <select
+                    id="newSiteManager"
+                    name="newSiteManager"
+                    value={newSiteManagerId}
+                    onChange={(e) => setNewSiteManagerId(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 p-2"
+                  >
+                    <option value="">Vyberte…</option>
+                    {siteManagerCandidates.map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.displayName} ({m.nickname})
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="siteManagerReason" className="block text-xs text-gray-600">
+                    Důvod změny (nepovinné, zůstane v záznamu o změnách)
+                  </label>
+                  <textarea
+                    id="siteManagerReason"
+                    name="siteManagerReason"
+                    value={siteManagerReason}
+                    onChange={(e) => setSiteManagerReason(e.target.value)}
+                    rows={2}
+                    className="w-full rounded-md border border-gray-300 p-2"
+                  />
+                  {siteManagerReason.length > 1000 && <p className="text-xs font-semibold text-red-700">{siteManagerReason.length} / 1000 znaků</p>}
+                  {siteManagerError && (
+                    <div role="alert" className="rounded bg-red-100 p-2 text-sm text-red-700">
+                      <p>{siteManagerError}</p>
+                      {siteManagerStale && (
+                        <button type="button" onClick={reloadForSiteManager} className="mt-1 font-semibold underline">
+                          Načíst znovu
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={changingSiteManager || !newSiteManagerId || siteManagerReason.length > 1000}
+                      className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {changingSiteManager ? "Ukládám..." : "Změnit stavbyvedoucího"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSiteManager(false);
+                        setSiteManagerError("");
+                        setSiteManagerStale(false);
+                      }}
+                      className="text-sm text-gray-600 hover:underline"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
             <div>
               <span className="text-gray-500">Stavebník:</span>
               <p className="font-medium text-gray-900">{project.builder || "Nespecifikován"}</p>
@@ -826,7 +961,12 @@ export const ProjectDetail: React.FC = () => {
                   <tr key={m.userId}>
                     <td className="py-2 text-sm font-medium text-gray-900">{m.nickname}</td>
                     <td className="py-2 text-sm text-gray-700">{m.displayName}</td>
-                    <td className="py-2 text-sm text-gray-600">{ROLE_LABELS[m.role] ?? m.role}</td>
+                    <td className="py-2 text-sm text-gray-600">
+                      {ROLE_LABELS[m.role] ?? m.role}
+                      {m.userId === project.siteManagerId && (
+                        <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Hlavní stavbyvedoucí</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
