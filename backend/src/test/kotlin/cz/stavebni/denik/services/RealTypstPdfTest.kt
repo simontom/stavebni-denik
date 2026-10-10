@@ -99,6 +99,33 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the identification of the project is printed, only what has a value, and hostile text stays text`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Bytový dům Zelená", address = "Karlova 15, Brno", cadastralArea = "Brno-střed", parcelNumbers = "450/1",
+                builder = "Město Brno", contractor = "Stavitel a.s.", siteManagerId = boss.id.toString(),
+                permitNumber = "SZ/2026/123", permitDate = "2026-03-01",
+                subcontractors = "Elektro s.r.o.\nVodoinstalace #panic(\"X\") a *tučně*",
+                supportingDocuments = "Smlouva o dílo č. SML-1",
+            )
+        )
+        val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Betonáž")
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
+
+        assertTrue(text.contains("Katastrální území"), text)
+        assertTrue(text.contains("Brno-střed"), text)
+        assertTrue(text.contains("Stavebník"), text)
+        assertTrue(text.contains("SZ/2026/123 ze dne 2026-03-01"), text)
+        assertTrue(text.contains("Poddodavatelé"), text)
+        assertTrue(text.contains("Vodoinstalace #panic(\"X\")"), "markup in a field is printed as it was typed: $text")
+        assertTrue(text.contains("Podklady stavby"), text)
+        assertFalse(text.contains("Projektant"), "a row without a value has no line: $text")
+    }
+
+    @Test
     fun `a draft says it has no number yet and a signed entry shows its number`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val project = ProjectService.createProject(

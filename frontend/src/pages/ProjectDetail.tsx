@@ -49,6 +49,12 @@ interface ProjectData {
   /** The role the signed-in user holds in this project; null for an administrator who is not a member. */
   myRole?: string | null;
   permitNumber?: string | null;
+  permitDate?: string | null;
+  designerName?: string | null;
+  tdsName?: string | null;
+  bozpName?: string | null;
+  subcontractors?: string | null;
+  supportingDocuments?: string | null;
   contractNumber?: string | null;
   contractDate?: string | null;
   designDocVersion?: string | null;
@@ -297,6 +303,11 @@ export const ProjectDetail: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
             <p className="mt-1 text-gray-600">{project.address}</p>
+            {project.myRole === "BOSS" && (
+              <Link to={`/projects/${id}/edit`} className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:underline">
+                Upravit údaje o stavbě
+              </Link>
+            )}
           </div>
           <div className="mt-4 flex gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm md:mt-0">
             {project.contractNumber && (
@@ -354,6 +365,39 @@ export const ProjectDetail: React.FC = () => {
               <span className="text-gray-500">Parcelní čísla:</span>
               <p className="font-medium text-gray-900">{project.parcelNumbers || "-"}</p>
             </div>
+            {project.permitNumber && (
+              <div>
+                <span className="text-gray-500">Povolení:</span>
+                <p className="font-medium text-gray-900">
+                  {project.permitNumber}
+                  {project.permitDate ? ` ze dne ${formatDate(project.permitDate)}` : ""}
+                </p>
+              </div>
+            )}
+            {!project.permitNumber && project.permitDate && (
+              <div>
+                <span className="text-gray-500">Datum povolení:</span>
+                <p className="font-medium text-gray-900">{formatDate(project.permitDate)}</p>
+              </div>
+            )}
+            {project.designerName && (
+              <div>
+                <span className="text-gray-500">Projektant:</span>
+                <p className="font-medium text-gray-900">{project.designerName}</p>
+              </div>
+            )}
+            {project.tdsName && (
+              <div>
+                <span className="text-gray-500">Technický dozor stavebníka:</span>
+                <p className="font-medium text-gray-900">{project.tdsName}</p>
+              </div>
+            )}
+            {project.bozpName && (
+              <div>
+                <span className="text-gray-500">Koordinátor BOZP:</span>
+                <p className="font-medium text-gray-900">{project.bozpName}</p>
+              </div>
+            )}
             {project.contractDate && (
               <div>
                 <span className="text-gray-500">Datum smlouvy:</span>
@@ -364,6 +408,18 @@ export const ProjectDetail: React.FC = () => {
               <div>
                 <span className="text-gray-500">Datum projektové dokumentace:</span>
                 <p className="font-medium text-gray-900">{formatDate(project.designDocDate)}</p>
+              </div>
+            )}
+            {project.subcontractors && (
+              <div className="md:col-span-2">
+                <span className="text-gray-500">Poddodavatelé:</span>
+                <p className="font-medium whitespace-pre-line text-gray-900">{project.subcontractors}</p>
+              </div>
+            )}
+            {project.supportingDocuments && (
+              <div className="md:col-span-2">
+                <span className="text-gray-500">Podklady stavby:</span>
+                <p className="font-medium whitespace-pre-line text-gray-900">{project.supportingDocuments}</p>
               </div>
             )}
           </div>
