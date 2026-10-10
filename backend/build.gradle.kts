@@ -22,7 +22,7 @@ val ktorVersion = "3.1.1"
 //   - jOOQ 3.21: OSS SQLDialect.POSTGRES tracks PG18 catalog changes
 //   - Flyway >= 11.14: first line that officially supports PG18
 //   - pgjdbc >= 42.7.7: fixes CVE-2025-49146
-val jooqVersion = "3.21.8"
+val jooqVersion = "3.21.9"
 val flywayVersion = "12.11.0"
 val pgJdbcVersion = "42.7.13"
 val testcontainersVersion = "1.21.4"
