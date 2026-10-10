@@ -67,10 +67,10 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -83,7 +83,7 @@ jobs:
 
       # After the build, and without keeping the token in .git/config: it is given to the push step alone.
       - name: Checkout the anchor repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: ${{ vars.AUDIT_ANCHOR_REPO }}
           token: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
