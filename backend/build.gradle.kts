@@ -17,7 +17,7 @@ java {
 
 repositories { mavenCentral() }
 
-val ktorVersion = "3.1.1"
+val ktorVersion = "3.6.0"
 // PostgreSQL 18 is the only supported database version.
 //   - jOOQ 3.21: OSS SQLDialect.POSTGRES tracks PG18 catalog changes
 //   - Flyway >= 11.14: first line that officially supports PG18
