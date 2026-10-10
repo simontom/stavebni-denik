@@ -5,8 +5,9 @@
 #   1. the checksums of the backup files are correct;
 #   2. pg_restore finishes without an error;
 #   3. every photo file matches the SHA-256 recorded at upload;
-#   4. (when APP_JAR is given) the audit-log hash chain verifies and still contains the row the manifest recorded, and
-#      every signed entry and its photos hash to what was recorded at signing.
+#   4. (when APP_JAR is given) the restored copy is migrated to the schema of that jar (a backup of an older version is
+#      restorable), the audit-log hash chain verifies and still contains the row the manifest recorded, and every signed
+#      entry and its photos hash to what was recorded at signing, in the format each was signed in.
 #
 # It refuses to restore over anything: the database must have no tables and the uploads directory must not exist or be
 # empty. A restore never overwrites live data; to replace a damaged database, restore into a fresh one and switch over.
@@ -97,6 +98,10 @@ if [ -n "${APP_JAR:-}" ]; then
   uploads_native="$(cd "$RESTORE_UPLOADS_DIR" && { pwd -W 2>/dev/null || pwd; })"
   export DB_USER="${PGUSER:?PGUSER}" DB_PASSWORD="${PGPASSWORD:?PGPASSWORD}" UPLOADS_DIR="$uploads_native"
   cli() { java -cp "$APP_JAR" cz.stavebni.denik.cli.AdminCliKt "$@"; }
+  # A backup from an older version of the application has an older schema, and the checks below are the code of THIS version:
+  # the restored copy is brought up to date first (what an operator does after a real restore anyway; for a backup of this
+  # version it changes nothing). A backup of a NEWER schema is refused by \`migrate\` (it names the versions this jar does not know) and fails here, which is the right answer.
+  DB_MIGRATE_USER="$PGUSER" DB_MIGRATE_PASSWORD="$PGPASSWORD" cli migrate     || fail "the restored database could not be migrated to the schema of this version of the application (a backup of a NEWER version needs that version's jar)"
   if [ -n "$anchor" ]; then
     cli audit-verify "$anchor" || fail "the audit chain does not verify against the anchor $anchor"
   else

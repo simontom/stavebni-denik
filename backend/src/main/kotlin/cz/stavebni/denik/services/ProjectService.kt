@@ -24,7 +24,7 @@ data class ProjectDto(
     val builder: String,
     val contractor: String,
     val siteManagerId: String,
-    // Legislative / contractual details (vyhláška 499/2006 Sb., příloha 16)
+    // Legislative / contractual details (vyhláška 131/2024 Sb., příloha 12, part A; see PROJECT.md "What an entry says")
     val permitNumber: String? = null,
     val tdsName: String? = null,
     val bozpName: String? = null,

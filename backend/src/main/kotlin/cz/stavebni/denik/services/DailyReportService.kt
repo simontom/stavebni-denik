@@ -34,7 +34,8 @@ data class DailyReportDto(
     val projectId: String,
     val date: String,
     val weather: WeatherData? = null,
-    val generalNotes: String? = null,
+    /** What the vyhláška asks an entry to say besides the day's work (see [EntryDetails]); only the fields that have a text, by key. */
+    val details: Map<String, String> = emptyMap(),
     val isLocked: Boolean = false,
     val workDescription: String = "",
     val workersByTrade: String = "[]",
@@ -98,6 +99,8 @@ internal data class ReportSnapshot(
     val weather: String? = null,
     /** SHA-256 of the content at signing (see [ReportSignature]). */
     val signatureHash: String? = null,
+    /** The fields of [EntryDetails] that have a text, by key. */
+    val details: Map<String, String> = emptyMap(),
 )
 
 object DailyReportService {
@@ -115,6 +118,11 @@ object DailyReportService {
         /** The weather as entered; null = not mentioned (keeps what is stored), an empty value clears it. */
         val weather: WeatherData? = null,
         /**
+         * The fields of [EntryDetails] by key. A key that is not mentioned keeps what is stored, an empty text clears the
+         * field; an unknown key or a too long text is a 400.
+         */
+        val details: Map<String, String>? = null,
+        /**
          * The client saw no entry for this day when it loaded the form. If one exists by now (somebody else created it), the
          * save is stale: it must not silently replace that entry.
          */
@@ -122,6 +130,9 @@ object DailyReportService {
     )
 
     private enum class WriteMode { CREATE_ONLY, SAVE }
+
+    private const val MAX_NAMES_PER_TRADE = 200
+    private const val MAX_NAME_CHARS = 100
 
     private val workersSerializer = kotlinx.serialization.builtins.ListSerializer(cz.stavebni.denik.domain.WorkerEntry.serializer())
     private val workersJsonFormat = Json { ignoreUnknownKeys = false }
@@ -139,9 +150,22 @@ object DailyReportService {
         require(rows.size <= 50) { "Seznam pracovníků může mít nejvýše 50 profesí" }
         for (row in rows) {
             require(row.trade.isNotBlank()) { "Každá profese v seznamu pracovníků musí mít název" }
+            EntryDetails.requireNoNul(row.trade, "Název profese")
             require(row.count in 0..100_000) { "Počet pracovníků u profese '${row.trade.trim()}' musí být celé číslo od 0 do 100000" }
+            require(row.names.size <= row.count) { "U profese '${row.trade.trim()}' je uvedeno více jmen (${row.names.size}) než pracovníků (${row.count})" }
+            require(row.names.size <= MAX_NAMES_PER_TRADE) { "U profese '${row.trade.trim()}' lze uvést nejvýše $MAX_NAMES_PER_TRADE jmen" }
+            for (name in row.names) {
+                require(name.isNotBlank()) { "Jméno pracovníka u profese '${row.trade.trim()}' nesmí být prázdné" }
+                EntryDetails.requireNoNul(name, "Jméno pracovníka")
+                // The form and the PDF separate names with a semicolon: a name that holds one would read as two people.
+                require(!name.contains(';')) { "Jméno pracovníka nesmí obsahovat středník (odděluje jména)" }
+                require(name.trim().length <= MAX_NAME_CHARS) { "Jméno pracovníka může mít nejvýše $MAX_NAME_CHARS znaků" }
+            }
         }
-        return workersJsonFormat.encodeToString(workersSerializer, rows.map { it.copy(trade = it.trade.trim()) })
+        return workersJsonFormat.encodeToString(
+            workersSerializer,
+            rows.map { row -> row.copy(trade = row.trade.trim(), names = row.names.map { it.trim() }) },
+        )
     }
 
     /** The clock behind "today" (Prague time); tests replace it. */
@@ -179,10 +203,11 @@ object DailyReportService {
         isControlDay: Boolean = false,
         constructionObj: String? = null,
         lateEntryReason: String? = null,
-        weather: WeatherData? = null
+        weather: WeatherData? = null,
+        details: Map<String, String>? = null,
     ): DailyReportDto = write(
         user, projectId, date, WriteMode.CREATE_ONLY,
-        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason, weather = weather),
+        ReportInput(workDescription, workersByTrade, isControlDay, constructionObj, lateEntryReason = lateEntryReason, weather = weather, details = details),
     )
 
     /**
@@ -204,6 +229,10 @@ object DailyReportService {
         // null = not mentioned; a mentioned but empty weather becomes "no weather".
         val weatherMentioned = input.weather != null
         val weather: WeatherData? = input.weather?.validated()
+        // Only what the request mentions; the keys are checked before anything is locked.
+        val detailValues: Map<org.jooq.Field<*>, String?> = input.details?.let { mentioned ->
+            EntryDetails.validated(mentioned).mapKeys { it.key.column }
+        } ?: emptyMap()
 
         return AuditService.auditedWrite(user, "report") { tx ->
             if (!tx.fetchExists(PROJECTS, PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))) {
@@ -236,6 +265,7 @@ object DailyReportService {
                     .set(DAILY_REPORTS.ISLATEENTRY, lateReason != null)
                     .set(DAILY_REPORTS.LATEENTRYREASON, lateReason)
                     .set(DAILY_REPORTS.WEATHER, weather?.let { JSONB.valueOf(weatherJson.encodeToString(WeatherData.serializer(), it)) })
+                    .set(detailValues)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
 
@@ -271,6 +301,7 @@ object DailyReportService {
                         DAILY_REPORTS.WEATHER,
                         if (weatherMentioned) weather?.let { JSONB.valueOf(weatherJson.encodeToString(WeatherData.serializer(), it)) } else existing.weather
                     )
+                    .set(detailValues)
                     .set(DAILY_REPORTS.UPDATEDAT, OffsetDateTime.now())
                     .where(DAILY_REPORTS.ID.eq(existing.id).and(DAILY_REPORTS.LOCKEDAT.isNull))
                     .returning()
@@ -382,12 +413,15 @@ object DailyReportService {
                 .where(DAILY_REPORTS.PROJECTID.eq(report.projectid!!))
                 .fetchOne(0, Int::class.javaObjectType) ?: 0) + 1
             report.set(DAILY_REPORTS.SEQUENCENUMBER, number)
+            // The signature covers the fields of the current format; the entry says which one it was signed in.
+            report.set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
 
             // Milliseconds: what the hash covers is exactly what is stored and read back.
             val now = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
             val signatureHash = ReportSignature.hash(tx, report, now, user.id)
             val signed = tx.update(DAILY_REPORTS)
                 .set(DAILY_REPORTS.SEQUENCENUMBER, number)
+                .set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
                 .set(DAILY_REPORTS.LOCKEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDBYID, user.id)
@@ -507,7 +541,7 @@ object DailyReportService {
         projectId = record.projectid.toString(),
         date = record.date.toString(),
         weather = weatherOf(record),
-        generalNotes = record.othernotes,
+        details = EntryDetails.filledOf(record),
         isLocked = record.lockedat != null,
         sequenceNumber = record.get(DAILY_REPORTS.SEQUENCENUMBER),
         workDescription = record.workdescription ?: "",
@@ -542,6 +576,7 @@ object DailyReportService {
             lockedAt = lockedat?.toString(),
             isLateEntry = islateentry ?: false,
             lateEntryReason = lateentryreason,
+            details = EntryDetails.filledOf(this),
             weather = weatherOf(this)?.describe(),
             signatureHash = get(DAILY_REPORTS.SIGNATUREHASH),
         )

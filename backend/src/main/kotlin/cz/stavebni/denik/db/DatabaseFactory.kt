@@ -50,6 +50,15 @@ object DatabaseFactory {
     /** Applies every pending migration; returns how many ran. Needs a role that may create and alter tables. */
     fun migrate(ds: DataSource): Int = flyway(ds).migrate().migrationsExecuted
 
+    /**
+     * The versions applied to the database that this build does not know: the database belongs to a NEWER version of the
+     * application. Flyway ignores them by default; whoever migrates or restores has to be told.
+     */
+    fun futureMigrations(ds: DataSource): List<String> =
+        flyway(ds).info().all()
+            .filter { it.state == org.flywaydb.core.api.MigrationState.FUTURE_SUCCESS || it.state == org.flywaydb.core.api.MigrationState.FUTURE_FAILED }
+            .map { "V" + it.version }
+
     /** Fails when a migration of this build has not been applied to the database (read-only: any role that can read the history). */
     fun requireUpToDate(ds: DataSource) {
         val pending = flyway(ds).info().pending()
