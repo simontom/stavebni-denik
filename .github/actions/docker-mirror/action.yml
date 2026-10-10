@@ -1,0 +1,20 @@
+name: Route Docker Hub pulls through a mirror
+description: >
+  Anonymous pulls from Docker Hub are rate-limited per address, and the addresses of the hosted runners are shared with
+  everybody else, so a pull can be refused for reasons that have nothing to do with the change under test (an image build, a
+  Testcontainers database, a service container: one refusal fails the job). This points the Docker daemon at Google's public
+  Docker Hub cache first; an image the cache does not have is still pulled from Docker Hub. Everything that uses the daemon
+  (docker pull, docker build, docker run, Testcontainers) benefits. Add it right after the checkout, before the first pull.
+
+runs:
+  using: composite
+  steps:
+    - name: Configure the registry mirror
+      shell: bash
+      run: |
+        set -euo pipefail
+        [ -f /etc/docker/daemon.json ] || echo '{}' | sudo tee /etc/docker/daemon.json >/dev/null
+        sudo jq '. + {"registry-mirrors": ["https://mirror.gcr.io"]}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.new >/dev/null
+        sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json
+        sudo systemctl restart docker
+        docker info --format 'registry mirrors: {{json .RegistryConfig.Mirrors}}'
