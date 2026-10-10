@@ -69,6 +69,8 @@ Jednorázové nastavení (dělá člověk, ne kód):
 3. V hlavním repozitáři nastavte tajemství `AUDIT_JDBC_URL`, `AUDIT_DB_USER` (role, která smí jen `SELECT` z `audit_log`), `AUDIT_DB_PASSWORD` a `AUDIT_ANCHOR_TOKEN` (token s právem zápisu jen do repozitáře kotev) a proměnnou `AUDIT_ANCHOR_REPO` (`vlastnik/nazev`); volitelně `AUDIT_TSA_URL`. Databáze musí být dosažitelná z GitHubu.
 4. Spusťte workflow ručně (`workflow_dispatch`); první běh zapíše první kotvu (useknutý konec lze poznat až od ní).
 
+Co kotvy nechrání: zápisy po poslední kotvě (až den, déle po neúspěšné noci). Workflow také **nepozná, že přestal běžet**: neúspěšná noc pošle upozornění, ale GitHub plánované workflowy v repozitáři bez aktivity po 60 dnech potichu vypne. Stáří nejnovějšího záznamu `anchors/anchor-….txt` proto hlídejte něčím mimo toto workflow (externí monitor, ruční kontrola). Když autorita vymění certifikát, přidejte nový do `tsa/ca.pem` (lze spojit víc certifikátů); staré tokeny se ověřují k času svého vydání.
+
 Později lze kotvu ověřit nezávisle na databázi: `openssl ts -verify -data anchors/anchor-….txt -in anchors/anchor-….tsr -CAfile tsa/ca.pem` dokazuje, že záznam existoval v daném čase, a `audit-verify <hlava>` dokazuje, že databáze ten řádek stále obsahuje beze změny.
 
 ## Zálohy

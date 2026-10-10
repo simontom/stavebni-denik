@@ -54,7 +54,15 @@ verify_opts=(-CAfile "$ca")
 cli() { java -cp "$APP_JAR" cz.stavebni.denik.cli.AdminCliKt "$@"; }
 valid_head() { [[ "$1" =~ ^[0-9]+:[0-9a-f]{64}$ ]]; }
 sha256() { sha256sum "$1" | cut -d' ' -f1; }
-token_ok() { openssl ts -verify -data "$1" -in "$2" "${verify_opts[@]}" >/dev/null 2>&1; }
+# A token is verified as of the time it was ISSUED (its genTime), so that an authority certificate that has expired or been
+# replaced since does not turn every old record into a "security incident". (Several certificates may be concatenated in
+# ca.pem: add the new one when the authority rotates.)
+token_ok() {
+  local gen epoch
+  gen="$(openssl ts -reply -in "$2" -text 2>/dev/null | sed -n 's/^Time stamp: //p' | head -n 1)"
+  epoch="$(date -u -d "$gen" +%s 2>/dev/null)" || return 1
+  openssl ts -verify -data "$1" -in "$2" "${verify_opts[@]}" -attime "$epoch" >/dev/null 2>&1
+}
 
 mkdir -p "$records"
 created=()
@@ -75,21 +83,24 @@ else
   log "no previous record: this is the first anchor (a cut tail cannot be detected before it exists)"
 fi
 
-# 2. The chain, against the previous head. Exit 1 = broken, 3 = could not run.
+# 2. The chain, against the previous head, AND the new head: both from ONE run of audit-verify. Taking the head from a second
+# run would let a database owner show the honest log to the check and a rebuilt one to the head (two runs are two
+# connections some seconds apart). Exit 1 = broken, 3 = could not run.
+verified="$(mktemp)"
+created+=("$verified")
 set +e
-if [ -n "$previous_head" ]; then cli audit-verify "$previous_head"; else cli audit-verify; fi
+if [ -n "$previous_head" ]; then cli audit-verify "$previous_head" > "$verified"; else cli audit-verify > "$verified"; fi
 code=$?
 set -e
+cat "$verified"
 case "$code" in
   0) ;;
   1) refuse 1 "the audit log does not verify${previous_head:+ against the recorded head $previous_head}: it was changed or cut. Treat this as a security incident" ;;
   *) refuse 3 "the audit log could not be checked (exit $code)" ;;
 esac
-
-# 3. The new head (the command refuses a damaged or empty chain).
-head="$(cli audit-head)" || refuse 3 "the head of the audit log could not be read"
-head="$(printf '%s' "$head" | tr -d '\r\n')"
-valid_head "$head" || refuse 3 "unexpected output of audit-head: '$head'"
+head="$(tr -d '\r' < "$verified" | sed -n 's/^Audit log OK: .* head \([0-9][0-9]*:[0-9a-f]\{64\}\)$/\1/p' | head -n 1)"
+rm -f "$verified"
+valid_head "$head" || refuse 3 "audit-verify did not report a head (is the audit log empty?)"
 if [ -n "$previous_head" ] && [ "${head%%:*}" -lt "${previous_head%%:*}" ]; then
   refuse 1 "the head $head is older than the recorded $previous_head: the log was cut"
 fi

@@ -5,7 +5,8 @@ name: Audit anchor
 # The hash chain shows that no row was changed in the middle. It cannot show that the newest rows were cut off, or that the
 # whole log was rebuilt, by someone who owns the database. So every night this job
 #   1. checks that the newest record in a private "anchor" repository still matches its RFC 3161 timestamp token,
-#   2. verifies the whole chain against the head that record names (intact, and not cut below it),
+#   2. verifies the whole chain against the head that record names (intact, and not cut below it) and takes the NEW head from
+#      that same run (a second run could be shown a different log),
 #   3. records the new head (a text file, the token request and the token) and pushes it to the anchor repository.
 # Nothing is recorded when a check fails. The details and the exit codes are in scripts/audit/record-anchor.sh; it is tested
 # in CI (scripts/audit/anchor-test.sh) against a real database and a real RFC 3161 exchange with a throwaway authority.
@@ -44,16 +45,15 @@ jobs:
     name: Verify the audit-log hash chain and record its head
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      JDBC_URL: ${{ secrets.AUDIT_JDBC_URL }}
-      DB_USER: ${{ secrets.AUDIT_DB_USER }}
-      DB_PASSWORD: ${{ secrets.AUDIT_DB_PASSWORD }}
-      ANCHOR_REPO: ${{ vars.AUDIT_ANCHOR_REPO }}
-      ANCHOR_TOKEN: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
-      TSA_URL: ${{ vars.AUDIT_TSA_URL || 'https://freetsa.org/tsr' }}
-
+    # Secrets are given to the steps that need them and to no other: the build below runs dependency code and must not see them.
     steps:
       - name: Check that it is configured
+        env:
+          JDBC_URL: ${{ secrets.AUDIT_JDBC_URL }}
+          DB_USER: ${{ secrets.AUDIT_DB_USER }}
+          DB_PASSWORD: ${{ secrets.AUDIT_DB_PASSWORD }}
+          ANCHOR_REPO: ${{ vars.AUDIT_ANCHOR_REPO }}
+          ANCHOR_TOKEN: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
         run: |
           missing=""
           [ -n "${JDBC_URL}" ] || missing="$missing AUDIT_JDBC_URL"
@@ -69,14 +69,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Checkout the anchor repository
-        uses: actions/checkout@v5
-        with:
-          repository: ${{ vars.AUDIT_ANCHOR_REPO }}
-          token: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
-          path: anchor-repo
-          persist-credentials: true
-
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -89,8 +81,26 @@ jobs:
           chmod +x gradlew
           ./gradlew :backend:shadowJar -x test --console=plain
 
+      # After the build, and without keeping the token in .git/config: it is given to the push step alone.
+      - name: Checkout the anchor repository
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.AUDIT_ANCHOR_REPO }}
+          token: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
+          path: anchor-repo
+          persist-credentials: false
+
       - name: Verify the chain against the last record and record the new head
+        env:
+          JDBC_URL: ${{ secrets.AUDIT_JDBC_URL }}
+          DB_USER: ${{ secrets.AUDIT_DB_USER }}
+          DB_PASSWORD: ${{ secrets.AUDIT_DB_PASSWORD }}
+          TSA_URL: ${{ vars.AUDIT_TSA_URL || 'https://freetsa.org/tsr' }}
         run: |
+          # The whole URL is a secret and is masked, but a connection error prints the host and port on their own: mask those too.
+          hostport="${JDBC_URL#jdbc:postgresql://}"; hostport="${hostport%%[/?]*}"
+          [ -z "$hostport" ] || echo "::add-mask::$hostport"
+          [ -z "${hostport%%:*}" ] || echo "::add-mask::${hostport%%:*}"
           set +e
           git -C anchor-repo config user.name "audit-anchor[bot]"
           git -C anchor-repo config user.email "audit-anchor@users.noreply.github.com"
@@ -105,6 +115,13 @@ jobs:
           esac
           exit "$code"
 
-      # A plain push: it fails when the history of the anchor repository moved (somebody rewrote it), which is what must be seen.
+      # A plain push (never forced): it fails when the anchor repository moved during the run. It does NOT by itself detect a
+      # history that was rewritten earlier: that is what the branch rule (no force-push, no deletion) and the time-stamped,
+      # hash-linked records are for (docs/DEPLOYMENT.md).
       - name: Push the record
-        run: git -C anchor-repo push origin HEAD
+        env:
+          ANCHOR_TOKEN: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
+        run: |
+          auth="$(printf 'x-access-token:%s' "$ANCHOR_TOKEN" | base64 -w0)"
+          echo "::add-mask::$auth"
+          git -C anchor-repo -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin HEAD
