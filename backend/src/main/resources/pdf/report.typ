@@ -25,6 +25,8 @@
   stroke: none,
   [*Stavba:*], [#plain(d.projectName)],
   [*Adresa:*], [#plain(d.address)],
+  // The identification of the diary as entered about the project: only rows that have a value.
+  ..d.projectInfo.map(x => ([*#x.label:*], plain(x.value))).flatten(),
   [*Datum:*], [#d.date],
   [*Stav záznamu:*], [#if d.isSigned [podepsán a uzamčen] else [rozpracovaný]],
   // A late entry (written after the previous working day) says so, with the author's reason.
@@ -34,6 +36,10 @@
     ()
   },
 )
+
+#if d.projectInfoNote != "" [
+  #text(size: 9pt, style: "italic")[#plain(d.projectInfoNote)]
+]
 
 == Počasí
 
@@ -59,6 +65,18 @@
   == #x.label
 
   #plain(x.text)
+]
+
+#if d.subcontractors != "" [
+  == Poddodavatelé
+
+  #plain(d.subcontractors)
+]
+
+#if d.supportingDocuments != "" [
+  == Podklady stavby
+
+  #plain(d.supportingDocuments)
 ]
 
 // The signature: who signed, when, and the hash of the content that was signed (it can be checked in the application).
