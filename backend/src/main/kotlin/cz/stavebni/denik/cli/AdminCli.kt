@@ -136,7 +136,7 @@ object AdminCli {
         return when (command) {
             "migrate" -> {
                 if (args.size != 1) return usage()
-                migrate(out)
+                migrate(out, err)
             }
             "create-admin" -> {
                 if (args.size != 3) return usage()
@@ -196,7 +196,7 @@ object AdminCli {
     }
 
     /** Migrates with the owner's credentials, and grants the application's role when it is named. */
-    private fun migrate(out: (String) -> Unit): Int {
+    private fun migrate(out: (String) -> Unit, err: (String) -> Unit): Int {
         val url = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik"
         val user = System.getenv("DB_MIGRATE_USER") ?: System.getenv("DB_USER") ?: "denik"
         val password = System.getenv("DB_MIGRATE_PASSWORD") ?: System.getenv("DB_PASSWORD") ?: "denik_dev"
@@ -204,6 +204,11 @@ object AdminCli {
         DatabaseFactory.pool(url, user, password, maxSize = 2).use { ds ->
             val executed = DatabaseFactory.migrate(ds)
             out("Schema migrated as '$user': $executed migration(s) applied.")
+            val future = DatabaseFactory.futureMigrations(ds)
+            if (future.isNotEmpty()) {
+                err("The database has migrations this version does not know (${future.joinToString(", ")}): it belongs to a newer version of the application. Use that version.")
+                return 1
+            }
             if (appRole != null) {
                 DatabaseFactory.grantAppRole(ds, appRole)
                 out("Privileges of '$appRole' set: data access only.")

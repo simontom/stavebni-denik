@@ -84,6 +84,23 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
     @Test
     fun `an entry signed before hashes existed is counted, not failed`() = runBlocking<Unit> {
         val (report, _) = signedEntryWithPhoto()
+        // What such an entry looks like: no hash, and the format of the time (1; hashes came with V8, formats with V14).
+        dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
+        try {
+            dsl.execute("""update daily_reports set "signatureHash" = null, "signatureFormat" = 1 where id = ?""", report)
+        } finally {
+            dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
+        }
+
+        val run = cli("verify-signatures")
+
+        assertEquals(0, run.code, run.err.toString())
+        assertTrue(run.out.single().contains("signed before hashes existed"), run.out.toString())
+    }
+
+    @Test
+    fun `a signature of the current format whose hash was removed is a failure, not nothing to compare`() = runBlocking<Unit> {
+        val (report, _) = signedEntryWithPhoto()
         dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
         try {
             dsl.execute("""update daily_reports set "signatureHash" = null where id = ?""", report)
@@ -93,8 +110,9 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
 
         val run = cli("verify-signatures")
 
-        assertEquals(0, run.code, run.err.toString())
-        assertTrue(run.out.single().contains("signed before hashes existed"), run.out.toString())
+        assertEquals(1, run.code)
+        assertTrue(run.err.any { it.contains(report.toString()) && it.contains("hash is missing") }, run.err.toString())
+        assertEquals(false, ReportSignature.check(dsl, report).contentMatches)
     }
 
     @Test

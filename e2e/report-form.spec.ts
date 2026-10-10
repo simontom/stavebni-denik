@@ -260,3 +260,48 @@ test("worker rows keep every trade and a count of 0, and a trade without a count
   await expect(page.locator('input[name="workerTrade"]').nth(1)).toHaveValue("Tesař");
   await expect(page.locator('input[name="workerCount"]').nth(1)).toHaveValue("0");
 });
+
+test("the fields the vyhláška asks for and the names of the people on site are saved and come back", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
+  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+
+  await page.locator('textarea[name="workDescription"]').fill("Betonáž stropu");
+  await page.locator('input[name="workerTrade"]').first().fill("Betonář");
+  await page.locator('input[name="workerCount"]').first().fill("3");
+  await page.getByLabel("Jména pracovníků 1").fill("Ing. Jan Novák, Ph.D.; Petr Svoboda");
+  await page.getByLabel("Dodávky a uskladnění materiálu a zařízení").fill("Beton C25/30, 12 m3");
+  await page.getByLabel("Použité stroje a mechanizace").fill("Autodomíchávač, čerpadlo");
+  await page.getByLabel("Opatření proti prašnosti").fill("Kropení povrchů");
+  await page.getByLabel("Opatření pro zajištění přístupnosti").fill("Obchozí trasa pro chodce");
+  await page.getByLabel("Závady a jejich odstranění").fill("Trhlina v omítce, opraveno");
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await save().click();
+  expect((await saved).ok()).toBeTruthy();
+
+  // Everything is stored: a reload shows it again.
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Ing. Jan Novák, Ph.D.; Petr Svoboda", { timeout: 15_000 });
+  await expect(page.getByLabel("Dodávky a uskladnění materiálu a zařízení")).toHaveValue("Beton C25/30, 12 m3");
+  await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("Autodomíchávač, čerpadlo");
+  await expect(page.getByLabel("Opatření proti prašnosti")).toHaveValue("Kropení povrchů");
+  await expect(page.getByLabel("Opatření pro zajištění přístupnosti")).toHaveValue("Obchozí trasa pro chodce");
+  await expect(page.getByLabel("Závady a jejich odstranění")).toHaveValue("Trhlina v omítce, opraveno");
+  await expect(page.getByLabel("Zkoušky, měření a kontroly")).toHaveValue("");
+
+  // A field is cleared by emptying it; more names than workers is refused with a message.
+  await page.getByLabel("Použité stroje a mechanizace").fill("");
+  await page.getByLabel("Jména pracovníků 1").fill("A; B; C; D");
+  await save().click();
+  await expect(page.getByText(/více jmen/i)).toBeVisible({ timeout: 15_000 });
+  await page.getByLabel("Jména pracovníků 1").fill("Jan Novák");
+  const savedAgain = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
+  await save().click();
+  expect((await savedAgain).ok()).toBeTruthy();
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("", { timeout: 15_000 });
+  await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Jan Novák");
+});

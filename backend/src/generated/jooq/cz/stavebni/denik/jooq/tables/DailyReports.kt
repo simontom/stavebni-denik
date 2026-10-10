@@ -249,6 +249,21 @@ open class DailyReports(
      */
     val SIGNATUREHASH: TableField<DailyReportsRecord, String?> = createField(DSL.name("signatureHash"), SQLDataType.CLOB, this, "")
 
+    /**
+     * The column <code>public.daily_reports.dustMeasures</code>.
+     */
+    val DUSTMEASURES: TableField<DailyReportsRecord, String?> = createField(DSL.name("dustMeasures"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.daily_reports.accessibilityMeasures</code>.
+     */
+    val ACCESSIBILITYMEASURES: TableField<DailyReportsRecord, String?> = createField(DSL.name("accessibilityMeasures"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.daily_reports.signatureFormat</code>.
+     */
+    val SIGNATUREFORMAT: TableField<DailyReportsRecord, Short?> = createField(DSL.name("signatureFormat"), SQLDataType.SMALLINT.nullable(false).defaultValue(DSL.field(DSL.raw("1"), SQLDataType.SMALLINT)), this, "")
+
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<DailyReportsRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)
@@ -409,6 +424,7 @@ open class DailyReports(
         get(): UsersPath = reportAcknowledgements().users()
     override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
         Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true),
+        Internal.createCheck(this, DSL.name("daily_reports_signature_format_check"), "((\"signatureFormat\" = ANY (ARRAY[1, 2])))", true),
         Internal.createCheck(this, DSL.name("daily_reports_signed_has_number"), "(((\"lockedAt\" IS NULL) OR (\"sequenceNumber\" IS NOT NULL)))", true)
     )
     override fun `as`(alias: String): DailyReports = DailyReports(DSL.name(alias), this)
