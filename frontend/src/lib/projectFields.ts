@@ -34,7 +34,15 @@ export interface FieldSpec {
 }
 
 export const LONGEST_NAME = 200;
+export const LONGEST_LONG = 500;
 export const LONGEST_LIST = 5000;
+
+/** The fields the server allows 500 characters for (ProjectService.MAX_LONG_CHARS); every other single-line field is 200. */
+const LONG_FIELDS: Key[] = ["address", "parcelNumbers", "builder", "contractor", "designerName"];
+
+/** The longest text the server accepts for a field, or null for a date. The form shows it and checks it: it never cuts what is typed. */
+export const limitOf = (spec: FieldSpec): number | null =>
+  spec.type === "date" ? null : spec.type === "textarea" ? LONGEST_LIST : LONG_FIELDS.includes(spec.key) ? LONGEST_LONG : LONGEST_NAME;
 
 /** The fields every project has, always asked. */
 export const CORE: FieldSpec[] = [
@@ -155,7 +163,8 @@ export const projectPayload = (values: ProjectFieldValues) => ({
 export const projectFieldsProblem = (values: ProjectFieldValues): string | null => {
   for (const spec of [...CORE, ...SECTIONS.flatMap((s) => s.fields)]) {
     if (spec.required && values[spec.key].trim() === "") return `${spec.label}: vyplňte údaj`;
-    if (spec.type === "textarea" && values[spec.key].length > LONGEST_LIST) return `${spec.label}: nejvýše ${LONGEST_LIST} znaků`;
+    const limit = limitOf(spec);
+    if (limit !== null && values[spec.key].length > limit) return `${spec.label}: nejvýše ${limit} znaků (teď ${values[spec.key].length})`;
   }
   return null;
 };

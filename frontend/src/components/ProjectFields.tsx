@@ -1,11 +1,12 @@
 import React from "react";
-import { CORE, LONGEST_LIST, LONGEST_NAME, SECTIONS, type FieldSpec, type ProjectFieldValues } from "../lib/projectFields";
+import { CORE, SECTIONS, limitOf, type FieldSpec, type ProjectFieldValues } from "../lib/projectFields";
 
 const inputClass = "w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500";
 
 const Field: React.FC<{ spec: FieldSpec; values: ProjectFieldValues; onChange: (patch: Partial<ProjectFieldValues>) => void }> = ({ spec, values, onChange }) => {
   const id = `project-${spec.key}`;
   const value = values[spec.key];
+  const limit = limitOf(spec);
   return (
     <div className={spec.type === "textarea" ? "md:col-span-2" : undefined}>
       <label htmlFor={id} className="mb-1 block text-sm font-medium text-gray-700">
@@ -19,16 +20,15 @@ const Field: React.FC<{ spec: FieldSpec; values: ProjectFieldValues; onChange: (
           name={spec.key}
           type={spec.type ?? "text"}
           required={spec.required}
-          maxLength={spec.type === "date" ? undefined : LONGEST_NAME}
           value={value}
           onChange={(e) => onChange({ [spec.key]: e.target.value })}
           placeholder={spec.placeholder}
           className={inputClass}
         />
       )}
-      {spec.type === "textarea" && value.length > LONGEST_LIST * 0.9 && (
-        <p className={`mt-1 text-xs ${value.length > LONGEST_LIST ? "font-semibold text-red-700" : "text-gray-600"}`}>
-          {value.length} / {LONGEST_LIST} znaků
+      {limit !== null && value.length > limit * 0.9 && (
+        <p className={`mt-1 text-xs ${value.length > limit ? "font-semibold text-red-700" : "text-gray-600"}`}>
+          {value.length} / {limit} znaků
         </p>
       )}
     </div>

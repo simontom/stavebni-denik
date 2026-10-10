@@ -90,6 +90,11 @@ internal data class ReportPdfData(
      * and prints the project as it stands when it is made. Only what has a value.
      */
     val projectInfo: List<LabeledPdf> = emptyList(),
+    /**
+     * Says that the identification above is the project's as of the day the PDF is made and is not part of the signature, and,
+     * for a signed entry, when the project was last changed if that was after signing.
+     */
+    val projectInfoNote: String = "",
     /** The firms of the subcontractors, one per line; empty when none were entered. */
     val subcontractors: String = "",
     /** The documents the diary refers to, one per line; empty when none were entered. */
@@ -196,6 +201,24 @@ object PdfExportService {
         ).filter { it.second.isNotEmpty() }.map { LabeledPdf(it.first, it.second) }
     }
 
+    /**
+     * The identification is read from the project NOW: a signed entry does not carry a copy of it and the signature does not
+     * cover it, so the PDF says so, and says when the project was changed after the entry was signed.
+     */
+    private fun projectInfoNoteOf(project: org.jooq.Record, report: org.jooq.Record): String {
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+        val lockedAt = report.get(DAILY_REPORTS.LOCKEDAT)
+        val projectChanged = project.get(PROJECTS.UPDATEDAT)
+        return buildString {
+            append("Údaje o stavbě platné ke dni $today")
+            if (lockedAt != null) append(" (nejsou součástí podpisu záznamu)")
+            append(".")
+            if (lockedAt != null && projectChanged != null && projectChanged.isAfter(lockedAt)) {
+                append(" Po podpisu tohoto záznamu byly změněny dne ${projectChanged.withOffsetSameInstant(java.time.ZoneOffset.UTC).toLocalDate()}.")
+            }
+        }
+    }
+
     private fun loadData(tx: DSLContext, reportId: UUID): ReportPdfData {
         val report = tx.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
@@ -209,6 +232,7 @@ object PdfExportService {
             projectName = project.get(PROJECTS.NAME) ?: "",
             address = project.get(PROJECTS.ADDRESS) ?: "",
             projectInfo = projectInfoOf(project),
+            projectInfoNote = projectInfoNoteOf(project, report),
             subcontractors = project.get(PROJECTS.SUBCONTRACTORS)?.trim().orEmpty(),
             supportingDocuments = project.get(PROJECTS.SUPPORTINGDOCUMENTS)?.trim().orEmpty(),
             date = report.get(DAILY_REPORTS.DATE).toString(),

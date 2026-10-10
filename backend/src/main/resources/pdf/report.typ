@@ -37,6 +37,10 @@
   },
 )
 
+#if d.projectInfoNote != "" [
+  #text(size: 9pt, style: "italic")[#plain(d.projectInfoNote)]
+]
+
 == Počasí
 
 #plain(d.weather)

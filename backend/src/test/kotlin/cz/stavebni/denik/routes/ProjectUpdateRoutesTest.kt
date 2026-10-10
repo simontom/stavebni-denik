@@ -104,6 +104,18 @@ class ProjectUpdateRoutesTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `a save without the version it was made from is a 400`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS)
+        val created = newProject(boss)
+
+        val response = put(generateJwtToken(boss), created.id, body(created, updatedAt = null, name = "Bez verze"))
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals("Dům", dsl.select(PROJECTS.NAME).from(PROJECTS).fetchSingle(PROJECTS.NAME))
+    }
+
+    @Test
     fun `a NUL character in a field is a 400, not a 500`() = testApplication {
         application { module() }
         val boss = createTestUser(role = Role.BOSS)

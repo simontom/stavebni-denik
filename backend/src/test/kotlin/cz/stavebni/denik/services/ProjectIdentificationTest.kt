@@ -152,7 +152,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
     @Test
     fun `an unknown project is not found`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
-        assertThrows<NotFoundException> { runBlocking { ProjectService.updateProject(boss, UUID.randomUUID(), dto(boss)) } }
+        assertThrows<NotFoundException> { runBlocking { ProjectService.updateProject(boss, UUID.randomUUID(), dto(boss).copy(updatedAt = java.time.OffsetDateTime.now().toString())) } }
     }
 
     @Test
@@ -191,5 +191,76 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         assertEquals("", json["supportingDocuments"]!!.jsonPrimitive.content)
         assertEquals(PdfExportService.template, typst)
         assertFalse(typst.contains("panic"))
+    }
+
+    @Test
+    fun `the version the client loaded is required`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss)
+        val id = UUID.fromString(created.id)
+
+        for (without in listOf(null, "", "  ")) {
+            assertThrows<IllegalArgumentException>("updatedAt = '${without}'") {
+                runBlocking { ProjectService.updateProject(boss, id, created.copy(name = "Bez verze", updatedAt = without)) }
+            }
+        }
+        assertThrows<IllegalArgumentException> { runBlocking { ProjectService.updateProject(boss, id, created.copy(updatedAt = "včera")) } }
+        assertEquals("Bytový dům", stored(created.id).get(PROJECTS.NAME))
+    }
+
+    @Test
+    fun `a save that changes nothing writes nothing`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = ProjectService.createProject(boss, dto(boss).copy(permitNumber = "SZ/1", permitDate = "2026-03-01"))
+        val id = UUID.fromString(created.id)
+
+        val same = ProjectService.updateProject(boss, id, created)
+
+        assertEquals(created.updatedAt, same.updatedAt, "no new version")
+        assertEquals(0, auditOf("project.update").size, "no audit row of an edit that changed nothing")
+        // A real change still goes through and is audited.
+        ProjectService.updateProject(boss, id, created.copy(permitNumber = "SZ/2"))
+        assertEquals(1, auditOf("project.update").size)
+    }
+
+    @Test
+    fun `a save that changes nothing is still refused to someone who may not change the project`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss)
+        val worker = createTestUser(role = Role.WORKER).also { addMember(UUID.fromString(created.id), it, Role.WORKER) }
+
+        assertThrows<ForbiddenException> { runBlocking { ProjectService.updateProject(worker, UUID.fromString(created.id), created) } }
+    }
+
+    @Test
+    fun `the PDF says the identification is as of the day it is made, and when it changed after the entry was signed`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss)
+        val projectId = UUID.fromString(created.id)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+
+        var data = ""
+        PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->
+            data = File(dir, "data.json").readText()
+            pdfFile.writeBytes(MINIMAL_PDF)
+        }
+        fun note(): String {
+            runBlocking { PdfExportService.generateReportPdf(dsl, report) }
+            return Json.parseToJsonElement(data).jsonObject["projectInfoNote"]!!.jsonPrimitive.content
+        }
+
+        val draft = note()
+        assertTrue(draft.startsWith("Údaje o stavbě platné ke dni "), draft)
+        assertFalse(draft.contains("nejsou součástí podpisu"), "a draft is not signed: $draft")
+
+        DailyReportService.signReport(boss, report)
+        val signed = note()
+        assertTrue(signed.contains("nejsou součástí podpisu záznamu"), signed)
+        assertFalse(signed.contains("Po podpisu"), "the project was not changed after signing: $signed")
+
+        // The manager changes the contractor after the entry was signed.
+        ProjectService.updateProject(boss, projectId, ProjectService.getProject(dsl, boss, projectId).copy(contractor = "Jiný stavitel s.r.o."))
+        val changed = note()
+        assertTrue(changed.contains("Po podpisu tohoto záznamu byly změněny dne "), changed)
     }
 }

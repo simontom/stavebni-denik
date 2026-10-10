@@ -18,7 +18,9 @@ test("the identification of a project is entered, changed by its manager, and a 
   await page.locator('input[name="name"]').fill(`E2E Identification ${Date.now()}`);
   await page.locator('input[name="address"]').fill("Karlova 15, Brno");
   await page.locator('input[name="cadastralArea"]').fill("Brno-střed");
-  await page.locator('input[name="parcelNumbers"]').fill("450/1");
+  // A long list of parcels (more than 200 characters, the server allows 500) is neither cut nor refused.
+  const parcels = Array.from({ length: 40 }, (_, i) => `450/${i + 1}`).join(", ");
+  await page.locator('input[name="parcelNumbers"]').fill(parcels);
   await page.locator('input[name="builder"]').fill("Město Brno");
   await page.locator('input[name="contractor"]').fill("Stavitel a.s.");
   await page.locator('input[name="permitNumber"]').fill("SZ/2026/123");
@@ -36,6 +38,7 @@ test("the identification of a project is entered, changed by its manager, and a 
 
   // The project page shows it.
   await expect(page.getByText("SZ/2026/123 ze dne 2026-03-01")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(parcels)).toBeVisible();
   await expect(page.getByText("Ing. Petr Projektant, Ph.D.")).toBeVisible();
   await expect(page.getByText("Jan Dozor")).toBeVisible();
   await expect(page.getByText("Elektro s.r.o.")).toBeVisible();

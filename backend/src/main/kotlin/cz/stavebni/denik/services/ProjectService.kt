@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
@@ -134,6 +135,19 @@ object ProjectService {
         )
     }
 
+    private fun OffsetDateTime?.sameInstant(other: OffsetDateTime?): Boolean =
+        (this == null && other == null) || (this != null && other != null && this.isEqual(other))
+
+    /** Whether the stored project already holds exactly these values. */
+    private fun sameFields(r: Record, f: Fields): Boolean =
+        r.get(PROJECTS.NAME) == f.name && r.get(PROJECTS.ADDRESS) == f.address && r.get(PROJECTS.CADASTRALAREA) == f.cadastralArea &&
+            r.get(PROJECTS.PARCELNUMBERS) == f.parcelNumbers && r.get(PROJECTS.BUILDER) == f.builder && r.get(PROJECTS.CONTRACTOR) == f.contractor &&
+            r.get(PROJECTS.PERMITNUMBER) == f.permitNumber && r.get(PROJECTS.PERMITDATE).sameInstant(f.permitDate) &&
+            r.get(PROJECTS.TDSNAME) == f.tdsName && r.get(PROJECTS.BOZPNAME) == f.bozpName && r.get(PROJECTS.DESIGNERNAME) == f.designerName &&
+            r.get(PROJECTS.CONTRACTNUMBER) == f.contractNumber && r.get(PROJECTS.CONTRACTDATE).sameInstant(f.contractDate) &&
+            r.get(PROJECTS.DESIGNDOCVERSION) == f.designDocVersion && r.get(PROJECTS.DESIGNDOCDATE).sameInstant(f.designDocDate) &&
+            r.get(PROJECTS.SUBCONTRACTORS) == f.subcontractors && r.get(PROJECTS.SUPPORTINGDOCUMENTS) == f.supportingDocuments
+
     /** What the audit row of a project keeps: everything a person can enter, as text. */
     @Serializable
     internal data class ProjectSnapshot(
@@ -235,18 +249,36 @@ object ProjectService {
      * Changes what is entered about a project (the identification of the diary). Only the manager of the project may, with
      * the role held in THIS project: an administrator who is not a member has no implicit right (decision D1). The site
      * manager is not changed here. The audit row keeps the project as it was and as it is. [data] carries the `updatedAt` the
-     * client saw: when somebody else changed the project since, the save is refused (409) instead of overwriting them.
+     * client saw, which is required: when somebody else changed the project since, the save is refused (409) instead of
+     * overwriting them. A save that changes nothing writes nothing.
      */
     suspend fun updateProject(user: SessionUser, projectId: UUID, data: ProjectDto): ProjectDto {
         val fields = validated(data)
-        val expected = data.updatedAt?.takeIf { it.isNotBlank() }?.let {
-            try {
-                OffsetDateTime.parse(it)
-            } catch (e: java.time.format.DateTimeParseException) {
-                throw IllegalArgumentException("Neplatná hodnota updatedAt")
+        // The version the client loaded is REQUIRED: without it the save would replace every field whatever somebody else
+        // changed meanwhile, which for the identification of a legal diary is not an option.
+        val expected = (data.updatedAt?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Chybí verze údajů (updatedAt): načtěte projekt znovu a uložte změny z něj"))
+            .let {
+                try {
+                    OffsetDateTime.parse(it)
+                } catch (e: java.time.format.DateTimeParseException) {
+                    throw IllegalArgumentException("Neplatná hodnota updatedAt")
+                }
+            }
+        val requestedManager = data.siteManagerId.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "siteManagerId") }
+
+        // A save that changes nothing writes nothing (no audit row of "before = after", no new version). Authorization first.
+        run {
+            val tx = DatabaseFactory.dsl
+            val role = ProjectAccess.requireAccess(tx, user, projectId)
+            assertCan(user, Action.ProjectUpdate, Resource(role = role))
+            val current = tx.selectFrom(PROJECTS).where(PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull)).fetchOne()
+            if (current != null && (requestedManager == null || requestedManager == current.sitemanagerid) &&
+                current.updatedat?.isEqual(expected) == true && sameFields(current, fields)
+            ) {
+                return toDto(current, role?.let { DbRole.valueOf(it.name) })
             }
         }
-        val requestedManager = data.siteManagerId.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "siteManagerId") }
 
         return AuditService.auditedWrite(user, "project") { tx ->
             val role = ProjectAccess.requireAccess(tx, user, projectId)
@@ -258,7 +290,7 @@ object ProjectService {
             if (requestedManager != null && requestedManager != existing.sitemanagerid) {
                 throw ConflictException("Stavbyvedoucího nelze touto úpravou změnit")
             }
-            if (expected != null && !existing.updatedat!!.isEqual(expected)) {
+            if (!existing.updatedat!!.isEqual(expected)) {
                 throw StaleVersionException("Údaje o stavbě mezitím změnil někdo jiný. Načtěte je znovu, aby se jeho změny neztratily.")
             }
             val updated = tx.update(PROJECTS)

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, currentUser, json, type UserOption } from "../../lib/api";
 import { ProjectFields } from "../../components/ProjectFields";
@@ -21,6 +21,16 @@ export const NewProject: React.FC = () => {
   }, []);
 
   const [error, setError] = useState("");
+  // The form is long: an error is brought into view, also when it is the same text as the last one.
+  const errorBox = useRef<HTMLDivElement | null>(null);
+  const [errorTick, setErrorTick] = useState(0);
+  const showError = (message: string) => {
+    setError(message);
+    setErrorTick((tick) => tick + 1);
+  };
+  useEffect(() => {
+    if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  }, [error, errorTick]);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -38,7 +48,7 @@ export const NewProject: React.FC = () => {
       });
       navigate(`/projects/${created.id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Chyba vytvoření projektu");
+      showError(err instanceof Error ? err.message : "Chyba vytvoření projektu");
     } finally {
       setLoading(false);
     }
@@ -48,7 +58,11 @@ export const NewProject: React.FC = () => {
     <div className="mx-auto max-w-3xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold text-gray-900">Nový projekt / zakázka</h1>
 
-      {error && <div className="mb-4 rounded bg-red-100 p-3 text-red-700">{error}</div>}
+      {error && (
+        <div ref={errorBox} role="alert" className="mb-4 rounded bg-red-100 p-3 text-red-700">
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <ProjectFields values={fields} onChange={(patch) => setFields((current) => ({ ...current, ...patch }))}>
