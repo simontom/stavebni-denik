@@ -1,0 +1,110 @@
+name: Audit anchor
+
+# Nightly tamper-evidence of the audit_log hash chain, and the recording of its head OUTSIDE the database (decision D4).
+#
+# The hash chain shows that no row was changed in the middle. It cannot show that the newest rows were cut off, or that the
+# whole log was rebuilt, by someone who owns the database. So every night this job
+#   1. checks that the newest record in a private "anchor" repository still matches its RFC 3161 timestamp token,
+#   2. verifies the whole chain against the head that record names (intact, and not cut below it),
+#   3. records the new head (a text file, the token request and the token) and pushes it to the anchor repository.
+# Nothing is recorded when a check fails. The details and the exit codes are in scripts/audit/record-anchor.sh; it is tested
+# in CI (scripts/audit/anchor-test.sh) against a real database and a real RFC 3161 exchange with a throwaway authority.
+#
+# THIS WORKFLOW FAILS WHEN IT IS NOT CONFIGURED. A nightly check that goes green without having checked anything is worse
+# than none: nobody notices that nothing is watching the log. Until a production database exists, disable the workflow in
+# the Actions tab (it can be re-enabled there), or set what is listed below. A failed run notifies the maintainers.
+#
+# Repository secrets (Settings -> Secrets and variables -> Actions):
+#   AUDIT_JDBC_URL       e.g. jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require  (must be reachable from GitHub)
+#   AUDIT_DB_USER        a role that can SELECT from audit_log (nothing else is needed)
+#   AUDIT_DB_PASSWORD
+#   AUDIT_ANCHOR_TOKEN   a token that can write to the anchor repository and nothing else (a fine-grained personal access
+#                        token with "Contents: read and write" on that one repository, or a deploy key's equivalent)
+# Repository variables:
+#   AUDIT_ANCHOR_REPO    owner/name of the PRIVATE anchor repository. Set it up once (docs/DEPLOYMENT.md): a branch rule that
+#                        forbids force-pushes and deletion, and tsa/ca.pem (and tsa/tsa.pem when the token does not carry it)
+#                        committed by a person who got the certificate from the time-stamping authority.
+#   AUDIT_TSA_URL        optional; the RFC 3161 authority. Default: https://freetsa.org/tsr
+
+on:
+  schedule:
+    # Every day at 04:00 UTC.
+    - cron: "0 4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: audit-anchor
+  cancel-in-progress: false
+
+jobs:
+  anchor:
+    name: Verify the audit-log hash chain and record its head
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      JDBC_URL: ${{ secrets.AUDIT_JDBC_URL }}
+      DB_USER: ${{ secrets.AUDIT_DB_USER }}
+      DB_PASSWORD: ${{ secrets.AUDIT_DB_PASSWORD }}
+      ANCHOR_REPO: ${{ vars.AUDIT_ANCHOR_REPO }}
+      ANCHOR_TOKEN: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
+      TSA_URL: ${{ vars.AUDIT_TSA_URL || 'https://freetsa.org/tsr' }}
+
+    steps:
+      - name: Check that it is configured
+        run: |
+          missing=""
+          [ -n "${JDBC_URL}" ] || missing="$missing AUDIT_JDBC_URL"
+          [ -n "${DB_USER}" ] || missing="$missing AUDIT_DB_USER"
+          [ -n "${DB_PASSWORD}" ] || missing="$missing AUDIT_DB_PASSWORD"
+          [ -n "${ANCHOR_REPO}" ] || missing="$missing AUDIT_ANCHOR_REPO(variable)"
+          [ -n "${ANCHOR_TOKEN}" ] || missing="$missing AUDIT_ANCHOR_TOKEN"
+          if [ -n "$missing" ]; then
+            echo "::error title=Audit log is not being verified or anchored::Missing repository secrets/variables:$missing. Set them, or disable this workflow until a production database exists."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Checkout the anchor repository
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ vars.AUDIT_ANCHOR_REPO }}
+          token: ${{ secrets.AUDIT_ANCHOR_TOKEN }}
+          path: anchor-repo
+          persist-credentials: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Build the application jar
+        run: |
+          chmod +x gradlew
+          ./gradlew :backend:shadowJar -x test --console=plain
+
+      - name: Verify the chain against the last record and record the new head
+        run: |
+          set +e
+          git -C anchor-repo config user.name "audit-anchor[bot]"
+          git -C anchor-repo config user.email "audit-anchor@users.noreply.github.com"
+          APP_JAR="$(find "$PWD/backend/build/libs" -name "*-all.jar" | head -n 1)" ANCHOR_REPO_DIR="$PWD/anchor-repo" bash scripts/audit/record-anchor.sh
+          code=$?
+          case "$code" in
+            0) echo "Audit log intact; its head is recorded." ;;
+            1) echo "::error title=AUDIT LOG OR ANCHOR BROKEN::The hash chain does not verify, the log was cut below the recorded head, or a record does not match its timestamp. Treat this as a security incident: do not write to the database, and see the output above." ;;
+            2) echo "::error title=Audit anchor is not configured::See the output above." ;;
+            3) echo "::error title=Audit log could not be checked or recorded::The run did not complete (see the output above). Nothing was recorded." ;;
+            *) echo "::error title=Audit anchor failed unexpectedly::exit code $code" ;;
+          esac
+          exit "$code"
+
+      # A plain push: it fails when the history of the anchor repository moved (somebody rewrote it), which is what must be seen.
+      - name: Push the record
+        run: git -C anchor-repo push origin HEAD

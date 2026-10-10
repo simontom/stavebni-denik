@@ -274,6 +274,19 @@ jobs:
           ./gradlew :backend:shadowJar -q --console=plain
           APP_JAR="$PWD/backend/build/libs/backend-all.jar" bash scripts/backup/drill.sh 2>&1 | tee /tmp/restore-drill.log
 
+      # The audit anchor (decision D4): records the head of the audit log outside the database with an RFC 3161 token, against a
+      # throwaway time-stamping authority, and shows that it refuses an unreachable authority, an edited earlier record, a log
+      # that lacks the row an earlier record named, and a certificate that is not the pinned one.
+      - name: Audit anchor recording test
+        timeout-minutes: 5
+        env:
+          JDBC_URL: jdbc:postgresql://localhost:5432/stavebni_denik
+          DB_USER: denik
+          DB_PASSWORD: denik_dev
+        run: |
+          set -o pipefail
+          APP_JAR="$PWD/backend/build/libs/backend-all.jar" bash scripts/audit/anchor-test.sh 2>&1 | tee /tmp/audit-anchor-test.log
+
       - name: E2E summary
         if: ${{ !cancelled() }}
         run: |
@@ -309,6 +322,7 @@ jobs:
             /tmp/playwright.log
             /tmp/gradle-assemble.log
             /tmp/restore-drill.log
+            /tmp/audit-anchor-test.log
           retention-days: 14
 
   docker:
