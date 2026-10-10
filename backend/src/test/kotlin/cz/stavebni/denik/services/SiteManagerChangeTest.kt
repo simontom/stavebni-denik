@@ -4,7 +4,6 @@ import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.MINIMAL_PDF
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
-import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.StaleVersionException
@@ -77,7 +76,7 @@ class SiteManagerChangeTest : BaseIntegrationTest() {
         assertThrows<ConflictException>("a worker") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, worker)) } }
         assertThrows<ConflictException>("not a member") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, outsider)) } }
         assertThrows<ConflictException>("no ČKAIT number") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, noCkait)) } }
-        assertThrows<NotFoundException>("deactivated") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, inactive)) } }
+        assertThrows<ConflictException>("deactivated") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, inactive)) } }
         assertThrows<ConflictException>("the same person") { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, boss)) } }
         assertEquals(boss.id, siteManagerOf(created.id))
         assertEquals(0, dsl.fetchCount(AUDIT_LOG, AUDIT_LOG.ACTION.eq("project.site_manager.change")))
@@ -116,6 +115,21 @@ class SiteManagerChangeTest : BaseIntegrationTest() {
         ProjectService.updateProject(boss, id, created.copy(name = "Přejmenováno"))
         assertThrows<StaleVersionException> { runBlocking { ProjectService.changeSiteManager(boss, id, request(created, deputy)) } }
         assertEquals(boss.id, siteManagerOf(created.id))
+    }
+
+    @Test
+    fun `an edit loaded before the site manager was replaced is stale, not a conflict about the site manager`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val deputy = createTestUser(role = Role.BOSS)
+        val created = project(boss)
+        val id = UUID.fromString(created.id)
+        addMember(id, deputy, Role.BOSS)
+
+        ProjectService.changeSiteManager(boss, id, request(created, deputy))
+
+        // The form still carries the previous site manager and the previous version.
+        assertThrows<StaleVersionException> { runBlocking { ProjectService.updateProject(boss, id, created.copy(name = "Přejmenováno")) } }
+        assertEquals(deputy.id, siteManagerOf(created.id))
     }
 
     @Test

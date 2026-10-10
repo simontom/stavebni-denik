@@ -52,4 +52,10 @@ test("the manager of a project replaces its site manager with another manager of
   await expect(page.getByLabel(/nový stavbyvedoucí/i)).toHaveCount(0);
   const project = await (await page.request.get(`/api/projects/${projectId}`)).json();
   expect(project.siteManagerId).toBe(deputyId);
+
+  // The members tab marks who the site manager is: the new one, in the row of the new one.
+  await page.goto(`/projects/${projectId}?tab=members`);
+  const deputyRow = page.getByRole("row").filter({ hasText: `e2e-deputy-${stamp}` });
+  await expect(deputyRow.getByText("Hlavní stavbyvedoucí")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText("Hlavní stavbyvedoucí")).toHaveCount(1);
 });

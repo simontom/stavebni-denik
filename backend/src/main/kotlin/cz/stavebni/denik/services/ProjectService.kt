@@ -210,7 +210,7 @@ object ProjectService {
             val previousId = existing.sitemanagerid!!
             if (newManagerId == previousId) throw ConflictException("Tento člen už je stavbyvedoucím")
             val active = tx.fetchExists(USERS, USERS.ID.eq(newManagerId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true)))
-            if (!active) throw cz.stavebni.denik.domain.NotFoundException("Uživatel nenalezen")
+            if (!active) throw ConflictException("Tento uživatel je deaktivovaný nebo smazaný a stavbyvedoucím být nemůže")
             if (ProjectAccess.roleIn(tx, newManagerId, projectId) != cz.stavebni.denik.domain.Role.BOSS) {
                 throw ConflictException("Stavbyvedoucím může být jen člen tohoto projektu s rolí vedoucího (BOSS)")
             }
@@ -372,11 +372,13 @@ object ProjectService {
                 .where(PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))
                 .forUpdate()
                 .fetchOne() ?: throw cz.stavebni.denik.domain.NotFoundException("Projekt nenalezen")
-            if (requestedManager != null && requestedManager != existing.sitemanagerid) {
-                throw ConflictException("Stavbyvedoucího nelze touto úpravou změnit")
-            }
+            // The version first: a form loaded before the site manager was replaced then gets STALE_VERSION (and the reload it
+            // offers), not a conflict about a field the person never touched.
             if (!existing.updatedat!!.isEqual(expected)) {
                 throw StaleVersionException("Údaje o stavbě mezitím změnil někdo jiný. Načtěte je znovu, aby se jeho změny neztratily.")
+            }
+            if (requestedManager != null && requestedManager != existing.sitemanagerid) {
+                throw ConflictException("Stavbyvedoucího nelze touto úpravou změnit")
             }
             val updated = tx.update(PROJECTS)
                 .set(PROJECTS.NAME, fields.name)

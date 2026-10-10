@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, apiFetch, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -121,6 +121,10 @@ export const ProjectDetail: React.FC = () => {
   const [newSiteManagerId, setNewSiteManagerId] = useState("");
   const [siteManagerReason, setSiteManagerReason] = useState("");
   const [changingSiteManager, setChangingSiteManager] = useState(false);
+  // What went wrong with the change, shown next to the form (the page banner may be out of sight), and whether the cause is a
+  // version that is out of date, which a reload of the project and its members mends.
+  const [siteManagerError, setSiteManagerError] = useState("");
+  const [siteManagerStale, setSiteManagerStale] = useState(false);
 
   const fail = (err: unknown, fallback: string) => setError(err instanceof Error ? err.message : fallback);
 
@@ -302,10 +306,26 @@ export const ProjectDetail: React.FC = () => {
   // (an active user holding a ČKAIT number).
   const siteManagerCandidates = members.filter((m) => m.role === "BOSS" && m.userId !== project?.siteManagerId);
 
+  /** The project and its members again, after the change found them out of date. */
+  const reloadForSiteManager = async () => {
+    if (!id) return;
+    try {
+      const [p, m] = await Promise.all([api<ProjectData>(`/api/projects/${id}`), api<ProjectMember[]>(`/api/projects/${id}/members`)]);
+      setProject(p);
+      setMembers(m);
+      setNewSiteManagerId("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
+    } catch (err) {
+      setSiteManagerError(err instanceof Error ? err.message : "Údaje se nepodařilo načíst znovu");
+    }
+  };
+
   const changeSiteManager = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!id || !project || !newSiteManagerId || changingSiteManager) return;
     setChangingSiteManager(true);
+    setSiteManagerError("");
     try {
       const updated = await api<ProjectData>(`/api/projects/${id}/site-manager`, {
         method: "PUT",
@@ -315,9 +335,12 @@ export const ProjectDetail: React.FC = () => {
       setShowSiteManager(false);
       setNewSiteManagerId("");
       setSiteManagerReason("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
       setError("");
     } catch (err) {
-      fail(err, "Stavbyvedoucího se nepodařilo změnit");
+      setSiteManagerError(err instanceof Error ? err.message : "Stavbyvedoucího se nepodařilo změnit");
+      setSiteManagerStale(err instanceof ApiError && err.code === "STALE_VERSION");
     } finally {
       setChangingSiteManager(false);
     }
@@ -391,6 +414,11 @@ export const ProjectDetail: React.FC = () => {
                   Změnit stavbyvedoucího
                 </button>
               )}
+              {project.myRole === "BOSS" && siteManagerCandidates.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Stavbyvedoucího lze změnit na jiného vedoucího (BOSS) tohoto projektu s číslem ČKAIT. Nejdřív ho přidejte v záložce Členové.
+                </p>
+              )}
               {showSiteManager && (
                 <form onSubmit={changeSiteManager} className="mt-2 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
                   <label htmlFor="newSiteManager" className="block text-xs text-gray-600">
@@ -423,6 +451,16 @@ export const ProjectDetail: React.FC = () => {
                     className="w-full rounded-md border border-gray-300 p-2"
                   />
                   {siteManagerReason.length > 1000 && <p className="text-xs font-semibold text-red-700">{siteManagerReason.length} / 1000 znaků</p>}
+                  {siteManagerError && (
+                    <div role="alert" className="rounded bg-red-100 p-2 text-sm text-red-700">
+                      <p>{siteManagerError}</p>
+                      {siteManagerStale && (
+                        <button type="button" onClick={reloadForSiteManager} className="mt-1 font-semibold underline">
+                          Načíst znovu
+                        </button>
+                      )}
+                    </div>
+                  )}
                   <div className="flex gap-3">
                     <button
                       type="submit"
@@ -431,7 +469,15 @@ export const ProjectDetail: React.FC = () => {
                     >
                       {changingSiteManager ? "Ukládám..." : "Změnit stavbyvedoucího"}
                     </button>
-                    <button type="button" onClick={() => setShowSiteManager(false)} className="text-sm text-gray-600 hover:underline">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSiteManager(false);
+                        setSiteManagerError("");
+                        setSiteManagerStale(false);
+                      }}
+                      className="text-sm text-gray-600 hover:underline"
+                    >
                       Zrušit
                     </button>
                   </div>
@@ -915,7 +961,12 @@ export const ProjectDetail: React.FC = () => {
                   <tr key={m.userId}>
                     <td className="py-2 text-sm font-medium text-gray-900">{m.nickname}</td>
                     <td className="py-2 text-sm text-gray-700">{m.displayName}</td>
-                    <td className="py-2 text-sm text-gray-600">{ROLE_LABELS[m.role] ?? m.role}</td>
+                    <td className="py-2 text-sm text-gray-600">
+                      {ROLE_LABELS[m.role] ?? m.role}
+                      {m.userId === project.siteManagerId && (
+                        <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Hlavní stavbyvedoucí</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
