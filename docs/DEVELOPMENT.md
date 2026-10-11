@@ -32,6 +32,8 @@ java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt aud
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
 ```
 
+Příkaz `migrate` (s údaji vlastníka databáze) migruje schéma a nastaví roli aplikace; lokálně ho nepotřebujete, backend migruje při startu. V produkci je to naopak: aplikace schéma nemigruje a běží pod rolí, která nic nevlastní (viz `PROJECT.md`, „Database roles“).
+
 Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head` a `audit-verify` jen čtou (nemigrují schéma). Návratové kódy jsou v `PROJECT.md`.
 
 ## Testy
@@ -52,6 +54,8 @@ pnpm typecheck                                    # TypeScript E2E kódu
 pnpm test:seed-guard                              # zkouška pojistky, že seed nepoběží proti cizí databázi
 pnpm test:e2e                                     # spustí si Vite sám, backend musí běžet na :8080
 ```
+
+Stejnou sadu spustí CI i **proti sestavenému produkčnímu obrazu** (`scripts/ci/e2e-image.sh`: obraz s `APP_ENV=production`, role databáze bez vlastnictví, schéma migrované vlastníkem, SPA servírovaná Ktorem). Lokálně: `docker build -t stavebni-denik:e2e .` a potom `IMAGE=stavebni-denik:e2e E2E_PG_PORT=55436 bash scripts/ci/e2e-image.sh` (potřebuje Docker a volný port 8080).
 
 E2E seed (`scripts/dev/e2e-prepare.ts`) zakládá účty `e2e-admin` a `e2e-investor` přímo v databázi a odmítne pracovat s čímkoli jiným než s databází na tomto počítači (`DATABASE_URL`, výchozí je lokální compose databáze). Test `full-flow` stahuje PDF, takže potřebuje `typst`; bez něj selže právě tam.
 

@@ -74,7 +74,7 @@ abstract class BaseIntegrationTest {
             "addenda", "audit_log", "authorized_persons", "photos",
             "material_needs", "remarks", "visits", "daily_reports",
             "site_handovers", "project_members", "projects", "sessions",
-            "rate_limit_attempts", "notifications", "users"
+            "rate_limit_attempts", "access_log", "audit_request_context", "notifications", "users"
         )
         // The audit log refuses TRUNCATE (migration V2); tests start from an empty database, so step around that guard.
         DatabaseFactory.dsl.execute("ALTER TABLE \"audit_log\" DISABLE TRIGGER audit_log_no_truncate")

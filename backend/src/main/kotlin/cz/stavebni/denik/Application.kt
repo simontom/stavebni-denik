@@ -22,6 +22,7 @@ import cz.stavebni.denik.routes.userRoutes
 import cz.stavebni.denik.routes.auditRoutes
 import cz.stavebni.denik.plugins.CrossSiteRequestGuard
 import cz.stavebni.denik.plugins.configureSecurity
+import cz.stavebni.denik.plugins.configureRequestContext
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
 import kotlinx.serialization.json.Json
@@ -42,7 +43,10 @@ fun Application.module() {
         DatabaseFactory.init(
             jdbcUrl = System.getenv("JDBC_URL") ?: System.getProperty("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
             user = System.getenv("DB_USER") ?: System.getProperty("DB_USER") ?: "denik",
-            password = System.getenv("DB_PASSWORD") ?: System.getProperty("DB_PASSWORD") ?: "denik_dev"
+            password = System.getenv("DB_PASSWORD") ?: System.getProperty("DB_PASSWORD") ?: "denik_dev",
+            migrate = AppConfig.migrateOnStart,
+            // Without migrating, an old schema must stop the start, not break the first request that needs a new column.
+            requireCurrent = true,
         )
     }
 
@@ -103,6 +107,7 @@ fun Application.module() {
     }
 
     configureSecurityHeaders()
+    configureRequestContext()
     configureSecurity()
     configureStatusPages()
 

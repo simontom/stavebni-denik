@@ -17,7 +17,8 @@ import org.jooq.Schema
 @Suppress("warnings")
 enum class Remarktype(@get:JvmName("literal") public val literal: String) : EnumType {
     INSPECTOR_REMARK("INSPECTOR_REMARK"),
-    INVESTOR_NOTE("INVESTOR_NOTE");
+    INVESTOR_NOTE("INVESTOR_NOTE"),
+    EXTERNAL_ENTRY("EXTERNAL_ENTRY");
     override fun getCatalog(): Catalog? = schema.catalog
     override fun getSchema(): Schema = Public.PUBLIC
     override fun getName(): String = "RemarkType"

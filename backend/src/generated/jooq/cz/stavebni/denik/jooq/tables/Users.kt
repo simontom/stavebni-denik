@@ -9,7 +9,6 @@ import cz.stavebni.denik.jooq.enums.Role
 import cz.stavebni.denik.jooq.indexes.USERS_DELETEDAT_IDX
 import cz.stavebni.denik.jooq.indexes.USERS_NICKNAME_KEY
 import cz.stavebni.denik.jooq.keys.ADDENDA__ADDENDA_AUTHORID_FKEY
-import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_AUTHORID_FKEY
 import cz.stavebni.denik.jooq.keys.DAILY_REPORTS__DAILY_REPORTS_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.NOTIFICATIONS__NOTIFICATIONS_RECIPIENTID_FKEY
@@ -17,6 +16,7 @@ import cz.stavebni.denik.jooq.keys.PHOTOS__PHOTOS_UPLOADEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.PROJECTS__PROJECTS_SITEMANAGERID_FKEY
 import cz.stavebni.denik.jooq.keys.PROJECT_MEMBERS__PROJECT_MEMBERS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.REMARKS__REMARKS_AUTHORID_FKEY
+import cz.stavebni.denik.jooq.keys.REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.SESSIONS__SESSIONS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY
@@ -29,6 +29,7 @@ import cz.stavebni.denik.jooq.tables.Photos.PhotosPath
 import cz.stavebni.denik.jooq.tables.ProjectMembers.ProjectMembersPath
 import cz.stavebni.denik.jooq.tables.Projects.ProjectsPath
 import cz.stavebni.denik.jooq.tables.Remarks.RemarksPath
+import cz.stavebni.denik.jooq.tables.ReportAcknowledgements.ReportAcknowledgementsPath
 import cz.stavebni.denik.jooq.tables.Sessions.SessionsPath
 import cz.stavebni.denik.jooq.tables.SiteHandovers.SiteHandoversPath
 import cz.stavebni.denik.jooq.tables.Visits.VisitsPath
@@ -227,23 +228,6 @@ open class Users(
     val addenda: AddendaPath
         get(): AddendaPath = addenda()
 
-    private lateinit var _dailyReportsAcknowledgedbyidFkey: DailyReportsPath
-
-    /**
-     * Get the implicit to-many join path to the
-     * <code>public.daily_reports</code> table, via the
-     * <code>daily_reports_acknowledgedById_fkey</code> key
-     */
-    fun dailyReportsAcknowledgedbyidFkey(): DailyReportsPath {
-        if (!this::_dailyReportsAcknowledgedbyidFkey.isInitialized)
-            _dailyReportsAcknowledgedbyidFkey = DailyReportsPath(this, null, DAILY_REPORTS__DAILY_REPORTS_ACKNOWLEDGEDBYID_FKEY.inverseKey)
-
-        return _dailyReportsAcknowledgedbyidFkey;
-    }
-
-    val dailyReportsAcknowledgedbyidFkey: DailyReportsPath
-        get(): DailyReportsPath = dailyReportsAcknowledgedbyidFkey()
-
     private lateinit var _dailyReportsAuthoridFkey: DailyReportsPath
 
     /**
@@ -358,6 +342,22 @@ open class Users(
     val remarks: RemarksPath
         get(): RemarksPath = remarks()
 
+    private lateinit var _reportAcknowledgements: ReportAcknowledgementsPath
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.report_acknowledgements</code> table
+     */
+    fun reportAcknowledgements(): ReportAcknowledgementsPath {
+        if (!this::_reportAcknowledgements.isInitialized)
+            _reportAcknowledgements = ReportAcknowledgementsPath(this, null, REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY.inverseKey)
+
+        return _reportAcknowledgements;
+    }
+
+    val reportAcknowledgements: ReportAcknowledgementsPath
+        get(): ReportAcknowledgementsPath = reportAcknowledgements()
+
     private lateinit var _sessions: SessionsPath
 
     /**
@@ -423,6 +423,13 @@ open class Users(
 
     val visits: VisitsPath
         get(): VisitsPath = visits()
+
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.daily_reports</code> table
+     */
+    val dailyReports: DailyReportsPath
+        get(): DailyReportsPath = reportAcknowledgements().dailyReports()
     override fun `as`(alias: String): Users = Users(DSL.name(alias), this)
     override fun `as`(alias: Name): Users = Users(alias, this)
     override fun `as`(alias: Table<*>): Users = Users(alias.qualifiedName, this)

@@ -80,3 +80,6 @@ run-*.ps1
 /.agents/
 /.kotlin/
 
+
+# A leftover of the retired Prisma setup: an old branch's `pnpm install` can regenerate this on a developer machine.
+/src/generated/prisma

@@ -63,6 +63,91 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the people on site and the fields of the vyhláška are printed, and hostile text stays text`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Náležitosti", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val saved = DailyReportService.saveReport(
+            boss, UUID.fromString(project.id), "2026-09-28",
+            DailyReportService.ReportInput(
+                workDescription = "Betonáž",
+                workersByTrade = """[{"trade":"Betonáři","count":3,"names":["Jan Novák","Petr Svoboda"]},{"trade":"Zedníci","count":2}]""",
+                details = mapOf(
+                    "materials" to "Beton C25/30\nVýztuž #panic(\"X\") a *tučně*",
+                    "dustMeasures" to "Kropení povrchů",
+                    "defects" to "Trhlina v omítce",
+                ),
+            ),
+        )
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(saved.id)).bytes)
+
+        assertTrue(text.contains("Pracovníci na stavbě"), text)
+        assertTrue(text.contains("Betonáři"), text)
+        assertTrue(text.contains("Jan Novák; Petr Svoboda"), text)
+        assertTrue(text.contains("Dodávky a uskladnění materiálu a zařízení"), text)
+        assertTrue(text.contains("Beton C25/30"), text)
+        assertTrue(text.contains("#panic(\"X\")"), "markup in a field is printed as it was typed: $text")
+        assertTrue(text.contains("Opatření proti prašnosti"), text)
+        assertTrue(text.contains("Závady a jejich odstranění"), text)
+        assertFalse(text.contains("Použité stroje"), "a field that was not filled in has no heading: $text")
+    }
+
+    @Test
+    fun `the identification of the project is printed, only what has a value, and hostile text stays text`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Bytový dům Zelená", address = "Karlova 15, Brno", cadastralArea = "Brno-střed", parcelNumbers = "450/1",
+                builder = "Město Brno", contractor = "Stavitel a.s.", siteManagerId = boss.id.toString(),
+                permitNumber = "SZ/2026/123", permitDate = "2026-03-01",
+                subcontractors = "Elektro s.r.o.\nVodoinstalace #panic(\"X\") a *tučně*",
+                supportingDocuments = "Smlouva o dílo č. SML-1",
+            )
+        )
+        val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Betonáž")
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
+
+        assertTrue(text.contains("Katastrální území"), text)
+        assertTrue(text.contains("Brno-střed"), text)
+        assertTrue(text.contains("Stavebník"), text)
+        assertTrue(text.contains("SZ/2026/123 ze dne 2026-03-01"), text)
+        assertTrue(text.contains("Poddodavatelé"), text)
+        assertTrue(text.contains("Vodoinstalace #panic(\"X\")"), "markup in a field is printed as it was typed: $text")
+        assertTrue(text.contains("Podklady stavby"), text)
+        assertFalse(text.contains("Projektant"), "a row without a value has no line: $text")
+    }
+
+    @Test
+    fun `a draft says it has no number yet and a signed entry shows its number`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Číslo záznamu", address = "Address", cadastralArea = "Area",
+                parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+            )
+        )
+        val report = UUID.fromString(DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Zápis").id)
+
+        val draft = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(draft.contains("zatím bez čísla"), draft)
+
+        // The number is given at signing (decision D11).
+        DailyReportService.signReport(boss, report)
+        val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(signed.contains("č. 1"), signed)
+        assertFalse(signed.contains("zatím bez čísla"), signed)
+    }
+
+    @Test
     fun `a late entry says so in the PDF, with its reason (hostile text stays text)`() = runBlocking {
         val boss = createTestUser(role = Role.BOSS)
         val project = ProjectService.createProject(

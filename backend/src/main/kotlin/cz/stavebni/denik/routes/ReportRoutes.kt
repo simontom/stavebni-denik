@@ -5,8 +5,12 @@ import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
+import cz.stavebni.denik.services.AddendumService
+import cz.stavebni.denik.services.CreateAddendumRequest
+import cz.stavebni.denik.services.CreateRemarkRequest
 import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.RemarkService
 import cz.stavebni.denik.services.ReportSignature
 import cz.stavebni.denik.services.SigningGuard
 import cz.stavebni.denik.util.Dates
@@ -43,7 +47,9 @@ data class CreateReportPayload(
     /** Required when a new entry is for a day before the previous working day (a late entry). */
     val lateEntryReason: String? = null,
     /** The weather, entered by hand; leave it out to keep what is stored, send an empty object to clear it. */
-    val weather: cz.stavebni.denik.domain.WeatherData? = null
+    val weather: cz.stavebni.denik.domain.WeatherData? = null,
+    /** The text fields of [cz.stavebni.denik.services.EntryDetails] by key; leave a key out to keep what is stored, send an empty text to clear it. */
+    val details: Map<String, String>? = null
 )
 
 /**
@@ -171,7 +177,8 @@ fun Application.reportRoutes() {
                         isControlDay = payload.isControlDay ?: false,
                         constructionObj = payload.constructionObj,
                         lateEntryReason = payload.lateEntryReason,
-                        weather = payload.weather
+                        weather = payload.weather,
+                        details = payload.details,
                     )
                     call.respond(HttpStatusCode.Created, report)
                 }
@@ -206,6 +213,7 @@ fun Application.reportRoutes() {
                                 expectedUpdatedAt = payload.expectedInstant(),
                                 lateEntryReason = payload.lateEntryReason,
                                 weather = payload.weather,
+                                details = payload.details,
                                 expectNew = payload.expectNew == true
                             )
                         )
@@ -265,6 +273,36 @@ fun Application.reportRoutes() {
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     DailyReportService.acknowledgeReport(user, reportId)
                     call.respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+                }
+
+                // Addenda: how a signed entry is corrected or completed (append-only).
+                get("/addenda") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    call.respond(AddendumService.list(DatabaseFactory.dsl, user, reportId))
+                }
+
+                post("/addenda") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
+                    val request = call.receive<CreateAddendumRequest>()
+                    call.respond(HttpStatusCode.Created, AddendumService.create(user, reportId, request))
+                }
+
+                // Entries of other parties (technical supervision, the client, authorities via the manager): append-only.
+                get("/remarks") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    call.respond(RemarkService.list(DatabaseFactory.dsl, user, reportId))
+                }
+
+                post("/remarks") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
+                    val request = call.receive<CreateRemarkRequest>()
+                    call.respond(HttpStatusCode.Created, RemarkService.create(user, reportId, request))
                 }
             }
         }

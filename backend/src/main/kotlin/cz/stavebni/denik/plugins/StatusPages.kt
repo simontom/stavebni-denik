@@ -41,6 +41,15 @@ fun Application.configureStatusPages() {
                 // For example two requests creating the same day at once: the database refuses the second.
                 is IntegrityConstraintViolationException ->
                     call.respond(HttpStatusCode.Conflict, mapOf("error" to "Záznam již existuje nebo odporuje omezením"))
+                // Text the database cannot store (a NUL character in a text or in JSON: SQLSTATE 22021, 22P05) is the client's
+                // mistake wherever it came from, not an error of the server.
+                is org.jooq.exception.DataAccessException ->
+                    if (cause.sqlState() in setOf("22021", "22P05")) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Text obsahuje nepovolený znak"))
+                    } else {
+                        cause.printStackTrace()
+                        call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Vnitřní chyba serveru"))
+                    }
                 is IllegalArgumentException -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))
                 is IllegalStateException -> call.respond(HttpStatusCode.Conflict, mapOf("error" to cause.message))
                 else -> {

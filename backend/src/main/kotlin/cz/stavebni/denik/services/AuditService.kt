@@ -3,8 +3,11 @@ package cz.stavebni.denik.services
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
+import cz.stavebni.denik.jooq.tables.references.AUDIT_REQUEST_CONTEXT
+import cz.stavebni.denik.plugins.RequestContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -67,19 +70,23 @@ object AuditService {
         ip: String? = null,
         userAgent: String? = null,
         block: suspend (DSLContext) -> T
-    ): T = withContext(NonCancellable + Dispatchers.IO) {
-        DatabaseFactory.dsl.transactionCoroutine { config ->
-            val tx = config.dsl()
+    ): T {
+        // Read here, in the caller's coroutine: the transaction below does not necessarily see its context.
+        val request = currentCoroutineContext()[RequestContext]
+        return withContext(NonCancellable + Dispatchers.IO) {
+            DatabaseFactory.dsl.transactionCoroutine { config ->
+                val tx = config.dsl()
 
-            // 1. Serialise appenders (same lock key as the original implementation)
-            tx.execute(AUDIT_LOCK_SQL)
+                // 1. Serialise appenders (same lock key as the original implementation)
+                tx.execute(AUDIT_LOCK_SQL)
 
-            // 2. The audit row is written before the business logic, so the caller has to
-            //    know the entity id (and any snapshots) up front.
-            appendRow(tx, actor, action, entityType, entityId, before, after, ip, userAgent)
+                // 2. The audit row is written before the business logic, so the caller has to
+                //    know the entity id (and any snapshots) up front.
+                appendRow(tx, actor, action, entityType, entityId, before, after, ip, userAgent, request)
 
-            // 3. Business logic in the same transaction
-            block(tx)
+                // 3. Business logic in the same transaction
+                block(tx)
+            }
         }
     }
 
@@ -113,20 +120,30 @@ object AuditService {
         actor: SessionUser?,
         entityType: String,
         block: (DSLContext) -> Audited<T>,
-    ): T = withContext(NonCancellable + Dispatchers.IO) {
-        DatabaseFactory.dsl.transactionCoroutine { config ->
-            val tx = config.dsl()
-            tx.execute(AUDIT_LOCK_SQL)
-            val outcome = block(tx)
-            appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, null, null)
-            outcome.result
+    ): T {
+        // Read here, in the caller's coroutine: the transaction below does not necessarily see its context.
+        val request = currentCoroutineContext()[RequestContext]
+        return withContext(NonCancellable + Dispatchers.IO) {
+            DatabaseFactory.dsl.transactionCoroutine { config ->
+                val tx = config.dsl()
+                tx.execute(AUDIT_LOCK_SQL)
+                val outcome = block(tx)
+                appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, null, null, request)
+                outcome.result
+            }
         }
     }
 
     /** Same lock key as the original implementation. */
     private const val AUDIT_LOCK_SQL = "SELECT pg_advisory_xact_lock(42)"
 
-    /** Appends one hash-chained row. Must run under [AUDIT_LOCK_SQL] in the caller's transaction. */
+    /**
+     * Appends one hash-chained row. Must run under [AUDIT_LOCK_SQL] in the caller's transaction.
+     *
+     * When the change is made on behalf of a request, the address and user agent of that request are written to
+     * `audit_request_context` in the same transaction. They are deliberately not part of the row or its hash: they are
+     * personal data and are deleted after twelve months, which the chain could not survive (decision D7).
+     */
     private fun appendRow(
         tx: DSLContext,
         actor: SessionUser?,
@@ -137,6 +154,7 @@ object AuditService {
         after: JsonElement?,
         ip: String?,
         userAgent: String?,
+        request: RequestContext?,
     ) {
         // Previous hash (genesis for the first row)
         val prevHash = tx.select(AUDIT_LOG.ROW_HASH)
@@ -164,7 +182,7 @@ object AuditService {
             ts = ts,
         )
 
-        tx.insertInto(AUDIT_LOG)
+        val auditId = tx.insertInto(AUDIT_LOG)
             .set(AUDIT_LOG.TS, ts)
             .set(AUDIT_LOG.ACTOR_ID, actorId)
             .set(AUDIT_LOG.ACTION, action)
@@ -176,7 +194,17 @@ object AuditService {
             .set(AUDIT_LOG.USER_AGENT, userAgent)
             .set(AUDIT_LOG.PREV_HASH, prevHash)
             .set(AUDIT_LOG.ROW_HASH, rowHash)
-            .execute()
+            .returning(AUDIT_LOG.ID)
+            .fetchSingle()
+            .id!!
+
+        request?.let {
+            tx.insertInto(AUDIT_REQUEST_CONTEXT)
+                .set(AUDIT_REQUEST_CONTEXT.AUDIT_ID, auditId)
+                .set(AUDIT_REQUEST_CONTEXT.IP, it.ip)
+                .set(AUDIT_REQUEST_CONTEXT.USER_AGENT, it.userAgent)
+                .execute()
+        }
     }
 
     /**

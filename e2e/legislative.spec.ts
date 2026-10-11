@@ -144,7 +144,7 @@ test.describe("Legislative Compliance", () => {
     await ackBtn.click();
 
     // Verify acknowledged status appears in header
-    await expect(page.getByText(/Potvrzeno investorem/i)).toBeVisible();
+    await expect(page.getByText(/Seznámil\(a\) se: .*\(stavebník\)/)).toBeVisible();
     await expect(ackBtn).not.toBeVisible();
   });
 });
