@@ -21,7 +21,7 @@ object CsvExportService {
         sb.append("Sequence Number,Date,Work Description,Work Suspended\n")
         
         for (r in reports) {
-            val seq = r.get(DAILY_REPORTS.SEQUENCENUMBER)
+            val seq = r.get(DAILY_REPORTS.SEQUENCENUMBER)?.toString() ?: "" // a draft has no number yet
             val date = r.get(DAILY_REPORTS.DATE)?.toString() ?: ""
             val desc = r.get(DAILY_REPORTS.WORKDESCRIPTION)?.replace("\"", "\"\"") ?: ""
             val suspended = r.get(DAILY_REPORTS.WORKSUSPENDED)

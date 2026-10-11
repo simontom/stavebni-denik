@@ -145,5 +145,8 @@ object RateLimiter {
 
         /** Wrong "current password" answers when changing one's own password. */
         val PASSWORD_CHANGE = Rule("pwchange:user", maxFailures = 5, window = Duration.ofMinutes(15))
+
+        /** Wrong passwords given to confirm a signature. */
+        val SIGNATURE_PASSWORD = Rule("signpw:user", maxFailures = 5, window = Duration.ofMinutes(15))
     }
 }

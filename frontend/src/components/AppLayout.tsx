@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
+import { SessionExpiredDialog } from "./SessionExpiredDialog";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -66,6 +67,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
+      <SessionExpiredDialog />
       <main className="flex-1">{children}</main>
     </div>
   );

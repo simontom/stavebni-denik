@@ -165,7 +165,7 @@ class ReportSchemaTest : BaseIntegrationTest() {
     // --- defaults that V2 used to add (now part of V1) -----------------------------------
 
     @Test
-    fun `updatedAt columns and the member role have database defaults`() {
+    fun `updatedAt columns have database defaults and the member role has none`() {
         val tables = listOf(
             "users", "projects", "site_handovers", "authorized_persons", "daily_reports", "material_needs", "visits"
         )
@@ -176,9 +176,10 @@ class ReportSchemaTest : BaseIntegrationTest() {
             )
             assertNotNull(default, "$table.updatedAt needs a default")
         }
+        // A membership names its role: a row inserted without one must not become a project manager (migration V7).
         val roleDefault = dsl.fetchValue(
             "select column_default from information_schema.columns where table_name = 'project_members' and column_name = 'role'"
         )
-        assertTrue(roleDefault.toString().contains("BOSS"), "project_members.role default was: $roleDefault")
+        assertNull(roleDefault, "project_members.role has no default, was: $roleDefault")
     }
 }

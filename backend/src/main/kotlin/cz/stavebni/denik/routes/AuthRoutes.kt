@@ -6,6 +6,8 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.plugins.clientIp
+import cz.stavebni.denik.plugins.userAgent
+import cz.stavebni.denik.services.AccessLogService
 import cz.stavebni.denik.services.ChangePasswordRequest
 import cz.stavebni.denik.services.JwtService
 import cz.stavebni.denik.services.PasswordPolicy
@@ -61,7 +63,12 @@ fun Application.authRoutes() {
             val hash = UserService.findPasswordHash(db, nickname)
             val passwordOk = if (hash == null) PasswordService.verifyAgainstNobody(req.password) else PasswordService.verifyAsync(hash, req.password)
             val user = if (passwordOk) UserService.findUserByNickname(db, nickname) else null
+            fun recordAccess(event: AccessLogService.Event, userId: java.util.UUID?) =
+                AccessLogService.record(db, event, userId, call.clientIp(), call.userAgent())
             if (user == null) {
+                // The account is recorded when there is one; for a name that does not exist nothing about the name is. The
+                // lookup is made either way, so that a name that exists does not cost more work than one that does not.
+                recordAccess(AccessLogService.Event.LOGIN_FAILURE, UserService.findUserByNickname(db, nickname)?.id)
                 call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid credentials"))
                 return@post
             }
@@ -71,10 +78,12 @@ fun Application.authRoutes() {
             val session = when (val opened = SessionService.openAfterPasswordCheck(db, user.id, hash!!)) {
                 is SessionService.Opened.Session -> opened.created
                 SessionService.Opened.CredentialsChanged -> {
+                    recordAccess(AccessLogService.Event.LOGIN_FAILURE, user.id)
                     call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid credentials"))
                     return@post
                 }
                 SessionService.Opened.PasswordExpired -> {
+                    recordAccess(AccessLogService.Event.LOGIN_FAILURE, user.id)
                     // Only a correct password gets here, so saying so reveals nothing to someone who does not have it.
                     call.respond(
                         HttpStatusCode.Unauthorized,
@@ -85,6 +94,7 @@ fun Application.authRoutes() {
             }
             // The password was right: this attempt was not a failure.
             RateLimiter.release(db, reservation)
+            recordAccess(AccessLogService.Event.LOGIN_SUCCESS, user.id)
             val sessionUser = user.copy(sessionId = session.id)
             val token = JwtService.createToken(sessionUser, session.expiresAt.toInstant())
 
@@ -109,7 +119,10 @@ fun Application.authRoutes() {
             token
                 ?.let { JwtService.verify(it) }
                 ?.let { JwtService.decodeUser(it) }
-                ?.let { SessionService.revoke(DatabaseFactory.dsl, it.sessionId) }
+                ?.let {
+                    SessionService.revoke(DatabaseFactory.dsl, it.sessionId)
+                    AccessLogService.record(DatabaseFactory.dsl, AccessLogService.Event.LOGOUT, it.id, call.clientIp(), call.userAgent())
+                }
 
             call.response.cookies.append(
                 name = "jwt",

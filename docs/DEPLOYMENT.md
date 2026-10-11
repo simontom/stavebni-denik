@@ -1,343 +1,118 @@
-# Deployment — Fly.io
+# Nasazení na Fly.io
 
-Tenhle dokument popisuje, jak nasadit aplikaci na **Fly.io** (single
-region, single machine + persistent volume + Fly Postgres). Je to
-jediný oficiálně podporovaný target.
+Architektura a pravidla jsou v [`../PROJECT.md`](../PROJECT.md). Tady je postup nasazení. **Sestavení zatím není uvolněné pro skutečná data deníku**: v produkčním režimu se aplikace bez `ALLOW_UNRELEASED_BUILD=true` nespustí (jen testovací data). Podmínky uvolnění jsou v `PROJECT.md`, kapitola „Release gate“.
 
-Pro architekturu app viz [`ARCHITECTURE.md`](./ARCHITECTURE.md).
-Pro lokální dev viz [`DEVELOPMENT.md`](./DEVELOPMENT.md).
+## Co se nasazuje
 
----
+Jeden Docker obraz (`Dockerfile`): Ktor backend + sestavené SPA (servíruje ho Ktor ze stejného původu) + `typst` pro PDF, na glibc Temurin JRE 21. Aplikace běží pod uživatelem `app`, ne jako root; vstupní skript při startu jen předá datový svazek tomuto uživateli a pak zahodí oprávnění. Heap JVM je omezený na 40 % paměti stroje; `fly.toml` žádá stroj `shared-cpu-1x` s **1 GB** (výchozí stroj Fly má 256 MB a nestačil by). Obraz je jediný artefakt, CI ho staví a spouští proti PostgreSQL 18.
 
-## TL;DR — first deploy
+## První nasazení
 
 ```bash
-# 0. Předpoklad: máš flyctl + účet na Fly.io
-brew install flyctl   # macOS
-# Windows: scoop install flyctl  ⌒OR⌒  iwr https://fly.io/install.ps1 -useb | iex
+# 0. flyctl a účet na Fly.io
 fly auth login
 
-# 1. Vytvořit Fly Postgres
-fly postgres create --name stavebni-denik-pg --region prg \
-  --vm-size shared-cpu-1x --volume-size 10
-
-# 2. Vytvořit app + persistent volume pro /data
+# 1. Aplikace a svazek pro fotky (musí odpovídat [mounts] ve fly.toml)
 fly apps create stavebni-denik
-fly volumes create data --region prg --size 5 --app stavebni-denik
+fly volumes create stavebni_denik_data --region fra --size 3 --app stavebni-denik
 
-# 3. Attach Postgres (vytvoří DATABASE_URL secret)
-fly postgres attach stavebni-denik-pg --app stavebni-denik
+# 2. PostgreSQL 18 (schéma používá uuidv7(), starší verze nestačí).
+#    Libovolná spravovaná nebo vlastní databáze dosažitelná z aplikace.
 
-# 4. Nastavit secrets (viz § 3)
-fly secrets set \
-  AUTH_SECRET="$(openssl rand -base64 32)" \
-  AUTH_URL="https://stavebni-denik.fly.dev" \
-  --app stavebni-denik
+# 3. Dvě databázové role. Vlastník (owner) schéma vytváří a mění, role "app" jen čte a zapisuje data.
+#    Aplikace dostane jen heslo role "app"; heslo vlastníka na Fly nikdy není.
+psql -v ON_ERROR_STOP=1 -v app_password="<heslo pro app>" -d stavebni_denik -f scripts/sql/bootstrap-app-role.sql   # jako superuser / vlastník
 
-# 5. Deploy
+# 4. Schéma se migruje PŘED nasazením, s údaji vlastníka, z vašeho počítače nebo z CI (ne z aplikace):
+DB_MIGRATE_USER=<owner> DB_MIGRATE_PASSWORD=<heslo vlastníka> DB_APP_ROLE=app \
+JDBC_URL="jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require" \
+  java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt migrate     # po ./gradlew :backend:shadowJar
+
+# 5. Tajemství aplikace (nikdy se necommitují)
+fly secrets set --app stavebni-denik \
+  JWT_SECRET="$(openssl rand -base64 32)" \
+  JDBC_URL="jdbc:postgresql://<host>:5432/stavebni_denik?sslmode=require" \
+  DB_USER="app" DB_PASSWORD="<heslo pro app>" \
+  ALLOW_UNRELEASED_BUILD=true          # jen pro testovací data, dokud není sestavení uvolněné
+
+# 6. Nasazení
 fly deploy --app stavebni-denik
-
-# 6. Bootstrap admin (jednou)
-fly ssh console --app stavebni-denik -C "node /app/scripts/seed.js"
-# Vypíše vygenerované heslo → ulož do bezpečného úložiště!
 ```
 
----
+`fly.toml` nastavuje `APP_ENV=production` (povinný `JWT_SECRET`, cookie `Secure`, HSTS, kontrola hesel proti uniklým databázím) a `CLIENT_IP_HEADER=Fly-Client-IP` (adresa klienta pro omezení pokusů o přihlášení; hlavičku Fly přepisuje, klient ji podvrhnout nemůže). Kontrola zdraví je `GET /api/health`.
 
-## 1. Architektura deploye
+## První administrátor
 
-```
-                   ┌─────────────────────┐
-   Uživatel ──→    │ Fly Edge (Anycast)  │
-   (HTTPS)         │ TLS termination     │
-                   └─────────┬───────────┘
-                             │ HTTP/2
-                   ┌─────────▼───────────┐
-                   │  Fly Machine        │
-                   │  region: prg        │
-                   │  shared-cpu-1x      │ ← swap_size_mb=512
-                   │  1 GB RAM           │
-                   │                     │
-                   │  ┌───────────────┐  │
-                   │  │ node server.js│  │ (Next standalone)
-                   │  └───────┬───────┘  │
-                   └──────────┼──────────┘
-                              │
-              ┌───────────────┴────────────────┐
-              │                                │
-       ┌──────▼──────┐                ┌────────▼────────┐
-       │ /data       │                │ Fly Postgres    │
-       │ volume      │                │ (separate app)  │
-       │ - photos/   │                │                 │
-       │ - logs      │                │                 │
-       └─────────────┘                └─────────────────┘
-              │
-              │ nightly cron
-              ▼
-       ┌──────────────┐
-       │ restic →     │
-       │ Backblaze B2 │
-       └──────────────┘
-```
-
-**Klíče:**
-
-- **Single machine, single region.** Aplikace nemá DB cluster a
-  spoléhá na in-process semafor pro PDF queue. Multi-instance by
-  vyžadoval externí queue / lock service.
-- **`/data` volume je SPF (single point of failure)** mezi nightly
-  zálohami. Restore z B2 trvá minuty — viz § 5.
-- **Fly Postgres app** je separate Fly app, attached přes
-  `fly postgres attach` (= secret `DATABASE_URL` se Set automaticky).
-
----
-
-## 2. `fly.toml` — referenční konfig
-
-V repu je referenční `fly.toml`. Klíčové sekce:
-
-```toml
-app = "stavebni-denik"
-primary_region = "prg"
-swap_size_mb = 512                  # OOM ochrana přes swap na volume
-
-[build]
-  dockerfile = "Dockerfile"
-
-[env]
-  NODE_ENV = "production"
-  DATA_DIR = "/data"
-  TZ = "Europe/Prague"
-  PORT = "3000"
-  OPEN_METEO_BASE = "https://api.open-meteo.com/v1"
-  PDF_RENDER_CONCURRENCY = "1"      # PDF queue depth (in-process)
-
-[deploy]
-  release_command = "pnpm exec prisma migrate deploy"
-
-[[services]]
-  internal_port = 3000
-  protocol = "tcp"
-  [[services.ports]]
-    handlers = ["http"]
-    port = 80
-    force_https = true
-  [[services.ports]]
-    handlers = ["tls", "http"]
-    port = 443
-
-[[mounts]]
-  source = "data"
-  destination = "/data"
-
-[[vm]]
-  size = "shared-cpu-1x"
-  memory = "1gb"
-```
-
----
-
-## 3. Secrets
-
-Nastavují se přes `fly secrets set KEY=value`. **NIKDY** commit
-do repa.
-
-| Secret | Povinný | Co dělá |
-|---|---|---|
-| `DATABASE_URL` | ano (auto z `postgres attach`) | Connection string na Fly Postgres |
-| `AUTH_SECRET` | ano | JWT signing secret. **Generuj `openssl rand -base64 32`**. Změna invaliduje všechny session. |
-| `AUTH_URL` | ano | Plně-qualified URL appky (např. `https://stavebni-denik.fly.dev`). Auth.js callbacks ji vyžadují. |
-| `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_AUTH_TOKEN` | ne | Pro source-map upload při buildu (build-time, ne runtime) |
-| `RESTIC_REPOSITORY` | jen pro backup | např. `b2:stavebni-denik-backup:/restic` |
-| `RESTIC_PASSWORD` | jen pro backup | **ULOŽ MIMO Fly** — bez něj zálohy nedešifruješ! |
-| `B2_ACCOUNT_ID`, `B2_ACCOUNT_KEY` | jen pro B2 backup | App key omezený na bucket |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | jen pro S3/R2 backup | Alternativa k B2 |
-| `ALERT_EMAIL` | ne | Cílová adresa pro SMTP alerty (např. broken audit chain) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | ne | Volitelný relay (Fly nemá SMTP) |
-| `NEXT_PUBLIC_APP_NAME` | ne | Branding v UI a metadata (default "Stavební deník") |
-
-Příklad nastavení:
+Nová databáze nemá uživatele. Příkaz běží uvnitř běžícího stroje:
 
 ```bash
-fly secrets set \
-  AUTH_SECRET="$(openssl rand -base64 32)" \
-  AUTH_URL="https://stavebni-denik.fly.dev" \
-  --app stavebni-denik
+fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin alice 'Alice Nováková'"
 ```
 
----
+Vypíše vygenerované heslo (jednou, jen na standardní výstup). Platí 7 dní a při prvním přihlášení se musí změnit. Zapomenuté heslo jediného administrátora obnoví `reset-password <přezdívka>`. Další uživatele zakládá administrátor v aplikaci.
 
-## 4. Bootstrap (jednorázový po prvním deployi)
+## Ověření deníku
+
+Audit log je řetěz hashů a databáze odmítá `UPDATE`, `DELETE` i `TRUNCATE`; kdo ale vlastní tabulku, může triggery vypnout. Proto se poslední řádek má zaznamenávat **mimo databázi**:
 
 ```bash
-# 1. Ověř, že migrace proběhly (`release_command` ve fly.toml):
-fly logs --app stavebni-denik | grep "Applying migration"
-
-# 2. Vytvoř bootstrap admina (vypíše vygenerované heslo!):
-fly ssh console --app stavebni-denik
-> cd /app
-> node scripts/seed.js   # zkompilovaná verze TS
-# nebo pokud máš tsx v image:
-> pnpm db:seed
-
-# Výpis:
-#   === Seed complete ===
-#   Nickname: admin
-#   Password: AbC123!xyz...
-#   ULOŽ DO PASSWORD MANAGERU!
-
-# 3. Otevři prohlížeč → https://stavebni-denik.fly.dev/login
-# 4. Přihlas se → mustChangePwd=true → změň heslo
+fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head"            # vypíše <id>:<hash>
+fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify 1234:ab12…"
 ```
 
----
+`audit-verify` skončí kódem `0` (řetěz je v pořádku), `1` (poškozený nebo useknutý) nebo `3` (kontrolu nešlo provést). Hlavu zaznamenává každou noc workflow `.github/workflows/audit-anchor.yml` (skript `scripts/audit/record-anchor.sh`): ověří řetěz proti poslední zaznamenané hlavě, zapíše novou hlavu do **soukromého repozitáře** a nechá ji časově orazítkovat nezávislou autoritou (RFC 3161). Když kterákoli kontrola selže, nic se nezapíše a běh skončí chybou. **Selže také, dokud není nastavené**, aby nikdo nevěřil, že se řetěz hlídá, když se nehlídá; do té doby ho lze v záložce Actions vypnout.
 
-## 5. Backup & restore (Backblaze B2)
+Jednorázové nastavení (dělá člověk, ne kód):
 
-Detail v README.md → "Backup & restore". Krátký reference:
+1. Vytvořte **soukromý repozitář** pro kotvy (např. `stavebni-denik-audit-anchors`) a pravidlo větve, které zakazuje force-push a mazání.
+2. Od provozovatele autority (výchozí je `https://freetsa.org/tsr`) získejte její certifikát, **porovnejte otisk s druhým zdrojem** a commitněte ho do repozitáře kotev jako `tsa/ca.pem` (a `tsa/tsa.pem`, pokud ho token nenese). Certifikát se nikdy nestahuje při každém běhu: token ověřený certifikátem stáhnutým při běhu nic nedokazuje.
+3. V hlavním repozitáři nastavte tajemství `AUDIT_JDBC_URL`, `AUDIT_DB_USER` (role, která smí jen `SELECT` z `audit_log`), `AUDIT_DB_PASSWORD` a `AUDIT_ANCHOR_TOKEN` (token s právem zápisu jen do repozitáře kotev) a proměnnou `AUDIT_ANCHOR_REPO` (`vlastnik/nazev`); volitelně `AUDIT_TSA_URL`. Databáze musí být dosažitelná z GitHubu.
+4. Spusťte workflow ručně (`workflow_dispatch`); první běh zapíše první kotvu (useknutý konec lze poznat až od ní).
 
-### Setup B2
+Co kotvy nechrání: zápisy po poslední kotvě (až den, déle po neúspěšné noci). Workflow také **nepozná, že přestal běžet**: neúspěšná noc pošle upozornění, ale GitHub plánované workflowy v repozitáři bez aktivity po 60 dnech potichu vypne. Stáří nejnovějšího záznamu `anchors/anchor-….txt` proto hlídejte něčím mimo toto workflow (externí monitor, ruční kontrola). Když autorita vymění certifikát, přidejte nový do `tsa/ca.pem` (lze spojit víc certifikátů); staré tokeny se ověřují k času svého vydání.
+
+Později lze kotvu ověřit nezávisle na databázi: `openssl ts -verify -data anchors/anchor-….txt -in anchors/anchor-….tsr -CAfile tsa/ca.pem` dokazuje, že záznam existoval v daném čase, a `audit-verify <hlava>` dokazuje, že databáze ten řádek stále obsahuje beze změny.
+
+## Zálohy
+
+Zálohu dělá `scripts/backup/backup.sh`, obnovu `scripts/backup/restore.sh` a `scripts/backup/drill.sh` obojí vyzkouší, **včetně toho, co musí obnova odmítnout**. CI ho spouští po E2E testech nad daty, která testy nechaly (podepsané záznamy, fotky, dodatky). Záloha, kterou nikdo nikdy neobnovil, je jen naděje; podrobnosti jsou v „Backups and the restore drill“ v `PROJECT.md`.
 
 ```bash
-# 1. Backblaze B2 console: vytvoř bucket "stavebni-denik-backup" + app key
-# 2. Fly secrets:
-fly secrets set \
-  RESTIC_REPOSITORY="b2:stavebni-denik-backup:/restic" \
-  RESTIC_PASSWORD="$(openssl rand -base64 32)" \
-  B2_ACCOUNT_ID="<keyID>" \
-  B2_ACCOUNT_KEY="<applicationKey>" \
-  --app stavebni-denik
+# záloha: adresář denik-<čas UTC>/ (db.dump, photos.tar.gz, manifest.json, SHA256SUMS)
+BACKUP_ROOT=/mnt/zalohy UPLOADS_DIR=/data/uploads \
+  PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=stavebni_denik \
+  scripts/backup/backup.sh
 
-# 3. ULOŽ RESTIC_PASSWORD mimo Fly (heslový manažer + off-site safe)
+# obnova: do PRÁZDNÉ databáze a prázdného adresáře (nic nepřepíše); s APP_JAR ověří i řetěz auditu a podpisy
+RESTORE_UPLOADS_DIR=/data/uploads-obnova APP_JAR=backend-all.jar \
+  PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=stavebni_denik_obnova \
+  scripts/backup/restore.sh /mnt/zalohy/denik-20261009T120000Z
 ```
 
-### Spustit zálohu
+- Skript záloh na konci vypíše **hlavu audit řetězu** (`<id>:<hash>`): zapište ji mimo databázi, je to kotva pro `audit-verify` (viz výše).
+- Obnova skončí „restore drill passed“, jen když sedí kontrolní součty záloh, `pg_restore` proběhne bez chyby, **každý soubor fotky odpovídá hashi zaznamenanému při nahrání**, řetěz auditu je neporušený a obsahuje řádek z manifestu a `verify-signatures` potvrdí, že podepsané záznamy jsou, jak byly podepsány. Po skutečné obnově spusťte `scripts/sql/bootstrap-app-role.sql` a příkaz `migrate` (krok 4), aby aplikační role dostala oprávnění, a teprve potom spusťte aplikaci.
+- Záloha obsahuje osobní údaje i samotný důkazní materiál: kopírujte ji na **šifrované úložiště, ze kterého stroj aplikace nemůže mazat** (restic, age + objektové úložiště…); skript to nedělá.
+- Je-li lokální `pg_dump` starší než server, nastavte `PG_DOCKER_IMAGE=postgres:18-alpine` (skripty pak pouští klienta z kontejneru).
+
+**Zatím není nastavené:** pravidelné spouštění záloh, kopie mimo stroj a pravidelné zkušební obnovy nad produkčními daty. Je to provozní krok, který čeká na produkční databázi; bez něj skutečná data nepouštějte.
+
+## Uchovávání IP adres a user agentů
+
+IP adresa a user agent požadavku jsou osobní údaje, proto **nejsou součástí hashe audit logu** (řetěz je trvalý a nejde mazat). Ukládají se do postranních tabulek `audit_request_context` (k řádkům audit logu) a `access_log` (přihlášení, neúspěšná přihlášení a odhlášení; není součástí právního řetězu) a uchovávají se **12 měsíců**. Databáze odmítne takový řádek změnit nebo smazat dřív; starší maže příkaz:
 
 ```bash
-# Ručně:
-fly ssh console --app stavebni-denik -C "/app/scripts/backup.sh"
-
-# Nightly (Fly Machines schedule):
-fly machine run . --schedule daily \
-  --command "/app/scripts/backup.sh" \
-  --app stavebni-denik
+fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records"
 ```
 
-### Restore
+**Spouštějte ho pravidelně** (např. týdně): lhůta je slib v zásadách ochrany osobních údajů. Pravidelné spouštění zatím není nastavené (čeká na produkční infrastrukturu, stejně jako zálohy). Zálohy obsahují tyto tabulky také, takže se na ně vztahuje stejná lhůta: zálohy starší než 12 měsíců je třeba mazat.
+
+## Aktualizace
 
 ```bash
-# 1. Z lokálního stroje s restic + secrets:
-restic snapshots --tag stavebni-denik-nightly
-restic restore <snapshot-id> --target /tmp/restore
-
-# 2. Postgres dump → DB:
-gunzip -c /tmp/restore/tmp/<...>/db.sql.gz | \
-  fly postgres connect --app stavebni-denik-pg | \
-  psql
-
-# 3. Fotky zpět:
-rsync -a /tmp/restore/data/photos/ \
-  fly-ssh-tunnel:/data/photos/
-
-# 4. Ověř audit chain:
-fly ssh console --app stavebni-denik -C "pnpm verify:audit"
-```
-
-Pokud `verify:audit` nahlásí porušení, je obnovený stav nedůvěryhodný
-— vyber starší snapshot a opakuj.
-
----
-
-## 6. Monitoring + alerty
-
-| Co | Kde |
-|---|---|
-| **Server errors** | stdout plain-text logy ve Fly Grafaně |
-| **Healthcheck** | `/healthz` (DB + volume probe) — Fly machines health check |
-| **Audit chain integrity** | Daily cron `pnpm verify:audit` → exit 1 + in-app notification pro každého isAdmin uživatele |
-| **CPU / RAM / disk** | Fly dashboard, alerty v Fly UI |
-| **Backup success** | restic exit code + log do `/data/backup.log` |
-| **PDF render slowness** | stdout access / time logy |
-
----
-
-## 7. Update / re-deploy
-
-```bash
-# Po push do main:
-git pull
+git checkout main && git pull
 fly deploy --app stavebni-denik
-
-# Fly automaticky:
-#   1. Build Dockerfile
-#   2. Spustí release_command (= prisma migrate deploy)
-#   3. Vytvoří nový machine, spustí, healthcheck OK → swap traffic
-#   4. Zruší starý machine
 ```
 
-### Rollback
+V produkci aplikace **schéma sama nemigruje** (`MIGRATE_ON_START` je tam ve výchozím stavu vypnuté): pokud schéma není aktuální, odmítne nastartovat s hláškou „the database schema is out of date ... run the migrate command“. Postup je proto: `migrate` s údaji vlastníka (jako v kroku 4), potom `fly deploy`. Migrace se nevracejí zpět, takže před nasazením zkontrolujte, že předchozí verze aplikace s novým schématem funguje (nasazení a migrace se překrývají jen na dobu startu).
 
-```bash
-fly releases --app stavebni-denik
-fly releases rollback <version> --app stavebni-denik
-```
-
-**Pozor na migrace.** Pokud nový deploy přidal sloupec a rollback to
-nevrátí, schema bude mít sloupec, ale starý kód ho nezná (= většinou
-OK, Prisma ignoruje extra sloupce). Pokud nový deploy DROP-uje
-sloupec, rollback NEPOMŮŽE — kód bude chtít sloupec, který už není.
-Zkontroluj migraci před deployem.
-
----
-
-## 8. Po-deploy checklist
-
-```
-[ ] fly status --app stavebni-denik → machine running, healthy
-[ ] fly logs --app stavebni-denik | grep "Ready in"
-[ ] curl -fsS https://stavebni-denik.fly.dev/healthz → 200
-[ ] Login na /login funguje
-[ ] /admin/audit má pdf.export / session.signin entries
-[ ] Backup secrets nastaveny → fly ssh console -C "/app/scripts/backup.sh" → exit 0
-[ ] Daily cron schedule existuje pro backup + verify:audit
-```
-
----
-
-## 9. Známé limity
-
-- **Single-region, single-machine.** Pro multi-region by se PDF
-  queue + audit log (s `FOR UPDATE` lock) musela přepracovat na
-  cross-instance synchronizaci.
-- **Fly Postgres free tier** stačí pro pár stovek záznamů. Při růstu
-  → škálovat machine přes `fly postgres update`.
-- **SMTP přes Fly nefunguje nativně.** Pokud chceš e-mail alerty,
-  potřebuješ externí relay (SendGrid, Postmark, Mailgun). V app se
-  to gate-uje na `SMTP_*` secrets — bez nich aplikace alerty
-  zobrazuje JEN v in-app notification bell.
-- **`/data` volume je SPF.** Strategie: nightly restic backup do
-  off-site B2 + `pnpm reconcile:photos` cron pro detekci orphan/
-  missing souborů.
-
----
-
-## 10. Místa, která možná budou potřeba laděním
-
-| Co | Kde |
-|---|---|
-| PDF render timeout (default 120 s) | `fly.toml` → `[deploy] timeout` nebo `app/api/projects/[id]/pdf/route.ts` `export const maxDuration` |
-| PDF queue size (default 1) | `PDF_RENDER_CONCURRENCY` env (vyšší jen na ≥ 2 GB RAM) |
-| Swap size | `fly.toml` → `swap_size_mb` |
-| Photo upload rate-limit | `src/server/rate-limit.ts` → `PHOTO_UPLOAD_USER_LIMIT` |
-| Login rate-limit | `src/server/rate-limit.ts` → `LOGIN_NICKNAME_LIMIT` / `LOGIN_IP_LIMIT` |
-| Audit retention | (žádná — audit_log je append-only forever) |
-| Photo retention | (žádná — `Photo.deletedAt` je soft, soubory zůstávají) |
-
-Co **NEMĚŇ** bez konzultace:
-
-- **Audit hash chain canonical JSON** — `src/server/audit-hash.ts`
-  `canonicalJSON()`. Jakákoliv změna invaliduje celý historický
-  chain.
-- **Photo path layout** — `{DATA_DIR}/photos/{projectId}/{reportId}/
-  {uuid}.jpg`. Změna by potřebovala batch migrace souborů.
-- **DB triggery na `audit_log`** — append-only ochrana.
+**Jednodušší, slabší varianta pro testovací data:** jedna role, `MIGRATE_ON_START=true` a `DB_USER` = vlastník. Funguje, ale aplikace pak vlastní tabulky a kdo získá její heslo, může vypnout triggery, které chrání záznamy (viz „Database roles“ v `PROJECT.md`). Pro skutečná data ji nepoužívejte.

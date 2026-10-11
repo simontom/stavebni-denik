@@ -35,10 +35,6 @@ class ReportBodyRoutesTest : BaseIntegrationTest() {
         return UUID.fromString(project.id)
     }
 
-    private fun addMember(projectId: UUID, user: SessionUser) {
-        dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, projectId).set(PROJECT_MEMBERS.USERID, user.id).execute()
-    }
-
     private fun stored(projectId: UUID, date: String) =
         dsl.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.PROJECTID.eq(projectId).and(DAILY_REPORTS.DATE.eq(java.time.LocalDate.parse(date))))

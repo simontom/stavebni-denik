@@ -1,9 +1,11 @@
 package cz.stavebni.denik.cli
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.services.AccessLogService
 import cz.stavebni.denik.services.AdminBootstrapService
 import cz.stavebni.denik.services.AuditAnchor
 import cz.stavebni.denik.services.AuditService
+import cz.stavebni.denik.services.ReportSignature
 import ch.qos.logback.classic.Level
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
@@ -13,10 +15,29 @@ import kotlin.system.exitProcess
 /**
  * Operator commands that run outside the web application, against the same database:
  *
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt migrate
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin <nickname> <displayName>
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password <nickname>
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records
+ *
+ * `prune-access-records` deletes the addresses and user agents kept with audit rows and the sign-in log once they are older
+ * than twelve months (decision D7; the database refuses to delete anything younger). Run it regularly: the retention is a
+ * promise made in the privacy notice.
+ *
+ * `verify-signatures` hashes every signed entry again and every photo file under UPLOADS_DIR, and compares them with what
+ * was recorded when the entry was signed and the photo uploaded. It reads only. It is what a restore from a backup runs to
+ * prove that nothing signed has changed; exit 1 when something no longer matches.
+ *
+ * `migrate` brings the schema up to date with the OWNER role's credentials (DB_MIGRATE_USER / DB_MIGRATE_PASSWORD; JDBC_URL as
+ * for the application) and, when DB_APP_ROLE names the application's role, gives that role its data-access privileges
+ * (db/grants/app-role.sql). In production the application never migrates: run this first, from a place that holds the
+ * owner's password and the application's machine does not.
+ *
+ * The other commands run as the application's role (DB_USER). In production they do not migrate and refuse a schema that is
+ * not current; elsewhere they migrate as before.
  *
  * The two audit commands only read: they do not migrate the schema, so they work with a read-only database role and
  * can run from a scheduler against a database that a newer or older version of the application owns.
@@ -36,14 +57,20 @@ fun main(args: Array<String>) {
         exitProcess(2)
     }
     quietLogging()
+    val production = System.getenv("APP_ENV")?.lowercase() == "production"
     exitProcess(
         AdminCli.runGuarded(args.toList(), out = ::println, err = System.err::println) {
-            DatabaseFactory.init(
-                jdbcUrl = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
-                user = System.getenv("DB_USER") ?: "denik",
-                password = System.getenv("DB_PASSWORD") ?: "denik_dev",
-                migrate = !AdminCli.readsOnly(args.toList()),
-            )
+            // `migrate` connects by itself, with the owner's credentials; the others connect as the application's role.
+            if (args.first() != "migrate") {
+                DatabaseFactory.init(
+                    jdbcUrl = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik",
+                    user = System.getenv("DB_USER") ?: "denik",
+                    password = System.getenv("DB_PASSWORD") ?: "denik_dev",
+                    // Production: the application's role migrates nothing; it must find the schema current.
+                    migrate = !production && !AdminCli.readsOnly(args.toList()),
+                    requireCurrent = production,
+                )
+            }
         },
     )
 }
@@ -63,23 +90,29 @@ private fun quietLogging() {
 
 object AdminCli {
     const val USAGE = """Usage:
+  migrate                                 migrate the schema as the owner role (DB_MIGRATE_USER / DB_MIGRATE_PASSWORD) and grant DB_APP_ROLE
   create-admin <nickname> <displayName>   create the first administrator (only while there is none)
   reset-password <nickname>               give an active user a new temporary password
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
-  audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut"""
+  audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
+  verify-signatures                       hash every signed entry and photo file again and compare with what was recorded
+  prune-access-records                    delete addresses and user agents older than twelve months (sign-in log, audit request context)"""
 
     /** Whether [args] name a command with the right number of arguments. */
     fun hasValidShape(args: List<String>): Boolean =
         when (args.firstOrNull()) {
+            "migrate" -> args.size == 1
             "create-admin" -> args.size == 3
             "reset-password" -> args.size == 2
             "audit-head" -> args.size == 1
+            "verify-signatures" -> args.size == 1
+            "prune-access-records" -> args.size == 1
             "audit-verify" -> args.size == 1 || (args.size == 2 && AuditAnchor.parse(args[1]) != null)
             else -> false
         }
 
     /** The commands that only read: they never change the schema or any row. */
-    fun readsOnly(args: List<String>): Boolean = args.firstOrNull() in setOf("audit-head", "audit-verify")
+    fun readsOnly(args: List<String>): Boolean = args.firstOrNull() in setOf("audit-head", "audit-verify", "verify-signatures")
 
     /**
      * [connect] opens the database; [run] then carries the command out. Anything unexpected on the way (a refused
@@ -101,6 +134,10 @@ object AdminCli {
         val command = args.firstOrNull()
         val usage = { err(USAGE); 2 }
         return when (command) {
+            "migrate" -> {
+                if (args.size != 1) return usage()
+                migrate(out, err)
+            }
             "create-admin" -> {
                 if (args.size != 3) return usage()
                 attempt(err) { AdminBootstrapService.createFirstAdmin(args[1], args[2]) }
@@ -124,6 +161,23 @@ object AdminCli {
                     else -> { out(head.toString()); 0 }
                 }
             }
+            "prune-access-records" -> {
+                if (args.size != 1) return usage()
+                val pruned = AccessLogService.prune(DatabaseFactory.dsl)
+                out("Pruned ${pruned.accessLog} sign-in log rows and ${pruned.auditRequestContext} audit request records older than ${AccessLogService.RETENTION_MONTHS} months.")
+                0
+            }
+            "verify-signatures" -> {
+                if (args.size != 1) return usage()
+                val result = ReportSignature.checkAll(DatabaseFactory.dsl)
+                if (result.ok) {
+                    out("Signatures OK: ${result.signed} signed entries" + if (result.withoutHash > 0) " (${result.withoutHash} signed before hashes existed: nothing to compare)." else ".")
+                    0
+                } else {
+                    result.problems.forEach { err("Signature BROKEN: $it") }
+                    1
+                }
+            }
             "audit-verify" -> {
                 if (args.size !in 1..2) return usage()
                 val anchor = args.getOrNull(1)?.let { AuditAnchor.parse(it) ?: return usage() }
@@ -139,6 +193,28 @@ object AdminCli {
             }
             else -> usage()
         }
+    }
+
+    /** Migrates with the owner's credentials, and grants the application's role when it is named. */
+    private fun migrate(out: (String) -> Unit, err: (String) -> Unit): Int {
+        val url = System.getenv("JDBC_URL") ?: "jdbc:postgresql://localhost:5432/stavebni_denik"
+        val user = System.getenv("DB_MIGRATE_USER") ?: System.getenv("DB_USER") ?: "denik"
+        val password = System.getenv("DB_MIGRATE_PASSWORD") ?: System.getenv("DB_PASSWORD") ?: "denik_dev"
+        val appRole = System.getenv("DB_APP_ROLE")?.takeIf { it.isNotBlank() }
+        DatabaseFactory.pool(url, user, password, maxSize = 2).use { ds ->
+            val executed = DatabaseFactory.migrate(ds)
+            out("Schema migrated as '$user': $executed migration(s) applied.")
+            val future = DatabaseFactory.futureMigrations(ds)
+            if (future.isNotEmpty()) {
+                err("The database has migrations this version does not know (${future.joinToString(", ")}): it belongs to a newer version of the application. Use that version.")
+                return 1
+            }
+            if (appRole != null) {
+                DatabaseFactory.grantAppRole(ds, appRole)
+                out("Privileges of '$appRole' set: data access only.")
+            }
+        }
+        return 0
     }
 
     private fun attempt(err: (String) -> Unit, block: suspend () -> AdminBootstrapService.Result): AdminBootstrapService.Result? =

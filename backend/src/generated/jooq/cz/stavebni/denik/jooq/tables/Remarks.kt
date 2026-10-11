@@ -122,6 +122,11 @@ open class Remarks(
      */
     val DELETEDAT: TableField<RemarksRecord, OffsetDateTime?> = createField(DSL.name("deletedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
+    /**
+     * The column <code>public.remarks.externalAuthor</code>.
+     */
+    val EXTERNALAUTHOR: TableField<RemarksRecord, String?> = createField(DSL.name("externalAuthor"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<RemarksRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<RemarksRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<RemarksRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)

@@ -74,7 +74,7 @@ abstract class BaseIntegrationTest {
             "addenda", "audit_log", "authorized_persons", "photos",
             "material_needs", "remarks", "visits", "daily_reports",
             "site_handovers", "project_members", "projects", "sessions",
-            "rate_limit_attempts", "notifications", "users"
+            "rate_limit_attempts", "access_log", "audit_request_context", "notifications", "users"
         )
         // The audit log refuses TRUNCATE (migration V2); tests start from an empty database, so step around that guard.
         DatabaseFactory.dsl.execute("ALTER TABLE \"audit_log\" DISABLE TRIGGER audit_log_no_truncate")
@@ -85,12 +85,30 @@ abstract class BaseIntegrationTest {
         }
     }
 
+    /**
+     * Makes [user] a member of the project in [role] (by default the role of their account). The role of a membership
+     * has no database default: what someone may do in a project follows it.
+     */
+    fun addMember(projectId: UUID, user: SessionUser, role: Role = user.role) {
+        val dbRole = cz.stavebni.denik.jooq.enums.Role.valueOf(role.name)
+        dsl.insertInto(PROJECT_MEMBERS)
+            .set(PROJECT_MEMBERS.PROJECTID, projectId)
+            .set(PROJECT_MEMBERS.USERID, user.id)
+            .set(PROJECT_MEMBERS.ROLE, dbRole)
+            .onConflict(PROJECT_MEMBERS.PROJECTID, PROJECT_MEMBERS.USERID)
+            .doUpdate()
+            .set(PROJECT_MEMBERS.ROLE, dbRole)
+            .execute()
+    }
+
     fun createTestUser(
         nickname: String = "user_${UUID.randomUUID().toString().substring(0, 8)}",
         displayName: String = "Test User",
         role: Role = Role.BOSS,
         isAdmin: Boolean = false,
-        rawPassword: String = "Password123!"
+        rawPassword: String = "Password123!",
+        /** A project manager signs diaries and so has a ČKAIT number (decision D2); other roles do not. */
+        ckaitNumber: String? = if (role == Role.BOSS) "0012345" else null,
     ): SessionUser {
         val userId = UUID.randomUUID()
         val pwdHash = PasswordService.hash(rawPassword)
@@ -105,6 +123,7 @@ abstract class BaseIntegrationTest {
             .set(USERS.ISADMIN, isAdmin)
             .set(USERS.ISACTIVE, true)
             .set(USERS.MUSTCHANGEPWD, false)
+            .set(USERS.CKAITNUMBER, ckaitNumber)
             .set(USERS.CREATEDAT, now)
             .set(USERS.UPDATEDAT, now)
             .execute()

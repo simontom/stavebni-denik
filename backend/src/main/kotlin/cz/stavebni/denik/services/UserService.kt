@@ -2,11 +2,14 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.assertCan
+import cz.stavebni.denik.domain.can
+import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.serialization.Serializable
 import org.jooq.DSLContext
@@ -138,9 +141,16 @@ object UserService {
             .map { toDto(it) }
     }
 
-    /** Active users for pickers; available to project managers (BOSS) and admins. */
+    /**
+     * Active users for pickers (who to add to a project, who to name site manager). Available to administrators, to
+     * people who may create projects (global role BOSS) and to anyone who manages at least one project.
+     */
     fun listUserOptions(tx: DSLContext, actor: SessionUser): List<UserOptionDto> {
-        if (!actor.isAdmin) assertCan(actor, Action.ProjectMemberManage)
+        val managesAProject = tx.fetchExists(
+            PROJECT_MEMBERS,
+            PROJECT_MEMBERS.USERID.eq(actor.id).and(PROJECT_MEMBERS.ROLE.eq(DbRole.BOSS))
+        )
+        if (!actor.isAdmin && !can(actor, Action.ProjectCreate) && !managesAProject) throw ForbiddenException(Action.ProjectMemberManage)
         return tx.select(USERS.ID, USERS.NICKNAME, USERS.DISPLAYNAME, USERS.ROLE)
             .from(USERS)
             .where(USERS.DELETEDAT.isNull)

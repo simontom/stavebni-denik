@@ -1,22 +1,16 @@
-<!-- BEGIN:nextjs-agent-rules -->
+# Stavební deník
 
-# This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
-<!-- END:nextjs-agent-rules -->
+Kotlin backend (`backend/`, Ktor + jOOQ + Flyway + PostgreSQL 18) and a Vite + React SPA (`frontend/`). **Read [`PROJECT.md`](PROJECT.md) first**: architecture, rules, security, how to run and test. The old Next.js/Prisma app has been removed.
 
 # Security Invariants
 
-See [`docs/SECURITY.md`](docs/SECURITY.md) for details on image upload airlock validations (magic byte signatures, re-encoding of every upload into a fresh JPEG, 8MP/5MB caps; the Kotlin backend does this with ImageIO, see PROJECT.md "Request and upload limits").
+Image uploads are an airlock: magic bytes, header-checked dimensions before any decoding, size caps, and re-encoding of every upload into a fresh metadata-free JPEG (the Kotlin backend does this with ImageIO). Details in [`PROJECT.md`](PROJECT.md), "Request and upload limits".
 
 # Git Workflow & Pull Requests (Strict)
 
 - **Always use Pull Requests / Merge Requests**: NEVER commit or push directly to `main`.
 - All work (features, fixes, dependency updates, documentation) must be done on a dedicated branch (e.g. `feat/...`, `fix/...`, `chore/...`) and merged via a Pull Request against `main`.
-- Ensure all CI gates (`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`) pass before requesting review / merging.
+- Ensure all CI gates pass before requesting review / merging: backend `./gradlew assemble test`, jOOQ drift check (`./gradlew :backend:generateJooq` leaves `backend/src/generated/jooq` unchanged), frontend `pnpm lint && pnpm build` (in `frontend/`), E2E `pnpm typecheck && pnpm test:e2e` (at the root), and the Docker image build + boot test. `.github/workflows/ci.yml` is the source of truth.
 
 <!-- graft:start -->
 

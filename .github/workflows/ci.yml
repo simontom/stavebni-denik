@@ -78,6 +78,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
+
       - name: Set up JDK 21
         uses: actions/setup-java@v5
         with:
@@ -118,6 +121,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -167,24 +173,26 @@ jobs:
     timeout-minutes: 25
     needs: [lint_build]
 
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: stavebni_denik
-          POSTGRES_USER: denik
-          POSTGRES_PASSWORD: denik_dev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U denik -d stavebni_denik"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
+
+      # A step, not a service container: service containers are pulled before the first step runs, so the mirror above
+      # could not help them.
+      - name: Start PostgreSQL 18
+        run: |
+          docker run -d --name e2e-postgres -p 5432:5432 \
+            -e POSTGRES_DB=stavebni_denik -e POSTGRES_USER=denik -e POSTGRES_PASSWORD=denik_dev \
+            postgres:18-alpine >/dev/null
+          # Over TCP: while the image initialises, a temporary server answers on the socket only (see the Docker job).
+          for i in $(seq 1 60); do
+            docker exec e2e-postgres pg_isready -h 127.0.0.1 -U denik -d stavebni_denik >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec e2e-postgres pg_isready -h 127.0.0.1 -U denik -d stavebni_denik
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -208,6 +216,9 @@ jobs:
         run: |
           cd frontend
           pnpm install --frozen-lockfile
+
+      - name: Type-check the E2E code
+        run: pnpm typecheck
 
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
@@ -252,6 +263,38 @@ jobs:
           set -o pipefail
           pnpm exec playwright test 2>&1 | tee /tmp/playwright.log
 
+      # Backs up the database and photos the tests just created (real signed entries, addenda, acknowledgements), restores
+      # them into an empty database and verifies the result (photo hashes, audit chain against the anchor, signatures),
+      # then shows that the restore refuses a non-empty target, a damaged backup and a replaced photo.
+      - name: Backup and restore drill
+        timeout-minutes: 5
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGUSER: denik
+          PGPASSWORD: denik_dev
+          PGDATABASE: stavebni_denik
+          PG_DOCKER_IMAGE: postgres:18-alpine
+          UPLOADS_DIR: backend/uploads
+          DRILL_DIR: ${{ runner.temp }}/restore-drill
+        run: |
+          set -o pipefail
+          ./gradlew :backend:shadowJar -q --console=plain
+          APP_JAR="$PWD/backend/build/libs/backend-all.jar" bash scripts/backup/drill.sh 2>&1 | tee /tmp/restore-drill.log
+
+      # The audit anchor (decision D4): records the head of the audit log outside the database with an RFC 3161 token, against a
+      # throwaway time-stamping authority, and shows that it refuses an unreachable authority, an edited earlier record, a log
+      # that lacks the row an earlier record named, and a certificate that is not the pinned one.
+      - name: Audit anchor recording test
+        timeout-minutes: 5
+        env:
+          JDBC_URL: jdbc:postgresql://localhost:5432/stavebni_denik
+          DB_USER: denik
+          DB_PASSWORD: denik_dev
+        run: |
+          set -o pipefail
+          APP_JAR="$PWD/backend/build/libs/backend-all.jar" bash scripts/audit/anchor-test.sh 2>&1 | tee /tmp/audit-anchor-test.log
+
       - name: E2E summary
         if: ${{ !cancelled() }}
         run: |
@@ -286,6 +329,8 @@ jobs:
             /tmp/backend.log
             /tmp/playwright.log
             /tmp/gradle-assemble.log
+            /tmp/restore-drill.log
+            /tmp/audit-anchor-test.log
           retention-days: 14
 
   docker:
@@ -296,6 +341,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
 
       # The image build uses the committed jOOQ sources and needs no JDK or
       # database on the runner.
@@ -315,7 +363,8 @@ jobs:
       - name: Boot image against PostgreSQL 18
         run: |
           set -euo pipefail
-          DB_PASSWORD="$(openssl rand -hex 16)"
+          DB_PASSWORD="$(openssl rand -hex 16)"       # the owner of the database (migrates)
+          APP_DB_PASSWORD="$(openssl rand -hex 16)"   # the role the application runs as (data access only)
           JWT_SECRET="$(openssl rand -base64 32)"
 
           cleanup() {
@@ -334,10 +383,18 @@ jobs:
           docker run -d --name smoke-pg --network smoke-net \
             -e POSTGRES_DB=stavebni_denik -e POSTGRES_USER=denik -e POSTGRES_PASSWORD="$DB_PASSWORD" \
             postgres:18-alpine >/dev/null
+          # Over TCP (-h 127.0.0.1), not the socket: while the image initialises, a temporary server answers on the socket
+          # only and then restarts, so a socket check can pass just before the database goes away for a moment.
           for i in $(seq 1 30); do
-            docker exec smoke-pg pg_isready -U denik -d stavebni_denik >/dev/null 2>&1 && break
+            docker exec smoke-pg pg_isready -h 127.0.0.1 -U denik -d stavebni_denik >/dev/null 2>&1 && break
             sleep 1
           done
+          docker exec smoke-pg pg_isready -h 127.0.0.1 -U denik -d stavebni_denik
+
+          # The application's own database role: it owns nothing (decision D5).
+          docker exec -i smoke-pg psql -U denik -d stavebni_denik -v ON_ERROR_STOP=1 -v app_password="$APP_DB_PASSWORD" \
+            < scripts/sql/bootstrap-app-role.sql >/dev/null
+          echo "application role created"
 
           # An unreleased build must refuse to start in production mode unless the
           # operator opts in explicitly (the guard runs before the database is used).
@@ -349,12 +406,30 @@ jobs:
           grep -q 'ALLOW_UNRELEASED_BUILD' /tmp/release-guard.log
           echo "release guard refuses an unreleased production start"
 
+          # In production the application does not migrate: on a database nobody has migrated it refuses to start.
+          if docker run --rm --network smoke-net -e APP_ENV=production -e ALLOW_UNRELEASED_BUILD=true -e JWT_SECRET="$JWT_SECRET" \
+              -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik -e DB_USER=app -e DB_PASSWORD="$APP_DB_PASSWORD" \
+              stavebni-denik:ci > /tmp/stale-schema.log 2>&1; then
+            echo "::error::the image started in production mode on a schema that was never migrated"
+            exit 1
+          fi
+          grep -q 'out of date' /tmp/stale-schema.log
+          echo "an unmigrated schema stops the application"
+
+          # The owner migrates and gives the application's role data access, from outside the application's machine.
+          docker run --rm --network smoke-net -e APP_ENV=production \
+            -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
+            -e DB_MIGRATE_USER=denik -e DB_MIGRATE_PASSWORD="$DB_PASSWORD" -e DB_APP_ROLE=app \
+            stavebni-denik:ci java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt migrate | tee /tmp/migrate.log
+          grep -q 'migrated' /tmp/migrate.log
+
           # /data is a fresh volume, owned by root like a Fly volume is: the entrypoint has to hand it to the app user.
+          # The application runs as the database role that owns nothing.
           docker volume create smoke-data >/dev/null
           docker run -d --name smoke-app --network smoke-net -p 8080:8080 -v smoke-data:/data \
             -e APP_ENV=production -e ALLOW_UNRELEASED_BUILD=true -e JWT_SECRET="$JWT_SECRET" \
             -e JDBC_URL=jdbc:postgresql://smoke-pg:5432/stavebni_denik \
-            -e DB_USER=denik -e DB_PASSWORD="$DB_PASSWORD" \
+            -e DB_USER=app -e DB_PASSWORD="$APP_DB_PASSWORD" \
             stavebni-denik:ci >/dev/null
 
           for i in $(seq 1 60); do
@@ -372,6 +447,21 @@ jobs:
           owner="$(docker exec smoke-app stat -c %U /data/uploads)"
           echo "owner of /data/uploads: $owner"
           [ "$owner" = "app" ]
+
+          # It really connects as that role, and that role cannot change the structure or switch a guard off.
+          connected="$(docker exec smoke-pg psql -U denik -d stavebni_denik -tAc "select count(*) from pg_stat_activity where usename = 'app'")"
+          echo "connections of the application's role: $connected"
+          [ "$connected" -ge 1 ]
+          as_app() { docker exec -e PGPASSWORD="$APP_DB_PASSWORD" smoke-pg psql -h localhost -U app -d stavebni_denik -v ON_ERROR_STOP=1 -c "$1" >/dev/null 2>&1; }
+          for statement in 'create table intruder (a int)' 'alter table audit_log disable trigger all' \
+              'alter table daily_reports disable trigger daily_reports_locked_immutable' 'truncate audit_log' 'delete from audit_log'; do
+            if as_app "$statement"; then
+              echo "::error::the application's database role was able to: $statement"
+              exit 1
+            fi
+          done
+          as_app 'select count(*) from users'
+          echo "the application's role has data access and nothing else"
 
           # Every Flyway migration in the repo must have been applied.
           expected="$(ls backend/src/main/resources/db/migration/V*.sql | wc -l)"
@@ -400,3 +490,69 @@ jobs:
             echo '```'
             echo "### tail"; echo '```'; tail -n 60 /tmp/docker.log; echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e-image:
+    name: E2E tests against the built image (production mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Route Docker Hub pulls through a mirror
+        uses: ./.github/actions/docker-mirror
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        run: npm install -g pnpm@${{ env.PNPM_VERSION }}
+
+      - name: Install root dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Build image (no push)
+        run: |
+          set -o pipefail
+          docker build --progress=plain -t stavebni-denik:e2e . 2>&1 | tee /tmp/docker-e2e.log
+
+      # The same suite as the e2e job, but against what is deployed: the image in production mode, as the database
+      # role that owns nothing, with the schema migrated by the owner (scripts/ci/e2e-image.sh).
+      - name: Run Playwright against the image
+        timeout-minutes: 12
+        env:
+          IMAGE: stavebni-denik:e2e
+        run: |
+          set -o pipefail
+          bash scripts/ci/e2e-image.sh 2>&1 | tee /tmp/playwright-image.log
+
+      - name: Summary
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Playwright against the image"
+            echo '```'
+            grep -nE "✘|✓|passed|failed|flaky|Error:|Timeout|expect\(|at .*spec\.ts" /tmp/playwright-image.log | head -100 || true
+            echo '```'
+            echo "### Application log (errors)"; echo '```'
+            grep -nE "ERROR|WARN|Exception|Caused by" /tmp/e2e-image-app.log | head -60 || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-image
+          path: |
+            playwright-report/
+            test-results/
+            /tmp/e2e-image-app.log
+            /tmp/playwright-image.log
+          retention-days: 14

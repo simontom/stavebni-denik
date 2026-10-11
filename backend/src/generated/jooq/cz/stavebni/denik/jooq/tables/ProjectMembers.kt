@@ -94,7 +94,7 @@ open class ProjectMembers(
     /**
      * The column <code>public.project_members.role</code>.
      */
-    val ROLE: TableField<ProjectMembersRecord, Role?> = createField(DSL.name("role"), SQLDataType.VARCHAR.nullable(false).defaultValue(DSL.field(DSL.raw("'BOSS'::\"Role\""), SQLDataType.VARCHAR)).asEnumDataType(Role::class.java), this, "")
+    val ROLE: TableField<ProjectMembersRecord, Role?> = createField(DSL.name("role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(Role::class.java), this, "")
 
     /**
      * The column <code>public.project_members.addedAt</code>.

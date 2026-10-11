@@ -17,3 +17,9 @@ class StaleVersionException(message: String) : RuntimeException(message)
 
 /** Too many attempts in a short time. Maps to HTTP 429 with a `Retry-After` header. */
 class TooManyRequestsException(val retryAfterSeconds: Long, message: String) : RuntimeException(message)
+
+/**
+ * The person has the right role but lacks something the law requires of a signer (a ČKAIT number). Maps to HTTP 403 and,
+ * unlike a plain [ForbiddenException], tells the person why: they can fix it (an administrator fills the number in).
+ */
+class SignerNotQualifiedException(message: String) : RuntimeException(message)

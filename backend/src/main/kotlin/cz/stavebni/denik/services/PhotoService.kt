@@ -185,7 +185,7 @@ object PhotoService {
             .fetchOne() ?: throw IllegalArgumentException("Report not found")
         assertCan(
             user, Action.PhotoUpload,
-            Resource(isMember = ProjectAccess.isMember(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
+            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
         )
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
@@ -227,7 +227,7 @@ object PhotoService {
                 val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
                 assertCan(
                     user, Action.PhotoUpload,
-                    Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+                    Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
                 )
 
                 val record = tx.insertInto(PHOTOS)
@@ -238,6 +238,9 @@ object PhotoService {
                     .set(PHOTOS.WIDTH, original.width)
                     .set(PHOTOS.HEIGHT, original.height)
                     .set(PHOTOS.BYTES, original.bytes.size)
+                    // What a signature of the entry covers: the hash of each stored file, as it was when it was stored.
+                    .set(PHOTOS.SHA256, sha256(original.bytes))
+                    .set(PHOTOS.THUMBSHA256, sha256(thumbnail.bytes))
                     .set(PHOTOS.UPLOADEDBYID, user.id)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
@@ -282,7 +285,7 @@ object PhotoService {
             val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
             assertCan(
                 user, Action.PhotoDelete,
-                Resource(isMember = ProjectAccess.isMember(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
+                Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
             )
 
             val now = OffsetDateTime.now()
@@ -306,6 +309,17 @@ object PhotoService {
             .and(PHOTOS.DELETEDAT.isNull)
             .fetch()
             .map { toDto(it) }
+    }
+
+    /** The photos of many reports in ONE query (a list of reports must not ask once per report), keyed by report. */
+    fun listPhotosForReports(tx: DSLContext, reportIds: Collection<UUID>): Map<UUID, List<PhotoDto>> {
+        if (reportIds.isEmpty()) return emptyMap()
+        return tx.selectFrom(PHOTOS)
+            .where(PHOTOS.REPORTID.`in`(reportIds))
+            .and(PHOTOS.DELETEDAT.isNull)
+            .orderBy(PHOTOS.CREATEDAT.asc(), PHOTOS.ID.asc())
+            .fetch()
+            .groupBy({ it.get(PHOTOS.REPORTID)!! }, { toDto(it) })
     }
 
     /** The photo as the API shows it: no file paths, only what a client needs (the image is fetched by id). */

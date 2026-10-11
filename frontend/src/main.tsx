@@ -3,9 +3,9 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
-import { Dashboard } from "./pages/Dashboard";
 import { ProjectList } from "./pages/projects/ProjectList";
 import { NewProject } from "./pages/projects/NewProject";
+import { EditProject } from "./pages/projects/EditProject";
 import { ProjectDetail } from "./pages/ProjectDetail";
 import { DailyReport } from "./pages/DailyReport";
 import { AdminUsers } from "./pages/AdminUsers";
@@ -36,14 +36,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           }
         />
         <Route
-          path="/dashboard"
-          element={
-            <AppLayout>
-              <Dashboard />
-            </AppLayout>
-          }
-        />
-        <Route
           path="/projects"
           element={
             <AppLayout>
@@ -56,6 +48,14 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           element={
             <AppLayout>
               <NewProject />
+            </AppLayout>
+          }
+        />
+        <Route
+          path="/projects/:id/edit"
+          element={
+            <AppLayout>
+              <EditProject />
             </AppLayout>
           }
         />

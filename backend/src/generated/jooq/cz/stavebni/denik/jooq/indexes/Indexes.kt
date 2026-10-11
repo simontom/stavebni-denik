@@ -5,8 +5,10 @@
 package cz.stavebni.denik.jooq.indexes
 
 
+import cz.stavebni.denik.jooq.tables.AccessLog
 import cz.stavebni.denik.jooq.tables.Addenda
 import cz.stavebni.denik.jooq.tables.AuditLog
+import cz.stavebni.denik.jooq.tables.AuditRequestContext
 import cz.stavebni.denik.jooq.tables.AuthorizedPersons
 import cz.stavebni.denik.jooq.tables.DailyReports
 import cz.stavebni.denik.jooq.tables.MaterialNeeds
@@ -31,11 +33,14 @@ import org.jooq.impl.Internal
 // INDEX definitions
 // -------------------------------------------------------------------------
 
+val ACCESS_LOG_RECORDED_AT_IDX: Index = Internal.createIndex(DSL.name("access_log_recorded_at_idx"), AccessLog.ACCESS_LOG, arrayOf(AccessLog.ACCESS_LOG.RECORDED_AT), false)
+val ACCESS_LOG_USER_ID_RECORDED_AT_IDX: Index = Internal.createIndex(DSL.name("access_log_user_id_recorded_at_idx"), AccessLog.ACCESS_LOG, arrayOf(AccessLog.ACCESS_LOG.USER_ID, AccessLog.ACCESS_LOG.RECORDED_AT), false)
 val ADDENDA_REPORTID_IDX: Index = Internal.createIndex(DSL.name("addenda_reportId_idx"), Addenda.ADDENDA, arrayOf(Addenda.ADDENDA.REPORTID), false)
 val AUDIT_LOG_ACTION_TS_IDX: Index = Internal.createIndex(DSL.name("audit_log_action_ts_idx"), AuditLog.AUDIT_LOG, arrayOf(AuditLog.AUDIT_LOG.ACTION, AuditLog.AUDIT_LOG.TS), false)
 val AUDIT_LOG_ACTOR_ID_TS_IDX: Index = Internal.createIndex(DSL.name("audit_log_actor_id_ts_idx"), AuditLog.AUDIT_LOG, arrayOf(AuditLog.AUDIT_LOG.ACTOR_ID, AuditLog.AUDIT_LOG.TS), false)
 val AUDIT_LOG_ENTITY_TYPE_ENTITY_ID_IDX: Index = Internal.createIndex(DSL.name("audit_log_entity_type_entity_id_idx"), AuditLog.AUDIT_LOG, arrayOf(AuditLog.AUDIT_LOG.ENTITY_TYPE, AuditLog.AUDIT_LOG.ENTITY_ID), false)
 val AUDIT_LOG_ROW_HASH_KEY: Index = Internal.createIndex(DSL.name("audit_log_row_hash_key"), AuditLog.AUDIT_LOG, arrayOf(AuditLog.AUDIT_LOG.ROW_HASH), true)
+val AUDIT_REQUEST_CONTEXT_RECORDED_AT_IDX: Index = Internal.createIndex(DSL.name("audit_request_context_recorded_at_idx"), AuditRequestContext.AUDIT_REQUEST_CONTEXT, arrayOf(AuditRequestContext.AUDIT_REQUEST_CONTEXT.RECORDED_AT), false)
 val AUTHORIZED_PERSONS_LINKEDUSERID_IDX: Index = Internal.createIndex(DSL.name("authorized_persons_linkedUserId_idx"), AuthorizedPersons.AUTHORIZED_PERSONS, arrayOf(AuthorizedPersons.AUTHORIZED_PERSONS.LINKEDUSERID), false)
 val AUTHORIZED_PERSONS_PROJECTID_IDX: Index = Internal.createIndex(DSL.name("authorized_persons_projectId_idx"), AuthorizedPersons.AUTHORIZED_PERSONS, arrayOf(AuthorizedPersons.AUTHORIZED_PERSONS.PROJECTID), false)
 val DAILY_REPORTS_AUTHORID_IDX: Index = Internal.createIndex(DSL.name("daily_reports_authorId_idx"), DailyReports.DAILY_REPORTS, arrayOf(DailyReports.DAILY_REPORTS.AUTHORID), false)

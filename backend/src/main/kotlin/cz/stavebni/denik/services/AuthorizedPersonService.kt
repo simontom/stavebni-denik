@@ -3,6 +3,7 @@ package cz.stavebni.denik.services
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.AUTHORIZED_PERSONS
@@ -59,13 +60,13 @@ object AuthorizedPersonService {
     }
 
     suspend fun create(actor: SessionUser, projectId: UUID, req: CreateAuthorizedPersonRequest): AuthorizedPersonDto {
-        assertCan(actor, Action.ProjectMemberManage)
         val name = req.name.trim()
         require(name.isNotEmpty()) { "Jméno pověřené osoby je povinné" }
         val linkedUserId = req.linkedUserId?.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "linkedUserId") }
 
         return AuditService.auditedWrite(actor, "authorizedPerson") { tx ->
-            ProjectAccess.requireAccess(tx, actor, projectId)
+            val actorRole = ProjectAccess.requireAccess(tx, actor, projectId)
+            assertCan(actor, Action.ProjectMemberManage, Resource(role = actorRole))
             val record = tx.insertInto(AUTHORIZED_PERSONS)
                 .set(AUTHORIZED_PERSONS.PROJECTID, projectId)
                 .set(AUTHORIZED_PERSONS.NAME, name)
@@ -85,13 +86,13 @@ object AuthorizedPersonService {
     }
 
     suspend fun revoke(actor: SessionUser, personId: UUID): AuthorizedPersonDto {
-        assertCan(actor, Action.ProjectMemberManage)
         return AuditService.auditedWrite(actor, "authorizedPerson") { tx ->
             val existing = tx.selectFrom(AUTHORIZED_PERSONS)
                 .where(AUTHORIZED_PERSONS.ID.eq(personId))
                 .forUpdate()
                 .fetchOne() ?: throw NotFoundException("Pověřená osoba nenalezena")
-            ProjectAccess.requireAccess(tx, actor, existing.get(AUTHORIZED_PERSONS.PROJECTID)!!)
+            val actorRole = ProjectAccess.requireAccess(tx, actor, existing.get(AUTHORIZED_PERSONS.PROJECTID)!!)
+            assertCan(actor, Action.ProjectMemberManage, Resource(role = actorRole))
             // Revoking twice must not overwrite the time of the first revocation.
             if (existing.get(AUTHORIZED_PERSONS.REVOKEDAT) != null) throw ConflictException("Pověřená osoba je již odvolána")
 

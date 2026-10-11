@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 
 interface Meter {
@@ -27,6 +27,9 @@ interface AuthorizedPerson {
   revokedAt?: string | null;
 }
 
+/** How many entries one request asks for (the server's default page; its maximum is 1000). */
+const REPORT_PAGE_SIZE = 400;
+
 interface ProjectMember {
   userId: string;
   nickname: string;
@@ -43,7 +46,17 @@ interface ProjectData {
   builder: string;
   contractor: string;
   siteManagerId: string;
+  /** The role the signed-in user holds in this project; null for an administrator who is not a member. */
+  myRole?: string | null;
+  /** The version of the project; sent back when it is changed. */
+  updatedAt?: string | null;
   permitNumber?: string | null;
+  permitDate?: string | null;
+  designerName?: string | null;
+  tdsName?: string | null;
+  bozpName?: string | null;
+  subcontractors?: string | null;
+  supportingDocuments?: string | null;
   contractNumber?: string | null;
   contractDate?: string | null;
   designDocVersion?: string | null;
@@ -73,6 +86,8 @@ export const ProjectDetail: React.FC = () => {
 
   // Reports
   const [reports, setReports] = useState<ReportItem[]>([]);
+  // The server sends the entries a page at a time (newest day first); a full page means there may be older ones.
+  const [hasMoreReports, setHasMoreReports] = useState(false);
   const [newReportDate, setNewReportDate] = useState(today());
 
   // Handovers
@@ -94,10 +109,22 @@ export const ProjectDetail: React.FC = () => {
   // Members
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  // Members and authorized persons are managed by the project's manager (the role held in THIS project) or an administrator.
+  const canManage = project?.myRole === "BOSS" || Boolean(currentUser()?.isAdmin);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("INVESTOR");
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
+
+  // Replacing the site manager (stavbyvedoucí): the manager of the project names another manager of it.
+  const [showSiteManager, setShowSiteManager] = useState(false);
+  const [newSiteManagerId, setNewSiteManagerId] = useState("");
+  const [siteManagerReason, setSiteManagerReason] = useState("");
+  const [changingSiteManager, setChangingSiteManager] = useState(false);
+  // What went wrong with the change, shown next to the form (the page banner may be out of sight), and whether the cause is a
+  // version that is out of date, which a reload of the project and its members mends.
+  const [siteManagerError, setSiteManagerError] = useState("");
+  const [siteManagerStale, setSiteManagerStale] = useState(false);
 
   const fail = (err: unknown, fallback: string) => setError(err instanceof Error ? err.message : fallback);
 
@@ -106,7 +133,7 @@ export const ProjectDetail: React.FC = () => {
     let ignore = false;
     Promise.all([
       api<ProjectData>(`/api/projects/${id}`),
-      api<ReportItem[]>(`/api/projects/${id}/reports`),
+      api<ReportItem[]>(`/api/projects/${id}/reports?limit=${REPORT_PAGE_SIZE}`),
       api<Handover[]>(`/api/projects/${id}/handovers`),
       api<AuthorizedPerson[]>(`/api/projects/${id}/authorized-persons`),
       api<ProjectMember[]>(`/api/projects/${id}/members`),
@@ -115,6 +142,7 @@ export const ProjectDetail: React.FC = () => {
         if (ignore) return;
         setProject(p);
         setReports(r);
+        setHasMoreReports(r.length >= REPORT_PAGE_SIZE);
         setHandovers(h);
         setAuthorizedPersons(ap);
         setMembers(m);
@@ -138,14 +166,25 @@ export const ProjectDetail: React.FC = () => {
       .catch(() => setUserOptions([]));
   }, []);
 
-  const handleDownloadPdf = async () => {
-    const target = reports[0];
+  const handleLoadOlderReports = async () => {
+    try {
+      const older = await api<ReportItem[]>(`/api/projects/${id}/reports?limit=${REPORT_PAGE_SIZE}&offset=${reports.length}`);
+      setReports((current) => [...current, ...older]);
+      setHasMoreReports(older.length >= REPORT_PAGE_SIZE);
+    } catch (err) {
+      fail(err, "Starší záznamy se nepodařilo načíst");
+    }
+  };
+
+  /** The PDF of one entry; without an argument, of the newest one. */
+  const handleDownloadPdf = async (entry?: ReportItem) => {
+    const target = entry ?? reports[0];
     if (!target) {
       setError("Projekt zatím nemá žádný denní záznam");
       return;
     }
     try {
-      const res = await fetch(`/api/reports/${target.id}/pdf`);
+      const res = await apiFetch(`/api/reports/${target.id}/pdf`);
       if (!res.ok) {
         // Show the server's own explanation (for example "Export do PDF není na serveru dostupný").
         let message = "Chyba při stahování PDF";
@@ -262,6 +301,51 @@ export const ProjectDetail: React.FC = () => {
 
   const selectedUser = userOptions.find((u) => u.id === selectedUserId);
 
+  const siteManagerName = members.find((m) => m.userId === project?.siteManagerId)?.displayName;
+  // Whoever can sign: a manager (role BOSS) of this project other than the present site manager. The server checks the rest
+  // (an active user holding a ČKAIT number).
+  const siteManagerCandidates = members.filter((m) => m.role === "BOSS" && m.userId !== project?.siteManagerId);
+
+  /** The project and its members again, after the change found them out of date. */
+  const reloadForSiteManager = async () => {
+    if (!id) return;
+    try {
+      const [p, m] = await Promise.all([api<ProjectData>(`/api/projects/${id}`), api<ProjectMember[]>(`/api/projects/${id}/members`)]);
+      setProject(p);
+      setMembers(m);
+      setNewSiteManagerId("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
+    } catch (err) {
+      setSiteManagerError(err instanceof Error ? err.message : "Údaje se nepodařilo načíst znovu");
+    }
+  };
+
+  const changeSiteManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !project || !newSiteManagerId || changingSiteManager) return;
+    setChangingSiteManager(true);
+    setSiteManagerError("");
+    try {
+      const updated = await api<ProjectData>(`/api/projects/${id}/site-manager`, {
+        method: "PUT",
+        body: json({ siteManagerId: newSiteManagerId, reason: siteManagerReason.trim() || null, updatedAt: project.updatedAt ?? null }),
+      });
+      setProject(updated);
+      setShowSiteManager(false);
+      setNewSiteManagerId("");
+      setSiteManagerReason("");
+      setSiteManagerError("");
+      setSiteManagerStale(false);
+      setError("");
+    } catch (err) {
+      setSiteManagerError(err instanceof Error ? err.message : "Stavbyvedoucího se nepodařilo změnit");
+      setSiteManagerStale(err instanceof ApiError && err.code === "STALE_VERSION");
+    } finally {
+      setChangingSiteManager(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-center text-gray-500">Načítání detailu projektu...</div>;
   if (!project) return <div className="p-8 text-center text-red-600">{error || "Projekt nenalezen"}</div>;
 
@@ -276,6 +360,11 @@ export const ProjectDetail: React.FC = () => {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
             <p className="mt-1 text-gray-600">{project.address}</p>
+            {project.myRole === "BOSS" && (
+              <Link to={`/projects/${id}/edit`} className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:underline">
+                Upravit údaje o stavbě
+              </Link>
+            )}
           </div>
           <div className="mt-4 flex gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm md:mt-0">
             {project.contractNumber && (
@@ -317,6 +406,84 @@ export const ProjectDetail: React.FC = () => {
         <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="mb-4 text-xl font-semibold">Informace o stavbě</h2>
           <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
+            <div className="md:col-span-2">
+              <span className="text-gray-500">Hlavní stavbyvedoucí:</span>
+              <p className="font-medium text-gray-900">{siteManagerName || "-"}</p>
+              {project.myRole === "BOSS" && siteManagerCandidates.length > 0 && !showSiteManager && (
+                <button type="button" onClick={() => setShowSiteManager(true)} className="mt-1 text-sm text-indigo-600 hover:underline">
+                  Změnit stavbyvedoucího
+                </button>
+              )}
+              {project.myRole === "BOSS" && siteManagerCandidates.length === 0 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Stavbyvedoucího lze změnit na jiného vedoucího (BOSS) tohoto projektu s číslem ČKAIT. Nejdřív ho přidejte v záložce Členové.
+                </p>
+              )}
+              {showSiteManager && (
+                <form onSubmit={changeSiteManager} className="mt-2 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
+                  <label htmlFor="newSiteManager" className="block text-xs text-gray-600">
+                    Nový stavbyvedoucí (vedoucí tohoto projektu s číslem ČKAIT)
+                  </label>
+                  <select
+                    id="newSiteManager"
+                    name="newSiteManager"
+                    value={newSiteManagerId}
+                    onChange={(e) => setNewSiteManagerId(e.target.value)}
+                    required
+                    className="w-full rounded-md border border-gray-300 p-2"
+                  >
+                    <option value="">Vyberte…</option>
+                    {siteManagerCandidates.map((m) => (
+                      <option key={m.userId} value={m.userId}>
+                        {m.displayName} ({m.nickname})
+                      </option>
+                    ))}
+                  </select>
+                  <label htmlFor="siteManagerReason" className="block text-xs text-gray-600">
+                    Důvod změny (nepovinné, zůstane v záznamu o změnách)
+                  </label>
+                  <textarea
+                    id="siteManagerReason"
+                    name="siteManagerReason"
+                    value={siteManagerReason}
+                    onChange={(e) => setSiteManagerReason(e.target.value)}
+                    rows={2}
+                    className="w-full rounded-md border border-gray-300 p-2"
+                  />
+                  {siteManagerReason.length > 1000 && <p className="text-xs font-semibold text-red-700">{siteManagerReason.length} / 1000 znaků</p>}
+                  {siteManagerError && (
+                    <div role="alert" className="rounded bg-red-100 p-2 text-sm text-red-700">
+                      <p>{siteManagerError}</p>
+                      {siteManagerStale && (
+                        <button type="button" onClick={reloadForSiteManager} className="mt-1 font-semibold underline">
+                          Načíst znovu
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <div className="flex gap-3">
+                    <button
+                      type="submit"
+                      disabled={changingSiteManager || !newSiteManagerId || siteManagerReason.length > 1000}
+                      className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      {changingSiteManager ? "Ukládám..." : "Změnit stavbyvedoucího"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowSiteManager(false);
+                        setSiteManagerError("");
+                        setSiteManagerStale(false);
+                      }}
+                      className="text-sm text-gray-600 hover:underline"
+                    >
+                      Zrušit
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
             <div>
               <span className="text-gray-500">Stavebník:</span>
               <p className="font-medium text-gray-900">{project.builder || "Nespecifikován"}</p>
@@ -333,6 +500,39 @@ export const ProjectDetail: React.FC = () => {
               <span className="text-gray-500">Parcelní čísla:</span>
               <p className="font-medium text-gray-900">{project.parcelNumbers || "-"}</p>
             </div>
+            {project.permitNumber && (
+              <div>
+                <span className="text-gray-500">Povolení:</span>
+                <p className="font-medium text-gray-900">
+                  {project.permitNumber}
+                  {project.permitDate ? ` ze dne ${formatDate(project.permitDate)}` : ""}
+                </p>
+              </div>
+            )}
+            {!project.permitNumber && project.permitDate && (
+              <div>
+                <span className="text-gray-500">Datum povolení:</span>
+                <p className="font-medium text-gray-900">{formatDate(project.permitDate)}</p>
+              </div>
+            )}
+            {project.designerName && (
+              <div>
+                <span className="text-gray-500">Projektant:</span>
+                <p className="font-medium text-gray-900">{project.designerName}</p>
+              </div>
+            )}
+            {project.tdsName && (
+              <div>
+                <span className="text-gray-500">Technický dozor stavebníka:</span>
+                <p className="font-medium text-gray-900">{project.tdsName}</p>
+              </div>
+            )}
+            {project.bozpName && (
+              <div>
+                <span className="text-gray-500">Koordinátor BOZP:</span>
+                <p className="font-medium text-gray-900">{project.bozpName}</p>
+              </div>
+            )}
             {project.contractDate && (
               <div>
                 <span className="text-gray-500">Datum smlouvy:</span>
@@ -343,6 +543,18 @@ export const ProjectDetail: React.FC = () => {
               <div>
                 <span className="text-gray-500">Datum projektové dokumentace:</span>
                 <p className="font-medium text-gray-900">{formatDate(project.designDocDate)}</p>
+              </div>
+            )}
+            {project.subcontractors && (
+              <div className="md:col-span-2">
+                <span className="text-gray-500">Poddodavatelé:</span>
+                <p className="font-medium whitespace-pre-line text-gray-900">{project.subcontractors}</p>
+              </div>
+            )}
+            {project.supportingDocuments && (
+              <div className="md:col-span-2">
+                <span className="text-gray-500">Podklady stavby:</span>
+                <p className="font-medium whitespace-pre-line text-gray-900">{project.supportingDocuments}</p>
               </div>
             )}
           </div>
@@ -406,11 +618,32 @@ export const ProjectDetail: React.FC = () => {
                     <span className="mr-3 font-semibold text-indigo-600">{r.date}</span>
                     <span className="text-sm text-gray-700">{r.workDescription || "Denní záznam stavebních prací"}</span>
                   </div>
-                  <Link to={`/projects/${id}/reports/${r.date}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-900">
-                    Zobrazit záznam →
-                  </Link>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => void handleDownloadPdf(r)}
+                      aria-label={`Stáhnout PDF záznamu z ${r.date}`}
+                      className="text-sm text-gray-600 underline hover:text-gray-900"
+                    >
+                      PDF
+                    </button>
+                    <Link to={`/projects/${id}/reports/${r.date}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-900">
+                      Zobrazit záznam →
+                    </Link>
+                  </div>
                 </div>
               ))}
+              {hasMoreReports && (
+                <div className="pt-4 text-center">
+                  <button
+                    type="button"
+                    onClick={() => void handleLoadOlderReports()}
+                    className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Načíst starší záznamy
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -566,9 +799,11 @@ export const ProjectDetail: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <div className="mb-6 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">Seznam pověřených osob</h2>
-              <button type="button" onClick={openPersonModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-                Přidat osobu
-              </button>
+              {canManage && (
+                <button type="button" onClick={openPersonModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+                  Přidat osobu
+                </button>
+              )}
             </div>
 
             {showPersonModal && (
@@ -639,7 +874,8 @@ export const ProjectDetail: React.FC = () => {
           <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
             <h2 className="mb-4 text-xl font-semibold text-gray-900">Členové projektu</h2>
 
-            <div className="mb-6 flex flex-wrap items-center gap-4">
+            {!canManage && <p className="mb-4 text-sm text-gray-500">Členy projektu spravuje stavbyvedoucí projektu.</p>}
+            <div className={canManage ? "mb-6 flex flex-wrap items-center gap-4" : "hidden"}>
               {/* User select trigger */}
               <div className="relative">
                 <button
@@ -662,6 +898,8 @@ export const ProjectDetail: React.FC = () => {
                         aria-selected={selectedUserId === u.id}
                         onClick={() => {
                           setSelectedUserId(u.id);
+                          // The person's own role is the default; the role in this project can be set to another.
+                          if (ROLE_LABELS[u.role]) setSelectedRole(u.role);
                           setShowUserDropdown(false);
                         }}
                         className="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-100"
@@ -723,7 +961,12 @@ export const ProjectDetail: React.FC = () => {
                   <tr key={m.userId}>
                     <td className="py-2 text-sm font-medium text-gray-900">{m.nickname}</td>
                     <td className="py-2 text-sm text-gray-700">{m.displayName}</td>
-                    <td className="py-2 text-sm text-gray-600">{ROLE_LABELS[m.role] ?? m.role}</td>
+                    <td className="py-2 text-sm text-gray-600">
+                      {ROLE_LABELS[m.role] ?? m.role}
+                      {m.userId === project.siteManagerId && (
+                        <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Hlavní stavbyvedoucí</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

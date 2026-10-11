@@ -12,19 +12,42 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired on the window when the server says the session is over (401). `detail.method` is the method of the refused request. */
+export const SESSION_EXPIRED_EVENT = "session-expired";
+
+let unsavedWork = false;
+
+/** A page with typed-in, unsaved work says so: a lapsed session then must not reload or leave the page. */
+export function setUnsavedWork(value: boolean): void {
+  unsavedWork = value;
+}
+
+export function hasUnsavedWork(): boolean {
+  return unsavedWork;
+}
+
+/**
+ * `fetch` with the session rule applied. A 401 does NOT throw the user to the login page (that would lose what they
+ * typed): it raises [SESSION_EXPIRED_EVENT], a dialog offers to sign in again in place, and the failed call is reported
+ * as an error the page shows like any other. Use it instead of a bare `fetch` for every call to the API except login
+ * and logout.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const res = await fetch(path, init);
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { method: (init.method ?? "GET").toUpperCase() } }));
+    throw new ApiError(401, "Přihlášení vypršelo. Přihlaste se znovu a zkuste to ještě jednou.");
+  }
+  return res;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(path, { ...init, headers });
-
-  if (res.status === 401) {
-    localStorage.removeItem("user");
-    window.location.assign("/login");
-    throw new ApiError(401, "Přihlášení vypršelo");
-  }
+  const res = await apiFetch(path, { ...init, headers });
 
   if (!res.ok) {
     let message = `Chyba ${res.status}`;

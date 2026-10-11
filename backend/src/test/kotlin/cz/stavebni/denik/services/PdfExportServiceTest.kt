@@ -197,7 +197,9 @@ class PdfExportServiceTest : BaseIntegrationTest() {
         val running = AtomicInteger()
         val peak = AtomicInteger()
         PdfExportService.compiler = TypstCompiler { _, _, pdfFile ->
-            peak.updateAndGet { maxOf(it, running.incrementAndGet()) }
+            // incrementAndGet must run exactly once per render: inside updateAndGet the lambda may be re-run on contention.
+            val now = running.incrementAndGet()
+            peak.accumulateAndGet(now) { a, b -> maxOf(a, b) }
             Thread.sleep(300)
             pdfFile.writeBytes(MINIMAL_PDF)
             running.decrementAndGet()

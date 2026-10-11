@@ -52,6 +52,10 @@ open class RemarksRecord() : UpdatableRecordImpl<RemarksRecord>(Remarks.REMARKS)
         set(value): Unit = set(7, value)
         get(): OffsetDateTime? = get(7) as OffsetDateTime?
 
+    open var externalauthor: String?
+        set(value): Unit = set(8, value)
+        get(): String? = get(8) as String?
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -61,7 +65,7 @@ open class RemarksRecord() : UpdatableRecordImpl<RemarksRecord>(Remarks.REMARKS)
     /**
      * Create a detached, initialised RemarksRecord
      */
-    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, type: Remarktype? = null, text: String? = null, isofficial: Boolean? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, type: Remarktype? = null, text: String? = null, isofficial: Boolean? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null, externalauthor: String? = null): this() {
         this.id = id
         this.reportid = reportid
         this.authorid = authorid
@@ -70,6 +74,7 @@ open class RemarksRecord() : UpdatableRecordImpl<RemarksRecord>(Remarks.REMARKS)
         this.isofficial = isofficial
         this.createdat = createdat
         this.deletedat = deletedat
+        this.externalauthor = externalauthor
         resetTouchedOnNotNull()
     }
 }

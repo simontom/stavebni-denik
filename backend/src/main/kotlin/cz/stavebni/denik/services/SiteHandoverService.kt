@@ -133,8 +133,8 @@ object SiteHandoverService {
                 throw NotFoundException("Projekt nenalezen")
             }
             // Real membership: an app admin who is not a member may read the project, not write to it.
-            val isMember = ProjectAccess.requireAccess(tx, user, projectId)
-            assertCan(user, Action.SiteHandoverCreate, Resource(isMember = isMember))
+            val role = ProjectAccess.requireAccess(tx, user, projectId)
+            assertCan(user, Action.SiteHandoverCreate, Resource(role = role))
 
             val record = tx.insertInto(SITE_HANDOVERS)
                 .set(SITE_HANDOVERS.PROJECTID, projectId)
@@ -163,11 +163,11 @@ object SiteHandoverService {
 
         return AuditService.auditedWrite(user, "siteHandover") { tx ->
             val existing = lockActive(tx, id)
-            val isMember = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
+            val role = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
             val isLocked = existing.get(SITE_HANDOVERS.SIGNEDAT) != null
             assertCan(
                 user, Action.SiteHandoverUpdate,
-                Resource(isMember = isMember, authorId = existing.get(SITE_HANDOVERS.CREATEDBYID), isLocked = isLocked)
+                Resource(role = role, authorId = existing.get(SITE_HANDOVERS.CREATEDBYID), isLocked = isLocked)
             )
 
             // The row is locked and judged above; the condition on signedAt is the last word if anything slipped through.
@@ -195,11 +195,11 @@ object SiteHandoverService {
     suspend fun deleteHandover(user: SessionUser, id: UUID) {
         AuditService.auditedWrite(user, "siteHandover") { tx ->
             val existing = lockActive(tx, id)
-            val isMember = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
+            val role = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
             val isLocked = existing.get(SITE_HANDOVERS.SIGNEDAT) != null
             assertCan(
                 user, Action.SiteHandoverDelete,
-                Resource(isMember = isMember, authorId = existing.get(SITE_HANDOVERS.CREATEDBYID), isLocked = isLocked)
+                Resource(role = role, authorId = existing.get(SITE_HANDOVERS.CREATEDBYID), isLocked = isLocked)
             )
 
             val record = tx.update(SITE_HANDOVERS)
@@ -222,8 +222,8 @@ object SiteHandoverService {
     suspend fun signHandover(user: SessionUser, id: UUID): SiteHandoverDto =
         AuditService.auditedWrite(user, "siteHandover") { tx ->
             val existing = lockActive(tx, id)
-            val isMember = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
-            assertCan(user, Action.SiteHandoverSign, Resource(isMember = isMember))
+            val role = ProjectAccess.requireAccess(tx, user, existing.get(SITE_HANDOVERS.PROJECTID)!!)
+            assertCan(user, Action.SiteHandoverSign, Resource(role = role))
             if (existing.get(SITE_HANDOVERS.SIGNEDAT) != null) {
                 throw IllegalStateException("Předávací protokol je již podepsán")
             }

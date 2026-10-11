@@ -1,9 +1,10 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.jooq.tables.references.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -27,6 +28,9 @@ class PdfExportException(message: String, cause: Throwable? = null) : RuntimeExc
 
 /** typst cannot be started at all (for example it is not installed). */
 class PdfUnavailableException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/** Both render slots stayed taken for the whole waiting time: the caller is told to come back, not kept waiting. */
+class PdfBusyException : RuntimeException("PDF export is busy")
 
 class PdfDocument(val fileName: String, val bytes: ByteArray)
 
@@ -81,13 +85,61 @@ internal data class ReportPdfData(
     val projectName: String,
     val address: String,
     val date: String,
-    val sequenceNumber: Int,
+    /**
+     * The identification of the diary (příloha 12, part A) as entered about the project NOW: the entry PDF is made on request
+     * and prints the project as it stands when it is made. Only what has a value.
+     */
+    val projectInfo: List<LabeledPdf> = emptyList(),
+    /**
+     * Says that the identification above is the project's as of the day the PDF is made and is not part of the signature, and,
+     * for a signed entry, when the project was last changed if that was after signing.
+     */
+    val projectInfoNote: String = "",
+    /** The firms of the subcontractors, one per line; empty when none were entered. */
+    val subcontractors: String = "",
+    /** The documents the diary refers to, one per line; empty when none were entered. */
+    val supportingDocuments: String = "",
+    /** Null while the entry is a draft: the number is given at signing (decision D11). */
+    val sequenceNumber: Int?,
     val weather: String,
     val workDescription: String,
+    /** The people on site by trade (the vyhláška asks for their names); empty when none were entered. */
+    val workers: List<WorkerPdf> = emptyList(),
+    /** The fields of [EntryDetails] that have a text, in their fixed order, with the label of the vyhláška. */
+    val details: List<DetailPdf> = emptyList(),
     val isSigned: Boolean,
     val isLateEntry: Boolean,
     val lateEntryReason: String,
+    /** Who signed ("Name, ČKAIT 123") and when; empty while the entry is not signed. */
+    val signedBy: String,
+    val signedAt: String,
+    /** SHA-256 of the entry's content at signing (see ReportSignature); empty for an unsigned entry. */
+    val signatureHash: String,
+    /** The addenda of a signed entry, oldest first. */
+    val addenda: List<AddendumPdf> = emptyList(),
+    /** The entries of other parties, oldest first. */
+    val remarks: List<RemarkPdf> = emptyList(),
+    /** Who took note of the signed entry ("Name (role)"), with the time, oldest first. */
+    val acknowledgements: List<AcknowledgementPdf> = emptyList(),
 )
+
+@Serializable
+internal data class LabeledPdf(val label: String, val value: String)
+
+@Serializable
+internal data class WorkerPdf(val trade: String, val count: Int, val names: String)
+
+@Serializable
+internal data class DetailPdf(val label: String, val text: String)
+
+@Serializable
+internal data class AcknowledgementPdf(val who: String, val at: String)
+
+@Serializable
+internal data class RemarkPdf(val author: String, val onBehalfOf: String, val at: String, val text: String)
+
+@Serializable
+internal data class AddendumPdf(val author: String, val at: String, val text: String)
 
 object PdfExportService {
     private val log = LoggerFactory.getLogger(PdfExportService::class.java)
@@ -97,6 +149,13 @@ object PdfExportService {
 
     /** At most two PDFs are rendered at the same time; the others wait. */
     private val slots = Semaphore(2)
+
+    /**
+     * How long a request waits for a free slot before it is refused with [PdfBusyException] (503). A render takes up to
+     * 20 s, so an unbounded queue would hold request threads and browsers for minutes while everyone retries.
+     */
+    @Volatile
+    var queueWait: Duration = Duration.ofSeconds(10)
 
     /** The fixed template. It contains no user text (see the comment in the file). */
     internal val template: String by lazy {
@@ -108,32 +167,129 @@ object PdfExportService {
 
     suspend fun generateReportPdf(tx: DSLContext, reportId: UUID): PdfDocument {
         val data = loadData(tx, reportId)
-        return slots.withPermit {
-            withContext(Dispatchers.IO) { render(data, reportId) }
+        // The flag is set inside the timed block and read outside it: a timeout that fires just after the permit was
+        // granted must not lose track of the permit.
+        var acquired = false
+        withTimeoutOrNull(queueWait.toMillis()) {
+            slots.acquire()
+            acquired = true
+        }
+        if (!acquired) throw PdfBusyException()
+        try {
+            return withContext(Dispatchers.IO) { render(data, reportId) }
+        } finally {
+            slots.release()
+        }
+    }
+
+    /** The identification of the diary as labelled rows; a row without a value is left out. A number and its date share a row. */
+    private fun projectInfoOf(tx: DSLContext, project: org.jooq.Record): List<LabeledPdf> {
+        fun text(value: String?) = value?.trim().orEmpty()
+        val siteManager = project.get(PROJECTS.SITEMANAGERID)?.let { id ->
+            tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(id)).fetchOne()
+                ?.let { u -> listOfNotNull(text(u.get(USERS.DISPLAYNAME)).ifEmpty { null }, text(u.get(USERS.CKAITNUMBER)).ifEmpty { null }?.let { "ČKAIT $it" }).joinToString(", ") }
+        }.orEmpty()
+        fun numbered(number: String?, date: java.time.OffsetDateTime?): String =
+            listOfNotNull(text(number).ifEmpty { null }, cz.stavebni.denik.util.Dates.format(date)?.let { "ze dne $it" }).joinToString(" ")
+        return listOf(
+            "Katastrální území" to text(project.get(PROJECTS.CADASTRALAREA)),
+            "Parcelní čísla" to text(project.get(PROJECTS.PARCELNUMBERS)),
+            "Stavebník" to text(project.get(PROJECTS.BUILDER)),
+            "Zhotovitel" to text(project.get(PROJECTS.CONTRACTOR)),
+            "Stavbyvedoucí" to siteManager,
+            "Projektant" to text(project.get(PROJECTS.DESIGNERNAME)),
+            "Povolení" to numbered(project.get(PROJECTS.PERMITNUMBER), project.get(PROJECTS.PERMITDATE)),
+            "Technický dozor stavebníka" to text(project.get(PROJECTS.TDSNAME)),
+            "Koordinátor BOZP" to text(project.get(PROJECTS.BOZPNAME)),
+            "Smlouva" to numbered(project.get(PROJECTS.CONTRACTNUMBER), project.get(PROJECTS.CONTRACTDATE)),
+            "Projektová dokumentace" to numbered(project.get(PROJECTS.DESIGNDOCVERSION), project.get(PROJECTS.DESIGNDOCDATE)),
+        ).filter { it.second.isNotEmpty() }.map { LabeledPdf(it.first, it.second) }
+    }
+
+    /**
+     * The identification is read from the project NOW: a signed entry does not carry a copy of it and the signature does not
+     * cover it, so the PDF says so, and says when the project was changed after the entry was signed.
+     */
+    private fun projectInfoNoteOf(project: org.jooq.Record, report: org.jooq.Record): String {
+        val today = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
+        val lockedAt = report.get(DAILY_REPORTS.LOCKEDAT)
+        val projectChanged = project.get(PROJECTS.UPDATEDAT)
+        return buildString {
+            append("Údaje o stavbě platné ke dni $today")
+            if (lockedAt != null) append(" (nejsou součástí podpisu záznamu)")
+            append(".")
+            if (lockedAt != null && projectChanged != null && projectChanged.isAfter(lockedAt)) {
+                append(" Po podpisu tohoto záznamu byly změněny dne ${projectChanged.withOffsetSameInstant(java.time.ZoneOffset.UTC).toLocalDate()}.")
+            }
         }
     }
 
     private fun loadData(tx: DSLContext, reportId: UUID): ReportPdfData {
         val report = tx.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
-            .fetchOne() ?: throw IllegalArgumentException("Report not found")
+            .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
 
         val project = tx.selectFrom(PROJECTS)
             .where(PROJECTS.ID.eq(report.get(DAILY_REPORTS.PROJECTID)))
-            .fetchOne() ?: throw IllegalArgumentException("Project not found")
+            .fetchOne() ?: throw NotFoundException("Projekt nenalezen")
 
         return ReportPdfData(
             projectName = project.get(PROJECTS.NAME) ?: "",
             address = project.get(PROJECTS.ADDRESS) ?: "",
+            projectInfo = projectInfoOf(tx, project),
+            projectInfoNote = projectInfoNoteOf(project, report),
+            subcontractors = project.get(PROJECTS.SUBCONTRACTORS)?.trim().orEmpty(),
+            supportingDocuments = project.get(PROJECTS.SUPPORTINGDOCUMENTS)?.trim().orEmpty(),
             date = report.get(DAILY_REPORTS.DATE).toString(),
-            sequenceNumber = report.get(DAILY_REPORTS.SEQUENCENUMBER) ?: 0,
+            sequenceNumber = report.get(DAILY_REPORTS.SEQUENCENUMBER),
             weather = report.get(DAILY_REPORTS.WEATHER)?.data()
                 ?.let { raw -> runCatching { Json { ignoreUnknownKeys = true }.decodeFromString(cz.stavebni.denik.domain.WeatherData.serializer(), raw) }.getOrNull() }
                 ?.takeUnless { it.isEmpty() }?.describe() ?: "Neuvedeno",
             workDescription = report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "",
+            workers = report.get(DAILY_REPORTS.WORKERSBYTRADE)?.data()
+                ?.let { raw ->
+                    runCatching {
+                        Json { ignoreUnknownKeys = true }.decodeFromString(
+                            kotlinx.serialization.builtins.ListSerializer(cz.stavebni.denik.domain.WorkerEntry.serializer()), raw
+                        )
+                    }.getOrNull()
+                }
+                ?.map { WorkerPdf(it.trade, it.count, it.names.joinToString("; ")) }
+                .orEmpty(),
+            details = EntryDetails.valuesOf(report).mapNotNull { (field, text) -> text?.let { DetailPdf(field.label, it) } },
             isSigned = report.get(DAILY_REPORTS.LOCKEDAT) != null,
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
+            signedBy = report.get(DAILY_REPORTS.SIGNEDBYID)?.let { id ->
+                tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(id)).fetchOne()
+                    ?.let { u -> listOfNotNull(u.get(USERS.DISPLAYNAME), u.get(USERS.CKAITNUMBER)?.takeIf { it.isNotBlank() }?.let { "ČKAIT $it" }).joinToString(", ") }
+            } ?: "",
+            signedAt = report.get(DAILY_REPORTS.SIGNEDAT)?.let { AuditHash.formatTs(it) } ?: "",
+            signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
+            addenda = tx.select(USERS.DISPLAYNAME, ADDENDA.CREATEDAT, ADDENDA.TEXT)
+                .from(ADDENDA)
+                .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))
+                .where(ADDENDA.REPORTID.eq(reportId))
+                .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
+                .fetch()
+                .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") },
+            acknowledgements = tx.select(USERS.DISPLAYNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+                .from(REPORT_ACKNOWLEDGEMENTS)
+                .join(USERS).on(USERS.ID.eq(REPORT_ACKNOWLEDGEMENTS.USERID))
+                .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(reportId))
+                .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc(), REPORT_ACKNOWLEDGEMENTS.ID.asc())
+                .fetch()
+                .map {
+                    val role = if (it.get(REPORT_ACKNOWLEDGEMENTS.ROLE) == cz.stavebni.denik.jooq.enums.Role.INVESTOR) "stavebník" else "dozor"
+                    AcknowledgementPdf("${it.get(USERS.DISPLAYNAME) ?: ""} ($role)", it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "")
+                },
+            remarks = tx.select(USERS.DISPLAYNAME, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
+                .from(REMARKS)
+                .join(USERS).on(USERS.ID.eq(REMARKS.AUTHORID))
+                .where(REMARKS.REPORTID.eq(reportId))
+                .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
+                .fetch()
+                .map { RemarkPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(REMARKS.EXTERNALAUTHOR) ?: "", it.get(REMARKS.CREATEDAT)?.let { at -> AuditHash.formatTs(at) } ?: "", it.get(REMARKS.TEXT) ?: "") },
         )
     }
 

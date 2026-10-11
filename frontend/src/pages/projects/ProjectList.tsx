@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { apiFetch } from "../../lib/api";
 
 interface Project {
   id: string;
@@ -13,7 +14,7 @@ export function ProjectList() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    fetch("/api/projects")
+    apiFetch("/api/projects")
       .then((res) => {
         if (!res.ok) throw new Error("Chyba při načítání projektů");
         return res.json();

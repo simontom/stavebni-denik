@@ -15,8 +15,8 @@ import java.time.format.DateTimeFormatter
 /**
  * Tamper-evident hash chain of `audit_log`.
  *
- * Byte-compatible with the canonical scheme of the original implementation
- * (`src/server/audit-hash.ts`, used by the nightly `scripts/verify-audit.ts`):
+ * Byte-compatible with the canonical scheme of the original TypeScript implementation (removed with the Next.js app;
+ * it is in the git history). The format must never change: rows written under it have to keep verifying:
  *
  *   row_hash = sha256_hex( canonicalJSON({ action, actorId, after, before,
  *                                          entityId, entityType, ip, prevHash,

@@ -142,6 +142,16 @@ open class Photos(
      */
     val DELETEDAT: TableField<PhotosRecord, OffsetDateTime?> = createField(DSL.name("deletedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
 
+    /**
+     * The column <code>public.photos.sha256</code>.
+     */
+    val SHA256: TableField<PhotosRecord, String?> = createField(DSL.name("sha256"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.photos.thumbSha256</code>.
+     */
+    val THUMBSHA256: TableField<PhotosRecord, String?> = createField(DSL.name("thumbSha256"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<PhotosRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<PhotosRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<PhotosRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)

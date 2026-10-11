@@ -52,7 +52,9 @@ data class WeatherData(
 @Serializable
 data class WorkerEntry(
     val trade: String,
-    val count: Int
+    val count: Int,
+    /** The names of the people of this trade on site that day (the vyhláška asks for them); at most [count]. Optional. */
+    val names: List<String> = emptyList()
 )
 
 @Serializable
@@ -74,11 +76,4 @@ data class MeterState(
     val medium: String = "",
     val serialNumber: String = "",
     val state: String = ""
-)
-
-@Serializable
-data class NotificationPayload(
-    val projectId: String? = null,
-    val message: String,
-    val actionUrl: String? = null
 )

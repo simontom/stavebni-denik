@@ -3,6 +3,7 @@ package cz.stavebni.denik.plugins
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
+import cz.stavebni.denik.domain.SignerNotQualifiedException
 import cz.stavebni.denik.domain.StaleVersionException
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
@@ -23,6 +24,7 @@ fun Application.configureStatusPages() {
                 is UnauthenticatedException -> call.respond(HttpStatusCode.Unauthorized, mapOf("error" to (cause.message ?: "Unauthenticated")))
                 // The exception names the denied action for the logs; the client only learns that it is not allowed.
                 is ForbiddenException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Nemáte oprávnění k této akci"))
+                is SignerNotQualifiedException -> call.respond(HttpStatusCode.Forbidden, mapOf("error" to cause.message, "code" to "SIGNER_NOT_QUALIFIED"))
                 is NotFoundException -> call.respond(HttpStatusCode.NotFound, mapOf("error" to (cause.message ?: "Not found")))
                 is TooManyRequestsException -> {
                     call.response.header(HttpHeaders.RetryAfter, cause.retryAfterSeconds.toString())
@@ -39,6 +41,15 @@ fun Application.configureStatusPages() {
                 // For example two requests creating the same day at once: the database refuses the second.
                 is IntegrityConstraintViolationException ->
                     call.respond(HttpStatusCode.Conflict, mapOf("error" to "Záznam již existuje nebo odporuje omezením"))
+                // Text the database cannot store (a NUL character in a text or in JSON: SQLSTATE 22021, 22P05) is the client's
+                // mistake wherever it came from, not an error of the server.
+                is org.jooq.exception.DataAccessException ->
+                    if (cause.sqlState() in setOf("22021", "22P05")) {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Text obsahuje nepovolený znak"))
+                    } else {
+                        cause.printStackTrace()
+                        call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Vnitřní chyba serveru"))
+                    }
                 is IllegalArgumentException -> call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))
                 is IllegalStateException -> call.respond(HttpStatusCode.Conflict, mapOf("error" to cause.message))
                 else -> {
