@@ -14,7 +14,7 @@ COPY frontend/ ./
 RUN pnpm build
 
 # --- 2. Backend (Gradle shadow jar) -----------------------------------------
-FROM gradle:8.10-jdk21-alpine AS backend
+FROM gradle:8.13-jdk21-alpine AS backend
 WORKDIR /app
 COPY settings.gradle.kts build.gradle.kts ./
 COPY backend backend
