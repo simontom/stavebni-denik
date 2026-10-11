@@ -13,7 +13,7 @@ export const ChangePasswordPage: React.FC = () => {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const rules = passwordRules(newPassword);
+  const rules = passwordRules(newPassword, currentUser()?.nickname);
   const rulesOk = rules.every((r) => r.ok);
   const matches = newPassword.length > 0 && newPassword === repeat;
   const canSubmit = !busy && currentPassword.length > 0 && rulesOk && matches;

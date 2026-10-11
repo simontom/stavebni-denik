@@ -355,7 +355,7 @@ object UserService {
         // A request that is refused before the current password is compared is not a guess: it does not count.
         val currentHash: String
         try {
-            val issues = PasswordPolicy.issues(request.newPassword)
+            val issues = PasswordPolicy.issues(request.newPassword, actor.nickname)
             require(issues.isEmpty()) { issues.joinToString(" ") }
             require(!BreachedPasswordService.isBreached(request.newPassword)) {
                 "Toto heslo se objevilo v uniklých databázích hesel. Zvolte jiné."

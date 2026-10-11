@@ -50,6 +50,26 @@ class CredentialsRoutesTest : BaseIntegrationTest() {
     private fun auditRows(action: String): List<String> =
         dsl.fetch("select * from audit_log where action = ?", action).map { it.formatJSON() }
 
+    // ---------------------------------------------------------------- change password: policy rules
+
+    @Test
+    fun `a new password that is common or contains the account's login name is refused and nothing changes`() = testApplication {
+        application { module() }
+        val user = createTestUser(nickname = "novak.jan", rawPassword = "Correct-Pass-1!")
+        val token = generateJwtToken(user)
+        val hashBefore = dsl.select(USERS.PASSWORDHASH).from(USERS).where(USERS.ID.eq(user.id)).fetchOne(USERS.PASSWORDHASH)
+
+        val common = changePassword(token, "Correct-Pass-1!", "Heslo123456!!")
+        val ownName = changePassword(token, "Correct-Pass-1!", "Xx-Novak.Jan-2026!")
+
+        assertEquals(HttpStatusCode.BadRequest, common.status)
+        assertTrue(common.bodyAsText().contains("běžné"), common.bodyAsText())
+        assertEquals(HttpStatusCode.BadRequest, ownName.status)
+        assertTrue(ownName.bodyAsText().contains("přihlašovací jméno"), ownName.bodyAsText())
+        assertEquals(hashBefore, dsl.select(USERS.PASSWORDHASH).from(USERS).where(USERS.ID.eq(user.id)).fetchOne(USERS.PASSWORDHASH))
+        assertEquals(0, failuresRecorded(), "a refusal before the current password is compared is not a guess")
+    }
+
     // ---------------------------------------------------------------- login: what an answer reveals
 
     @Test
