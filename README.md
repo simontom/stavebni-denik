@@ -16,7 +16,7 @@ Elektronický stavební deník podle § 157 stavebního zákona (zákon č. 283/
 
 | Vrstva   | Technologie                                                                                            |
 | -------- | ------------------------------------------------------------------------------------------------------ |
-| Backend  | Kotlin 2.1, Ktor 3.1 (Netty), jOOQ 3.21, Flyway, PostgreSQL 18, Argon2id                               |
+| Backend  | Kotlin 2.4, Ktor 3.6 (Netty), jOOQ 3.21, Flyway, PostgreSQL 18, Argon2id                               |
 | Frontend | Vite 8, React 19, React Router 7, Tailwind CSS 4                                                       |
 | Audit    | Append-only `audit_log` s řetězem SHA-256 hashů, databázové triggery, ověření příkazem `audit-verify`  |
 | Fotky    | ImageIO: kontrola hlavičky před dekódováním, přeuložení do nového JPEG bez metadat, otočení podle EXIF |
