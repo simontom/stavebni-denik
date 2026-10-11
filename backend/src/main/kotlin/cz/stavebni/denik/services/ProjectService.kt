@@ -57,6 +57,17 @@ data class ProjectDto(
     val myRole: String? = null,
 )
 
+/** The request that replaces the site manager (stavbyvedoucí) of a project. */
+@Serializable
+data class SiteManagerChangeRequest(
+    /** The new site manager: an active member of the project whose role in it is BOSS and who holds a ČKAIT number. */
+    val siteManagerId: String,
+    /** Why (optional, at most 1 000 characters); it is kept in the audit row. */
+    val reason: String? = null,
+    /** The `updatedAt` of the project as the client saw it. Required, like for any change of the project. */
+    val updatedAt: String? = null,
+)
+
 object ProjectService {
 
     fun listProjects(tx: DSLContext, user: SessionUser): List<ProjectDto> {
@@ -147,6 +158,80 @@ object ProjectService {
             r.get(PROJECTS.CONTRACTNUMBER) == f.contractNumber && r.get(PROJECTS.CONTRACTDATE).sameInstant(f.contractDate) &&
             r.get(PROJECTS.DESIGNDOCVERSION) == f.designDocVersion && r.get(PROJECTS.DESIGNDOCDATE).sameInstant(f.designDocDate) &&
             r.get(PROJECTS.SUBCONTRACTORS) == f.subcontractors && r.get(PROJECTS.SUPPORTINGDOCUMENTS) == f.supportingDocuments
+
+    /** Who the site manager was or is, as the audit row of a change of site manager keeps it. */
+    @Serializable
+    internal data class SiteManagerSnapshot(
+        val projectId: String,
+        val siteManagerId: String,
+        val displayName: String?,
+        val ckaitNumber: String?,
+        val reason: String? = null,
+    )
+
+    private fun siteManagerSnapshot(tx: DSLContext, projectId: UUID, userId: UUID, reason: String? = null): JsonElement {
+        val person = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(userId)).fetchOne()
+        return Json.encodeToJsonElement(
+            SiteManagerSnapshot.serializer(),
+            SiteManagerSnapshot(projectId.toString(), userId.toString(), person?.get(USERS.DISPLAYNAME), person?.get(USERS.CKAITNUMBER), reason),
+        )
+    }
+
+    /**
+     * Replaces the site manager of a project. The site manager signs the diary (decisions D2, D8), so the project is never
+     * without one and the new one has to be able to sign: an active member of this project with the role BOSS in it, holding
+     * a ČKAIT number. Only the manager of the project may (the role held in THIS project). The previous site manager stays
+     * a manager of the project; whether they stay a member is decided by the normal member management, which protects only
+     * the CURRENT site manager. The audit row names the previous and the new person and the reason.
+     */
+    suspend fun changeSiteManager(user: SessionUser, projectId: UUID, req: SiteManagerChangeRequest): ProjectDto {
+        val newManagerId = ProjectAccess.parseId(req.siteManagerId, "siteManagerId")
+        val reason = req.reason?.trim()?.ifEmpty { null }?.let { Text.checked(it, "Důvod změny", 1_000) }
+        val expected = (req.updatedAt?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Chybí verze údajů (updatedAt): načtěte projekt znovu a uložte změnu z něj"))
+            .let {
+                try {
+                    OffsetDateTime.parse(it)
+                } catch (e: java.time.format.DateTimeParseException) {
+                    throw IllegalArgumentException("Neplatná hodnota updatedAt")
+                }
+            }
+
+        return AuditService.auditedWrite(user, "project") { tx ->
+            val role = ProjectAccess.requireAccess(tx, user, projectId)
+            assertCan(user, Action.ProjectUpdate, Resource(role = role))
+            val existing = tx.selectFrom(PROJECTS)
+                .where(PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne() ?: throw cz.stavebni.denik.domain.NotFoundException("Projekt nenalezen")
+            if (!existing.updatedat!!.isEqual(expected)) {
+                throw StaleVersionException("Údaje o stavbě mezitím změnil někdo jiný. Načtěte je znovu, aby se jeho změny neztratily.")
+            }
+            val previousId = existing.sitemanagerid!!
+            if (newManagerId == previousId) throw ConflictException("Tento člen už je stavbyvedoucím")
+            val active = tx.fetchExists(USERS, USERS.ID.eq(newManagerId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true)))
+            if (!active) throw ConflictException("Tento uživatel je deaktivovaný nebo smazaný a stavbyvedoucím být nemůže")
+            if (ProjectAccess.roleIn(tx, newManagerId, projectId) != cz.stavebni.denik.domain.Role.BOSS) {
+                throw ConflictException("Stavbyvedoucím může být jen člen tohoto projektu s rolí vedoucího (BOSS)")
+            }
+            if (!ProjectAccess.hasCkaitNumber(tx, newManagerId)) {
+                throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+            }
+            val updated = tx.update(PROJECTS)
+                .set(PROJECTS.SITEMANAGERID, newManagerId)
+                .set(PROJECTS.UPDATEDAT, OffsetDateTime.now())
+                .where(PROJECTS.ID.eq(projectId))
+                .returning()
+                .fetchOne() ?: throw IllegalStateException("Failed to update project")
+            AuditService.Audited(
+                result = toDto(updated, role?.let { DbRole.valueOf(it.name) }),
+                action = "project.site_manager.change",
+                entityId = projectId.toString(),
+                before = siteManagerSnapshot(tx, projectId, previousId),
+                after = siteManagerSnapshot(tx, projectId, newManagerId, reason),
+            )
+        }
+    }
 
     /** What the audit row of a project keeps: everything a person can enter, as text. */
     @Serializable
@@ -287,11 +372,13 @@ object ProjectService {
                 .where(PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))
                 .forUpdate()
                 .fetchOne() ?: throw cz.stavebni.denik.domain.NotFoundException("Projekt nenalezen")
-            if (requestedManager != null && requestedManager != existing.sitemanagerid) {
-                throw ConflictException("Stavbyvedoucího nelze touto úpravou změnit")
-            }
+            // The version first: a form loaded before the site manager was replaced then gets STALE_VERSION (and the reload it
+            // offers), not a conflict about a field the person never touched.
             if (!existing.updatedat!!.isEqual(expected)) {
                 throw StaleVersionException("Údaje o stavbě mezitím změnil někdo jiný. Načtěte je znovu, aby se jeho změny neztratily.")
+            }
+            if (requestedManager != null && requestedManager != existing.sitemanagerid) {
+                throw ConflictException("Stavbyvedoucího nelze touto úpravou změnit")
             }
             val updated = tx.update(PROJECTS)
                 .set(PROJECTS.NAME, fields.name)

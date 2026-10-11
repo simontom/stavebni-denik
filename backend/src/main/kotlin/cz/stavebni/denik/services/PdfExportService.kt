@@ -183,8 +183,12 @@ object PdfExportService {
     }
 
     /** The identification of the diary as labelled rows; a row without a value is left out. A number and its date share a row. */
-    private fun projectInfoOf(project: org.jooq.Record): List<LabeledPdf> {
+    private fun projectInfoOf(tx: DSLContext, project: org.jooq.Record): List<LabeledPdf> {
         fun text(value: String?) = value?.trim().orEmpty()
+        val siteManager = project.get(PROJECTS.SITEMANAGERID)?.let { id ->
+            tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(id)).fetchOne()
+                ?.let { u -> listOfNotNull(text(u.get(USERS.DISPLAYNAME)).ifEmpty { null }, text(u.get(USERS.CKAITNUMBER)).ifEmpty { null }?.let { "ČKAIT $it" }).joinToString(", ") }
+        }.orEmpty()
         fun numbered(number: String?, date: java.time.OffsetDateTime?): String =
             listOfNotNull(text(number).ifEmpty { null }, cz.stavebni.denik.util.Dates.format(date)?.let { "ze dne $it" }).joinToString(" ")
         return listOf(
@@ -192,6 +196,7 @@ object PdfExportService {
             "Parcelní čísla" to text(project.get(PROJECTS.PARCELNUMBERS)),
             "Stavebník" to text(project.get(PROJECTS.BUILDER)),
             "Zhotovitel" to text(project.get(PROJECTS.CONTRACTOR)),
+            "Stavbyvedoucí" to siteManager,
             "Projektant" to text(project.get(PROJECTS.DESIGNERNAME)),
             "Povolení" to numbered(project.get(PROJECTS.PERMITNUMBER), project.get(PROJECTS.PERMITDATE)),
             "Technický dozor stavebníka" to text(project.get(PROJECTS.TDSNAME)),
@@ -231,7 +236,7 @@ object PdfExportService {
         return ReportPdfData(
             projectName = project.get(PROJECTS.NAME) ?: "",
             address = project.get(PROJECTS.ADDRESS) ?: "",
-            projectInfo = projectInfoOf(project),
+            projectInfo = projectInfoOf(tx, project),
             projectInfoNote = projectInfoNoteOf(project, report),
             subcontractors = project.get(PROJECTS.SUBCONTRACTORS)?.trim().orEmpty(),
             supportingDocuments = project.get(PROJECTS.SUPPORTINGDOCUMENTS)?.trim().orEmpty(),
