@@ -126,7 +126,7 @@ open class Sessions(
     /**
      * Create an aliased <code>public.sessions</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, SESSIONS)
 
     /**
      * Create a <code>public.sessions</code> table reference

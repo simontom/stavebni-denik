@@ -151,7 +151,7 @@ open class AuditLog(
     /**
      * Create an aliased <code>public.audit_log</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, AUDIT_LOG)
 
     /**
      * Create a <code>public.audit_log</code> table reference

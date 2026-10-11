@@ -189,7 +189,7 @@ open class Users(
     /**
      * Create an aliased <code>public.users</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, USERS)
 
     /**
      * Create a <code>public.users</code> table reference

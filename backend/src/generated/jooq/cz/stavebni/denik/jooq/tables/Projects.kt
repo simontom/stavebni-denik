@@ -234,7 +234,7 @@ open class Projects(
     /**
      * Create an aliased <code>public.projects</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, PROJECTS)
 
     /**
      * Create a <code>public.projects</code> table reference

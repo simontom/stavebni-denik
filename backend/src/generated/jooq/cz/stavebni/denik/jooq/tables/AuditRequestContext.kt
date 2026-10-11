@@ -108,7 +108,7 @@ open class AuditRequestContext(
      * Create an aliased <code>public.audit_request_context</code> table
      * reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, AUDIT_REQUEST_CONTEXT)
 
     /**
      * Create a <code>public.audit_request_context</code> table reference

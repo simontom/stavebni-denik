@@ -126,7 +126,7 @@ open class Notifications(
     /**
      * Create an aliased <code>public.notifications</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, NOTIFICATIONS)
 
     /**
      * Create a <code>public.notifications</code> table reference

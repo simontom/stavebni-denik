@@ -136,7 +136,7 @@ open class AuthorizedPersons(
     /**
      * Create an aliased <code>public.authorized_persons</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, AUTHORIZED_PERSONS)
 
     /**
      * Create a <code>public.authorized_persons</code> table reference

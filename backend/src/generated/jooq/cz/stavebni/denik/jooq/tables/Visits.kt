@@ -154,7 +154,7 @@ open class Visits(
     /**
      * Create an aliased <code>public.visits</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, VISITS)
 
     /**
      * Create a <code>public.visits</code> table reference
