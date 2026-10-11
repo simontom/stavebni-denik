@@ -164,7 +164,7 @@ open class Photos(
     /**
      * Create an aliased <code>public.photos</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, PHOTOS)
 
     /**
      * Create a <code>public.photos</code> table reference

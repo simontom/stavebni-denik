@@ -276,7 +276,7 @@ open class DailyReports(
     /**
      * Create an aliased <code>public.daily_reports</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, DAILY_REPORTS)
 
     /**
      * Create a <code>public.daily_reports</code> table reference

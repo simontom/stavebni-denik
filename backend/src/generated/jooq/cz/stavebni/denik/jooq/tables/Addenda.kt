@@ -117,7 +117,7 @@ open class Addenda(
     /**
      * Create an aliased <code>public.addenda</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, ADDENDA)
 
     /**
      * Create a <code>public.addenda</code> table reference

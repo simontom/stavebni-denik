@@ -146,7 +146,7 @@ open class MaterialNeeds(
     /**
      * Create an aliased <code>public.material_needs</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, MATERIAL_NEEDS)
 
     /**
      * Create a <code>public.material_needs</code> table reference

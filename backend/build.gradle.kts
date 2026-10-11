@@ -2,7 +2,7 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     application
-    id("com.gradleup.shadow") version "8.3.0"
+    id("com.gradleup.shadow") version "8.3.11"
 }
 
 application {
@@ -17,12 +17,12 @@ java {
 
 repositories { mavenCentral() }
 
-val ktorVersion = "3.1.1"
+val ktorVersion = "3.6.0"
 // PostgreSQL 18 is the only supported database version.
 //   - jOOQ 3.21: OSS SQLDialect.POSTGRES tracks PG18 catalog changes
 //   - Flyway >= 11.14: first line that officially supports PG18
 //   - pgjdbc >= 42.7.7: fixes CVE-2025-49146
-val jooqVersion = "3.21.8"
+val jooqVersion = "3.21.9"
 val flywayVersion = "12.11.0"
 val pgJdbcVersion = "42.7.13"
 val testcontainersVersion = "1.21.4"
@@ -61,19 +61,19 @@ dependencies {
     implementation("org.jooq:jooq-kotlin-coroutines:$jooqVersion")
 
     implementation("org.postgresql:postgresql:$pgJdbcVersion")
-    implementation("com.zaxxer:HikariCP:6.2.1")
+    implementation("com.zaxxer:HikariCP:6.3.3")
 
     implementation("org.flywaydb:flyway-core:$flywayVersion")
     implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
 
-    implementation("com.auth0:java-jwt:4.4.0")
-    implementation("de.mkammerer:argon2-jvm:2.11")
+    implementation("com.auth0:java-jwt:4.6.1")
+    implementation("de.mkammerer:argon2-jvm:2.12")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("io.konform:konform:0.7.0")
-    implementation("net.coobird:thumbnailator:0.4.20")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("io.konform:konform:0.11.1")
+    implementation("net.coobird:thumbnailator:0.4.21")
 
-    implementation("ch.qos.logback:logback-classic:1.5.12")
+    implementation("ch.qos.logback:logback-classic:1.6.5")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
     testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
@@ -81,9 +81,9 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:$testcontainersVersion")
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
     testImplementation("org.testcontainers:junit-jupiter:$testcontainersVersion")
-    testImplementation("org.wiremock:wiremock:3.10.0")
+    testImplementation("org.wiremock:wiremock:3.13.2")
     // Reads the text of a generated PDF back, to check what the real typst rendered.
-    testImplementation("org.apache.pdfbox:pdfbox:3.0.4")
+    testImplementation("org.apache.pdfbox:pdfbox:3.0.8")
 
     // jOOQ code generation toolchain (runs only via `generateJooq`)
     "codegenImplementation"("org.jooq:jooq-codegen:$jooqVersion")
@@ -92,7 +92,7 @@ dependencies {
     "codegenImplementation"("org.flywaydb:flyway-database-postgresql:$flywayVersion")
     "codegenImplementation"("org.postgresql:postgresql:$pgJdbcVersion")
     "codegenImplementation"("org.testcontainers:postgresql:$testcontainersVersion")
-    "codegenRuntimeOnly"("org.slf4j:slf4j-simple:2.0.17")
+    "codegenRuntimeOnly"("org.slf4j:slf4j-simple:2.0.20")
 }
 
 val isWindows = System.getProperty("os.name").lowercase().contains("windows")

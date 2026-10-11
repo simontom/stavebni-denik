@@ -118,7 +118,7 @@ open class ProjectMembers(
     /**
      * Create an aliased <code>public.project_members</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, PROJECT_MEMBERS)
 
     /**
      * Create a <code>public.project_members</code> table reference

@@ -139,7 +139,7 @@ open class Remarks(
     /**
      * Create an aliased <code>public.remarks</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, REMARKS)
 
     /**
      * Create a <code>public.remarks</code> table reference

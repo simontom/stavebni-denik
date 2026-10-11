@@ -162,7 +162,7 @@ open class SiteHandovers(
     /**
      * Create an aliased <code>public.site_handovers</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, SITE_HANDOVERS)
 
     /**
      * Create a <code>public.site_handovers</code> table reference

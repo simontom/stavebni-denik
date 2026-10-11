@@ -119,7 +119,7 @@ open class ReportAcknowledgements(
      * Create an aliased <code>public.report_acknowledgements</code> table
      * reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, REPORT_ACKNOWLEDGEMENTS)
 
     /**
      * Create a <code>public.report_acknowledgements</code> table reference

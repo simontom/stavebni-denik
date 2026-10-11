@@ -120,7 +120,7 @@ open class AccessLog(
     /**
      * Create an aliased <code>public.access_log</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, ACCESS_LOG)
 
     /**
      * Create a <code>public.access_log</code> table reference

@@ -107,7 +107,7 @@ open class RateLimitAttempts(
     /**
      * Create an aliased <code>public.rate_limit_attempts</code> table reference
      */
-    constructor(alias: Name): this(alias, null)
+    constructor(alias: Name): this(alias, RATE_LIMIT_ATTEMPTS)
 
     /**
      * Create a <code>public.rate_limit_attempts</code> table reference
