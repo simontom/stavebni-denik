@@ -1,6 +1,6 @@
 # Stavební deník
 
-Elektronický stavební deník podle § 157 stavebního zákona (zákon č. 283/2021 Sb.) a vyhlášky č. 131/2024 Sb. (příloha 12). Aplikace je **single-tenant**: jedna instance patří jedné firmě.
+Elektronický stavební deník podle § 166 stavebního zákona (zákon č. 283/2021 Sb.) a vyhlášky č. 131/2024 Sb. (příloha 12). Aplikace je **single-tenant**: jedna instance patří jedné firmě.
 
 > **Stav:** sestavení ještě není uvolněné pro skutečná data deníku. V produkčním režimu se aplikace bez `ALLOW_UNRELEASED_BUILD=true` nespustí (jen pro testovací data). Podmínky uvolnění jsou v [`PROJECT.md`](PROJECT.md), kapitola „Release gate“.
 
