@@ -11,18 +11,18 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@node-rs/argon2": "^2.2.1",
-    "pg": "^8.23.0"
+    "@node-rs/argon2": "^2.2.2",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^25.9.7",
+    "@playwright/test": "^1.64.0",
+    "@types/node": "^25.9.9",
     "@types/pg": "^8.23.1",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
-    "prettier": "^3.9.7",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3"
   }
 }
