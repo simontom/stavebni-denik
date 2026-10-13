@@ -24,7 +24,7 @@ val ktorVersion = "3.6.0"
 //   - pgjdbc >= 42.7.7: fixes CVE-2025-49146
 val jooqVersion = "3.21.9"
 val flywayVersion = "12.11.0"
-val pgJdbcVersion = "42.7.13"
+val pgJdbcVersion = "42.7.14"
 val testcontainersVersion = "1.21.4"
 val postgresImage = "postgres:18-alpine"
 
