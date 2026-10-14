@@ -27,10 +27,10 @@ RUN gradle :backend:shadowJar --no-daemon -x test
 # below runs on any libc.
 FROM eclipse-temurin:21-jre
 # The archive is pinned by checksum. When TYPST_VERSION changes, update TYPST_SHA256 too (and the
-# same pair in .github/actions/install-typst/action.yml). typst publishes no checksums; this one was computed from
-# two independent downloads and matches the size GitHub lists for the asset.
-ARG TYPST_VERSION=0.13.1
-ARG TYPST_SHA256=7d214bfeffc2e585dc422d1a09d2b144969421281e8c7f5d784b65fc69b5673f
+# same pair in .github/actions/install-typst/action.yml). The checksum matches the GitHub release
+# asset digest and was verified against an independent download.
+ARG TYPST_VERSION=0.15.1
+ARG TYPST_SHA256=a6d077d0a95eed5a2eba715b2dae06be954f624ccbf85758a03f389ded33118c
 RUN apt-get update \
     && apt-get install -y --no-install-recommends xz-utils fontconfig fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/* \
