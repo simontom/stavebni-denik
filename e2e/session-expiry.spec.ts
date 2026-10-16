@@ -43,7 +43,7 @@ test("a session that ends while an entry is being written does not lose the text
 
   // The session ends (the cookie is gone, as after the 12 hours or a logout elsewhere).
   await page.context().clearCookies();
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
 
   // The page is not thrown away: a dialog asks for the password, and the text is still there.
   await expect(dialog).toBeVisible({ timeout: 15_000 });
@@ -63,7 +63,7 @@ test("a session that ends while an entry is being written does not lose the text
   await expect(description).toHaveValue("Betonáž stropu, první polovina");
 
   const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await saved).ok()).toBeTruthy();
 
   await page.goto(`${projectUrl}/reports/${day}`);

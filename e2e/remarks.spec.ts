@@ -38,7 +38,7 @@ test("the manager records an entry of an outside party, also after signing, and 
   await page.goto(`${projectUrl}/reports/${day}`);
   await page.locator('textarea[name="workDescription"]').fill("Betonáž stropu");
   const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await saved).ok()).toBeTruthy();
 
   // Sign: after that the entry itself is locked, but entries of other parties are still possible.

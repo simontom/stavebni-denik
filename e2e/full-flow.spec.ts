@@ -56,7 +56,7 @@ test.describe("Full E2E flow", () => {
 
     // Wait for the form submission to finish and navigate to the created report view
     const submitResponse = page.waitForResponse((resp) => resp.request().method() === "POST" && resp.url().includes("/reports/"));
-    await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+    await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
     await submitResponse;
     await page.goto(reportUrl);
     await page.waitForLoadState("networkidle");

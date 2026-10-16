@@ -121,8 +121,11 @@ export const DailyReport: React.FC = () => {
 
   // The role in THIS project decides what the page offers: investors and inspectors acknowledge, builders write and sign.
   // (The server decides in the end; this only keeps the page from offering what would be refused.)
-  const [myRole, setMyRole] = useState<string | null>(null);
+  // undefined until the project has been asked: the form stays locked until then.
+  const [myRole, setMyRole] = useState<string | null | undefined>(undefined);
   const isInvestor = myRole === "INVESTOR" || myRole === "INSPECTOR";
+  // Only the manager and the workers of the project write the daily entry (Rbac.kt, ReportCreate): for anybody else a save ends in 403.
+  const canWrite = myRole === "BOSS" || myRole === "WORKER";
   useEffect(() => {
     if (!projectId) return;
     let ignore = false;
@@ -189,6 +192,11 @@ export const DailyReport: React.FC = () => {
   const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details });
   const [savedKey, setSavedKey] = useState<string | null>(null);
   const dirty = savedKey !== null && formKey !== savedKey;
+  // One save at a time: a second tap while the first is on its way would send a second create (and get a false conflict).
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  // When the form was last saved; shown until the next change.
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
   useEffect(() => {
     if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [error, errorTick]);
@@ -197,6 +205,20 @@ export const DailyReport: React.FC = () => {
     setUnsavedWork(dirty);
     return () => setUnsavedWork(false);
   }, [dirty]);
+  // Closing the tab, reloading or leaving the app with unsaved text: the browser asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
+  // and only by somebody who may write it.
+  const roleKnown = myRole !== undefined;
+  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -294,7 +316,7 @@ export const DailyReport: React.FC = () => {
 
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loadState !== "ready" || isFuture || isSigned) return;
+    if (!editable || isFuture || savingRef.current) return;
 
     // A trade needs a name and a whole head count (0 is allowed); a row left completely empty is simply not a trade.
     const rows = workers.filter((r) => r.trade.trim() !== "" || r.count.trim() !== "" || r.names.trim() !== "");
@@ -309,6 +331,8 @@ export const DailyReport: React.FC = () => {
     }
     const submittedKey = formKey;
 
+    savingRef.current = true;
+    setSaving(true);
     try {
       const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`, {
         method: "POST",
@@ -337,6 +361,7 @@ export const DailyReport: React.FC = () => {
         const data = await res.json();
         setConflict(false);
         setSavedKey(submittedKey);
+        setSavedAt(new Date());
         if (data) {
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setIsLateEntry(Boolean(data.isLateEntry));
@@ -355,6 +380,9 @@ export const DailyReport: React.FC = () => {
     } catch (err) {
       console.error("Failed to create report:", err);
       showError("Záznam se nepodařilo uložit");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -544,8 +572,13 @@ export const DailyReport: React.FC = () => {
 
       {/* Main Report Form */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <form onSubmit={handleCreateReport}>
-          <fieldset disabled={isSigned} className="m-0 min-w-0 space-y-6 border-0 p-0">
+        {(loadState === "loading" || !roleKnown) && (
+          <p role="status" className="py-8 text-center text-sm text-gray-600">
+            Načítám záznam…
+          </p>
+        )}
+        <form onSubmit={handleCreateReport} hidden={loadState === "loading" || !roleKnown}>
+          <fieldset disabled={!editable} className="m-0 min-w-0 space-y-6 border-0 p-0">
             {isFuture && (
               <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
                 Záznam nelze založit pro budoucí datum.
@@ -787,15 +820,22 @@ export const DailyReport: React.FC = () => {
                 </div>
               )}
             </div>
+          ) : roleKnown && !canWrite ? (
+            <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
           ) : (
             <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
               {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
+              {!dirty && !saving && savedAt && (
+                <span role="status" className="text-xs text-green-700">
+                  Uloženo {savedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
               <button
                 type="submit"
-                disabled={loadState !== "ready" || isFuture}
+                disabled={!editable || isFuture || saving}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Vytvořit záznam
+                {saving ? "Ukládám…" : updatedAt === null ? "Uložit záznam" : "Uložit změny"}
               </button>
             </div>
           )}
@@ -842,7 +882,7 @@ export const DailyReport: React.FC = () => {
       {/* Entries of other parties (supervision, the client, authorities): also on a signed entry */}
       {entryId && (
         <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm empty:hidden">
-          <Remarks entryId={entryId} role={myRole} />
+          <Remarks entryId={entryId} role={myRole ?? null} />
         </div>
       )}
 

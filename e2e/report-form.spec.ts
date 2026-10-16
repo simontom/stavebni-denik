@@ -43,7 +43,7 @@ test("a new entry starts empty and an entry that could not be loaded cannot be s
   await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('textarea[name="workDescription"]')).toHaveValue("");
   await expect(page.locator('input[name="workerTrade"]').first()).toHaveValue("");
-  await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toBeEnabled();
+  await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toBeEnabled();
 
   // The entry cannot be loaded (server error): saving is blocked, so an empty form cannot overwrite it.
   await page.route(`**/api/projects/${projectId}/reports/${pragueDay(-1)}`, (route) =>
@@ -51,7 +51,7 @@ test("a new entry starts empty and an entry that could not be loaded cannot be s
   );
   await page.goto(`${projectUrl}/reports/${pragueDay(-1)}`);
   await expect(page.getByText(/nepodařilo načíst/i)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toBeDisabled();
 });
 
 test("two people editing the same entry: the second save is refused and offers the other version", async ({ browser, page, baseURL }) => {
@@ -60,7 +60,7 @@ test("two people editing the same entry: the second save is refused and offers t
   const day = pragueDay(0);
   const reportUrl = `${projectUrl}/reports/${day}`;
   const description = page.locator('textarea[name="workDescription"]');
-  const save = (p: Page) => p.getByRole("button", { name: /vytvořit záznam/i });
+  const save = (p: Page) => p.getByRole("button", { name: /uložit (záznam|změny)/i });
 
   // Person A creates the entry.
   await page.goto(reportUrl);
@@ -107,7 +107,7 @@ test("an entry for an earlier day is a flagged late entry with a reason; a futur
   await page.locator('textarea[name="workDescription"]').fill("Zápis zpětně");
   await reason.fill("Deník byl na jiné stavbě");
   const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${lateDay}`));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await saved).ok()).toBeTruthy();
 
   await page.goto(`${projectUrl}/reports/${lateDay}`);
@@ -124,14 +124,14 @@ test("an entry for an earlier day is a flagged late entry with a reason; a futur
   // A day that has not come yet cannot be saved.
   await page.goto(`${projectUrl}/reports/${pragueDay(1)}`);
   await expect(page.getByText(/budoucí datum/i)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toBeDisabled();
+  await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toBeDisabled();
 });
 
 test("the weather is entered by hand, saved with the entry, shown again, and can be cleared", async ({ page }) => {
   test.setTimeout(90_000);
   const projectUrl = await loginAndCreateProject(page);
   const day = pragueDay(0);
-  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+  const save = () => page.getByRole("button", { name: /uložit (záznam|změny)/i });
   const saved = () => page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
 
   await page.goto(`${projectUrl}/reports/${day}`);
@@ -167,7 +167,7 @@ test("two people opening the same empty day: the second save is refused, the fir
   test.setTimeout(90_000);
   const projectUrl = await loginAndCreateProject(page);
   const reportUrl = `${projectUrl}/reports/${pragueDay(0)}`;
-  const save = (p: Page) => p.getByRole("button", { name: /vytvořit záznam/i });
+  const save = (p: Page) => p.getByRole("button", { name: /uložit (záznam|změny)/i });
 
   // Both open the day while it is empty.
   await page.goto(reportUrl);
@@ -206,7 +206,7 @@ test("signing needs a saved entry, signs what was saved, and leaves a read-only 
 
   await description.fill("První verze");
   const first = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await first).ok()).toBeTruthy();
   await expect(sign).toBeEnabled();
 
@@ -215,7 +215,7 @@ test("signing needs a saved entry, signs what was saved, and leaves a read-only 
   await expect(page.getByText(/neuložené změny/i).first()).toBeVisible();
   await expect(sign).toBeDisabled();
   const second = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/"));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await second).ok()).toBeTruthy();
   await expect(sign).toBeEnabled();
 
@@ -229,7 +229,7 @@ test("signing needs a saved entry, signs what was saved, and leaves a read-only 
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(description).toBeDisabled();
   await expect(description).toHaveValue("První verze, ale ještě neuloženo");
-  await expect(page.getByRole("button", { name: /vytvořit záznam/i })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
 });
 
 test("worker rows keep every trade and a count of 0, and a trade without a count is not saved", async ({ page }) => {
@@ -238,7 +238,7 @@ test("worker rows keep every trade and a count of 0, and a trade without a count
   const day = pragueDay(0);
   await page.goto(`${projectUrl}/reports/${day}`);
   await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
-  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+  const save = () => page.getByRole("button", { name: /uložit (záznam|změny)/i });
 
   // A trade without a head count: refused in the form, nothing is sent.
   await page.locator('textarea[name="workDescription"]').fill("Práce");
@@ -267,7 +267,7 @@ test("the fields the vyhláška asks for and the names of the people on site are
   const day = pragueDay(0);
   await page.goto(`${projectUrl}/reports/${day}`);
   await expect(page.locator('textarea[name="workDescription"]')).toBeVisible({ timeout: 15_000 });
-  const save = () => page.getByRole("button", { name: /vytvořit záznam/i });
+  const save = () => page.getByRole("button", { name: /uložit (záznam|změny)/i });
 
   await page.locator('textarea[name="workDescription"]').fill("Betonáž stropu");
   await page.locator('input[name="workerTrade"]').first().fill("Betonář");
@@ -304,4 +304,77 @@ test("the fields the vyhláška asks for and the names of the people on site are
   await page.goto(`${projectUrl}/reports/${day}`);
   await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("", { timeout: 15_000 });
   await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Jan Novák");
+});
+
+test("the form is locked until the entry has loaded, so text typed early is not overwritten", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const projectId = projectUrl.split("/").pop()!;
+  const day = pragueDay(0);
+  const description = page.locator('textarea[name="workDescription"]');
+
+  // A slow connection: the entry arrives only when the test lets it through.
+  let release!: () => void;
+  const arrived = new Promise<void>((resolve) => (release = resolve));
+  await page.route(`**/api/projects/${projectId}/reports/${day}`, async (route) => {
+    if (route.request().method() === "GET") await arrived;
+    await route.continue();
+  });
+
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(page.getByText(/načítám záznam/i)).toBeVisible({ timeout: 15_000 });
+  // Nothing can be typed or saved while the entry is on its way.
+  await expect(description.fill("Text, který by se ztratil", { timeout: 1_000 })).rejects.toThrow();
+  await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toBeHidden();
+
+  release();
+  await expect(description).toBeEditable({ timeout: 15_000 });
+  await expect(description).toHaveValue("");
+  await expect(page.getByText(/načítám záznam/i)).toBeHidden();
+});
+
+test("a double tap on save sends one save, the button says what is happening, and closing with unsaved text asks first", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const projectId = projectUrl.split("/").pop()!;
+  const day = pragueDay(0);
+  const description = page.locator('textarea[name="workDescription"]');
+
+  // A slow save, so the second tap lands while the first is still on its way.
+  let posts = 0;
+  await page.route(`**/api/projects/${projectId}/reports/${day}`, async (route) => {
+    if (route.request().method() === "POST") {
+      posts += 1;
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+    }
+    await route.continue();
+  });
+
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(description).toBeEditable({ timeout: 15_000 });
+  const save = page.getByRole("button", { name: "Uložit záznam", exact: true });
+  await expect(save).toBeEnabled();
+  await description.fill("Jednou uložený zápis");
+
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
+  await save.dblclick();
+  await expect(page.getByRole("button", { name: /ukládám/i })).toBeDisabled();
+  expect((await saved).ok()).toBeTruthy();
+
+  // Saved once, without a false "somebody created it meanwhile"; the entry exists now.
+  await expect(page.getByRole("status").filter({ hasText: /uloženo \d{1,2}:\d{2}/i })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: "Uložit změny", exact: true })).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(posts).toBe(1);
+
+  // The next change replaces "Uloženo" with "Neuložené změny", and leaving the page now asks first.
+  await description.click();
+  await description.pressSequentially(" a doplněný");
+  await expect(page.getByText(/neuložené změny/i)).toBeVisible();
+  await expect(page.getByText(/uloženo \d{1,2}:\d{2}/i)).toHaveCount(0);
+  const dialog = page.waitForEvent("dialog");
+  void page.close({ runBeforeUnload: true });
+  const asked = await dialog;
+  expect(asked.type()).toBe("beforeunload");
+  await asked.accept();
 });
