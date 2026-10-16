@@ -4,9 +4,9 @@ Review date: 2026-10-01 (branch `feat/tests-and-e2e-overhaul` @ `2afe509`, PR #6
 
 **How to read this.** The review (findings C1–L7, the legal basis) and the plan (items 0–13, decisions D1–D13) are kept as they were written, because they explain _why_ the system looks the way it does. **What is true today** is in [`PROJECT.md`](../PROJECT.md): that file is the source of truth for the behaviour of the system, and the "Release gate" section there is the live checklist. The "Current state" block below says which parts of this plan are done; the appendix at the end keeps the earlier dated notes word for word.
 
-## Current state (2026-10-12)
+## Current state (2026-10-16)
 
-`main` is at the merge of #129. There are no open pull requests. Backend suite: 493 tests. CI jobs: lint/typecheck/build, jOOQ drift check, integration tests, E2E against `gradlew run`, E2E against the built production image (`e2e-image`), Docker image build and boot test.
+`main` is at `d04cbf9` (#135). Backend suite: **503 `@Test` methods** (493 run without a local `typst` binary, plus 10 in `RealTypstPdfTest` that run when `typst` is installed and are mandatory in CI via `REQUIRE_TYPST=1`). Playwright E2E suite: **30 tests** across 13 spec files. CI jobs: lint/typecheck/build, jOOQ drift check, integration tests, E2E against `gradlew run`, E2E against the built production image (`e2e-image`), Docker image build and boot test.
 
 ### Plan items
 
@@ -17,29 +17,133 @@ Review date: 2026-10-01 (branch `feat/tests-and-e2e-overhaul` @ `2afe509`, PR #6
 | 2   | Single write path, signed reports immutable (C2, H1, H2, H5, H7)                                     | Done                                                                                                                                                                                              |
 | 3   | Create vs update, bad body is 400, Prague "today", `expectedUpdatedAt`, late-entry window (D10)      | Done                                                                                                                                                                                              |
 | 4   | Database-backed sessions, password change and reset, login limits, cross-site check (C4, H8, M1, M2) | Done                                                                                                                                                                                              |
-| 5   | Remaining services moved onto the write path                                                         | Done                                                                                                                                                                                              |
+| 5   | Remaining services moved onto the write path                                                         | Done (note: `UserService` (`createUser`, `setActive`, `deleteUser`, `changeOwnPassword`, `resetPassword`) and `AdminBootstrapService` still use `auditedTransaction`; see Track A S5 below)       |
 | 6   | Database invariants and roles (H6, D5)                                                               | Done: the application's role owns nothing, `migrate` runs as the owner                                                                                                                            |
 | 7   | Uploads (H9, M7, L7)                                                                                 | Done                                                                                                                                                                                              |
-| 8   | PDF export (H4)                                                                                      | Done, except the audit anchor in the footer (see below)                                                                                                                                           |
+| 8   | PDF export (H4)                                                                                      | Done, except the audit anchor in the footer and the příloha 12 PDF layout gaps (see Tracks A, B & C below)                                                                                        |
 | 9a  | Entries of other parties, addenda, acknowledgements                                                  | Done. The file attachment for entries of authorities (D9) is open                                                                                                                                 |
-| 9b  | Weather (manual, D12), příloha 12 fields, removal of the invented-data UI                            | Done; labels and mapping are provisional until a lawyer confirms them                                                                                                                             |
+| 9b  | Weather (manual, D12), příloha 12 fields, removal of the invented-data UI                            | Done; verified against the verbatim text of vyhláška 131/2024 Sb. příloha 12 on 2026-10-16 (remaining gaps in Track C; lawyer confirmation still required)                                        |
 | 10  | Audit anchor (D4)                                                                                    | The code and CI test are merged (`audit-anchor.yml`). **Not switched on**                                                                                                                         |
 | 11  | Retire the legacy tree and CI                                                                        | Done (#109, #116)                                                                                                                                                                                 |
-| 12  | § 166(3) archive export                                                                              | **Open**                                                                                                                                                                                          |
+| 12  | § 166(3) archive export                                                                              | **Open** (cryptographic verification design in Track C below)                                                                                                                                     |
 | 13  | Release hardening                                                                                    | Code parts done (first-admin CLI, non-root image, memory settings, backup scripts with a restore drill in CI, IP/user agent outside the hash, entry numbers at signing). The rest is open (below) |
 
 Decisions D1–D13 were taken on 2026-10-08 by assuming the recommended defaults, on the owner's instruction; later choices (per-project member roles, #105) are described in `PROJECT.md`.
 
-Merged since the notes in the appendix: #122 (příloha 12 part B), #123 (Docker Hub mirror, CI), #125 (project identification), #124 (audit anchor job), #127 (site-manager change), the Dependabot backlog (#126, #104, #106, #128; Kotlin 2.4, Ktor 3.6, jOOQ 3.21.9) and #129 (common passwords and the login name refused; README cites § 166).
+Merged since the notes in the appendix: #122 (příloha 12 part B), #123 (Docker Hub mirror, CI), #125 (project identification), #124 (audit anchor job), #127 (site-manager change), the Dependabot backlog (#126, #104, #106, #128; Kotlin 2.4, Ktor 3.6, jOOQ 3.21.9), #129 (common passwords and the login name refused; README cites § 166), #130 (this review and plan committed), #131–#133 (Dependabot bumps: Kotlin 2.4.21, Gradle 8.14.6, pgjdbc 42.7.14, Playwright 1.64.0, Vite 8.3.4, lucide-react 1.54.0), #134 (`typst` upgraded from 0.13.1 to 0.15.1) and #135 (Gradle 8.14 builder image in `Dockerfile`).
 
 ### Still open, and what blocks it
 
-1. **Needs a lawyer:** the příloha 12 labels and mapping (they come from a summary of the annex, not the official text), the signature approach, how entries by authorities are handled (a qualified electronic signature may be required), whether above-threshold public contracts are excluded, and what exactly the § 166(3) archive export hands over (a hash-chain slice cannot be verified standalone, so it has to carry its anchor).
+1. **Needs a lawyer:** confirmation of the příloha 12 labels and mapping (verified against the official Sbírka zákonů text on 2026-10-16; see `PROJECT.md` and Track C below), the signature approach (whether ČKAIT number + password re-entry + SHA-256 content hash stands for "otisk razítka a podpis" under příloha 12 Part A / zákon 360/1992 Sb. § 13 or needs a qualified electronic signature/seal), how entries by authorities are handled (a QES under zákon 297/2016 Sb. § 5 may be required), whether above-threshold public contracts (§ 166(5) of zákon 283/2021 Sb.) are excluded, and whether Part A identification printed as-of-today with a modification note suffices or must be frozen per signed entry.
 2. **Needs infrastructure:** a production database and Fly settings; switching on `audit-anchor.yml` (a private anchor repository with a branch rule, the pinned authority certificate, the secrets); a schedule and an encrypted off-site copy for backups, and a periodic restore drill on production data; a schedule for `prune-access-records`; monitoring and alerts (nothing exists yet).
 3. **Needs the owner:** add the `e2e-image` job to the required status checks of `main`; disable `audit-anchor.yml` in the Actions tab until a production database exists (it fails every night while unconfigured); `fly.toml` asks for a 1 GB machine (cost).
 4. **Paperwork:** GDPR notice and processor agreements (D13). The audit chain permanently holds worker names, by design.
-5. **Not built:** the protocol-file attachment for authorities (D9, an upload-airlock decision for non-image files); the audit anchor in the PDF footer; the "one working week" rule for simple buildings; start and interruption of work as separate fields (free text today); only users with a ČKAIT number may hold the BOSS role of a project (D2, today any member can be made BOSS by a manager or administrator, audited); a second factor (TOTP proposal in `PROJECT.md`); per-user volume limits on photo upload and PDF export; a CI check that released migrations never change (the rule applies from the first deploy tag).
+5. **Not built:** the protocol-file attachment for authorities (D9, an upload-airlock decision for non-image files); the § 166(3) archive export (item 12); the audit anchor in the PDF footer; the "one working week" rule for simple buildings; start and interruption of work as separate fields (free text today); two remaining D2 ČKAIT edge cases (S1/S2 below; `addMember`, `createProject` and `changeSiteManager` already enforce ČKAIT on `BOSS`); a second factor (TOTP proposal in `PROJECT.md`); per-user volume limits on photo upload and PDF export; a CI check that released migrations never change (the rule applies from the first deploy tag).
 6. **Small things not done:** deprecation warnings from the dependency bumps (`Principal` in Ktor, `PartData.FileItem.streamProvider`/`dispose` in `PhotoRoutes`, a `Json {}` built on every call in `ReportRoutes` and `PdfExportService`); the change-password form does not check breached passwords as you type (the server does); no rate limit on administrator password resets (only administrators can do it).
+
+---
+
+## 2026-10-16 Multi-Agent Review & 4-Track Action Plan
+
+On 2026-10-16, four specialist reviews were conducted across **Plans & Backlog**, **Security & Architecture**, **Czech Construction Law Paragraphs (_Paragrafy_)**, and **Visual Web & PDF Design**. Below are the consolidated findings and the 4-track plan for team discussion.
+
+### Track A — Security, Write-Path & Code Hardening (Ready to Build; No External Blocker)
+
+1. **S1 (Medium — D2 Broken Site-Manager Role on Project Creation):**
+   - **Where:** `ProjectService.kt:268-270, 309-320`, `ProjectAccess.kt:24-25`.
+   - **Problem:** When `createProject` is called with `siteManagerId != user.id`, `ProjectService.kt:310-316` inserts the site manager into `project_members` using their _global_ role (`USERS.ROLE`) instead of `DbRole.BOSS`. If the chosen site manager holds a ČKAIT number but has global role `WORKER`, `INSPECTOR` or `INVESTOR`, they become `projects.siteManagerId` with a non-`BOSS` project role — unable to sign reports, edit the project, or manage members, and locked against removal by `requireSiteManagerStaysManager`. Furthermore, `ProjectAccess.hasCkaitNumber` does not verify `USERS.ISACTIVE.eq(true)` and `USERS.DELETEDAT.isNull`.
+   - **Fix:** Always insert `siteManagerId` into `project_members` with `DbRole.BOSS`, and check `isActive` + `deletedAt.isNull` in `createProject` / `hasCkaitNumber`.
+2. **S2 (Medium — D2 Invariant Bypass via User Edit):**
+   - **Where:** `UserService.kt:245`.
+   - **Problem:** An administrator can clear `ckaitNumber` (`ckaitNumber = ""`) on a user who is currently `projects.siteManagerId` or holds `PROJECT_MEMBERS.ROLE = BOSS` on an active project, leaving the project without a qualified signer.
+   - **Fix:** Refuse clearing `ckaitNumber` (`409 Conflict`) while the user is `siteManagerId` or holds `BOSS` in any non-deleted project; include `ckaitNumber` / `hasCkait` in `UserOptionDto` so the UI only offers qualified users for `BOSS` / `siteManagerId`.
+3. **S3 (Low-Medium — Site Handover Signing, Optimistic Concurrency & Text Limits):**
+   - **Where:** `SiteHandoverService.kt:125-246`, `ProjectRoutes.kt:134-150`.
+   - **Problem:** `signHandover` permanently locks a handover protocol in the database (migration V5) without password re-entry (`SigningGuard.confirmPassword`), `updateHandover` lacks `expectedUpdatedAt` compare-and-set, and `type`, `participants` and `notes` do not validate length/NUL characters via `Text.checked`.
+4. **S4 (Low — Unrouted Photo Deletion & Missing SHA-256 in Delete Snapshot):**
+   - **Where:** `PhotoService.kt:274-304`, `PhotoRoutes.kt:49-140`.
+   - **Problem:** `PROJECT.md` documents that a project `BOSS` can delete a photo from an unsigned report (`Action.PhotoDelete`), and `PhotoService.deletePhoto` exists, but no `DELETE /api/photos/{id}` route is registered in `PhotoRoutes.kt`. In addition, `PhotoService.deletePhoto` logs `sha256Original = null, sha256Thumbnail = null` in its `PhotoSnapshot` instead of reading `PHOTOS.SHA256` and `PHOTOS.THUMBSHA256`, and omits `.and(DAILY_REPORTS.DELETEDAT.isNull)`.
+5. **S5 (Low — Security Headers, CSP & Legacy `auditedTransaction` Callers):**
+   - **Where:** `Application.kt:90-107, 139-154`, `CrossSiteGuard.kt:51-54`, `UserService.kt:189, 279, 306, 383, 424`, `AdminBootstrapService.kt:30, 66`.
+   - **Problem & Fix:**
+     - Remove `https://api.open-meteo.com` from browser CSP `connect-src` in `Application.kt:141` (`connect-src 'self';`).
+     - Add `Permissions-Policy: camera=(), microphone=(), geolocation=()`, `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Resource-Policy: same-origin` in `configureSecurityHeaders()`.
+     - In `CrossSiteGuard.kt`, require `https://` on `Origin` fallback in production.
+     - Migrate the remaining `UserService` and `AdminBootstrapService` mutations from legacy `AuditService.auditedTransaction` (which logs `before = null, after = null` and `entityId = nickname` on create) to `AuditService.auditedWrite` with `UserSnapshot`, then delete `auditedTransaction` and the dead `Map<*, *>` pipeline interceptor in `Application.kt:90-107`.
+6. **S6 (Low — UTC vs. Prague Date in PDF Header Note):**
+   - **Where:** `PdfExportService.kt:214, 222`.
+   - **Problem & Fix:** `projectInfoNoteOf` uses `ZoneOffset.UTC` instead of `Dates.PRAGUE` (decision D10), causing PDFs exported between 00:00 and 02:00 Prague time to print the previous calendar day.
+7. **Volume Rate Limits (`RateLimiter.consume`):**
+   - **Where:** `RateLimiter.kt:11-52`, `PhotoRoutes.kt`, `PdfRoutes.kt`, `UserService.kt:418`.
+   - **Design:** Add `RateLimiter.consume` (reserves an attempt without releasing on success) to enforce per-user sliding-window caps: 60 photo uploads / 5 min, 15 PDF exports / 5 min, and 10 administrator password resets / 15 min.
+8. **Audit Anchor in the PDF Footer (D4):**
+   - **Where:** `PdfExportService.kt:84-124`, `backend/src/main/resources/pdf/report.typ`.
+   - **Design:** Keep `ReportSignature` unchanged (it hashes the entry before `audit_log.row_hash` is computed). Pass the entry's `report.lock` audit row ID/hash and the current `audit_log` chain head (`<headId>:<headHash>` + export UTC timestamp) in `ReportPdfData` and print them in the page footer of `report.typ`.
+9. **Deprecation & Build Cleanups:**
+   - Remove deprecated `io.ktor.server.auth.Principal` from `SessionUser.kt:31` and dead `UserPrincipal` from `Security.kt:11, 89`.
+   - Replace deprecated `part.streamProvider()` / `part.dispose()` in `PhotoRoutes.kt:73, 86` with Ktor 3 `part.provider()`.
+   - Reuse the shared `Json` instance in `ReportRoutes.kt:68` and `PdfExportService.kt:246, 252`.
+   - Remove unused dependencies (`ktor-server-rate-limit`, `ktor-server-sessions`, `io.konform:konform`) in `backend/build.gradle.kts` and add `scripts/ci/check-immutable-migrations.sh` to guard released migrations once a `v*` tag exists.
+
+---
+
+### Track B — Visual Design, Field Ergonomics & Typst PDF Redesign
+
+1. **Phase 1 — Quick Visual & UX Wins (`frontend/src/`):**
+   - **Foundation (`frontend/src/index.css`):** Add `color-scheme: light;` (preventing mobile OS dark mode from rendering unreadable dark native inputs outdoors), enforce `tabular-nums` on dates/numbers/counts/hashes, standardize input focus/border/disabled styles across `LoginPage.tsx`, `ProjectFields.tsx`, `ProjectDetail.tsx` and `DailyReport.tsx`, and delete unused Vite starter files (`frontend/src/App.tsx`, `App.css`, `assets/hero.png`, `assets/react.svg`, `assets/vite.svg`).
+   - **Report List Status Badges (`ProjectDetail.tsx:615-635`):** Render `r.isSigned` (`Podepsáno` emerald badge with lock icon vs. `Rozpracováno` amber badge) and clamp multi-line `r.workDescription` (`line-clamp-1`) so managers and inspectors can scan 30+ days at a glance.
+   - **Daily Report Status, Save Label & Unified Signature Card (`DailyReport.tsx:507-518, 759-801, 901-923`):**
+     - Show an explicit `Rozpracováno (koncept)` or `Nový záznam` badge in the header when `!isSigned`.
+     - Change the save button label (`L798`) from hardcoded `"Vytvořit záznam"` to `"Uložit změny"` when `updatedAt !== null`.
+     - Merge the duplicate/half-empty bottom `"Uzamčení a podpis denního záznamu"` card (`L901-923`) with the signed hash/verification block (`L759-789`) into a single **Podpis a uzamčení záznamu** card, using a statutory seal style instead of destructive `bg-red-600`.
+   - **Progressive Disclosure for the 8 Příloha 12 Detail Fields (`DailyReport.tsx:703-728`):** Keep filled `DETAIL_FIELDS` expanded; collapse empty optional fields behind quick-add chips or `<details>` accordions while editing, and hide empty detail fields on signed reports (`isSigned === true`) so a signed report reads like a clean statutory document instead of 8 disabled empty textboxes.
+   - **Weather Quick-Select Chips & Total Worker Counter (`DailyReport.tsx:594-700`):** Render `WEATHER_CONDITIONS` as one-tap pills alongside the condition input, visually group each trade row on mobile, and display the live total headcount (`Celkem osob na stavbě: X`) in the workers header.
+2. **Phase 2 — Field Navigation & Typst PDF Visual Upgrade:**
+   - **Prev / Next Day Switcher (`DailyReport.tsx:497-505`):** Add `← Předchozí den` and `Další den →` (bounded by `pragueToday()`) in the daily report header so inspectors can step through a week of entries without bouncing back to the project page.
+   - **Sticky Dirty-State Save Bar (`DailyReport.tsx`, `EditProject.tsx`):** Show a sticky bottom bar (`sticky bottom-0`) when `dirty === true` with `"Neuložené změny"` and the primary save action.
+   - **Structured Part A Overview Cards (`ProjectDetail.tsx:358-383, 405-562`):** Consolidate the Part A identification fields (which are currently split between the top summary card at `358-383` and a flat grid of remaining fields at `405-562`) into the same 4 logical statutory cards used in `ProjectFields.tsx`.
+   - **Typst PDF Visual Upgrade (`backend/src/main/resources/pdf/report.typ`):** Add page numbering (`Strana X z Y`, required by příloha 12 C.1.d) and the audit anchor in the page footer, format Part A identification and the workers table with clean engineering borders (`stroke: 0.5pt + luma(200)`), and place the `Podpis` + SHA-256 verification block inside an unbreakable shaded seal box (`breakable: false`).
+3. **Phase 3 — Native `<dialog>` & Mobile Touch Targets:**
+   - Replace the 7 manual `fixed inset-0` `<div>` modal overlays (`SessionExpiredDialog.tsx:75`, `DailyReport.tsx:857`, `ProjectDetail.tsx:663, 810`, `AdminUsers.tsx:244, 334, 365`) and `window.confirm()` calls with a reusable native `<dialog>` component (providing top-layer rendering, focus trapping and `Escape` handling).
+   - Make `AppLayout.tsx` responsive on 360px–390px phone viewports and ensure `>= 40px` touch targets on action buttons (`AdminUsers.tsx`, `ProjectDetail.tsx`, `DailyReport.tsx`) using `lucide-react` icons already installed in `frontend/package.json`.
+
+---
+
+### Track C — Statutory Paragraphs (_Paragrafy_), Legal Gaps & Lawyer Sign-Off
+
+1. **Verified Statutory Framework (Zákon č. 283/2021 Sb. & Vyhláška č. 131/2024 Sb.):**
+   - **§ 166 odst. 1–5 zákona č. 283/2021 Sb.:** Duty to keep the diary in Czech (`odst. 1`; _jednoduchý záznam_ allowed for simple buildings in Příloha č. 2 **except** residential/recreational under Příloha č. 2 odst. 1 písm. a)); authorised persons (`odst. 2`: _stavebník_, _stavbyvedoucí_, _stavební dozor_, _kontrolní prohlídka_, _zeměměřič / ÚOZI_, _TDS_, _dozor projektanta_, _koordinátor BOZP_, other supervisory bodies); handover in machine-readable format **or** 10-year access (`odst. 3`); implementing decree (`odst. 4`); mandatory electronic diary for above-threshold public contracts (`odst. 5`).
+   - **Related sections in Act 283/2021 Sb.:** **§ 155** (selected regulated activities — ČKAIT/ČKA/ÚOZI), **§§ 160–161** (_stavebník_; **§ 161 odst. 2** requires ČKAIT-authorised TDS and _dozor projektanta_ on publicly funded contractor builds), **§ 163 odst. 2 písm. d)** (contractor's duty to keep the diary), **§ 164** (_stavbyvedoucí_), **§ 165** (_stavební dozor_), **§ 167 písm. c)** (owner's 10-year retention duty), **§ 266 odst. 1** (duty to record unforeseen archaeological/cultural finds in the diary), **§§ 302–303** (offences for diary violations — fines up to **400 000 Kč**), **§§ 329–330** (transitional provisions).
+   - **Electronic signature statutes:** **OZ §§ 561–562** (§ 562 odst. 2 rebuttable presumption of reliability for systematic, sequential records protected against modification); **zákon č. 297/2016 Sb. §§ 5–7** (§ 5 requires QES for public authorities; § 7 allows simple/other electronic signatures between private parties); **zákon č. 360/1992 Sb. § 13 odst. 3–5** (electronic authorisation stamp/signature).
+2. **Code & PDF Adjustments to Match Verbatim Příloha č. 12 (Can Be Built Now):**
+   - **Page numbering (`report.typ:8`):** Add `numbering: "1 / 1"` to satisfy **Příloha č. 12, C.1.d** (_„stavební deník má číslované strany bez ohledu na jeho formu“_).
+   - **Part A layout in `report.typ` & `PdfExportService.kt`:**
+     - Move `subcontractors` (**Part A.c**) and `supportingDocuments` (**Part A.h**) into the Part A identification section of `report.typ` (they are currently rendered after Part B).
+     - Include `authorized_persons` (**Part A.f**: first/last name and function _funkce_), all `BOSS` and `INSPECTOR` project members (**Part A.d & A.e**), and a field for _autorský dozor / dozor projektanta_ (**Part A.e**, distinct from the `designerName` firm in A.c) in Part A.
+     - Print `USERS.CKAITNUMBER` next to `remarks` and `acknowledgements` when the author holds one (**Part A final paragraph**).
+     - Print `site_handovers` (**Part B.2.a**) in the diary PDF (or add a dedicated handover protocol PDF export).
+   - **Official Part B labels & placeholders (`EntryDetails.kt`, `DailyReport.tsx`, `projectFields.ts`):**
+     - Update weather label/hint to mention site state (_„Počasí a stav staveniště“_, **B.1.b**).
+     - Update `materials` and `machinery` labels to match **B.1.d** (_„Dodávky materiálů, výrobků, strojů a zařízení, jejich uskladnění a zabudování“_) and **B.1.e** (_„Nasazení mechanizačních prostředků“_).
+     - Update `testsAndChecks` / `otherNotes` placeholders to explicitly prompt for **B.2.m** (_souhlas se zakrýváním prací — základové spáry, výztuž do betonu, podzemní vedení_), **B.2.c** (_nástupy a ukončení činností poddodavatelů_), and **B.2.w** (_nepředvídané nálezy_, § 266 odst. 1).
+     - Update `builder`, `contractor` and `designerName` placeholders in `projectFields.ts` to prompt for _obchodní firma / jméno a příjmení, sídlo a IČO_ (**Part A.c**) and `permitNumber` label to _„Číslo jednací povolení“_ (**Part A.a**).
+3. **D9 — Protocol File Attachment for External Authorities:**
+   - **Recommended Design:** Byte-preserving PDF upload airlock (`POST /api/remarks/{id}/attachment`, `%PDF-` magic bytes, max 10 MiB) so any PAdES qualified electronic signature from a public authority (zákon 297/2016 Sb. § 5) remains intact. Inspect the PDF structure in memory with Apache PDFBox (already in `backend/build.gradle.kts:86` as `testImplementation`; promote to `implementation`) under a 2-permit semaphore and reject (`400`) files containing `/JavaScript`, `/JS`, `/Launch`, `/EmbeddedFiles`, `/RichMedia`, `/SubmitForm` or non-navigation `/OpenAction`/`/AA`. Store as `protocols/<uuid>.pdf` with its SHA-256 recorded in `remarks` and `RemarkSnapshot`, and serve only with `Content-Disposition: attachment`, `Content-Security-Policy: sandbox; default-src 'none'`, and `X-Content-Type-Options: nosniff`.
+4. **§ 166(3) Archive Export (Plan Item 12):**
+   - **Cryptographic Design:** Because `audit_log` is a single global linear chain (`H_i = SHA256(fields_i || H_{i-1})`), redacting other projects' payloads prevents a standalone verifier from recomputing `H_i` across non-project rows. Solve this either by (a) a two-tier hash (`row_hash = SHA256(prev_hash + ":" + payload_hash)`) where non-project rows are exported as `(id, prev_hash, payload_hash, row_hash)` stubs all the way to the RFC 3161 `.tsr` anchor without exposing any other project's data, or (b) adding a per-project hash link (`project_prev_hash`, `project_row_hash`) on project-scoped audit rows. Bundle `project.json`, `reports/*.{json,pdf}`, `photos/*`, `protocols/*`, `audit/*`, `SHA256SUMS` and a standalone verifier (`AdminCliKt verify-archive` / script).
+
+---
+
+### Track D — Infrastructure, Operations & Owner Checklist
+
+1. **GitHub Repository Settings (Can Be Done Immediately):**
+   - Add `e2e-image` to the required status checks on `main`.
+   - Disable `.github/workflows/audit-anchor.yml` in the GitHub Actions tab until the production database and anchor repository are configured.
+2. **Production Provisioning (`docs/DEPLOYMENT.md`):**
+   - Provision EU PostgreSQL 18 + Fly.io (`fly.toml`: 1 GB RAM, volume `/data/uploads`), bootstrap the unprivileged `app` DB role (`scripts/sql/bootstrap-app-role.sql`), run `AdminCliKt migrate` as owner, and create the first admin via `AdminCliKt create-admin`.
+   - Configure the private anchor repository, branch protection, pinned TSA certificate (`tsa/ca.pem`), and secrets to enable `audit-anchor.yml`.
+   - Schedule encrypted off-site backups (`scripts/backup/backup.sh`), periodic production restore drills (`scripts/backup/restore.sh`), weekly `AdminCliKt prune-access-records`, and uptime/anchor-age monitoring.
+   - Complete GDPR notice & DPAs (D13) and lawyer sign-off, then remove `ALLOW_UNRELEASED_BUILD`.
 
 ## Bottom line
 

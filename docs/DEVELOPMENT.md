@@ -30,11 +30,13 @@ java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt cre
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt reset-password <přezdívka>
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-head
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
+java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
+java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records
 ```
 
 Příkaz `migrate` (s údaji vlastníka databáze) migruje schéma a nastaví roli aplikace; lokálně ho nepotřebujete, backend migruje při startu. V produkci je to naopak: aplikace schéma nemigruje a běží pod rolí, která nic nevlastní (viz `PROJECT.md`, „Database roles“).
 
-Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head` a `audit-verify` jen čtou (nemigrují schéma). Návratové kódy jsou v `PROJECT.md`.
+Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head`, `audit-verify` a `verify-signatures` jen čtou (nemigrují schéma). `prune-access-records` maže záznamy v `access_log` a `audit_request_context` starší než 12 měsíců. Návratové kódy jsou v `PROJECT.md`.
 
 ## Testy
 
