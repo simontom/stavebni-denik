@@ -38,7 +38,7 @@ test("signing asks for the password, a wrong one signs nothing, and the signatur
   await page.goto(`${projectUrl}/reports/${day}`);
   await page.locator('textarea[name="workDescription"]').fill("Betonáž základové desky");
   const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await saved).ok()).toBeTruthy();
 
   const dialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });

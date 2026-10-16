@@ -39,7 +39,7 @@ test("a signed entry is corrected by addenda, which can be added but never edite
   await page.goto(`${projectUrl}/reports/${day}`);
   await description.fill("Betonáž stropu, první polovina");
   const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
-  await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
   expect((await saved).ok()).toBeTruthy();
 
   // While the entry is being written there is no place for an addendum: it is edited directly.

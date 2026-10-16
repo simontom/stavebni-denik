@@ -105,7 +105,7 @@ test.describe("Legislative Compliance", () => {
     await page.locator('input[name="isControlDay"]').check();
     await page.locator('input[name="constructionObj"]').fill("SO-101");
     await page.locator('textarea[name="workDescription"]').fill("Práce na SO-101");
-    await page.getByRole("button", { name: /vytvořit záznam/i }).click();
+    await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
 
     // Verify badges
     await expect(page.getByText("Kontrolní den")).toBeVisible();
@@ -146,5 +146,13 @@ test.describe("Legislative Compliance", () => {
     // Verify acknowledged status appears in header
     await expect(page.getByText(/Seznámil\(a\) se: .*\(stavebník\)/)).toBeVisible();
     await expect(ackBtn).not.toBeVisible();
+
+    // An investor reads the daily entry but does not write it: an unsigned day is shown locked, without a save button.
+    const yesterday = new Date(`${new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date())}T00:00:00Z`);
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    await page.goto(reportUrl.replace(/\/reports\/.*$/, `/reports/${yesterday.toISOString().slice(0, 10)}`));
+    await expect(page.getByText(/můžete jen číst/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('textarea[name="workDescription"]')).toBeDisabled();
+    await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
   });
 });
