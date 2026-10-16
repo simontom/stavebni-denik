@@ -20,7 +20,7 @@ pnpm --prefix frontend dev           # Vite na :5173, /api se proxyuje na :8080
 
 Konfigurace backendu jde přes proměnné prostředí (tabulka v `PROJECT.md`, kapitola „Runtime configuration“); `.env.example` je vzor. Bez `JWT_SECRET` se v dev režimu použije náhodné tajemství na jeden běh, takže restart backendu odhlásí všechny.
 
-## První uživatel a obnova hesla
+## První uživatel a operátorské příkazy
 
 Čerstvá databáze nemá uživatele. Příkazy běží proti stejné databázi jako aplikace:
 
@@ -36,7 +36,7 @@ java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt pru
 
 Příkaz `migrate` (s údaji vlastníka databáze) migruje schéma a nastaví roli aplikace; lokálně ho nepotřebujete, backend migruje při startu. V produkci je to naopak: aplikace schéma nemigruje a běží pod rolí, která nic nevlastní (viz `PROJECT.md`, „Database roles“).
 
-Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head`, `audit-verify` a `verify-signatures` jen čtou (nemigrují schéma). `prune-access-records` maže záznamy v `access_log` a `audit_request_context` starší než 12 měsíců. Návratové kódy jsou v `PROJECT.md`.
+Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head`, `audit-verify` a `verify-signatures` jen čtou (nemigrují schéma; `verify-signatures` čte i soubory fotek v `UPLOADS_DIR`). `prune-access-records` maže záznamy v `access_log` a `audit_request_context` starší než 12 měsíců. S `APP_ENV=production` nemigruje schéma žádný příkaz kromě `migrate` a každý odmítne běžet nad schématem, které není aktuální. Návratové kódy jsou v `PROJECT.md`, kapitola „First administrator and operator CLI“.
 
 ## Testy
 
