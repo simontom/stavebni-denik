@@ -8,6 +8,7 @@ import cz.stavebni.denik.services.PdfBusyException
 import cz.stavebni.denik.services.PdfExportService
 import cz.stavebni.denik.services.PdfUnavailableException
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.RateLimiter
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -15,16 +16,24 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import java.util.UUID
 
-/** The PDF of one report, or the reason there is none. Access has been checked by the caller. */
-private suspend fun ApplicationCall.respondReportPdf(reportId: UUID) {
+/**
+ * The PDF of one report, or the reason there is none. Access has been checked by the caller.
+ *
+ * Every attempt counts towards the person's limit ([RateLimiter.Rules.PDF_EXPORT]), except an export that the server could not
+ * do, busy or without its tool: that is not the person's doing, so the attempt is given back.
+ */
+private suspend fun ApplicationCall.respondReportPdf(user: SessionUser, reportId: UUID) {
+    val attempt = RateLimiter.reserveOrRefuse(DatabaseFactory.dsl, RateLimiter.Rules.PDF_EXPORT, user.id.toString(), "Příliš mnoho exportů do PDF.")
     // A broken or missing PDF tool must be an error the user can see, never an empty "PDF".
     val document = try {
         PdfExportService.generateReportPdf(DatabaseFactory.dsl, reportId)
     } catch (e: PdfUnavailableException) {
+        RateLimiter.release(DatabaseFactory.dsl, attempt)
         application.environment.log.error("PDF export is unavailable: ${e.message}")
         respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Export do PDF není na serveru dostupný"))
         return
     } catch (e: PdfBusyException) {
+        RateLimiter.release(DatabaseFactory.dsl, attempt)
         // Not an error of the server: come back in a moment.
         response.header(HttpHeaders.RetryAfter, "10")
         respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Export do PDF je právě vytížený, zkuste to za chvíli", "code" to "PDF_BUSY"))
@@ -49,7 +58,7 @@ fun Application.pdfRoutes() {
                     throw IllegalArgumentException("Záznam se určuje svým id; datum jen v rámci projektu (/api/projects/{id}/reports/{datum}/pdf)")
                 }
                 ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
-                call.respondReportPdf(reportId)
+                call.respondReportPdf(user, reportId)
             }
 
             // By report id or by day, inside one project: only that project's entries can be found.
@@ -63,7 +72,7 @@ fun Application.pdfRoutes() {
                 } catch (e: NotFoundException) {
                     throw NotFoundException("Záznam nenalezen")
                 }
-                call.respondReportPdf(reportId)
+                call.respondReportPdf(user, reportId)
             }
         }
     }

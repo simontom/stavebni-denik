@@ -13,6 +13,7 @@ import cz.stavebni.denik.services.PhotoDto
 import cz.stavebni.denik.services.PhotoService
 import cz.stavebni.denik.services.PhotoStorage
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.RateLimiter
 import cz.stavebni.denik.services.UploadGate
 import cz.stavebni.denik.services.UploadLimits
 import kotlinx.serialization.Serializable
@@ -152,6 +153,8 @@ fun Application.photoRoutes() {
                 }
                 // Closed on every way out: the answer, an error, a client that went away, the time limit.
                 permit.use {
+                    // Volume per person, counted before anything is read: every attempt counts, whatever becomes of it.
+                    RateLimiter.reserveOrRefuse(DatabaseFactory.dsl, RateLimiter.Rules.PHOTO_UPLOAD, user.id.toString(), "Příliš mnoho nahrávání fotografií.")
                     val upload = try {
                         withTimeout(UploadLimits.bodyTimeout.toMillis()) { readUpload(call, user) }
                     } catch (e: TimeoutCancellationException) {

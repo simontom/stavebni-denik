@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
@@ -266,6 +267,36 @@ class PhotoUploadGateRoutesTest : BaseIntegrationTest() {
 
             assertEquals(0, gate.usersTracked)
             assertEquals(0, dsl.fetchCount(PHOTOS))
+        } finally {
+            server.stop(100, 1000)
+        }
+    }
+
+    /**
+     * A refusal comes while the client is still sending a 5 MiB body that the server will not read. A real client must still
+     * receive the answer (not a reset connection), or the person would see "network error" instead of the reason.
+     */
+    @Test
+    fun `a client that is still sending a big body receives the refusal`() = runBlocking<Unit> {
+        val s = site()
+        val investor = createTestUser(role = Role.INVESTOR).also { addMember(s.projectId, it) }
+        UploadLimits.gate = UploadGate(maxTotal = 1, maxPerUser = 1)
+        val server = embeddedServer(Netty, port = 0) { module() }.start(wait = false)
+        try {
+            val port = server.engine.resolvedConnectors().first().port
+            val head = multipartStart(s.reportId).toByteArray()
+            val file = ByteArray(5 * 1024 * 1024) { 0x41 }
+            val body = head + file + "\r\n--$boundary--\r\n".toByteArray()
+            val client = java.net.http.HttpClient.newHttpClient()
+            val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port/api/photos/upload"))
+                .header("Authorization", bearer(investor))
+                .header("Content-Type", "multipart/form-data; boundary=$boundary")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofByteArray(body))
+                .build()
+
+            val response = withContext(Dispatchers.IO) { client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString()) }
+
+            assertEquals(403, response.statusCode(), response.body())
         } finally {
             server.stop(100, 1000)
         }
