@@ -227,15 +227,13 @@ class EntryDetailsTest : BaseIntegrationTest() {
         assertEquals("Zedníci", worker["trade"]!!.jsonPrimitive.content)
         // Separated by semicolons, because a name can have a comma in it ("Ing. Jan Novák, Ph.D.").
         assertEquals("Jan Novák; Petr Svoboda", worker["names"]!!.jsonPrimitive.content)
-        // In the fixed order of the fields, only those with a text; the text is data, never part of the template.
+        // Every field, in the fixed order, because the PDF prints every heading; a field without a text has an empty one (the
+        // template says "bez záznamu"). The text is data, never part of the template.
         val details = json["details"]!!.jsonArray.map { it.jsonObject["label"]!!.jsonPrimitive.content to it.jsonObject["text"]!!.jsonPrimitive.content }
-        assertEquals(
-            listOf(
-                "Dodávky a uskladnění materiálu a zařízení" to "Cement",
-                "Opatření proti prašnosti" to "#panic(\"x\") Kropení",
-            ),
-            details,
-        )
+        val filled = mapOf("materials" to "Cement", "dustMeasures" to "#panic(\"x\") Kropení")
+        assertEquals(EntryDetails.FIELDS.map { it.label to (filled[it.key] ?: "") }, details)
+        assertEquals(8, details.size)
+        assertEquals("Cement", details.first().second)
         assertEquals(PdfExportService.template, typst, "main.typ given to typst is exactly the fixed template")
         assertFalse(typst.contains("panic"), "the text of a field never becomes part of the typst source")
     }
