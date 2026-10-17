@@ -87,25 +87,6 @@ fun Application.module() {
         })
     }
 
-    sendPipeline.intercept(ApplicationSendPipeline.Before) { value ->
-        if (value is Map<*, *> && value.values.any { it !is String && it !is Number && it !is Boolean && it != null }) {
-            val jsonObject = kotlinx.serialization.json.buildJsonObject {
-                value.forEach { (k, v) ->
-                    val key = k.toString()
-                    when (v) {
-                        is String -> put(key, kotlinx.serialization.json.JsonPrimitive(v))
-                        is Number -> put(key, kotlinx.serialization.json.JsonPrimitive(v))
-                        is Boolean -> put(key, kotlinx.serialization.json.JsonPrimitive(v))
-                        is cz.stavebni.denik.domain.SessionUser -> put(key, kotlinx.serialization.json.Json.encodeToJsonElement(cz.stavebni.denik.domain.SessionUser.serializer(), v))
-                        null -> put(key, kotlinx.serialization.json.JsonNull)
-                        else -> put(key, kotlinx.serialization.json.JsonPrimitive(v.toString()))
-                    }
-                }
-            }
-            proceedWith(jsonObject)
-        }
-    }
-
     configureSecurityHeaders()
     configureRequestContext()
     configureSecurity()
