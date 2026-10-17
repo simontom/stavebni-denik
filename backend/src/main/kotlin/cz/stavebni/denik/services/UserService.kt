@@ -9,15 +9,12 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.domain.can
+import cz.stavebni.denik.jooq.tables.records.UsersRecord
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import cz.stavebni.denik.util.Text
 import kotlinx.serialization.Serializable
 import org.jooq.DSLContext
-import cz.stavebni.denik.jooq.tables.records.UsersRecord
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.Record
 import org.jooq.impl.DSL
 import java.security.SecureRandom
@@ -82,17 +79,6 @@ data class ChangePasswordRequest(
 data class ResetPasswordResponse(
     /** Shown to the administrator exactly once; only the Argon2id hash is stored. */
     val initialPassword: String,
-)
-
-@Serializable
-internal data class UserSnapshot(
-    val id: String,
-    val nickname: String,
-    val displayName: String,
-    val role: String,
-    val isAdmin: Boolean,
-    val isActive: Boolean,
-    val ckaitNumber: String?,
 )
 
 object UserService {
@@ -202,18 +188,14 @@ object UserService {
         val password = generatePassword()
         val hash = PasswordService.hashAsync(password)
 
-        val created = AuditService.auditedTransaction(
-            actor = actor,
-            action = "user.create",
-            entityType = "user",
-            entityId = nickname,
-        ) { tx ->
+        // The audit row is written after the insert, in the same transaction: it names the user by id and holds what the user is.
+        val created = AuditService.auditedWrite(actor, "user") { tx ->
             // "alice" and "Alice" would be look-alike accounts in a legal record, and share one login lockout.
             if (tx.fetchExists(USERS, DSL.lower(USERS.NICKNAME).eq(nickname.lowercase()))) {
                 throw IllegalStateException("Uživatel s přihlašovacím jménem $nickname již existuje")
             }
             val now = OffsetDateTime.now()
-            tx.insertInto(USERS)
+            val record = tx.insertInto(USERS)
                 .set(USERS.NICKNAME, nickname)
                 .set(USERS.DISPLAYNAME, displayName)
                 .set(USERS.PASSWORDHASH, hash)
@@ -228,8 +210,13 @@ object UserService {
                 .set(USERS.UPDATEDAT, now)
                 .returning()
                 .fetchOne()
-                ?.let { toDto(it) }
                 ?: throw IllegalStateException("Nepodařilo se vytvořit uživatele")
+            AuditService.Audited(
+                result = toDto(record),
+                action = "user.create",
+                entityId = record.id.toString(),
+                after = record.toSnapshot(),
+            )
         }
         return CreateUserResponse(user = created, initialPassword = password)
     }
@@ -244,10 +231,7 @@ object UserService {
         val ckaitNumber = checkedCkaitNumber(req.ckaitNumber) // null when blank: a blank number clears it, an absent one leaves it
 
         return AuditService.auditedWrite(actor, "user") { tx ->
-            val existing = tx.selectFrom(USERS)
-                .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
-                .forUpdate()
-                .fetchOne() ?: throw NotFoundException("Uživatel nenalezen")
+            val existing = lockedUser(tx, id)
             // Whoever may edit users could otherwise make themselves a project manager (and then a member of any project).
             if (id == actor.id && role != null && existing.role?.name != role.name) {
                 throw IllegalArgumentException("Nelze změnit vlastní roli")
@@ -279,25 +263,12 @@ object UserService {
         }
     }
 
-    /** What the audit log keeps of a user: who they are and what they may do. Never the password hash. */
-    private fun UsersRecord.toSnapshot(): JsonElement = Json.encodeToJsonElement(
-        UserSnapshot.serializer(),
-        UserSnapshot(
-            id = id.toString(), nickname = nickname ?: "", displayName = displayname ?: "", role = role?.name ?: "",
-            isAdmin = isadmin ?: false, isActive = isactive ?: false, ckaitNumber = ckaitnumber,
-        )
-    )
-
     suspend fun setActive(actor: SessionUser, id: UUID, active: Boolean): UserDto {
         assertCan(actor, if (active) Action.UserActivate else Action.UserDeactivate)
         if (id == actor.id && !active) throw IllegalArgumentException("Nelze deaktivovat vlastní účet")
 
-        return AuditService.auditedTransaction(
-            actor = actor,
-            action = if (active) "user.activate" else "user.deactivate",
-            entityType = "user",
-            entityId = id.toString(),
-        ) { tx ->
+        return AuditService.auditedWrite(actor, "user") { tx ->
+            val existing = lockedUser(tx, id)
             if (!active) requireAnotherActiveAdminIfTargetIsOne(tx, id)
 
             val updated = tx.update(USERS)
@@ -310,7 +281,13 @@ object UserService {
 
             // Reactivating an account must not bring back sessions from before it was deactivated.
             if (!active) SessionService.revokeAllForUser(tx, id)
-            toDto(updated)
+            AuditService.Audited(
+                result = toDto(updated),
+                action = if (active) "user.activate" else "user.deactivate",
+                entityId = id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
     }
 
@@ -319,12 +296,8 @@ object UserService {
         assertCan(actor, Action.UserDelete)
         if (id == actor.id) throw IllegalArgumentException("Nelze smazat vlastní účet")
 
-        AuditService.auditedTransaction(
-            actor = actor,
-            action = "user.delete",
-            entityType = "user",
-            entityId = id.toString(),
-        ) { tx ->
+        AuditService.auditedWrite(actor, "user") { tx ->
+            val existing = lockedUser(tx, id)
             requireAnotherActiveAdminIfTargetIsOne(tx, id)
 
             val now = OffsetDateTime.now()
@@ -333,11 +306,26 @@ object UserService {
                 .set(USERS.ISACTIVE, false)
                 .set(USERS.UPDATEDAT, now)
                 .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
-                .execute()
-            if (updated == 0) throw NotFoundException("Uživatel nenalezen")
+                .returning()
+                .fetchOne()
+                ?: throw NotFoundException("Uživatel nenalezen")
             SessionService.revokeAllForUser(tx, id)
+            AuditService.Audited(
+                result = Unit,
+                action = "user.delete",
+                entityId = id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
     }
+
+    /** The row of a user who is not deleted, locked for the rest of the transaction: the state an audit row records as "before". */
+    internal fun lockedUser(tx: DSLContext, id: UUID): UsersRecord =
+        tx.selectFrom(USERS)
+            .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
+            .forUpdate()
+            .fetchOne() ?: throw NotFoundException("Uživatel nenalezen")
 
     /**
      * The application must always keep an administrator. Called inside the audited transaction
@@ -395,34 +383,33 @@ object UserService {
         require(request.newPassword != request.currentPassword) { "Nové heslo musí být jiné než stávající." }
 
         val newHash = PasswordService.hashAsync(request.newPassword)
-        // The audit row names the account and the action only; neither password nor hash goes into it.
-        AuditService.auditedTransaction(
-            actor = actor,
-            action = "user.password_change",
-            entityType = "user",
-            entityId = actor.id.toString(),
-        ) { tx ->
+        // The audit row shows the account before and after (the password as flags and times); neither password nor hash goes into it.
+        AuditService.auditedWrite(actor, "user") { tx ->
             // The password was checked a moment ago, outside this transaction. If an administrator reset it (or the
             // user changed it elsewhere) in between, this change was made on the strength of a password that no
             // longer exists: it must not overwrite the newer one.
-            val stored = tx.select(USERS.PASSWORDHASH)
-                .from(USERS)
-                .where(USERS.ID.eq(actor.id).and(USERS.DELETEDAT.isNull))
-                .forUpdate()
-                .fetchOne(USERS.PASSWORDHASH)
-                ?: throw NotFoundException("Uživatel nenalezen")
-            if (stored != currentHash) {
+            val existing = lockedUser(tx, actor.id)
+            if (existing.passwordhash != currentHash) {
                 throw IllegalStateException("Heslo bylo mezitím změněno. Přihlaste se znovu a zkuste to znovu.")
             }
-            tx.update(USERS)
+            val updated = tx.update(USERS)
                 .set(USERS.PASSWORDHASH, newHash)
                 .set(USERS.PASSWORDCHANGEDAT, OffsetDateTime.now())
                 .setNull(USERS.PASSWORDEXPIRESAT)
                 .set(USERS.MUSTCHANGEPWD, false)
                 .set(USERS.UPDATEDAT, OffsetDateTime.now())
                 .where(USERS.ID.eq(actor.id))
-                .execute()
+                .returning()
+                .fetchOne()
+                ?: throw NotFoundException("Uživatel nenalezen")
             SessionService.revokeOthersForUser(tx, actor.id, actor.sessionId)
+            AuditService.Audited(
+                result = Unit,
+                action = "user.password_change",
+                entityId = actor.id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
     }
 
@@ -437,28 +424,37 @@ object UserService {
 
         val password = generatePassword()
         val hash = PasswordService.hashAsync(password)
-        AuditService.auditedTransaction(
-            actor = actor,
-            action = "user.password_reset",
-            entityType = "user",
-            entityId = id.toString(),
-        ) { tx ->
-            val nickname = tx.update(USERS)
-                .set(USERS.PASSWORDHASH, hash)
-                .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
-                .set(USERS.PASSWORDEXPIRESAT, OffsetDateTime.now().plus(TEMPORARY_PASSWORD_LIFETIME))
-                .set(USERS.MUSTCHANGEPWD, true)
-                .set(USERS.UPDATEDAT, OffsetDateTime.now())
-                .where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
-                .returning(USERS.NICKNAME)
-                .fetchOne()
-                ?.get(USERS.NICKNAME)
-                ?: throw NotFoundException("Uživatel nenalezen")
+        AuditService.auditedWrite(actor, "user") { tx ->
+            val existing = lockedUser(tx, id)
+            val updated = issueTemporaryPassword(tx, existing, hash)
             SessionService.revokeAllForUser(tx, id)
-            RateLimiter.clear(tx, RateLimiter.Rules.LOGIN_USER, loginKey(nickname))
+            RateLimiter.clear(tx, RateLimiter.Rules.LOGIN_USER, loginKey(updated.nickname!!))
+            AuditService.Audited(
+                result = Unit,
+                action = "user.password_reset",
+                entityId = id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
         return ResetPasswordResponse(initialPassword = password)
     }
+
+    /**
+     * Gives the (locked) user [existing] the temporary password with hash [hash]: it has to be changed at the next login and
+     * expires after [TEMPORARY_PASSWORD_LIFETIME]. Shared by the administrator's reset and the operator's `reset-password`.
+     */
+    internal fun issueTemporaryPassword(tx: DSLContext, existing: UsersRecord, hash: String): UsersRecord =
+        tx.update(USERS)
+            .set(USERS.PASSWORDHASH, hash)
+            .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
+            .set(USERS.PASSWORDEXPIRESAT, OffsetDateTime.now().plus(TEMPORARY_PASSWORD_LIFETIME))
+            .set(USERS.MUSTCHANGEPWD, true)
+            .set(USERS.UPDATEDAT, OffsetDateTime.now())
+            .where(USERS.ID.eq(existing.id!!))
+            .returning()
+            .fetchOne()
+            ?: throw NotFoundException("Uživatel nenalezen")
 
     /** The key under which failed logins of an account name are counted. */
     fun loginKey(nickname: String): String = nickname.trim().lowercase().take(128)
