@@ -11,6 +11,7 @@ import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.domain.can
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
+import cz.stavebni.denik.util.Text
 import kotlinx.serialization.Serializable
 import org.jooq.DSLContext
 import cz.stavebni.denik.jooq.tables.records.UsersRecord
@@ -97,6 +98,21 @@ internal data class UserSnapshot(
 object UserService {
 
     internal val NICKNAME_PATTERN = Regex("^[A-Za-z0-9._@-]{3,64}$")
+
+    /** The longest display name and ČKAIT number, counted after trimming; the text columns are bounded by nothing else. */
+    const val MAX_DISPLAY_NAME_CHARS = 200
+    const val MAX_CKAIT_CHARS = 50
+
+    /** A display name as it is stored: trimmed, not empty, at most [MAX_DISPLAY_NAME_CHARS] characters. Anything wrong is a 400. */
+    internal fun checkedDisplayName(value: String): String {
+        val name = value.trim()
+        require(name.isNotEmpty()) { "Jméno a příjmení je povinné" }
+        return Text.checked(name, "Jméno a příjmení", MAX_DISPLAY_NAME_CHARS)
+    }
+
+    /** A ČKAIT number as it is stored: trimmed, null when blank, at most [MAX_CKAIT_CHARS] characters. */
+    internal fun checkedCkaitNumber(value: String?): String? =
+        value?.trim()?.ifEmpty { null }?.let { Text.checked(it, "Číslo ČKAIT", MAX_CKAIT_CHARS) }
     /** How long a generated password (new account, administrator reset) works if it is never used. */
     val TEMPORARY_PASSWORD_LIFETIME: Duration = Duration.ofDays(7)
 
@@ -177,11 +193,11 @@ object UserService {
     suspend fun createUser(actor: SessionUser, req: CreateUserRequest): CreateUserResponse {
         assertCan(actor, Action.UserCreate)
         val nickname = req.nickname.trim()
-        val displayName = req.displayName.trim()
         require(NICKNAME_PATTERN.matches(nickname)) {
             "Přihlašovací jméno musí mít 3–64 znaků (písmena, číslice, . _ - @)"
         }
-        require(displayName.isNotEmpty()) { "Jméno a příjmení je povinné" }
+        val displayName = checkedDisplayName(req.displayName)
+        val ckaitNumber = checkedCkaitNumber(req.ckaitNumber)
         val role = parseRole(req.role)
         val password = generatePassword()
         val hash = PasswordService.hashAsync(password)
@@ -206,7 +222,7 @@ object UserService {
                 .set(USERS.ISACTIVE, true)
                 .set(USERS.MUSTCHANGEPWD, true)
                 .set(USERS.PASSWORDEXPIRESAT, now.plus(TEMPORARY_PASSWORD_LIFETIME))
-                .set(USERS.CKAITNUMBER, req.ckaitNumber?.trim()?.ifEmpty { null })
+                .set(USERS.CKAITNUMBER, ckaitNumber)
                 .set(USERS.CREATEDBYID, actor.id)
                 .set(USERS.CREATEDAT, now)
                 .set(USERS.UPDATEDAT, now)
@@ -224,8 +240,8 @@ object UserService {
             throw IllegalArgumentException("Nelze odebrat administrátorská práva sám sobě")
         }
         val role = req.role?.let { parseRole(it) }
-        val displayName = req.displayName?.trim()
-        if (displayName != null) require(displayName.isNotEmpty()) { "Jméno a příjmení je povinné" }
+        val displayName = req.displayName?.let { checkedDisplayName(it) }
+        val ckaitNumber = checkedCkaitNumber(req.ckaitNumber) // null when blank: a blank number clears it, an absent one leaves it
 
         return AuditService.auditedWrite(actor, "user") { tx ->
             val existing = tx.selectFrom(USERS)
@@ -242,7 +258,7 @@ object UserService {
             if (displayName != null) update.set(USERS.DISPLAYNAME, displayName)
             if (role != null) update.set(USERS.ROLE, DbRole.valueOf(role.name))
             if (req.isAdmin != null) update.set(USERS.ISADMIN, req.isAdmin)
-            if (req.ckaitNumber != null) update.set(USERS.CKAITNUMBER, req.ckaitNumber.trim().ifEmpty { null })
+            if (req.ckaitNumber != null) update.set(USERS.CKAITNUMBER, ckaitNumber)
             val updated = update.where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
                 .returning()
                 .fetchOne()

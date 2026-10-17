@@ -78,6 +78,17 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the display name of the first administrator has the same limit as any other, 200 characters`() = runBlocking<Unit> {
+        val tooLong = assertThrows<IllegalArgumentException> { AdminBootstrapService.createFirstAdmin("long.name", "Č".repeat(201)) }
+        assertTrue(tooLong.message!!.contains("nejvýše 200 znaků"), tooLong.message)
+        assertEquals(0, dsl.fetchCount(USERS), "nothing was created")
+
+        AdminBootstrapService.createFirstAdmin("long.name", " " + "Č".repeat(200) + " ")
+
+        assertEquals("Č".repeat(200), user("long.name")!!.displayname)
+    }
+
+    @Test
     fun `two runs at once create exactly one administrator`() = runBlocking {
         val outcomes = coroutineScope {
             listOf("alice", "bob").map { nick ->

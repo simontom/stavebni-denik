@@ -20,9 +20,8 @@ object AdminBootstrapService {
     /** Creates an active administrator, but only while the system has none: after that, administrators are made in the application. */
     suspend fun createFirstAdmin(nickname: String, displayName: String): Result {
         val nick = nickname.trim()
-        val name = displayName.trim()
         require(UserService.NICKNAME_PATTERN.matches(nick)) { "Přihlašovací jméno musí mít 3–64 znaků (písmena, číslice, . _ - @)" }
-        require(name.isNotEmpty()) { "Jméno a příjmení je povinné" }
+        val name = UserService.checkedDisplayName(displayName)
 
         val password = UserService.generatePassword()
         val hash = PasswordService.hash(password)
