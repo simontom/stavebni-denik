@@ -66,12 +66,19 @@ object PhotoService {
     private const val MAX_JPEG_PIXELS = 64_000_000L
     /** Other formats (PNG ...) are decoded in full by the JDK, so they get a smaller limit. */
     private const val MAX_OTHER_PIXELS = 16_000_000L
+    /**
+     * What a JPEG that the decoder cannot stream (progressive, or with one scan per component) may claim: it keeps about
+     * 6 bytes per pixel for the whole image, measured at 98 MiB for exactly this many pixels
+     * (`ProgressiveJpegMemoryTest`). A baseline JPEG is limited by [MAX_JPEG_PIXELS] instead.
+     */
+    const val MAX_PROGRESSIVE_JPEG_PIXELS = 16_000_000L
     private const val MAX_SIDE_PIXELS = 16_000 // longest side; a 1 x 16,000 image is fine, a 1 x 60,000,000 one is not
     /** Most pixels held in memory for one image. The JPEG reader skips pixels while decoding to stay below it. */
     private const val MAX_DECODED_PIXELS = 4_000_000L
 
-    /** Decoding and encoding are heavy: at most two images at the same time, whatever the number of uploads. */
-    private val imageSlots = Semaphore(2)
+    /** Decoding and encoding are heavy: at most this many images at the same time, whatever the number of uploads. */
+    const val IMAGE_SLOTS = 2
+    private val imageSlots = Semaphore(IMAGE_SLOTS)
 
     private class Encoded(val bytes: ByteArray, val width: Int, val height: Int)
 
@@ -82,9 +89,10 @@ object PhotoService {
      *
      * A big photo is accepted and decoded already reduced: the reader skips pixels while decoding
      * (source subsampling), so what is held in memory never exceeds about [MAX_DECODED_PIXELS], whatever the
-     * size of the original. The stored picture is at most 1920 x 1080 anyway.
+     * size of the original. The stored picture is at most 1920 x 1080 anyway. That holds for a JPEG the decoder streams;
+     * one with several scans (progressive) is limited to [MAX_PROGRESSIVE_JPEG_PIXELS] (see [requireSingleScan]).
      */
-    private fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
+    internal fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
         try {
             ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
                 val readers = ImageIO.getImageReaders(stream)
@@ -96,10 +104,12 @@ object PhotoService {
                     val height = reader.getHeight(0)
                     if (width <= 0 || height <= 0) throw IllegalArgumentException("Invalid or corrupted image data")
                     val pixels = width.toLong() * height.toLong()
-                    val maxPixels = if (reader.formatName.equals("JPEG", ignoreCase = true)) MAX_JPEG_PIXELS else MAX_OTHER_PIXELS
+                    val isJpeg = reader.formatName.equals("JPEG", ignoreCase = true)
+                    val maxPixels = if (isJpeg) MAX_JPEG_PIXELS else MAX_OTHER_PIXELS
                     if (pixels > maxPixels || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
                         throw IllegalArgumentException("Image dimensions exceed ${maxPixels / 1_000_000}MP limit")
                     }
+                    if (isJpeg && pixels > MAX_PROGRESSIVE_JPEG_PIXELS) requireSingleScan(bytes, width, height)
                     val param = reader.defaultReadParam
                     if (pixels > MAX_DECODED_PIXELS) {
                         val step = ceil(sqrt(pixels.toDouble() / MAX_DECODED_PIXELS)).toInt()
@@ -112,6 +122,24 @@ object PhotoService {
             }
         } catch (e: IOException) {
             throw IllegalArgumentException("Invalid or corrupted image data")
+        }
+    }
+
+    /**
+     * A JPEG above [MAX_PROGRESSIVE_JPEG_PIXELS] must be an ordinary single-scan file, which the decoder streams. A progressive
+     * one (or one with a scan per component) makes it keep the coefficients of the whole image: about 6 bytes per pixel,
+     * 373 MiB for the 64 megapixels the header may claim, twice with the two decode slots (see [JpegHeader]).
+     *
+     * The answer comes from our own walk over the header. It must agree with what the decoder reported ([width] and
+     * [height]); a header that cannot be followed, or that the two read differently, is refused: when in doubt, not decoded.
+     */
+    private fun requireSingleScan(bytes: ByteArray, width: Int, height: Int) {
+        val frame = JpegHeader.frameOf(bytes)
+        if (frame == null || frame.width != width || frame.height != height) {
+            throw IllegalArgumentException("Invalid or corrupted image data")
+        }
+        if (frame.isMultiScan) {
+            throw IllegalArgumentException("Progressive JPEG dimensions exceed ${MAX_PROGRESSIVE_JPEG_PIXELS / 1_000_000}MP limit")
         }
     }
 
