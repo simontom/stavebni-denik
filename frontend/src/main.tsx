@@ -11,6 +11,8 @@ import { DailyReportPage } from "./pages/DailyReport";
 import { AdminUsers } from "./pages/AdminUsers";
 import { AuditLogViewer } from "./pages/AuditLogViewer";
 import { AppLayout } from "./components/AppLayout";
+import { currentUser } from "./lib/api";
+import { browserStorage, pruneDrafts } from "./lib/draftStore";
 import "./index.css";
 
 export function RootRoute() {
@@ -19,6 +21,14 @@ export function RootRoute() {
     return <Navigate to="/login" replace />;
   }
   return <Navigate to="/projects" replace />;
+}
+
+// When the application starts: drafts of daily entries that are older than 30 days, unreadable, or not the signed-in
+// person's are removed (they hold the names of people on site). Never allowed to stop the application from starting.
+try {
+  pruneDrafts(browserStorage(), { signedInUserId: currentUser()?.id ?? null });
+} catch {
+  // the application works without drafts
 }
 
 // A data router (not <BrowserRouter>): only it can block a navigation (useBlocker), which the pages with unsaved

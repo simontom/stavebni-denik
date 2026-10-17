@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { currentUser, hasUnsavedWork, setUnsavedWork, SESSION_EXPIRED_EVENT, type SessionUser } from "../lib/api";
+import { currentUser, hasUnsavedWork, setUnsavedWork, SESSION_EXPIRED_EVENT, unsavedWorkIsKeptAsDraft, type SessionUser } from "../lib/api";
+import { browserStorage, clearAllDrafts } from "../lib/draftStore";
 
 /**
  * Shown when the server ends the session while a page is open. The page underneath keeps its state (a half-written
@@ -33,9 +34,10 @@ export function SessionExpiredDialog() {
   if (!open) return null;
 
   const leave = () => {
-    // Signing out for good: the guard that asks before leaving a page with unsaved work must let this through (the
-    // button says what is thrown away).
+    // Signing out for good: nothing of the page stays on the device (a draft holds the names of the people on site), and
+    // the guard that asks before leaving a page with unsaved work must let this through (the button says what is thrown away).
     setUnsavedWork(false);
+    clearAllDrafts(browserStorage());
     localStorage.removeItem("user");
     setOpen(false);
     navigate("/login");
@@ -81,6 +83,7 @@ export function SessionExpiredDialog() {
           Přihlášení vypršelo
         </h2>
         <p className="text-sm text-gray-600">Vaše práce na stránce zůstala, jak byla. Přihlaste se znovu a zopakujte, co jste dělali (například uložení).</p>
+        {unsavedWorkIsKeptAsDraft() && <p className="text-sm text-gray-600">Rozepsaný text je uložený i v tomto zařízení; odhlášením se smaže.</p>}
         <p className="text-sm text-gray-800">
           Uživatel: <strong>{user?.nickname ?? "?"}</strong>
         </p>

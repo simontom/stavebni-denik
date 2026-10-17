@@ -2,9 +2,10 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { Remarks } from "../components/Remarks";
-import { api, apiFetch, currentUser, setUnsavedWork } from "../lib/api";
+import { api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
+import { useReportDraft } from "../lib/useReportDraft";
 
 interface PhotoItem {
   id: string;
@@ -164,15 +165,23 @@ export const DailyReport: React.FC = () => {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   const roleKnown = myRole !== undefined;
-  // Tell the application: after a lapsed session the page must keep what was typed (no reload, no redirect), and leaving
-  // the page (a link, logging out) asks first.
-  useEffect(() => {
-    setUnsavedWork(dirty);
-    return () => setUnsavedWork(false);
-  }, [dirty]);
+  // The draft of this day kept on the device (backlog B2): offered when the day opens if it holds what the stored entry
+  // does not, written while there are unsaved changes, gone when they are saved. Not for a signed entry or a role that cannot write.
+  // The hook also tells the application about unsaved work (setUnsavedWork): after a lapsed session the page must keep what
+  // was typed (no reload, no redirect), and leaving the page (a link, logging out) asks first.
+  const draft = useReportDraft({
+    scope: meId && projectId && reportId ? { userId: meId, projectId, day: reportId } : null,
+    ready: loadState === "ready" && roleKnown,
+    loadedKey: savedKey,
+    canWrite,
+    isSigned,
+    dirty,
+    values,
+    updatedAt,
+  });
   // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
-  // and only by somebody who may write it.
-  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned;
+  // only by somebody who may write it, and not while a draft waits for the person to take it or throw it away.
+  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned && draft.offer === null;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -182,7 +191,7 @@ export const DailyReport: React.FC = () => {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  /** Puts [v] into the form (an entry as loaded from the server). */
+  /** Puts [v] into the form (an entry as loaded from the server, or a draft the person took back). */
   const applyValues = (v: FormValues) => {
     setWorkDescription(v.workDescription);
     setDetails(v.details);
@@ -193,6 +202,10 @@ export const DailyReport: React.FC = () => {
     setWeatherMin(v.weatherMin);
     setWeatherMax(v.weatherMax);
     setLateEntryReason(v.lateEntryReason);
+  };
+  const handleRestoreDraft = () => {
+    const restored = draft.restore();
+    if (restored) applyValues(restored);
   };
 
   useEffect(() => {
@@ -489,6 +502,32 @@ export const DailyReport: React.FC = () => {
         )}
       </div>
 
+      {/* A draft kept on this device that the stored entry does not have: the form stays locked until the person decides */}
+      {draft.offer && (
+        <section aria-labelledby="draft-banner-title" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h2 id="draft-banner-title" className="text-sm font-semibold text-amber-900">
+            Našli jsme rozepsaný záznam
+          </h2>
+          <p className="mt-1 text-sm text-amber-900">
+            V tomto zařízení je koncept z {draft.offer.savedAt.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}, který není v
+            uloženém záznamu. Chcete v něm pokračovat?
+          </p>
+          {draft.offer.stale && (
+            <p className="mt-1 text-sm font-medium text-amber-900">
+              Záznam byl od té doby změněn (někým jiným nebo na jiném zařízení). Když koncept obnovíte a uložíte, přepíšete novější verzi.
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={handleRestoreDraft} className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+              Obnovit
+            </button>
+            <button type="button" onClick={draft.discard} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+              Zahodit
+            </button>
+          </div>
+        </section>
+      )}
+
       {error && (
         <div ref={errorBox} role="alert" className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
           {error}
@@ -497,7 +536,9 @@ export const DailyReport: React.FC = () => {
               <button type="button" onClick={() => window.location.reload()} className="rounded bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800">
                 Načíst aktuální verzi
               </button>
-              <span className="ml-2 text-xs">Co jste právě napsali, si před načtením zkopírujte.</span>
+              <span className="ml-2 text-xs">
+                {unsavedWorkIsKeptAsDraft() ? "Co jste právě napsali, zůstane jako koncept a po načtení vám ho nabídneme." : "Co jste právě napsali, si před načtením zkopírujte."}
+              </span>
             </div>
           )}
         </div>

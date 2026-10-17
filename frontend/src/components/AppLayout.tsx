@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, Outlet, useBlocker, useLocation, useNavigate, Navigate } from "react-router-dom";
-import { hasUnsavedWork, setUnsavedWork } from "../lib/api";
+import { hasUnsavedWork, setUnsavedWork, unsavedWorkIsKeptAsDraft } from "../lib/api";
+import { clearAllDrafts, browserStorage } from "../lib/draftStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SessionExpiredDialog } from "./SessionExpiredDialog";
 
@@ -31,6 +32,8 @@ export function AppLayout() {
     } catch {
       // ignore
     }
+    // Drafts hold personal data (the names of the people on site): none stays on a device after a logout.
+    clearAllDrafts(browserStorage());
     localStorage.removeItem("user");
     navigate("/login");
   };
@@ -83,7 +86,9 @@ export function AppLayout() {
       </main>
       {blocker.state === "blocked" && (
         <ConfirmDialog title="Neuložené změny" cancelLabel="Zůstat" confirmLabel="Odejít bez uložení" onCancel={() => blocker.reset()} onConfirm={() => blocker.proceed()}>
-          Stránka má neuložené změny. Když odejdete, ztratí se.
+          {unsavedWorkIsKeptAsDraft()
+            ? "Tento záznam má neuložené změny. Když odejdete, rozepsaný text zůstane jako koncept v tomto zařízení a při dalším otevření dne vám ho nabídneme."
+            : "Stránka má neuložené změny. Když odejdete, ztratí se."}
         </ConfirmDialog>
       )}
       {confirmingLogout && (
@@ -97,7 +102,7 @@ export function AppLayout() {
             void logout();
           }}
         >
-          Stránka má neuložené změny. Po odhlášení se ztratí.
+          Stránka má neuložené změny. Po odhlášení se ztratí{unsavedWorkIsKeptAsDraft() ? ", i s konceptem uloženým v tomto zařízení" : ""}.
         </ConfirmDialog>
       )}
     </div>
