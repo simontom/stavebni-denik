@@ -104,6 +104,8 @@ IP adresa a user agent požadavku jsou osobní údaje, proto **nejsou součást�
 fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records"
 ```
 
+Stejný příkaz maže i záznamy omezovače pokusů (`rate_limit_attempts`: adresa nebo přezdívka a čas) starší než **1 den**: k omezení stačí nejvýše 15 minut, a záznam klíče, který se už neobjeví, by jinak zůstal navždy.
+
 **Spouštějte ho pravidelně** (např. týdně): lhůta je slib v zásadách ochrany osobních údajů. Pravidelné spouštění zatím není nastavené (čeká na produkční infrastrukturu, stejně jako zálohy). Zálohy obsahují tyto tabulky také, takže se na ně vztahuje stejná lhůta: zálohy starší než 12 měsíců je třeba mazat.
 
 ## Aktualizace
