@@ -184,6 +184,23 @@ object PhotoService {
         return isJpeg(bytes) || isPng(bytes) || isWebp(bytes)
     }
 
+    /**
+     * Whether [user] may add a photo to the entry right now (their role in its project, and the entry not being signed):
+     * one cheap query, no image work. The route asks it **before** the body of the upload is read, so that someone who may not
+     * upload is refused without their file being buffered; [uploadPhoto] asks again, and the decision that counts is the one
+     * inside its transaction, on the locked row.
+     */
+    fun requireMayUpload(user: SessionUser, reportId: UUID) {
+        val early = DatabaseFactory.dsl.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
+            .from(DAILY_REPORTS)
+            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
+            .fetchOne() ?: throw IllegalArgumentException("Report not found")
+        assertCan(
+            user, Action.PhotoUpload,
+            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
+        )
+    }
+
     suspend fun uploadPhoto(
         user: SessionUser,
         reportId: UUID,
@@ -207,14 +224,7 @@ object PhotoService {
 
         // An early, cheap look so that a request that cannot succeed does not make the server decode an image. The
         // decision that counts is made again inside the transaction below, on the locked report row.
-        val early = DatabaseFactory.dsl.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
-            .from(DAILY_REPORTS)
-            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
-            .fetchOne() ?: throw IllegalArgumentException("Report not found")
-        assertCan(
-            user, Action.PhotoUpload,
-            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
-        )
+        requireMayUpload(user, reportId)
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
         //    the image is then decoded exactly once.
