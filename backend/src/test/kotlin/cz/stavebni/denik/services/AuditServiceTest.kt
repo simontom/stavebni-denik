@@ -153,9 +153,7 @@ class AuditServiceTest : BaseIntegrationTest() {
         val dummyProjectId = UUID.randomUUID()
 
         dsl.withFailingTrigger("audit_log", "INSERT") {
-            assertThrows<Exception> {
-                runBlocking { appendTestAuditRow(user, action = "never.written", entityId = "1") { tx -> insertProject(tx, dummyProjectId, user.id) } }
-            }
+            runBlocking { assertInjectedFailure { appendTestAuditRow(user, action = "never.written", entityId = "1") { tx -> insertProject(tx, dummyProjectId, user.id) } } }
         }
 
         assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(dummyProjectId)), "a change without its audit row is not made")

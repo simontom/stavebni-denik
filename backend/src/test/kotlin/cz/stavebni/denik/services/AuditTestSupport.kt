@@ -3,6 +3,9 @@ package cz.stavebni.denik.services
 import cz.stavebni.denik.domain.SessionUser
 import kotlinx.serialization.json.JsonElement
 import org.jooq.DSLContext
+import org.jooq.exception.DataAccessException
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.assertThrows
 
 /**
  * Appends one audit row through the real write path ([AuditService.auditedWrite]: the same transaction, lock and hash chain as
@@ -37,4 +40,13 @@ internal fun DSLContext.withFailingTrigger(table: String, event: String, body: (
         execute("DROP TRIGGER test_always_fails ON \"$table\"")
         execute("DROP FUNCTION test_always_fails()")
     }
+}
+
+/**
+ * Runs [body], which has to fail with the database error that [withFailingTrigger] injects (a [DataAccessException] that names
+ * it): any other exception, such as a refusal by the application's own checks, does not count as the injected failure.
+ */
+internal suspend fun assertInjectedFailure(body: suspend () -> Unit) {
+    val error = assertThrows<DataAccessException> { body() }
+    assertTrue(error.message!!.contains("this write must fail"), "not the failure that was injected: ${error.message}")
 }

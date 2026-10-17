@@ -344,11 +344,11 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val users = dsl.fetchCount(USERS)
 
         dsl.withFailingTrigger("audit_log", "INSERT") {
-            assertThrows<Exception> { runBlocking { UserService.createUser(actor, CreateUserRequest(nickname = "never.created", displayName = "Nikdy")) } }
-            assertThrows<Exception> { runBlocking { UserService.updateUser(actor, target.id, UpdateUserRequest(displayName = "Změněné")) } }
-            assertThrows<Exception> { runBlocking { UserService.setActive(actor, target.id, active = false) } }
-            assertThrows<Exception> { runBlocking { UserService.resetPassword(actor, target.id) } }
-            assertThrows<Exception> { runBlocking { UserService.deleteUser(actor, target.id) } }
+            runBlocking { assertInjectedFailure { UserService.createUser(actor, CreateUserRequest(nickname = "never.created", displayName = "Nikdy")) } }
+            runBlocking { assertInjectedFailure { UserService.updateUser(actor, target.id, UpdateUserRequest(displayName = "Změněné")) } }
+            runBlocking { assertInjectedFailure { UserService.setActive(actor, target.id, active = false) } }
+            runBlocking { assertInjectedFailure { UserService.resetPassword(actor, target.id) } }
+            runBlocking { assertInjectedFailure { UserService.deleteUser(actor, target.id) } }
         }
 
         assertEquals(users, dsl.fetchCount(USERS), "no user was created")
@@ -369,9 +369,9 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val before = count()
 
         dsl.withFailingTrigger("sessions", "UPDATE") {
-            assertThrows<Exception> { runBlocking { UserService.setActive(actor, target.id, active = false) } }
-            assertThrows<Exception> { runBlocking { UserService.deleteUser(actor, target.id) } }
-            assertThrows<Exception> { runBlocking { UserService.resetPassword(actor, target.id) } }
+            runBlocking { assertInjectedFailure { UserService.setActive(actor, target.id, active = false) } }
+            runBlocking { assertInjectedFailure { UserService.deleteUser(actor, target.id) } }
+            runBlocking { assertInjectedFailure { UserService.resetPassword(actor, target.id) } }
         }
 
         val stored = dsl.selectFrom(USERS).where(USERS.ID.eq(target.id)).fetchOne()!!

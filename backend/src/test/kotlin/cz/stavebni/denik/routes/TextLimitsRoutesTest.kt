@@ -46,9 +46,17 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
 
     private fun user(nickname: String) = dsl.selectFrom(USERS).where(USERS.NICKNAME.eq(nickname)).fetchOne()
 
-    private fun assertRefused(response: HttpResponse, body: String, expected: String) {
+    /**
+     * [request] is answered with 400 and a message that contains [expected], and writes no audit row of any kind: the number of
+     * rows is taken before the request and has to be the same after it.
+     */
+    private suspend fun assertRefused(expected: String, request: suspend () -> HttpResponse) {
+        val rowsBefore = dsl.fetchCount(AUDIT_LOG)
+        val response = request()
+        val body = response.bodyAsText()
         assertEquals(HttpStatusCode.BadRequest, response.status, body)
         assertTrue(body.contains(expected), "expected '$expected' in: $body")
+        assertEquals(rowsBefore, dsl.fetchCount(AUDIT_LOG), "a refused request writes no audit row")
     }
 
     // ------------------------------------------------------------------------------ display name
@@ -61,10 +69,21 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
         assertEquals(200, user("name.limit")!!.displayname!!.length)
 
-        val tooLong = createUser("name.too.long", "displayName" to "Č".repeat(201))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Jméno a příjmení může mít nejvýše 200 znaků")
+        assertRefused("Jméno a příjmení může mít nejvýše 200 znaků") { createUser("name.too.long", "displayName" to "Č".repeat(201)) }
         assertNull(user("name.too.long"), "nothing was created")
-        assertEquals(0, dsl.fetchCount(AUDIT_LOG, AUDIT_LOG.ENTITY_ID.eq("name.too.long")))
+    }
+
+    @Test
+    fun `characters are counted as a person counts them, an emoji is one`() = testApplication {
+        application { module() }
+        val emoji = "😀" // U+1F600: one character, two UTF-16 code units
+
+        val ok = createUser("name.emoji", "displayName" to emoji.repeat(200))
+        assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
+        assertEquals(emoji.repeat(200), user("name.emoji")!!.displayname, "200 characters, although 400 UTF-16 code units, are stored whole")
+
+        assertRefused("Jméno a příjmení může mít nejvýše 200 znaků") { createUser("name.emoji.long", "displayName" to emoji.repeat(201)) }
+        assertNull(user("name.emoji.long"))
     }
 
     @Test
@@ -75,8 +94,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.Created, padded.status, padded.bodyAsText())
         assertEquals("a".repeat(200), user("name.padded")!!.displayname)
 
-        val blank = createUser("name.blank", "displayName" to "   ")
-        assertRefused(blank, blank.bodyAsText(), "Jméno a příjmení je povinné")
+        assertRefused("Jméno a příjmení je povinné") { createUser("name.blank", "displayName" to "   ") }
     }
 
     @Test
@@ -88,21 +106,17 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.OK, ok.status, ok.bodyAsText())
         assertEquals("ž".repeat(200), user("edit.name")!!.displayname)
 
-        val tooLong = patchUser(target.id, "displayName" to "ž".repeat(201))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Jméno a příjmení může mít nejvýše 200 znaků")
+        assertRefused("Jméno a příjmení může mít nejvýše 200 znaků") { patchUser(target.id, "displayName" to "ž".repeat(201)) }
         assertEquals("ž".repeat(200), user("edit.name")!!.displayname, "the stored name is unchanged")
 
-        val blank = patchUser(target.id, "displayName" to "  ")
-        assertRefused(blank, blank.bodyAsText(), "Jméno a příjmení je povinné")
+        assertRefused("Jméno a příjmení je povinné") { patchUser(target.id, "displayName" to "  ") }
     }
 
     @Test
     fun `a NUL character in a display name is a 400 with a message`() = testApplication {
         application { module() }
 
-        val response = createUser("name.nul", "displayName" to "Jan\u0000Novák")
-
-        assertRefused(response, response.bodyAsText(), "nepovolený znak")
+        assertRefused("nepovolený znak") { createUser("name.nul", "displayName" to "Jan\u0000Novák") }
         assertNull(user("name.nul"))
     }
 
@@ -116,8 +130,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
         assertEquals("1".repeat(50), user("ckait.limit")!!.ckaitnumber)
 
-        val tooLong = createUser("ckait.too.long", "displayName" to "Autorizovaná osoba", "ckaitNumber" to "1".repeat(51))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Číslo ČKAIT může mít nejvýše 50 znaků")
+        assertRefused("Číslo ČKAIT může mít nejvýše 50 znaků") { createUser("ckait.too.long", "displayName" to "Autorizovaná osoba", "ckaitNumber" to "1".repeat(51)) }
         assertNull(user("ckait.too.long"))
     }
 
@@ -143,8 +156,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.OK, ok.status, ok.bodyAsText())
         assertEquals("9".repeat(50), user("edit.ckait")!!.ckaitnumber)
 
-        val tooLong = patchUser(target.id, "ckaitNumber" to "9".repeat(51))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Číslo ČKAIT může mít nejvýše 50 znaků")
+        assertRefused("Číslo ČKAIT může mít nejvýše 50 znaků") { patchUser(target.id, "ckaitNumber" to "9".repeat(51)) }
         assertEquals("9".repeat(50), user("edit.ckait")!!.ckaitnumber, "the stored number is unchanged")
 
         val cleared = patchUser(target.id, "ckaitNumber" to "  ")
@@ -183,10 +195,8 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
         assertEquals(1, persons().size)
 
-        val tooLong = addPerson("name" to "N".repeat(201))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Jméno pověřené osoby může mít nejvýše 200 znaků")
+        assertRefused("Jméno pověřené osoby může mít nejvýše 200 znaků") { addPerson("name" to "N".repeat(201)) }
         assertEquals(1, persons().size, "nothing was added")
-        assertEquals(1, dsl.fetchCount(AUDIT_LOG, AUDIT_LOG.ACTION.eq("authorizedPerson.create")), "and no audit row either")
     }
 
     @Test
@@ -196,8 +206,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         val ok = addPerson("name" to "Ing. Dozor", "company" to "C".repeat(200))
         assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
 
-        val tooLong = addPerson("name" to "Ing. Dozor", "company" to "C".repeat(201))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Organizace může mít nejvýše 200 znaků")
+        assertRefused("Organizace může mít nejvýše 200 znaků") { addPerson("name" to "Ing. Dozor", "company" to "C".repeat(201)) }
         assertEquals(1, persons().size)
     }
 
@@ -209,8 +218,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.Created, ok.status, ok.bodyAsText())
         assertEquals(500, persons().single().authorization!!.length)
 
-        val tooLong = addPerson("name" to "Ing. Dozor", "authorization" to "A".repeat(501))
-        assertRefused(tooLong, tooLong.bodyAsText(), "Rozsah pověření / Funkce může mít nejvýše 500 znaků")
+        assertRefused("Rozsah pověření / Funkce může mít nejvýše 500 znaků") { addPerson("name" to "Ing. Dozor", "authorization" to "A".repeat(501)) }
         assertEquals(1, persons().size)
     }
 
@@ -227,8 +235,7 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
         assertEquals("c".repeat(200), stored.company)
         assertEquals("a".repeat(500), stored.authorization)
 
-        val blankName = addPerson("name" to "   ")
-        assertRefused(blankName, blankName.bodyAsText(), "Jméno pověřené osoby je povinné")
+        assertRefused("Jméno pověřené osoby je povinné") { addPerson("name" to "   ") }
 
         val blankRest = addPerson("name" to "Karel", "company" to "  ", "authorization" to "")
         assertEquals(HttpStatusCode.Created, blankRest.status, blankRest.bodyAsText())
@@ -240,10 +247,9 @@ class TextLimitsRoutesTest : BaseIntegrationTest() {
     @Test
     fun `a NUL character in a field of an authorised person is a 400 with a message`() = testApplication {
         application { module() }
+        check(projectId.toString().isNotEmpty()) // the project (and its audit row) is made lazily: before the rows are counted, not by the refused request
 
-        val response = addPerson("name" to "Karel\u0000", "company" to "Firma")
-
-        assertRefused(response, response.bodyAsText(), "nepovolený znak")
+        assertRefused("nepovolený znak") { addPerson("name" to "Karel\u0000", "company" to "Firma") }
         assertEquals(0, persons().size)
     }
 }
