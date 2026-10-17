@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -7,6 +8,10 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   css: {
     postcss: {},
+  },
+  // Unit tests (pure modules in src/lib, no DOM): `pnpm test`. The browser behaviour is covered by the Playwright suite in e2e/.
+  test: {
+    include: ["src/**/*.test.ts"],
   },
   server: {
     port: 5173,
