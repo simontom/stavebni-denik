@@ -11,6 +11,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -47,7 +49,11 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
         val rows = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("user.bootstrap_admin")).fetch()
         assertEquals(1, rows.size)
         assertNull(rows[0].get(AUDIT_LOG.ACTOR_ID))
-        assertEquals("first.admin", rows[0].get(AUDIT_LOG.ENTITY_ID))
+        assertEquals(user("first.admin")!!.id.toString(), rows[0].get(AUDIT_LOG.ENTITY_ID), "the user's id, as for every other user row")
+        assertNull(rows[0].get(AUDIT_LOG.BEFORE))
+        val after = kotlinx.serialization.json.Json.parseToJsonElement(rows[0].get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        assertEquals("true", after["isAdmin"]!!.jsonPrimitive.content, "the row records what was created")
+        assertEquals("first.admin", after["nickname"]!!.jsonPrimitive.content)
         val json = auditJson("user.bootstrap_admin").single()
         assertFalse(json.contains(result.password) || json.contains("argon2"))
         assertTrue(AuditService.verifyChain(dsl).ok)
@@ -75,6 +81,17 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
         assertThrows<IllegalArgumentException> { AdminBootstrapService.createFirstAdmin("has space", "Nekdo") }
         assertThrows<IllegalArgumentException> { AdminBootstrapService.createFirstAdmin("valid.name", "   ") }
         assertEquals(1, dsl.fetchCount(USERS))
+    }
+
+    @Test
+    fun `the display name of the first administrator has the same limit as any other, 200 characters`() = runBlocking<Unit> {
+        val tooLong = assertThrows<IllegalArgumentException> { AdminBootstrapService.createFirstAdmin("long.name", "Č".repeat(201)) }
+        assertTrue(tooLong.message!!.contains("nejvýše 200 znaků"), tooLong.message)
+        assertEquals(0, dsl.fetchCount(USERS), "nothing was created")
+
+        AdminBootstrapService.createFirstAdmin("long.name", " " + "Č".repeat(200) + " ")
+
+        assertEquals("Č".repeat(200), user("long.name")!!.displayname)
     }
 
     @Test
