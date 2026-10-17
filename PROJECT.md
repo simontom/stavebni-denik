@@ -255,6 +255,17 @@ The session cookie is `SameSite=Lax`. In addition, `CrossSiteRequestGuard` refus
 
 Behind the Vite dev proxy the page and the API are the same origin for the browser (`Sec-Fetch-Site: same-origin`), so nothing needs configuring.
 
+## Security headers
+
+`configureSecurityHeaders` (`Application.kt`) sets the same headers on every response of the Ktor server: API answers, errors (`401`, `403`, `404`, `413`), CORS preflights and the files of the SPA. `SecurityHeadersTest` checks each of those kinds. `e2e/security-headers.spec.ts` reads the headers from whatever `BASE_URL` serves: the Vite dev server, which sets a development version of them in `frontend/vite.config.ts` (its `script-src` allows inline scripts for hot reloading), or the built image in the `e2e-image` job. A change to a header therefore goes into those three places.
+
+- `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`. A page talks to its own origin and to nobody else: the weather is typed by hand (decision D12) and nothing calls Open-Meteo, so it is not listed.
+- `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`.
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`: features the application does not use are off for the page and for anything it embeds. `camera=()` governs `getUserMedia` only; the photo field is a plain `<input type="file">`, which hands the choice to the operating system and still opens the camera app on a phone. A feature that used `getUserMedia` would have to change this header.
+- `Cross-Origin-Opener-Policy: same-origin`: no other site's window shares the browsing context group of the application.
+- `Cross-Origin-Resource-Policy: same-site`, **not** `same-origin`: `same-origin` would stop photos from loading on an SPA host listed in `CORS_ALLOWED_ORIGINS`.
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`, in production only (plain HTTP development must not pin HTTPS).
+
 ## Code layout
 
 - `backend/src/main/kotlin/cz/stavebni/denik/` — application (config, db, domain, plugins, routes, services, util)
@@ -376,7 +387,6 @@ Before the first release:
 - **Photos cannot be removed.** `PhotoService.deletePhoto` exists and the matrix allows it to BOSS, but no route calls it, so a photo uploaded to the wrong entry stays there and becomes part of what is signed.
 - **User audit rows:** `UserService` (create, activate and deactivate, delete, own password change, reset) and `AdminBootstrapService` still use the legacy `AuditService.auditedTransaction`. Its row is written before the change, without before/after values (so `user.create` records no role, administrator flag or ČKAIT number), and creates use the nickname as `entityId`. The hash chain is not affected; the completeness of the record is.
 - **Upload memory:** the body of an upload (up to 5 MiB) is read into memory before the access check and before the two-image limit, so many parallel uploads, even from a member who may not upload, can exhaust the heap. A progressive JPEG near the 64-megapixel cap may need several hundred MB to decode (not measured).
-- **Headers:** the CSP still allows `https://api.open-meteo.com` in `connect-src`, although nothing calls it (`SecurityHeadersTest`, `e2e/security-headers.spec.ts` and the dev CSP in `frontend/vite.config.ts` pin it as well). `Permissions-Policy` and `Cross-Origin-Opener-Policy` are not set; `Cross-Origin-Resource-Policy` would have to be `same-site`, not `same-origin`, because of `CORS_ALLOWED_ORIGINS`.
 - **Text limits:** `displayName`, `ckaitNumber` and the fields of authorised persons are bounded only by the 256 KiB body limit.
 - **The PDF of an entry** leaves out the control-day flag and the construction object, although the signature covers both. It prints the subcontractors and the supporting documents after part B, and does not print the authorised persons, the other BOSS and the INSPECTOR members, the handover protocols, or the ČKAIT number next to entries of other parties and acknowledgements. It has no page numbers, no footer, no draft watermark and no line that ends the entry. Times are printed in UTC, and `projectInfoNoteOf` takes the UTC date where decision D10 says Prague.
 - **The web application on the site:** at phone width the header and the tabs of a project do not wrap, so every page inside the application's layout is laid out wider than the screen (about 570 px with the E2E data) and shrunk to fit. Unsaved text is lost without a warning when leaving the entry through a link inside the application or logging out (closing or reloading the tab asks first), and nothing is kept as a draft. A signed entry is a disabled form with example text in the empty fields instead of a document, and the signer is shown only after "Ověřit podpis". The full list and the order of the work are in [`docs/REVIEW-AND-PLAN.md`](docs/REVIEW-AND-PLAN.md) (backlog, track B).
