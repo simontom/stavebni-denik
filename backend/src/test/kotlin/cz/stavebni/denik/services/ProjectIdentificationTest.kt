@@ -185,7 +185,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         val rows = json["projectInfo"]!!.jsonArray.associate { it.jsonObject["label"]!!.jsonPrimitive.content to it.jsonObject["value"]!!.jsonPrimitive.content }
         assertEquals("Brno-střed", rows["Katastrální území"])
         assertEquals("Město Brno", rows["Stavebník"])
-        assertEquals("SZ/1 ze dne 2026-03-01", rows["Povolení"])
+        assertEquals("SZ/1 ze dne 1. 3. 2026", rows["Povolení"])
         assertFalse(rows.containsKey("Projektant"), "a row without a value is left out")
         assertEquals("Elektro #panic(\"x\")", json["subcontractors"]!!.jsonPrimitive.content)
         assertEquals("", json["supportingDocuments"]!!.jsonPrimitive.content)

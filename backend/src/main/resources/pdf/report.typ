@@ -3,10 +3,19 @@
 // User-controlled text (project name, address, work description, ...) is NEVER part of this
 // file. It arrives in data.json and is shown as plain content, so it cannot be interpreted
 // as typst markup or code (no `#read(...)`, no loops, no layout tricks).
+//
+// What the document says, in order (the data model is `ReportPdfData` in ReportPdfData.kt, section by section):
+//   title and status
+//   part A  the identification of the diary: the project, the firms, the documents (příloha 12, part A)
+//   part B  the entry of the day: every field that the signature covers, with "bez záznamu" where it says nothing
+//   the signature, and the end of the entry ("Konec denního záznamu č. N")
+//   what was added after the signature: acknowledgements, addenda, entries of other parties (not part of the signature)
+// Every page has a footer (project, number, date, page of the total); a draft has a watermark across every page.
 #let d = json("data.json")
 
-#set page(paper: "a4", margin: 2cm)
-#set text(font: "Libertinus Serif", size: 11pt, lang: "cs")
+#let grey = luma(105)
+#let rule = 0.5pt + luma(140)
+#let none-mark = text(fill: grey, style: "italic")[bez záznamu]
 
 // Shows a string as plain text and keeps its line breaks. Windows line endings count as one
 // break, and a tab becomes spaces (a tab character would otherwise render as nothing).
@@ -18,119 +27,243 @@
   }
 }
 
-= Denní záznam stavby #if d.sequenceNumber != none [č. #d.sequenceNumber] else [(rozpracovaný, zatím bez čísla)]
+// The text, or "bez záznamu" when there is none: an empty field is stated, never left out.
+#let or-none(s) = if s.trim() != "" { plain(s) } else { none-mark }
 
-#table(
-  columns: (auto, 1fr),
-  stroke: none,
-  [*Stavba:*], [#plain(d.projectName)],
-  [*Adresa:*], [#plain(d.address)],
-  // The identification of the diary as entered about the project: only rows that have a value.
-  ..d.projectInfo.map(x => ([*#x.label:*], plain(x.value))).flatten(),
-  [*Datum:*], [#d.date],
-  [*Stav záznamu:*], [#if d.isSigned [podepsán a uzamčen] else [rozpracovaný]],
-  // A late entry (written after the previous working day) says so, with the author's reason.
-  ..if d.isLateEntry {
-    ([*Pozdní zápis:*], [#plain(d.lateEntryReason)])
-  } else {
-    ()
-  },
+// A text on one line, cut with an ellipsis when it is long (for the footer, which has a fixed height).
+#let one-line(s, max) = {
+  let flat = s.replace(regex("\s+"), " ").trim()
+  let cs = flat.clusters()
+  if cs.len() > max { cs.slice(0, max).join() + "…" } else { flat }
+}
+
+// A hash, in a monospaced font small enough for 64 characters to fit on a line of a table.
+#let hash(s) = text(font: "DejaVu Sans Mono", size: 7.5pt)[#s]
+
+// A table of "label: value" rows with a shaded label column. `rows` is an array of (label, value) pairs.
+#let facts(rows) = table(
+  columns: (5.2cm, 1fr),
+  stroke: rule,
+  inset: (x: 6pt, y: 5pt),
+  fill: (x, y) => if x == 0 { luma(243) },
+  ..rows.map(r => (strong[#r.at(0):], r.at(1))).flatten(),
 )
 
-#if d.projectInfoNote != "" [
-  #text(size: 9pt, style: "italic")[#plain(d.projectInfoNote)]
+// "Entry no. 5", or the words for an entry that has no number yet.
+#let entry-label = if d.sequenceNumber != none [Záznam č. #d.sequenceNumber] else [Záznam bez čísla]
+
+#set document(title: "Denní záznam stavby")
+#set page(
+  paper: "a4",
+  margin: (x: 2cm, top: 2cm, bottom: 2.4cm),
+  footer-descent: 0.5cm,
+  footer: context {
+    set text(size: 8.5pt, fill: grey)
+    line(length: 100%, stroke: 0.4pt + luma(160))
+    v(0.1em)
+    grid(
+      columns: (1fr, auto),
+      column-gutter: 1em,
+      [#one-line(d.projectName, 70) · #entry-label · #d.date],
+      [Strana #counter(page).display() z #counter(page).final().first()],
+    )
+  },
+  // An entry that is not signed is a draft: every page says so, across the text. It is drawn over the page (translucent), so
+  // the shaded cells of the tables do not hide it.
+  foreground: if d.isSigned { none } else {
+    // The box is wider than the words, so that the line is never wrapped.
+    place(
+      center + horizon,
+      rotate(-40deg, box(width: 720pt, align(center, text(size: 42pt, weight: "bold", fill: rgb(190, 30, 30, 50))[KONCEPT – NEPODEPSÁNO]))),
+    )
+  },
+)
+#set text(font: "Libertinus Serif", size: 10.5pt, lang: "cs")
+
+// level 1: the title; level 2: a part of the document; level 3: a field of the entry. A heading stays with what follows it.
+#show heading.where(level: 1): it => block(sticky: true, above: 0pt, below: 0.7em, text(size: 18pt, weight: "bold", it.body))
+#show heading.where(level: 2): it => block(
+  sticky: true,
+  above: 1.6em,
+  below: 0.8em,
+  width: 100%,
+  stroke: (bottom: 0.8pt + luma(60)),
+  inset: (bottom: 3pt),
+  text(size: 13pt, weight: "bold", it.body),
+)
+#show heading.where(level: 3): it => block(sticky: true, above: 1.1em, below: 0.5em, text(size: 10.5pt, weight: "bold", it.body))
+
+// ---- title and status ---------------------------------------------------------------------------
+
+= Denní záznam stavby #if d.sequenceNumber != none [č. #d.sequenceNumber] else [(rozpracovaný, zatím bez čísla)]
+
+#text(size: 11pt)[
+  #strong[#plain(d.projectName)] · #d.weekday #d.date ·
+  #if d.isSigned [podepsán a uzamčen] else [rozpracovaný, nepodepsáno]
 ]
 
-== Počasí
+// ---- part A: the identification of the diary --------------------------------------------------------
+
+== Část A – Údaje o stavbě (identifikace deníku)
+
+#facts((
+  ([Stavba], plain(d.projectName)),
+  ([Adresa], plain(d.address)),
+  // The identification as entered about the project: only rows that have a value.
+  ..d.projectInfo.map(x => ([#x.label], plain(x.value))),
+  ..if d.subcontractors != "" { (([Poddodavatelé], plain(d.subcontractors)),) } else { () },
+  ..if d.supportingDocuments != "" { (([Podklady stavby], plain(d.supportingDocuments)),) } else { () },
+))
+
+#if d.projectInfoNote != "" [
+  #v(0.3em)
+  #text(size: 9pt, style: "italic", fill: grey)[#plain(d.projectInfoNote)]
+]
+
+// ---- part B: the entry of the day ----------------------------------------------------------------------
+
+== Část B – Záznam za den
+
+#facts((
+  ([Datum], [#d.weekday #d.date]),
+  ([Číslo záznamu], if d.sequenceNumber != none [č. #d.sequenceNumber] else [zatím bez čísla (číslo se přidělí při podpisu)]),
+  ([Stav záznamu], if d.isSigned [podepsán a uzamčen] else [rozpracovaný, nepodepsáno]),
+  ([Autor záznamu], or-none(d.author)),
+  // A late entry (written after the previous working day) says so, with the author's reason.
+  ..if d.isLateEntry { (([Pozdní zápis], plain(d.lateEntryReason)),) } else { () },
+  ([Kontrolní den], if d.isControlDay [ano (proběhla stavební kontrola)] else [ne]),
+  ([Stavební objekt (SO)], or-none(d.constructionObj)),
+))
+
+=== Počasí
 
 #plain(d.weather)
 
-#if d.workers.len() > 0 [
-  == Pracovníci na stavbě
+=== Pracovníci na stavbě
 
+#if d.workers.len() > 0 [
   #table(
     columns: (auto, auto, 1fr),
-    stroke: none,
-    [*Profese*], [*Počet*], [*Jména*],
+    stroke: rule,
+    inset: (x: 6pt, y: 5pt),
+    fill: (x, y) => if y == 0 { luma(243) },
+    table.header([*Profese*], [*Počet*], [*Jména*]),
     ..d.workers.map(w => (plain(w.trade), [#w.count], plain(w.names))).flatten(),
+    // The total is printed once, under the last row (not repeated on every page of a long table).
+    table.footer(repeat: false, [*Celkem*], [*#d.workers.map(w => w.count).sum(default: 0)*], []),
   )
-]
+] else [#none-mark]
 
-== Popis prací
+=== Popis prací
 
-#plain(d.workDescription)
+#or-none(d.workDescription)
 
-// The other fields the vyhláška asks for (labels are fixed in the application, the text is plain content).
+// The other fields the vyhláška asks for: every one has its heading (the labels are fixed in the application, the text is plain content).
 #for x in d.details [
-  == #x.label
+  === #x.label
 
-  #plain(x.text)
+  #or-none(x.text)
 ]
 
-#if d.subcontractors != "" [
-  == Poddodavatelé
+=== Fotografie
 
-  #plain(d.subcontractors)
-]
-
-#if d.supportingDocuments != "" [
-  == Podklady stavby
-
-  #plain(d.supportingDocuments)
-]
-
-// The signature: who signed, when, and the hash of the content that was signed (it can be checked in the application).
-#if d.isSigned [
-  == Podpis
+#if d.photos.len() > 0 [
+  Počet fotografií: #d.photos.len(). Fotografie samotné jsou v aplikaci; zde je otisk (SHA-256) každého souboru, a ty jsou součástí obsahu, který podpis pokrývá.
 
   #table(
     columns: (auto, 1fr),
-    stroke: none,
-    [*Podepsal:*], [#plain(d.signedBy)],
-    [*Čas podpisu (UTC):*], [#d.signedAt],
-    ..if d.signatureHash != "" {
-      ([*Otisk obsahu (SHA-256):*], [#text(font: "DejaVu Sans Mono", size: 8pt)[#d.signatureHash]])
-    } else {
-      ()
-    },
+    stroke: rule,
+    inset: (x: 6pt, y: 5pt),
+    fill: (x, y) => if y == 0 { luma(243) },
+    table.header([*Č.*], [*Nahrál(a), čas, otisk souboru (SHA-256)*]),
+    ..d.photos.enumerate().map(((i, p)) => (
+      [#(i + 1)],
+      [#plain(p.uploadedBy), #p.at \ #if p.sha256 != "" [#hash(p.sha256)] else [otisk neuložen]],
+    )).flatten(),
   )
-]
+] else [#none-mark]
 
-// Who took note of the signed entry.
-#if d.acknowledgements.len() > 0 [
-  == Seznámení se záznamem
+// ---- the signature and the end of the entry ---------------------------------------------------------------
+// One block that is never split between two pages: the signature, and the line that closes the entry, stay together.
 
-  #for a in d.acknowledgements [
-    - #plain(a.who), #a.at (UTC)
-  ]
-]
+#block(breakable: false, width: 100%)[
+  == Podpis
 
-// Addenda: corrections and additions to the signed entry, each with its author and time. They are not part of the signed text.
-#if d.addenda.len() > 0 [
-  == Dodatky
-
-  #for a in d.addenda [
-    *#plain(a.author)*, #a.at (UTC)
-
-    #plain(a.text)
-
-    #v(0.6em)
-  ]
-]
-
-// Entries of other parties (supervision, the client, authorities): each says who wrote it, and for an outside party who recorded it.
-#if d.remarks.len() > 0 [
-  == Zápisy dalších osob
-
-  #for r in d.remarks [
-    #if r.onBehalfOf != "" [
-      *#plain(r.onBehalfOf)* (zapsal #plain(r.author)), #r.at (UTC)
-    ] else [
-      *#plain(r.author)*, #r.at (UTC)
+  #if d.isSigned [
+    #facts((
+      ([Podepsal], plain(d.signedBy)),
+      ([Čas podpisu], [#d.signedAt]),
+      ([Číslo záznamu], [č. #d.sequenceNumber]),
+      ([ID záznamu], hash(d.entryId)),
+      // The hash of the content as it was signed; it can be checked in the application ("Ověřit podpis").
+      ([Otisk obsahu (SHA-256)], if d.signatureHash != "" { hash(d.signatureHash) } else [neuložen (záznam byl podepsán před zavedením otisků)]),
+      // The audit row that recorded the signature: its `after` holds the hash above, so it ties this entry to the chain.
+      ([Podpis v auditním řetězci (SHA-256 řádku)], if d.auditRowHash != "" { hash(d.auditRowHash) } else [nenalezen (záznam byl podepsán před zavedením auditního deníku)]),
+    ))
+    #v(0.3em)
+    #text(size: 8.5pt, style: "italic", fill: grey)[Otisk obsahu lze ověřit v aplikaci (Ověřit podpis). Řádek auditního řetězce, který podpis zapsal, obsahuje týž otisk, a váže tak vytištěný záznam k řetězci.]
+  ] else [
+    #rect(width: 100%, stroke: rule, inset: 8pt)[
+      Záznam není podepsán. Dokud není podepsán, může se měnit; číslo mu bude přiděleno při podpisu.
     ]
+  ]
 
-    #plain(r.text)
+  #v(1.2em)
+  #align(center)[
+    #line(length: 55%, stroke: 0.6pt)
+    #v(0.1em)
+    #strong[
+      #if d.sequenceNumber != none [Konec denního záznamu č. #d.sequenceNumber] else [Konec rozpracovaného denního záznamu (zatím bez čísla; číslo bude přiděleno při podpisu)]
+    ]
+    #v(0.1em)
+    #line(length: 55%, stroke: 0.6pt)
+  ]
+]
 
-    #v(0.6em)
+// ---- what was added after the signature -----------------------------------------------------------------------
+// These are separate records with their own author and time; they are not part of what the signature covers.
+
+#if d.acknowledgements.len() > 0 or d.addenda.len() > 0 or d.remarks.len() > 0 [
+  == Připojeno po podpisu záznamu
+
+  #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem; nejsou součástí podpisu záznamu.]
+
+  // Who took note of the signed entry.
+  #if d.acknowledgements.len() > 0 [
+    === Seznámení se záznamem
+
+    #for a in d.acknowledgements [
+      - #plain(a.who), #a.at
+    ]
+  ]
+
+  // Addenda: corrections and additions to the signed entry, each with its author and time.
+  #if d.addenda.len() > 0 [
+    === Dodatky
+
+    #for a in d.addenda [
+      *#plain(a.author)*, #a.at
+
+      #plain(a.text)
+
+      #v(0.6em)
+    ]
+  ]
+
+  // Entries of other parties (supervision, the client, authorities): each says who wrote it, and for an outside party who recorded it.
+  #if d.remarks.len() > 0 [
+    === Zápisy dalších osob
+
+    #for r in d.remarks [
+      #if r.onBehalfOf != "" [
+        *#plain(r.onBehalfOf)* (zapsal #plain(r.author)), #r.at
+      ] else [
+        *#plain(r.author)*, #r.at
+      ]
+
+      #plain(r.text)
+
+      #v(0.6em)
+    ]
   ]
 ]
