@@ -23,9 +23,13 @@ export default defineConfig({
     },
     headers: {
       "Content-Security-Policy":
-        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.open-meteo.com; frame-ancestors 'none'; base-uri 'self';",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self';",
       "X-Frame-Options": "DENY",
       "X-Content-Type-Options": "nosniff",
+      // Same values as the backend (Application.kt): the E2E suite reads these headers from this server.
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Resource-Policy": "same-site",
       "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
     },
   },
