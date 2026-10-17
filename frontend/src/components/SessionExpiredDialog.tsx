@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { currentUser, hasUnsavedWork, SESSION_EXPIRED_EVENT, type SessionUser } from "../lib/api";
+import { currentUser, hasUnsavedWork, setUnsavedWork, SESSION_EXPIRED_EVENT, type SessionUser } from "../lib/api";
 
 /**
  * Shown when the server ends the session while a page is open. The page underneath keeps its state (a half-written
@@ -33,6 +33,9 @@ export function SessionExpiredDialog() {
   if (!open) return null;
 
   const leave = () => {
+    // Signing out for good: the guard that asks before leaving a page with unsaved work must let this through (the
+    // button says what is thrown away).
+    setUnsavedWork(false);
     localStorage.removeItem("user");
     setOpen(false);
     navigate("/login");
@@ -102,7 +105,7 @@ export function SessionExpiredDialog() {
         )}
         <div className="flex items-center justify-between gap-2 border-t pt-3">
           <button type="button" onClick={leave} className="text-sm text-gray-600 underline hover:text-gray-900">
-            Odhlásit
+            {hasUnsavedWork() ? "Odhlásit a zahodit změny" : "Odhlásit"}
           </button>
           <button
             type="submit"
