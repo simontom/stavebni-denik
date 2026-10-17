@@ -89,29 +89,33 @@ class SecurityHeadersTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `the single page app is served with the same headers`() = testApplication {
+    fun `the single page app is served with the same headers`() {
         val dir = Files.createTempDirectory("spa")
         Files.writeString(dir.resolve("index.html"), """<!doctype html><div id="root"></div>""")
         Files.createDirectories(dir.resolve("assets"))
         Files.writeString(dir.resolve("assets/app.js"), "console.log('app');")
         System.setProperty("STATIC_DIR", dir.toString())
         try {
-            application { module() }
+            testApplication {
+                application { module() }
 
-            val index = client.get("/")
-            assertEquals(HttpStatusCode.OK, index.status)
-            index.assertHardened("index")
-            // A route of the SPA that is not a file: the app is served and the headers are still there.
-            val deepLink = client.get("/projects/123")
-            assertEquals(HttpStatusCode.OK, deepLink.status)
-            deepLink.assertHardened("deep link")
-            // A real file of the build (script, stylesheet, image) is a static response, not the index page.
-            val script = client.get("/assets/app.js")
-            assertEquals(HttpStatusCode.OK, script.status)
-            assertEquals("console.log('app');", script.bodyAsText())
-            script.assertHardened("static file")
+                val index = client.get("/")
+                assertEquals(HttpStatusCode.OK, index.status)
+                index.assertHardened("index")
+                // A route of the SPA that is not a file: the app is served and the headers are still there.
+                val deepLink = client.get("/projects/123")
+                assertEquals(HttpStatusCode.OK, deepLink.status)
+                deepLink.assertHardened("deep link")
+                // A real file of the build (script, stylesheet, image) is a static response, not the index page.
+                val script = client.get("/assets/app.js")
+                assertEquals(HttpStatusCode.OK, script.status)
+                assertEquals("console.log('app');", script.bodyAsText())
+                script.assertHardened("static file")
+            }
         } finally {
             System.clearProperty("STATIC_DIR")
+            // Only now, with the application stopped: Ktor watches the files it serves and reads one again when it changes,
+            // so deleting the directory while the application runs can fail the test with a FileNotFoundException.
             dir.toFile().deleteRecursively()
         }
     }
