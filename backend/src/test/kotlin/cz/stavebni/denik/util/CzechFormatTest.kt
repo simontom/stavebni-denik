@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.util.Locale
 
 class CzechFormatTest {
 
@@ -40,6 +41,22 @@ class CzechFormatTest {
     @Test
     fun `an offset other than UTC is converted, not printed as it came`() {
         assertEquals("2. 6. 2026 08:00:00 SELČ (UTC+2)", CzechFormat.dateTime(OffsetDateTime.parse("2026-06-02T09:00:00+03:00")))
+    }
+
+    @Test
+    @Suppress("DEPRECATION")
+    fun `the digits are Latin whatever the default locale of the machine is`() {
+        // A document is read the same everywhere: under Arabic or Thai locales the JDK's own formatting would use other digits.
+        val saved = Locale.getDefault()
+        try {
+            for (locale in listOf(Locale("ar", "SA"), Locale("th", "TH", "TH"), Locale("fa", "IR"), Locale("hi", "IN"))) {
+                Locale.setDefault(locale)
+                assertEquals("1. 7. 2026 04:05:06 SELČ (UTC+2)", CzechFormat.dateTime(OffsetDateTime.parse("2026-07-01T02:05:06Z")), locale.toString())
+                assertEquals("1. 7. 2026", CzechFormat.date(LocalDate.of(2026, 7, 1)), locale.toString())
+            }
+        } finally {
+            Locale.setDefault(saved)
+        }
     }
 
     @Test

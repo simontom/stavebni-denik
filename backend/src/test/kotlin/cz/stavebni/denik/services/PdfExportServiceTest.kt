@@ -11,6 +11,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -109,6 +110,8 @@ class PdfExportServiceTest : BaseIntegrationTest() {
         val json = Json.parseToJsonElement(data).jsonObject
         assertEquals(lockRowHash, json["auditRowHash"]!!.jsonPrimitive.content)
         assertEquals(reportId.toString(), json["entryId"]!!.jsonPrimitive.content)
+        // The format the entry was signed in: the template explains a missing hash as "old" only for format 1.
+        assertEquals(ReportSignature.CURRENT_FORMAT, json["signatureFormat"]!!.jsonPrimitive.int)
         assertTrue(Regex("""\d{1,2}\. \d{1,2}\. \d{4} \d{2}:\d{2}:\d{2} SE?L?Č \(UTC\+[12]\)""").matches(json["signedAt"]!!.jsonPrimitive.content), json["signedAt"].toString())
         assertEquals(0, json["photos"]!!.jsonArray.size, "no photos on this entry")
     }
@@ -127,6 +130,7 @@ class PdfExportServiceTest : BaseIntegrationTest() {
         val json = Json.parseToJsonElement(data).jsonObject
         assertEquals(false, json["isSigned"]!!.jsonPrimitive.boolean)
         for (key in listOf("signedBy", "signedAt", "signatureHash", "auditRowHash")) assertEquals("", json[key]!!.jsonPrimitive.content, key)
+        assertTrue(json["signatureFormat"] is kotlinx.serialization.json.JsonNull, "a draft is not signed in any format")
     }
 
     @Test

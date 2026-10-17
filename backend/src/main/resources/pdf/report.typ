@@ -196,9 +196,11 @@
       ([Číslo záznamu], [č. #d.sequenceNumber]),
       ([ID záznamu], hash(d.entryId)),
       // The hash of the content as it was signed; it can be checked in the application ("Ověřit podpis").
-      ([Otisk obsahu (SHA-256)], if d.signatureHash != "" { hash(d.signatureHash) } else [neuložen (záznam byl podepsán před zavedením otisků)]),
+      // Only an entry of the first signature format can be old enough to have no hash (and, in test data, no audit row); a
+      // missing hash or row in a later format is a failure of the check, and is said so, not explained away.
+      ([Otisk obsahu (SHA-256)], if d.signatureHash != "" { hash(d.signatureHash) } else if d.signatureFormat == 1 [neuložen (záznam byl podepsán před zavedením otisků)] else [otisk podpisu chybí: záznam nelze ověřit]),
       // The audit row that recorded the signature: its `after` holds the hash above, so it ties this entry to the chain.
-      ([Podpis v auditním řetězci (SHA-256 řádku)], if d.auditRowHash != "" { hash(d.auditRowHash) } else [nenalezen (záznam byl podepsán před zavedením auditního deníku)]),
+      ([Podpis v auditním řetězci (SHA-256 řádku)], if d.auditRowHash != "" { hash(d.auditRowHash) } else if d.signatureFormat == 1 [nenalezen (záznam byl podepsán před zavedením auditního deníku)] else [záznam o podpisu v auditním řetězci chybí: záznam nelze ověřit]),
     ))
     #v(0.3em)
     #text(size: 8.5pt, style: "italic", fill: grey)[Otisk obsahu lze ověřit v aplikaci (Ověřit podpis). Řádek auditního řetězce, který podpis zapsal, obsahuje týž otisk, a váže tak vytištěný záznam k řetězci.]
@@ -221,12 +223,19 @@
 ]
 
 // ---- what was added after the signature -----------------------------------------------------------------------
-// These are separate records with their own author and time; they are not part of what the signature covers.
+// These are separate records with their own author and time; they are not part of what the signature covers. An entry of
+// another party can also be made on a draft, which has no signature to come after: its heading says so in neutral words.
 
 #if d.acknowledgements.len() > 0 or d.addenda.len() > 0 or d.remarks.len() > 0 [
-  == Připojeno po podpisu záznamu
+  #if d.isSigned [
+    == Připojeno po podpisu záznamu
 
-  #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem; nejsou součástí podpisu záznamu.]
+    #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem; nejsou součástí podpisu záznamu.]
+  ] else [
+    == Zápisy připojené k záznamu (záznam ještě není podepsán)
+
+    #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem.]
+  ]
 
   // Who took note of the signed entry.
   #if d.acknowledgements.len() > 0 [

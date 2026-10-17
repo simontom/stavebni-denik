@@ -28,7 +28,9 @@ object CzechFormat {
     fun dateTime(at: OffsetDateTime): String {
         val local = at.atZoneSameInstant(Dates.PRAGUE)
         val summer = local.zone.rules.isDaylightSavings(local.toInstant())
-        val time = "%02d:%02d:%02d".format(local.hour, local.minute, local.second)
+        // padStart, not String.format: format() writes the digits of the machine's default locale (Arabic-Indic, Thai, ...).
+        fun two(value: Int) = value.toString().padStart(2, '0')
+        val time = "${two(local.hour)}:${two(local.minute)}:${two(local.second)}"
         val zone = if (summer) "SELČ" else "SEČ"
         return "${date(local.toLocalDate())} $time $zone (UTC+${local.offset.totalSeconds / 3600})"
     }

@@ -130,14 +130,26 @@ object PdfExportService {
 
     // ---- the sections of the document, one function each -----------------------------------------------------------
 
-    /** A person as the document names them: the name, and with [withCkait] their ČKAIT number as it stands now. */
-    private fun personOf(tx: DSLContext, id: UUID?, withCkait: Boolean = false): String {
+    /**
+     * A person as the document names them: the name, and with [withCkait] their ČKAIT number as it stands now. A text longer than
+     * its limit is cut with an ellipsis: the signature block may not be split between pages, so it must have a known height
+     * (`displayName` and `ckaitNumber` are bounded only by the size of a request; the signature check shows the full values).
+     */
+    private fun personOf(tx: DSLContext, id: UUID?, withCkait: Boolean = false, nameLimit: Int = Int.MAX_VALUE, ckaitLimit: Int = Int.MAX_VALUE): String {
         if (id == null) return ""
         val user = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(id)).fetchOne() ?: return ""
-        val name = user.get(USERS.DISPLAYNAME)?.trim().orEmpty().ifEmpty { null }
-        val ckait = if (withCkait) user.get(USERS.CKAITNUMBER)?.trim().orEmpty().ifEmpty { null }?.let { "ČKAIT $it" } else null
+        val name = user.get(USERS.DISPLAYNAME)?.trim().orEmpty().ifEmpty { null }?.let { shortened(it, nameLimit) }
+        val ckait = if (withCkait) user.get(USERS.CKAITNUMBER)?.trim().orEmpty().ifEmpty { null }?.let { "ČKAIT ${shortened(it, ckaitLimit)}" } else null
         return listOfNotNull(name, ckait).joinToString(", ")
     }
+
+    /** [text] cut to [limit] characters (code points, so no character is split) with an ellipsis; shorter text is returned as it is. */
+    internal fun shortened(text: String, limit: Int): String =
+        if (text.codePointCount(0, text.length) <= limit) text else text.substring(0, text.offsetByCodePoints(0, limit)).trimEnd() + "…"
+
+    /** The longest name and ČKAIT number of the signer that the signature block prints. */
+    private const val SIGNER_NAME_LIMIT = 120
+    private const val SIGNER_CKAIT_LIMIT = 40
 
     /** A calendar day that is stored as a timestamp at UTC midnight (the date of a permit or a contract), in Czech form. */
     private fun storedDay(value: OffsetDateTime?): String? =
@@ -286,7 +298,8 @@ object PdfExportService {
             photos = photosOf(tx, reportId),
             // the signature
             entryId = reportId.toString(),
-            signedBy = personOf(tx, report.get(DAILY_REPORTS.SIGNEDBYID), withCkait = true),
+            signedBy = personOf(tx, report.get(DAILY_REPORTS.SIGNEDBYID), withCkait = true, nameLimit = SIGNER_NAME_LIMIT, ckaitLimit = SIGNER_CKAIT_LIMIT),
+            signatureFormat = if (lockedAt != null) report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() else null,
             signedAt = signedAt?.let { CzechFormat.dateTime(it) } ?: "",
             signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
             auditRowHash = if (lockedAt != null) lockRowHashOf(tx, reportId) else "",

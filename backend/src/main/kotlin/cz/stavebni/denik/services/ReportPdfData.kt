@@ -62,7 +62,13 @@ internal data class ReportPdfData(
 
     // ---- the signature (empty while the entry is a draft) -----------------------------------------------------------
     val entryId: String = "",
-    /** Who signed ("Name, ČKAIT 123"). */
+    /**
+     * The format the entry was signed in (see ReportSignature); null for a draft. Format 1 is what was signed before hashes
+     * existed, so a missing hash or audit row is explained as an old entry only there; from format 2 on it is a failure, as in
+     * `ReportSignature.check`, and the PDF says so.
+     */
+    val signatureFormat: Int? = null,
+    /** Who signed ("Name, ČKAIT 123"); the name and the number are cut when they are enormous, so the signature block has a known height. */
     val signedBy: String,
     /** When, in Prague time with the zone. */
     val signedAt: String,

@@ -525,11 +525,80 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `a signed entry without a content hash says so`() = runBlocking<Unit> {
-        GoldenFixture.insertSignedEntry(dsl, signatureHash = null)
+    fun `an entry of the first signature format without a hash or an audit row is explained as an old entry`() = runBlocking<Unit> {
+        // Format 1 is what was signed before hashes (and, in test data, the audit trail) existed: nothing is missing that was ever there.
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = null, signatureFormat = 1)
 
         val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
 
-        assertTrue(Regex("""Otisk obsahu[^\n]*neuložen""").containsMatchIn(text), text)
+        assertTrue(Regex("""Otisk obsahu[\s\S]{0,60}neuložen[\s\S]{0,40}před zavedením otisků""").containsMatchIn(text), text)
+        assertTrue(Regex("""audit[\s\S]{0,60}nenalezen[\s\S]{0,40}před zavedením auditního deníku""").containsMatchIn(text), text)
+        assertFalse(text.contains("nelze ověřit"), text)
+    }
+
+    @Test
+    fun `an entry of the second format without a content hash is a failure, not an old entry`() = runBlocking<Unit> {
+        // From format 2 on a missing hash is a failure (ReportSignature.check): the PDF must not explain it away as a legacy entry.
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = null, signatureFormat = 2)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        assertTrue(Regex("""Otisk obsahu[\s\S]{0,60}chybí[\s\S]{0,20}nelze ověřit""").containsMatchIn(text), text)
+        assertFalse(text.contains("před zavedením otisků"), "a damaged entry is not explained as an old one: $text")
+    }
+
+    @Test
+    fun `an entry of the second format without a row in the audit chain is a failure, not an old entry`() = runBlocking<Unit> {
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = "9".repeat(64), signatureFormat = 2)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        assertTrue(Regex("""audit[\s\S]{0,80}chybí[\s\S]{0,20}nelze ověřit""").containsMatchIn(text), text)
+        assertFalse(text.contains("před zavedením auditního deníku"), "an entry signed in format 2 is not older than the audit trail: $text")
+        assertTrue(squeezed(text).contains("9".repeat(64)), "the hash that is there is still printed: $text")
+    }
+
+    @Test
+    fun `a signer with an enormous name does not push the end of the entry off the page`() = runBlocking<Unit> {
+        // The signature check shows the full values; the PDF cuts them, because the signature block may not be split.
+        for ((label, name, ckait) in listOf(
+            Triple("words", "Jan Novák ".repeat(400), "1234567890 ".repeat(400)),
+            Triple("one long word", "A".repeat(4000), "9".repeat(4000)),
+        )) {
+            val boss = createTestUser(role = Role.BOSS, displayName = name, ckaitNumber = ckait)
+            val projectId = projectOf(boss, "Dlouhé jméno $label")
+            val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+            DailyReportService.signReport(boss, report)
+            val signedHash = dsl.fetchValue("""select "signatureHash" from daily_reports where id = ?""", report) as String
+
+            val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+            val heading = pages.indexOfFirst { Regex("(?m)^Podpis$").containsMatchIn(it) }
+            val hash = pages.indexOfFirst { squeezed(it).contains(signedHash) }
+            val end = pages.indexOfFirst { it.contains("Konec denního záznamu č. 1") }
+            assertTrue(heading >= 0 && heading == hash && heading == end, "$label: heading on page $heading, hash on $hash, the end on $end")
+            assertTrue(pages[heading].contains("Podepsal:"), label)
+        }
+    }
+
+    @Test
+    fun `a draft with an entry of another party is not described as having a signature`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectOf(boss)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        // Nothing stops an entry of another party on a draft (RemarkService has no lock check).
+        RemarkService.create(boss, report, CreateRemarkRequest(text = "Stavební úřad si vyžádal doklady.", externalAuthor = "Stavební úřad"))
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(text.contains("Stavební úřad si vyžádal doklady."), text)
+        assertTrue(text.contains("záznam ještě není podepsán"), "a neutral heading for a draft: $text")
+        assertFalse(text.contains("Připojeno po podpisu"), "a draft has no signature to come after: $text")
+        assertFalse(text.contains("nejsou součástí podpisu záznamu"), text)
+        // A signed entry keeps its wording.
+        DailyReportService.signReport(boss, report)
+        val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(signed.contains("Připojeno po podpisu záznamu"), signed)
+        assertTrue(signed.contains("nejsou součástí podpisu záznamu"), signed)
     }
 }
