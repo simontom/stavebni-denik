@@ -107,6 +107,8 @@ test("unsaved text on day B is not carried to day A either: the person is asked 
   await leaveDialog(page).getByRole("button", { name: "Zůstat", exact: true }).click();
   await expect(leaveDialog(page)).toBeHidden();
   await expect(description(page)).toHaveValue("Rozepsaný den B");
+  // Focus is where it was before the question: back in the text the person was typing.
+  await expect(description(page)).toBeFocused();
 
   // Leaving anyway: day A is a fresh, empty form.
   await page.evaluate(() => history.go(-2));
@@ -145,6 +147,8 @@ test("leaving the entry through a link with unsaved changes asks first; staying 
   await page.keyboard.press("Escape");
   await expect(leaveDialog(page)).toBeHidden();
   await expect(description(page)).toHaveValue("Rozepsaný zápis");
+  // Focus returns to the link that was clicked, not to the page body.
+  await expect(backToList(page)).toBeFocused();
 
   // The browser's Back button asks as well.
   await page.goBack();
@@ -152,6 +156,7 @@ test("leaving the entry through a link with unsaved changes asks first; staying 
   await leaveDialog(page).getByRole("button", { name: "Zůstat", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/reports/${day}$`));
   await expect(description(page)).toHaveValue("Rozepsaný zápis");
+  await expect(backToList(page)).toBeFocused();
 
   // The header's links ask as well; "Odejít" goes on.
   await page.getByRole("link", { name: "Projekty", exact: true }).click();
@@ -195,6 +200,8 @@ test("logging out with unsaved changes asks first; logging out without them does
   await expect(logoutDialog(page)).toBeHidden();
   await expect(page).toHaveURL(new RegExp(`/reports/${day}$`));
   await expect(description(page)).toHaveValue("Rozepsáno, než se odhlásím");
+  // Focus is back on the button that opened the question.
+  await expect(page.getByRole("button", { name: "Odhlásit se", exact: true })).toBeFocused();
 
   // Confirmed: logged out.
   await page.getByRole("button", { name: "Odhlásit se", exact: true }).click();
