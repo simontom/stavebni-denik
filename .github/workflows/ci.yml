@@ -48,12 +48,12 @@ jobs:
           chmod +x gradlew
           ./gradlew assemble --console=plain 2>&1 | tee /tmp/gradle.log
 
-      - name: Frontend install, lint & build
+      - name: Frontend install, lint, unit tests & build
         run: |
           set -o pipefail
           cd frontend
           # The committed lockfile is the source of truth: a package.json that disagrees with it fails here.
-          { pnpm install --frozen-lockfile && pnpm lint && pnpm build; } 2>&1 | tee /tmp/frontend.log
+          { pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build; } 2>&1 | tee /tmp/frontend.log
 
       - name: Failure summary
         if: failure()
