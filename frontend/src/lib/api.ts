@@ -16,14 +16,25 @@ export class ApiError extends Error {
 export const SESSION_EXPIRED_EVENT = "session-expired";
 
 let unsavedWork = false;
+let unsavedWorkKept = false;
 
-/** A page with typed-in, unsaved work says so: a lapsed session then must not reload or leave the page. */
-export function setUnsavedWork(value: boolean): void {
+/**
+ * A page with typed-in, unsaved work says so: a lapsed session then must not reload or leave the page, and leaving it
+ * (a link inside the application, logging out) asks first. [keptAsDraft] says that the text is also kept on this
+ * device as a draft, which is what the question tells the person (leaving then does not lose it).
+ */
+export function setUnsavedWork(value: boolean, keptAsDraft = false): void {
   unsavedWork = value;
+  unsavedWorkKept = value && keptAsDraft;
 }
 
 export function hasUnsavedWork(): boolean {
   return unsavedWork;
+}
+
+/** The unsaved work is also kept on this device as a draft. */
+export function unsavedWorkIsKeptAsDraft(): boolean {
+  return unsavedWork && unsavedWorkKept;
 }
 
 /**

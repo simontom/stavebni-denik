@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { Remarks } from "../components/Remarks";
-import { api, apiFetch, currentUser, setUnsavedWork } from "../lib/api";
+import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
+import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
+import { useReportDraft } from "../lib/useReportDraft";
 
 interface PhotoItem {
   id: string;
@@ -25,77 +27,8 @@ async function readError(res: Response, fallback: string): Promise<string> {
 /** Suggestions for the weather field; any text is accepted. */
 const WEATHER_CONDITIONS = ["jasno", "polojasno", "oblačno", "zataženo", "mlha", "přeháňky", "déšť", "bouřka", "sněžení", "silný vítr"];
 
-/** A temperature field as the number the server expects, or undefined when it is empty. */
-const temperature = (value: string): number | undefined => {
-  const n = Number.parseFloat(value.replace(",", "."));
-  return Number.isFinite(n) ? n : undefined;
-};
-
-interface WorkerRow {
-  trade: string;
-  count: string;
-  /** The names of the people of this trade, separated by semicolons (the vyhláška asks for them; optional). */
-  names: string;
-}
-
-/**
- * The text fields a daily entry has besides the day's work (vyhláška 131/2024 Sb., příloha 12, part B). The keys and the
- * order are those of the server (EntryDetails.kt); the labels are the same.
- */
-const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[] = [
-  { key: "materials", label: "Dodávky a uskladnění materiálu a zařízení", placeholder: "Co bylo dodáno, uskladněno nebo zabudováno" },
-  { key: "machinery", label: "Použité stroje a mechanizace", placeholder: "Stroje a mechanizace nasazené v tento den" },
-  { key: "testsAndChecks", label: "Zkoušky, měření a kontroly", placeholder: "Provedené zkoušky, měření a kontroly a jejich výsledek" },
-  { key: "safetyNotes", label: "Bezpečnost práce, ochrana životního prostředí a poučení", placeholder: "Poučení pracovníků, bezpečnostní a environmentální opatření" },
-  { key: "dustMeasures", label: "Opatření proti prašnosti", placeholder: "Např. kropení, zakrytí, čištění komunikací" },
-  { key: "accessibilityMeasures", label: "Opatření pro zajištění přístupnosti", placeholder: "Např. zachování přístupu k okolním objektům" },
-  { key: "defects", label: "Závady a jejich odstranění", placeholder: "Zjištěné závady a způsob jejich odstranění" },
-  { key: "otherNotes", label: "Ostatní zápisy", placeholder: "Další skutečnosti rozhodné pro stavbu" },
-];
-
-type Details = Record<string, string>;
-const emptyDetails = (): Details => Object.fromEntries(DETAIL_FIELDS.map((d) => [d.key, ""]));
-
-/**
- * "Jan Novák; Petr Svoboda" as the list the server expects; blanks are left out. Names are separated by semicolons, not
- * commas: a name often has a comma in it ("Ing. Jan Novák, Ph.D.").
- */
-const namesOf = (text: string): string[] =>
-  text
-    .split(";")
-    .map((n) => n.trim())
-    .filter((n) => n !== "");
-
 /** The longest text of one field, as the server accepts it (EntryDetails.MAX_CHARS). */
 const MAX_DETAIL_CHARS = 5000;
-
-/** Everything the user can edit on the form. */
-interface FormValues {
-  workDescription: string;
-  workers: WorkerRow[];
-  isControlDay: boolean;
-  constructionObj: string;
-  weatherCondition: string;
-  weatherMin: string;
-  weatherMax: string;
-  lateEntryReason: string;
-  details: Details;
-}
-
-const EMPTY_FORM: FormValues = {
-  workDescription: "",
-  workers: [{ trade: "", count: "", names: "" }],
-  isControlDay: false,
-  constructionObj: "",
-  weatherCondition: "",
-  weatherMin: "",
-  weatherMax: "",
-  lateEntryReason: "",
-  details: emptyDetails(),
-};
-
-/** The form as one string: compared with the state it was loaded or last saved in, to know about unsaved changes. */
-const keyOf = (v: FormValues): string => JSON.stringify(v);
 
 /** One party's acknowledgement of the signed entry, as the server lists it. */
 interface Acknowledgement {
@@ -121,8 +54,12 @@ export const DailyReport: React.FC = () => {
 
   // The role in THIS project decides what the page offers: investors and inspectors acknowledge, builders write and sign.
   // (The server decides in the end; this only keeps the page from offering what would be refused.)
-  // undefined until the project has been asked: the form stays locked until then.
+  // undefined until the project has been asked: the form stays locked until then. A request that failed (a bad connection, a
+  // server error) is no answer: the role stays unknown, the form stays locked and a retry is offered. Only the server saying
+  // that the person has no access (403, 404) is the answer "no role".
   const [myRole, setMyRole] = useState<string | null | undefined>(undefined);
+  const [roleFailed, setRoleFailed] = useState(false);
+  const [roleTry, setRoleTry] = useState(0);
   const isInvestor = myRole === "INVESTOR" || myRole === "INSPECTOR";
   // Only the manager and the workers of the project write the daily entry (Rbac.kt, ReportCreate): for anybody else a save ends in 403.
   const canWrite = myRole === "BOSS" || myRole === "WORKER";
@@ -131,15 +68,27 @@ export const DailyReport: React.FC = () => {
     let ignore = false;
     api<{ myRole?: string | null }>(`/api/projects/${projectId}`)
       .then((p) => {
-        if (!ignore) setMyRole(p.myRole ?? null);
+        if (ignore) return;
+        setMyRole(p.myRole ?? null);
+        setRoleFailed(false);
       })
-      .catch(() => {
-        if (!ignore) setMyRole(null);
+      .catch((err: unknown) => {
+        if (ignore) return;
+        if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
+          setMyRole(null);
+          setRoleFailed(false);
+        } else {
+          setRoleFailed(true);
+        }
       });
     return () => {
       ignore = true;
     };
-  }, [projectId]);
+  }, [projectId, roleTry]);
+  const retryRole = () => {
+    setRoleFailed(false);
+    setRoleTry((n) => n + 1);
+  };
   /** Shows a message and brings it into view, also when it is the same text as the last one (a repeated failed attempt). */
   const showError = (message: string) => {
     setError(message);
@@ -172,6 +121,8 @@ export const DailyReport: React.FC = () => {
   // Each party that took note of the signed entry (technical supervision, author's supervision, the client, ...).
   const [acknowledgements, setAcknowledgements] = useState<Acknowledgement[]>([]);
   const meId = currentUser()?.id;
+  // Whose draft this page keeps: the person who opened it. Fixed here; another tab may sign somebody else in later.
+  const [draftUserId] = useState(() => currentUser()?.id);
   const iAcknowledged = acknowledgements.some((a) => a.userId === meId);
   // The version of the entry as this form last saw it (null for a day without an entry). Sent back on save, so a
   // second person's changes are not overwritten without anybody noticing.
@@ -188,9 +139,16 @@ export const DailyReport: React.FC = () => {
   const [weatherMax, setWeatherMax] = useState<string>("");
   const [lateEntryReason, setLateEntryReason] = useState<string>("");
   const [isLateEntry, setIsLateEntry] = useState<boolean>(false);
-  // What the form holds, as one string: compared with the state it was loaded or last saved in to know about unsaved changes.
-  const formKey = keyOf({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details });
+  // What the form holds (the same object until something is edited), and as one string: compared with the state it was
+  // loaded or last saved in to know about unsaved changes.
+  const values = useMemo<FormValues>(
+    () => ({ workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details }),
+    [workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details],
+  );
+  const formKey = useMemo(() => keyOf(values), [values]);
   const [savedKey, setSavedKey] = useState<string | null>(null);
+  // The form as the server showed it when the day was opened: what a draft is compared with.
+  const [loadedForm, setLoadedForm] = useState<FormValues | null>(null);
   const dirty = savedKey !== null && formKey !== savedKey;
   // One save at a time: a second tap while the first is on its way would send a second create (and get a false conflict).
   const savingRef = useRef(false);
@@ -200,11 +158,6 @@ export const DailyReport: React.FC = () => {
   useEffect(() => {
     if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [error, errorTick]);
-  // Tell the session dialog: after a lapsed session the page must keep what was typed (no reload, no redirect).
-  useEffect(() => {
-    setUnsavedWork(dirty);
-    return () => setUnsavedWork(false);
-  }, [dirty]);
   // Closing the tab, reloading or leaving the app with unsaved text: the browser asks first.
   useEffect(() => {
     if (!dirty) return;
@@ -215,10 +168,24 @@ export const DailyReport: React.FC = () => {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
-  // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
-  // and only by somebody who may write it.
   const roleKnown = myRole !== undefined;
-  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned;
+  // The draft of this day kept on the device (backlog B2): offered when the day opens if it holds what the stored entry
+  // does not, written while there are unsaved changes, gone when they are saved. Not for a signed entry or a role that cannot write.
+  // The hook also tells the application about unsaved work (setUnsavedWork): after a lapsed session the page must keep what
+  // was typed (no reload, no redirect), and leaving the page (a link, logging out) asks first.
+  const draft = useReportDraft({
+    scope: draftUserId && projectId && reportId ? { userId: draftUserId, projectId, day: reportId } : null,
+    ready: loadState === "ready",
+    loaded: loadedForm,
+    canWrite: roleKnown ? canWrite : null,
+    isSigned,
+    dirty,
+    values,
+    updatedAt,
+  });
+  // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
+  // only by somebody who may write it, and not while a draft waits for the person to take it or throw it away.
+  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned && draft.offer === null;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -227,6 +194,23 @@ export const DailyReport: React.FC = () => {
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  /** Puts [v] into the form (an entry as loaded from the server, or a draft the person took back). */
+  const applyValues = (v: FormValues) => {
+    setWorkDescription(v.workDescription);
+    setDetails(v.details);
+    setWorkers(v.workers);
+    setIsControlDay(v.isControlDay);
+    setConstructionObj(v.constructionObj);
+    setWeatherCondition(v.weatherCondition);
+    setWeatherMin(v.weatherMin);
+    setWeatherMax(v.weatherMax);
+    setLateEntryReason(v.lateEntryReason);
+  };
+  const handleRestoreDraft = () => {
+    const restored = draft.restore();
+    if (restored) applyValues(restored);
+  };
 
   useEffect(() => {
     let ignore = false;
@@ -241,45 +225,13 @@ export const DailyReport: React.FC = () => {
           if (ignore) return;
           setLoadState("ready");
           if (!data) {
-            setSavedKey(keyOf(EMPTY_FORM)); // no entry yet: the empty form is the saved state
+            setSavedKey(keyOf(emptyForm())); // no entry yet: the empty form is the saved state
+            setLoadedForm(emptyForm());
             return;
           }
-          let loadedWorkers: WorkerRow[] = EMPTY_FORM.workers;
-          try {
-            const trades = typeof data.workersByTrade === "string" ? JSON.parse(data.workersByTrade) : data.workersByTrade;
-            if (Array.isArray(trades) && trades.length > 0) {
-              loadedWorkers = trades.map((t: { trade?: unknown; count?: unknown; names?: unknown }) => ({
-                trade: typeof t.trade === "string" ? t.trade : "",
-                count: typeof t.count === "number" ? String(t.count) : "",
-                names: Array.isArray(t.names) ? t.names.filter((n): n is string => typeof n === "string").join("; ") : "",
-              }));
-            }
-          } catch {
-            // keep the empty row
-          }
-          const loaded: FormValues = {
-            workDescription: typeof data.workDescription === "string" ? data.workDescription : "",
-            workers: loadedWorkers,
-            isControlDay: Boolean(data.isControlDay),
-            constructionObj: typeof data.constructionObj === "string" ? data.constructionObj : "",
-            weatherCondition: typeof data.weather?.condition === "string" ? data.weather.condition : "",
-            weatherMin: typeof data.weather?.tempMin === "number" ? String(data.weather.tempMin) : "",
-            weatherMax: typeof data.weather?.tempMax === "number" ? String(data.weather.tempMax) : "",
-            lateEntryReason: typeof data.lateEntryReason === "string" ? data.lateEntryReason : "",
-            details: {
-              ...emptyDetails(),
-              ...Object.fromEntries(Object.entries((data.details ?? {}) as Record<string, unknown>).filter(([k, v]) => k in emptyDetails() && typeof v === "string")),
-            } as Details,
-          };
-          setWorkDescription(loaded.workDescription);
-          setDetails(loaded.details);
-          setWorkers(loaded.workers);
-          setIsControlDay(loaded.isControlDay);
-          setConstructionObj(loaded.constructionObj);
-          setWeatherCondition(loaded.weatherCondition);
-          setWeatherMin(loaded.weatherMin);
-          setWeatherMax(loaded.weatherMax);
-          setLateEntryReason(loaded.lateEntryReason);
+          const loaded = formFromEntry(data);
+          applyValues(loaded);
+          setLoadedForm(loaded);
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setEntryId(typeof data.id === "string" ? data.id : null);
           setSignatureHash(typeof data.signatureHash === "string" ? data.signatureHash : null);
@@ -354,7 +306,7 @@ export const DailyReport: React.FC = () => {
           ...(updatedAt ? { expectedUpdatedAt: updatedAt } : { expectNew: true }),
           ...(needsLateReason ? { lateEntryReason } : {}),
           // Always sent: what the form shows is what is stored (an empty weather clears it).
-          weather: { condition: weatherCondition.trim() || undefined, tempMin: temperature(weatherMin), tempMax: temperature(weatherMax) },
+          weather: { condition: weatherCondition.trim() || undefined, tempMin: temperatureOf(weatherMin), tempMax: temperatureOf(weatherMax) },
         }),
       });
       if (res.ok) {
@@ -430,6 +382,7 @@ export const DailyReport: React.FC = () => {
   /** Opens the signing dialog. A signature covers the stored version, so unsaved text must be saved first. */
   const handleSignAndLock = () => {
     // Unsaved text on the screen would not be part of the signature, and the page would say "signed" above words that were never signed.
+    if (draft.offer) return showError("Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.");
     if (dirty) return showError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
     if (updatedAt === null) return showError("Záznam ještě není uložen. Nejdřív jej uložte.");
     setSignPassword("");
@@ -556,6 +509,32 @@ export const DailyReport: React.FC = () => {
         )}
       </div>
 
+      {/* A draft kept on this device that the stored entry does not have: the form stays locked until the person decides */}
+      {draft.offer && (
+        <section aria-labelledby="draft-banner-title" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h2 id="draft-banner-title" className="text-sm font-semibold text-amber-900">
+            Našli jsme rozepsaný záznam
+          </h2>
+          <p className="mt-1 text-sm text-amber-900">
+            V tomto zařízení je koncept z {draft.offer.savedAt.toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}, který není v
+            uloženém záznamu. Chcete v něm pokračovat?
+          </p>
+          {draft.offer.stale && (
+            <p className="mt-1 text-sm font-medium text-amber-900">
+              Záznam byl od té doby změněn (někým jiným nebo na jiném zařízení). Když koncept obnovíte a uložíte, přepíšete novější verzi.
+            </p>
+          )}
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={handleRestoreDraft} className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
+              Obnovit
+            </button>
+            <button type="button" onClick={draft.discard} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+              Zahodit
+            </button>
+          </div>
+        </section>
+      )}
+
       {error && (
         <div ref={errorBox} role="alert" className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">
           {error}
@@ -564,7 +543,9 @@ export const DailyReport: React.FC = () => {
               <button type="button" onClick={() => window.location.reload()} className="rounded bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800">
                 Načíst aktuální verzi
               </button>
-              <span className="ml-2 text-xs">Co jste právě napsali, si před načtením zkopírujte.</span>
+              <span className="ml-2 text-xs">
+                {unsavedWorkIsKeptAsDraft() ? "Co jste právě napsali, zůstane jako koncept a po načtení vám ho nabídneme." : "Co jste právě napsali, si před načtením zkopírujte."}
+              </span>
             </div>
           )}
         </div>
@@ -572,7 +553,15 @@ export const DailyReport: React.FC = () => {
 
       {/* Main Report Form */}
       <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        {(loadState === "loading" || !roleKnown) && (
+        {!roleKnown && roleFailed && (
+          <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
+            Roli v projektu se nepodařilo zjistit, záznam proto zůstává zamčený.{" "}
+            <button type="button" onClick={retryRole} className="rounded bg-red-700 px-3 py-1 text-xs font-semibold text-white hover:bg-red-800">
+              Zkusit znovu
+            </button>
+          </div>
+        )}
+        {(loadState === "loading" || !roleKnown) && !roleFailed && (
           <p role="status" className="py-8 text-center text-sm text-gray-600">
             Načítám záznam…
           </p>
@@ -950,12 +939,16 @@ export const DailyReport: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleSignAndLock}
-                  disabled={dirty || updatedAt === null}
+                  disabled={dirty || updatedAt === null || draft.offer !== null}
                   className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Podepsat a uzamknout
                 </button>
-                {(dirty || updatedAt === null) && <p className="mt-1 text-xs text-amber-700">Nejdřív záznam uložte, podepíše se uložená verze.</p>}
+                {draft.offer ? (
+                  <p className="mt-1 text-xs text-amber-700">Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.</p>
+                ) : (
+                  (dirty || updatedAt === null) && <p className="mt-1 text-xs text-amber-700">Nejdřív záznam uložte, podepíše se uložená verze.</p>
+                )}
               </div>
             )}
           </div>
@@ -964,3 +957,13 @@ export const DailyReport: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * The route element of the entry page: [DailyReport] mounted once per project and day. When only the day in the URL changes
+ * (the browser's history, a link to another day) React would otherwise keep the page, and one day's text would be
+ * saved into another; with the key the page starts fresh for every day.
+ */
+export function DailyReportPage() {
+  const { projectId, reportId } = useParams<{ projectId: string; reportId: string }>();
+  return <DailyReport key={`${projectId}/${reportId}`} />;
+}

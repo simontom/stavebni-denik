@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { User } from "lucide-react";
+import { browserStorage, clearDraftsExceptUser } from "../../lib/draftStore";
 
 export function LoginPage() {
   const [nickname, setNickname] = useState("");
@@ -38,6 +39,8 @@ export function LoginPage() {
       const data = await response.json();
       if (data && data.user) {
         localStorage.setItem("user", JSON.stringify(data.user));
+        // Drafts of an earlier person on this device are not for the one who signed in now (the same person keeps theirs).
+        if (typeof data.user.id === "string") clearDraftsExceptUser(browserStorage(), data.user.id);
       }
 
       // A temporary password (new account, administrator reset) has to be replaced first.
