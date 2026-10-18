@@ -2,6 +2,8 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.domain.Role
+import cz.stavebni.denik.domain.SessionUser
+import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import kotlinx.coroutines.runBlocking
 import org.apache.pdfbox.Loader
 import org.apache.pdfbox.text.PDFTextStripper
@@ -38,6 +40,32 @@ class RealTypstPdfTest : BaseIntegrationTest() {
     private fun textOf(pdf: ByteArray): String =
         Loader.loadPDF(pdf).use { Normalizer.normalize(PDFTextStripper().getText(it), Normalizer.Form.NFC) }
 
+    /** The text of every page, so a test can say on which page something is. */
+    private fun pagesOf(pdf: ByteArray): List<String> = Loader.loadPDF(pdf).use { document ->
+        val stripper = PDFTextStripper()
+        (1..document.numberOfPages).map { number ->
+            stripper.startPage = number
+            stripper.endPage = number
+            Normalizer.normalize(stripper.getText(document), Normalizer.Form.NFC)
+        }
+    }
+
+    /** No white space at all: a long hash or a watermark may be broken over several lines of the extracted text. */
+    private fun squeezed(text: String): String = text.filterNot { it.isWhitespace() }
+
+    private suspend fun projectOf(boss: SessionUser, name: String = "Náležitosti", extra: (ProjectDto) -> ProjectDto = { it }): UUID =
+        UUID.fromString(
+            ProjectService.createProject(
+                boss,
+                extra(
+                    ProjectDto(
+                        id = "", name = name, address = "Address", cadastralArea = "Area",
+                        parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
+                    )
+                )
+            ).id
+        )
+
     private suspend fun exportText(projectName: String, description: String): String {
         val boss = createTestUser(role = Role.BOSS)
         val project = ProjectService.createProject(
@@ -57,7 +85,8 @@ class RealTypstPdfTest : BaseIntegrationTest() {
 
         assertTrue(text.contains("Denní záznam stavby"), text)
         assertTrue(text.contains("Bytový dům Zelená"), text)
-        assertTrue(text.contains("2026-09-28"), text)
+        assertTrue(text.contains("pondělí 28. 9. 2026"), "a Czech date with the weekday: $text")
+        assertFalse(text.contains("2026-09-28"), "no ISO date in a document for people: $text")
         assertTrue(text.contains("Betonáž stropu"), text)
         assertTrue(text.contains("Druhý řádek"), text)
     }
@@ -90,12 +119,13 @@ class RealTypstPdfTest : BaseIntegrationTest() {
         assertTrue(text.contains("Pracovníci na stavbě"), text)
         assertTrue(text.contains("Betonáři"), text)
         assertTrue(text.contains("Jan Novák; Petr Svoboda"), text)
+        assertTrue(Regex("""Celkem\s*5""").containsMatchIn(text), "the total of the workers: $text")
         assertTrue(text.contains("Dodávky a uskladnění materiálu a zařízení"), text)
         assertTrue(text.contains("Beton C25/30"), text)
         assertTrue(text.contains("#panic(\"X\")"), "markup in a field is printed as it was typed: $text")
         assertTrue(text.contains("Opatření proti prašnosti"), text)
         assertTrue(text.contains("Závady a jejich odstranění"), text)
-        assertFalse(text.contains("Použité stroje"), "a field that was not filled in has no heading: $text")
+        assertTrue(text.contains("Použité stroje a mechanizace"), "a field that was not filled in still has its heading: $text")
     }
 
     @Test
@@ -118,7 +148,7 @@ class RealTypstPdfTest : BaseIntegrationTest() {
         assertTrue(text.contains("Katastrální území"), text)
         assertTrue(text.contains("Brno-střed"), text)
         assertTrue(text.contains("Stavebník"), text)
-        assertTrue(text.contains("SZ/2026/123 ze dne 2026-03-01"), text)
+        assertTrue(text.contains("SZ/2026/123 ze dne 1. 3. 2026"), text)
         assertTrue(text.contains("Poddodavatelé"), text)
         assertTrue(text.contains("Vodoinstalace #panic(\"X\")"), "markup in a field is printed as it was typed: $text")
         assertTrue(text.contains("Podklady stavby"), text)
@@ -236,5 +266,339 @@ class RealTypstPdfTest : BaseIntegrationTest() {
 
         assertTrue(text.contains("Řádek číslo 1 popisu"), text.take(200))
         assertTrue(text.contains("Řádek číslo 2000 popisu"))
+    }
+
+    // --- the entry as a document (backlog B8) -------------------------------------------------------------
+
+    @Test
+    fun `a draft is marked across the page, and says in words that it has no number`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val report = DailyReportService.createReport(boss, projectOf(boss), "2026-09-28", workDescription = "Zápis").id
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+
+        assertTrue(squeezed(text).contains("KONCEPT–NEPODEPSÁNO"), "the watermark: $text")
+        assertTrue(text.contains("Konec rozpracovaného denního záznamu"), text)
+        assertTrue(text.contains("zatím bez čísla"), text)
+        assertFalse(text.contains("Podepsal:"), "a draft has no signature block: $text")
+    }
+
+    @Test
+    fun `a signed entry has no watermark and ends with its number`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectOf(boss), "2026-09-28", workDescription = "Zápis").id)
+        DailyReportService.signReport(boss, report)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertFalse(squeezed(text).contains("KONCEPT"), text)
+        assertTrue(text.contains("Konec denního záznamu č. 1"), text)
+        assertFalse(text.contains("Konec rozpracovaného"), text)
+    }
+
+    @Test
+    fun `the control day and the construction object are printed, and so is the absence of both`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectOf(boss)
+        val control = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Kontrola", isControlDay = true, constructionObj = "SO 02 Hala").id
+        val plain = DailyReportService.createReport(boss, projectId, "2026-09-29", workDescription = "Běžný den").id
+
+        val withBoth = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(control)).bytes)
+        assertTrue(Regex("""Kontrolní den[^\n]*\bano\b""").containsMatchIn(withBoth), withBoth)
+        assertTrue(Regex("""Stavební objekt[^\n]*SO 02 Hala""").containsMatchIn(withBoth), withBoth)
+
+        val without = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(plain)).bytes)
+        assertTrue(Regex("""Kontrolní den[^\n]*\bne\b""").containsMatchIn(without), without)
+        assertTrue(Regex("""Stavební objekt[^\n]*bez záznamu""").containsMatchIn(without), without)
+    }
+
+    @Test
+    fun `every heading is printed, with bez záznamu where nothing was entered`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val report = DailyReportService.createReport(boss, projectOf(boss), "2026-09-28").id
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+
+        for (heading in listOf("Počasí", "Pracovníci na stavbě", "Popis prací") + EntryDetails.FIELDS.map { it.label }) {
+            assertTrue(text.contains(heading), "heading '$heading' of an entry that says nothing: $text")
+        }
+        // The work description, the workers and the eight fields say nothing; so does the construction object.
+        assertTrue(Regex("bez záznamu").findAll(text).count() >= 10, text)
+    }
+
+    @Test
+    fun `the author of the entry is named`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Autor Záznamu")
+        val report = DailyReportService.createReport(boss, projectOf(boss), "2026-09-28", workDescription = "Zápis").id
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+
+        assertTrue(Regex("""Autor záznamu[^\n]*Ing\. Autor Záznamu""").containsMatchIn(text), text)
+    }
+
+    @Test
+    fun `every page has a footer with the project, the number, the date and the page of the total`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val long = (1..150).joinToString("\n") { "Řádek číslo $it popisu prací na stavbě." }
+        val report = UUID.fromString(
+            DailyReportService.createReport(boss, projectOf(boss, "Bytový dům Zelená"), "2026-09-28", workDescription = long).id
+        )
+        DailyReportService.signReport(boss, report)
+
+        val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(pages.size >= 3, "a long entry runs over several pages (${pages.size})")
+        pages.forEachIndexed { index, page ->
+            assertTrue(page.contains("Strana ${index + 1} z ${pages.size}"), "page ${index + 1}: $page")
+            assertTrue(page.contains("Bytový dům Zelená"), "the project in the footer of page ${index + 1}")
+            assertTrue(page.contains("Záznam č. 1"), "the number in the footer of page ${index + 1}")
+            assertTrue(page.contains("28. 9. 2026"), "the date in the footer of page ${index + 1}")
+        }
+    }
+
+    @Test
+    fun `the footer of a draft says it has no number`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val report = DailyReportService.createReport(boss, projectOf(boss, "Koncept"), "2026-09-28", workDescription = "Zápis").id
+
+        val pages = pagesOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+
+        for ((index, page) in pages.withIndex()) {
+            assertTrue(page.contains("Strana ${index + 1} z ${pages.size}"), page)
+            assertTrue(Regex("""Koncept[^\n]*Záznam bez čísla[^\n]*28\. 9\. 2026""").containsMatchIn(page), page)
+        }
+    }
+
+    @Test
+    fun `part A, the identification with the subcontractors and the documents, comes before part B`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectOf(boss) {
+            it.copy(subcontractors = "Elektro s.r.o.", supportingDocuments = "Smlouva o dílo č. SML-1", permitNumber = "SZ/1")
+        }
+        val report = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+
+        val partA = text.indexOf("Část A")
+        val partB = text.indexOf("Část B")
+        assertTrue(partA in 0 until partB, "both parts, A first: $text")
+        for (inA in listOf("Katastrální území", "Povolení", "Poddodavatelé", "Elektro s.r.o.", "Podklady stavby", "Smlouva o dílo č. SML-1")) {
+            val at = text.indexOf(inA)
+            assertTrue(at in partA until partB, "'$inA' belongs to part A (at $at, A at $partA, B at $partB): $text")
+        }
+        for (inB in listOf("Počasí", "Popis prací", "Betonáž")) {
+            assertTrue(text.indexOf(inB) > partB, "'$inB' belongs to part B: $text")
+        }
+    }
+
+    @Test
+    fun `the signature shows when it was made in Prague time with the zone, and the hash of its row in the audit chain`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Podepsaný Stavbyvedoucí")
+        val projectId = projectOf(boss)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+        // Something else is audited afterwards: the head of the chain is now another row than the one of the signature.
+        projectOf(boss, "Jiná stavba")
+        val lockRowHash = dsl.select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG)
+            .where(AUDIT_LOG.ACTION.eq("report.lock").and(AUDIT_LOG.ENTITY_ID.eq(report.toString()))).fetchSingle().value1()!!
+        val head = dsl.select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.desc()).limit(1).fetchSingle().value1()!!
+        assertNotEquals(lockRowHash, head, "the test needs a head that is not the row of the signature")
+        val signedHash = dsl.fetchValue("""select "signatureHash" from daily_reports where id = ?""", report) as String
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(Regex("""Podepsal:[^\n]*Ing\. Podepsaný Stavbyvedoucí, ČKAIT 0012345""").containsMatchIn(text), text)
+        assertTrue(Regex("""Čas podpisu:[^\n]*\d{1,2}\. \d{1,2}\. \d{4} \d{2}:\d{2}:\d{2} SE?L?Č \(UTC\+[12]\)""").containsMatchIn(text), "Prague time with the zone: $text")
+        assertFalse(text.contains("(UTC)"), "no UTC times left: $text")
+        assertTrue(squeezed(text).contains(signedHash), "the hash of the content: $text")
+        assertTrue(squeezed(text).contains(lockRowHash), "the hash of the audit row of the signature: $text")
+        assertFalse(squeezed(text).contains(head), "the head of the chain changes with every action and says how busy the company is: $text")
+        assertTrue(text.contains(report.toString()), "the id of the entry, which the signature covers and which names the audit row: $text")
+    }
+
+    @Test
+    fun `an entry signed without a row in the audit chain says so, and lists the photos with their hashes`() = runBlocking<Unit> {
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = "9".repeat(64))
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        // (A long label may wrap in its cell, so the line break between the label and the value is allowed.)
+        assertTrue(Regex("""audit[\s\S]{0,60}nenalezen""").containsMatchIn(text), "it says there is no row instead of failing: $text")
+        assertTrue(squeezed(text).contains("9".repeat(64)), text)
+        // 10:15:30.123 UTC on 28 September 2026 is 12:15:30 in Prague, on summer time.
+        assertTrue(text.contains("28. 9. 2026 12:15:30 SELČ (UTC+2)"), text)
+        // Two photos are on the entry, a third was removed and is not part of it.
+        assertTrue(squeezed(text).contains("a".repeat(64)) && squeezed(text).contains("c".repeat(64)), text)
+        assertFalse(squeezed(text).contains("e".repeat(64)), "a removed photo is not listed: $text")
+        assertTrue(Regex("""Kontrolní den[^\n]*\bano\b""").containsMatchIn(text), text)
+        assertTrue(Regex("""Stavební objekt[^\n]*SO 01""").containsMatchIn(text), text)
+        assertTrue(Regex("""Celkem\s*5""").containsMatchIn(text), text)
+    }
+
+    @Test
+    fun `hostile text in the author, the signer, the construction object and the photos stays text`() = runBlocking<Unit> {
+        val hostile = "#panic(\"X\") *tučně* \$ x \$"
+        val boss = createTestUser(role = Role.BOSS, displayName = hostile)
+        val projectId = projectOf(boss, "#read(\"/etc/passwd\")")
+        val report = UUID.fromString(
+            DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž", constructionObj = "#panic(\"Y\")").id
+        )
+        dsl.execute(
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256")
+               values (gen_random_uuid(), ?, 'photos/x.jpg', 'photos/x-thumb.jpg', 800, 600, 1000, ?, ?)""",
+            report, boss.id, "a".repeat(64),
+        )
+        DailyReportService.signReport(boss, report)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(Regex("""Autor záznamu: [^\n]*#panic\("X"\) \*tučně\*""").containsMatchIn(text), text)
+        assertTrue(Regex("""Podepsal: [^\n]*#panic\("X"\) \*tučně\*""").containsMatchIn(text), text)
+        assertTrue(text.contains("#panic(\"Y\")"), text)
+        assertTrue(text.contains("#read(\"/etc/passwd\")"), "the project name, in the footer and the tables: $text")
+        assertFalse(text.contains("root:x"), "nothing was read from the machine")
+    }
+
+    // --- the layout, with data made by hand (no database) -----------------------------------------------------
+
+    private fun dataOf(workDescription: String, isSigned: Boolean = true, projectName: String = "Bytový dům Zelená") = ReportPdfData(
+        projectName = projectName, address = "Karlova 15", date = "28. 9. 2026", weekday = "pondělí",
+        sequenceNumber = if (isSigned) 7 else null, isSigned = isSigned,
+        isLateEntry = false, lateEntryReason = "", weather = "Neuvedeno", workDescription = workDescription,
+        entryId = "00000000-0000-4000-8000-000000000007",
+        signedBy = if (isSigned) "Ing. Jan Stavbyvedoucí, ČKAIT 0012345" else "", signedAt = if (isSigned) "28. 9. 2026 14:32:07 SELČ (UTC+2)" else "",
+        signatureHash = if (isSigned) "5".repeat(64) else "", auditRowHash = if (isSigned) "7".repeat(64) else "",
+    )
+
+    private fun lines(count: Int) = (1..count).joinToString("\n") { "Řádek číslo $it popisu prací na stavbě." }
+
+    private fun render(data: ReportPdfData): ByteArray = PdfExportService.render(data, UUID.randomUUID()).bytes
+
+    @Test
+    fun `the signature and the end of the entry are never split between two pages, wherever the page breaks`() {
+        // Entries of every length across two pages: wherever the page break falls, the heading "Podpis", its hashes and the line
+        // that ends the entry are on one page (a block that may not break moves to the next page as a whole). Without that
+        // rule entries of 20 to 22 and of 65 to 74 lines are split (typst 0.15.1); every second length is tried so that a
+        // change of the layout cannot move the zone out of the range unnoticed.
+        var splitAt = emptyList<Int>()
+        for (count in 20..130 step 2) {
+            val pages = pagesOf(render(dataOf(lines(count))))
+            val heading = pages.indexOfFirst { Regex("(?m)^Podpis$").containsMatchIn(it) }
+            val hash = pages.indexOfFirst { squeezed(it).contains("7".repeat(64)) }
+            val end = pages.indexOfFirst { it.contains("Konec denního záznamu č. 7") }
+            if (heading < 0 || heading != hash || heading != end) splitAt += count
+        }
+        assertEquals(emptyList<Int>(), splitAt, "entries of these numbers of lines have a signature that is split between two pages")
+    }
+
+    @Test
+    fun `every page of a draft carries the watermark`() {
+        val pages = pagesOf(render(dataOf(lines(150), isSigned = false)))
+
+        assertTrue(pages.size >= 3, "a long draft runs over several pages")
+        pages.forEachIndexed { index, page -> assertTrue(squeezed(page).contains("KONCEPT–NEPODEPSÁNO"), "page ${index + 1}: $page") }
+    }
+
+    @Test
+    fun `the total of a long table of workers is printed once, under its last row`() {
+        val workers = (1..60).map { WorkerPdf("Profese $it", it, "") }
+
+        val pages = pagesOf(render(dataOf("Zápis").copy(workers = workers)))
+        val text = pages.joinToString("\n")
+
+        assertTrue(pages.size >= 3, "sixty trades run over several pages")
+        assertEquals(1, Regex("Celkem").findAll(text).count(), "the total is not repeated on every page: $text")
+        assertTrue(Regex("""Celkem\s*1830""").containsMatchIn(text), text)
+        assertTrue(pages.count { it.contains("Profese") && it.contains("Počet") } >= 2, "the header of the table is repeated on the next page")
+    }
+
+    @Test
+    fun `a very long project name does not break the footer`() {
+        val name = (1..60).joinToString("\n") { "Stavba číslo $it s velmi dlouhým názvem" }
+
+        val pages = pagesOf(render(dataOf("Zápis", projectName = name)))
+
+        pages.forEachIndexed { index, page ->
+            assertTrue(page.contains("Strana ${index + 1} z ${pages.size}"), page)
+            assertTrue(Regex("""Stavba číslo 1 s velmi[^\n]*…[^\n]*Záznam č\. 7[^\n]*28\. 9\. 2026""").containsMatchIn(page), "the project name is cut to one line in the footer: $page")
+        }
+    }
+
+    @Test
+    fun `an entry of the first signature format without a hash or an audit row is explained as an old entry`() = runBlocking<Unit> {
+        // Format 1 is what was signed before hashes (and, in test data, the audit trail) existed: nothing is missing that was ever there.
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = null, signatureFormat = 1)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        assertTrue(Regex("""Otisk obsahu[\s\S]{0,60}neuložen[\s\S]{0,40}před zavedením otisků""").containsMatchIn(text), text)
+        assertTrue(Regex("""audit[\s\S]{0,60}nenalezen[\s\S]{0,40}před zavedením auditního deníku""").containsMatchIn(text), text)
+        assertFalse(text.contains("nelze ověřit"), text)
+    }
+
+    @Test
+    fun `an entry of the second format without a content hash is a failure, not an old entry`() = runBlocking<Unit> {
+        // From format 2 on a missing hash is a failure (ReportSignature.check): the PDF must not explain it away as a legacy entry.
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = null, signatureFormat = 2)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        assertTrue(Regex("""Otisk obsahu[\s\S]{0,60}chybí[\s\S]{0,20}nelze ověřit""").containsMatchIn(text), text)
+        assertFalse(text.contains("před zavedením otisků"), "a damaged entry is not explained as an old one: $text")
+    }
+
+    @Test
+    fun `an entry of the second format without a row in the audit chain is a failure, not an old entry`() = runBlocking<Unit> {
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = "9".repeat(64), signatureFormat = 2)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, GoldenFixture.entryId).bytes)
+
+        assertTrue(Regex("""audit[\s\S]{0,80}chybí[\s\S]{0,20}nelze ověřit""").containsMatchIn(text), text)
+        assertFalse(text.contains("před zavedením auditního deníku"), "an entry signed in format 2 is not older than the audit trail: $text")
+        assertTrue(squeezed(text).contains("9".repeat(64)), "the hash that is there is still printed: $text")
+    }
+
+    @Test
+    fun `a signer with an enormous name does not push the end of the entry off the page`() = runBlocking<Unit> {
+        // The signature check shows the full values; the PDF cuts them, because the signature block may not be split.
+        for ((label, name, ckait) in listOf(
+            Triple("words", "Jan Novák ".repeat(400), "1234567890 ".repeat(400)),
+            Triple("one long word", "A".repeat(4000), "9".repeat(4000)),
+        )) {
+            val boss = createTestUser(role = Role.BOSS, displayName = name, ckaitNumber = ckait)
+            val projectId = projectOf(boss, "Dlouhé jméno $label")
+            val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+            DailyReportService.signReport(boss, report)
+            val signedHash = dsl.fetchValue("""select "signatureHash" from daily_reports where id = ?""", report) as String
+
+            val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+            val heading = pages.indexOfFirst { Regex("(?m)^Podpis$").containsMatchIn(it) }
+            val hash = pages.indexOfFirst { squeezed(it).contains(signedHash) }
+            val end = pages.indexOfFirst { it.contains("Konec denního záznamu č. 1") }
+            assertTrue(heading >= 0 && heading == hash && heading == end, "$label: heading on page $heading, hash on $hash, the end on $end")
+            assertTrue(pages[heading].contains("Podepsal:"), label)
+        }
+    }
+
+    @Test
+    fun `a draft with an entry of another party is not described as having a signature`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectOf(boss)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        // Nothing stops an entry of another party on a draft (RemarkService has no lock check).
+        RemarkService.create(boss, report, CreateRemarkRequest(text = "Stavební úřad si vyžádal doklady.", externalAuthor = "Stavební úřad"))
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(text.contains("Stavební úřad si vyžádal doklady."), text)
+        assertTrue(text.contains("záznam ještě není podepsán"), "a neutral heading for a draft: $text")
+        assertFalse(text.contains("Připojeno po podpisu"), "a draft has no signature to come after: $text")
+        assertFalse(text.contains("nejsou součástí podpisu záznamu"), text)
+        // A signed entry keeps its wording.
+        DailyReportService.signReport(boss, report)
+        val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+        assertTrue(signed.contains("Připojeno po podpisu záznamu"), signed)
+        assertTrue(signed.contains("nejsou součástí podpisu záznamu"), signed)
     }
 }
