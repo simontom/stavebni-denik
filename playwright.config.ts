@@ -10,6 +10,9 @@ import path from "node:path";
  */
 const isCI = Boolean(process.env.CI);
 
+/** The specs that run in the phone project (and only there). */
+const MOBILE_SPECS = /mobile-[^/\\]*\.spec\.ts$/;
+
 export default defineConfig({
   testDir: path.resolve(__dirname, "e2e"),
   fullyParallel: false,
@@ -20,9 +23,7 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 10_000 },
   workers: 1,
-  reporter: isCI
-    ? [["list"], ["github"], ["html", { open: "never" }], ["json", { outputFile: "playwright-report/results.json" }]]
-    : "list",
+  reporter: isCI ? [["list"], ["github"], ["html", { open: "never" }], ["json", { outputFile: "playwright-report/results.json" }]] : "list",
   globalSetup: path.resolve(__dirname, "e2e/global-setup.ts"),
   use: {
     baseURL: process.env.BASE_URL ?? "http://localhost:5173",
@@ -35,6 +36,22 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      // The specs named mobile-*.spec.ts are for the phone project below.
+      testIgnore: MOBILE_SPECS,
+    },
+    {
+      // A phone: 360 x 780 CSS px (a small Android), touch, mobile viewport. Only the mobile-*.spec.ts specs run here: they
+      // visit the pages with realistic data and check that nothing scrolls sideways and the primary controls can be reached.
+      name: "mobile",
+      testMatch: MOBILE_SPECS,
+      use: {
+        ...devices["Pixel 5"],
+        viewport: { width: 360, height: 780 },
+        screen: { width: 360, height: 780 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
     },
   ],
   webServer: process.env.BASE_URL
