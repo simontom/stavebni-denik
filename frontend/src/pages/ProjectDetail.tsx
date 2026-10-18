@@ -435,11 +435,15 @@ export const ProjectDetail: React.FC = () => {
                     className="w-full rounded-md border border-gray-300 p-2"
                   >
                     <option value="">Vyberte…</option>
-                    {siteManagerCandidates.map((m) => (
-                      <option key={m.userId} value={m.userId}>
-                        {m.displayName} ({m.nickname})
-                      </option>
-                    ))}
+                    {siteManagerCandidates.map((m) => {
+                      // The list of users says who holds a ČKAIT number: a manager without one is shown, but cannot be chosen.
+                      const withoutNumber = userOptions.some((u) => u.id === m.userId && !u.hasCkait);
+                      return (
+                        <option key={m.userId} value={m.userId} disabled={withoutNumber}>
+                          {m.displayName} ({m.nickname}){withoutNumber ? " – bez čísla ČKAIT" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                   <label htmlFor="siteManagerReason" className="block text-xs text-gray-600">
                     Důvod změny (nepovinné, zůstane v záznamu o změnách)
