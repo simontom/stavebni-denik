@@ -300,6 +300,8 @@ export const ProjectDetail: React.FC = () => {
   };
 
   const selectedUser = userOptions.find((u) => u.id === selectedUserId);
+  // A manager of a project (BOSS) signs its diary and so holds a ČKAIT number (the server refuses otherwise): say so up front.
+  const managerNeedsCkait = selectedRole === "BOSS" && selectedUser !== undefined && !selectedUser.hasCkait;
 
   const siteManagerName = members.find((m) => m.userId === project?.siteManagerId)?.displayName;
   // Whoever can sign: a manager (role BOSS) of this project other than the present site manager. The server checks the rest
@@ -943,9 +945,19 @@ export const ProjectDetail: React.FC = () => {
                 )}
               </div>
 
-              <button type="button" onClick={() => void handleAddMember()} className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">
+              <button
+                type="button"
+                disabled={managerNeedsCkait}
+                onClick={() => void handleAddMember()}
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 Přidat
               </button>
+              {managerNeedsCkait && (
+                <p role="status" className="basis-full text-sm text-amber-800">
+                  {selectedUser?.displayName} nemá číslo ČKAIT, a proto nemůže být vedoucím projektu (podepisuje záznamy). Číslo doplní administrátor v seznamu uživatelů.
+                </p>
+              )}
             </div>
 
             <table className="min-w-full divide-y divide-gray-200">

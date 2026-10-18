@@ -20,6 +20,9 @@ export const NewProject: React.FC = () => {
       .catch(() => setUserOptions([]));
   }, []);
 
+  // The creator becomes a manager of the project too, so they need a ČKAIT number as well (the server refuses otherwise).
+  const myNumberMissing = me !== null && userOptions.some((u) => u.id === me.id && !u.hasCkait);
+
   const [error, setError] = useState("");
   // The form is long: an error is brought into view, also when it is the same text as the last one.
   const errorBox = useRef<HTMLDivElement | null>(null);
@@ -64,6 +67,13 @@ export const NewProject: React.FC = () => {
         </div>
       )}
 
+      {myNumberMissing && (
+        <div role="status" className="mb-4 rounded bg-amber-100 p-3 text-sm text-amber-900">
+          Váš účet nemá číslo ČKAIT, takže projekt založit nemůžete: zakladatel se stává jeho vedoucím a vedoucí musí mít číslo. Požádejte administrátora, aby ho u vašeho účtu
+          doplnil.
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
         <ProjectFields values={fields} onChange={(patch) => setFields((current) => ({ ...current, ...patch }))}>
           <div className="relative">
@@ -80,21 +90,28 @@ export const NewProject: React.FC = () => {
             {showDropdown && (
               <div role="listbox" className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
                 {userOptions.length === 0 && <div className="px-4 py-2 text-sm text-gray-500">Žádní uživatelé k výběru</div>}
-                {userOptions.map((u) => (
-                  <div
-                    key={u.id}
-                    role="option"
-                    aria-selected={siteManagerId === u.id}
-                    onClick={() => {
-                      setSiteManagerId(u.id);
-                      setSiteManagerName(`${u.displayName} (${u.nickname})`);
-                      setShowDropdown(false);
-                    }}
-                    className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
-                  >
-                    {u.displayName} ({u.nickname})
-                  </div>
-                ))}
+                {userOptions.map((u) =>
+                  u.hasCkait ? (
+                    <div
+                      key={u.id}
+                      role="option"
+                      aria-selected={siteManagerId === u.id}
+                      onClick={() => {
+                        setSiteManagerId(u.id);
+                        setSiteManagerName(`${u.displayName} (${u.nickname})`);
+                        setShowDropdown(false);
+                      }}
+                      className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
+                    >
+                      {u.displayName} ({u.nickname})
+                    </div>
+                  ) : (
+                    // The site manager signs the diary and so needs a ČKAIT number: shown, but not to be picked, with the reason.
+                    <div key={u.id} role="option" aria-selected={false} aria-disabled="true" className="cursor-not-allowed px-4 py-2 text-sm text-gray-500">
+                      {u.displayName} ({u.nickname}) <span className="text-xs">– bez čísla ČKAIT, stavbyvedoucím být nemůže</span>
+                    </div>
+                  ),
+                )}
               </div>
             )}
           </div>

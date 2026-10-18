@@ -107,4 +107,6 @@ export interface UserOption {
   nickname: string;
   displayName: string;
   role: string;
+  /** Whether the person holds a ČKAIT number, which a manager of a project and a site manager must (the number itself is not sent). */
+  hasCkait: boolean;
 }

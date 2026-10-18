@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api, json, ROLE_LABELS } from "../lib/api";
+import { api, currentUser, json, ROLE_LABELS } from "../lib/api";
 
 interface User {
   id: string;
@@ -10,6 +10,8 @@ interface User {
   isActive: boolean;
   /** Professional authorization (ČKAIT); a person who manages a project or signs its diary needs one. */
   ckaitNumber?: string | null;
+  /** In the answer to a save only: the number of somebody who manages a project was changed or removed. */
+  warning?: string | null;
 }
 
 interface CreateUserResponse {
@@ -21,6 +23,8 @@ export const AdminUsers: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // What the server wants the administrator to know after a save (a changed ČKAIT number of a manager of a project).
+  const [notice, setNotice] = useState("");
 
   // Create User Modal State
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -102,15 +106,17 @@ export const AdminUsers: React.FC = () => {
     setEditCkait(user.ckaitNumber ?? "");
   };
 
+  const editingOwnAccount = editingUser !== null && editingUser.id === currentUser()?.id;
+
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
     try {
-      const updated = await api<User>(`/api/users/${editingUser.id}`, {
-        method: "PATCH",
-        body: json({ displayName: editDisplayName, role: editRole, ckaitNumber: editCkait }),
-      });
-      replaceUser(updated);
+      // An administrator cannot change their own number (the server refuses): it is not sent for their own account.
+      const body = editingOwnAccount ? { displayName: editDisplayName, role: editRole } : { displayName: editDisplayName, role: editRole, ckaitNumber: editCkait };
+      const updated = await api<User>(`/api/users/${editingUser.id}`, { method: "PATCH", body: json(body) });
+      replaceUser({ ...updated, warning: undefined });
+      setNotice(updated.warning ?? "");
       setEditingUser(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chyba při ukládání");
@@ -172,6 +178,14 @@ export const AdminUsers: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+      {notice && (
+        <div role="status" className="mb-4 flex items-start justify-between gap-4 rounded bg-amber-100 p-3 text-sm text-amber-900">
+          <span>{notice}</span>
+          <button type="button" onClick={() => setNotice("")} className="shrink-0 font-semibold underline">
+            Zavřít
+          </button>
+        </div>
+      )}
 
       {/* Users Table */}
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -393,9 +407,11 @@ export const AdminUsers: React.FC = () => {
                   id="edit-ckait"
                   type="text"
                   value={editCkait}
+                  disabled={editingOwnAccount}
                   onChange={(e) => setEditCkait(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                  className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
                 />
+                {editingOwnAccount && <p className="mt-1 text-xs text-gray-600">Své číslo ČKAIT si administrátor měnit nemůže. Požádejte jiného administrátora.</p>}
               </div>
               <div className="flex justify-end gap-2 border-t pt-2">
                 <button type="button" onClick={() => setEditingUser(null)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
