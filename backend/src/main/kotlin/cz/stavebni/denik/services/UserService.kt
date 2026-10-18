@@ -2,6 +2,7 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Role
@@ -10,6 +11,7 @@ import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.domain.can
 import cz.stavebni.denik.jooq.tables.records.UsersRecord
+import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import cz.stavebni.denik.util.Text
@@ -34,6 +36,11 @@ data class UserDto(
     val mustChangePwd: Boolean,
     val ckaitNumber: String? = null,
     val createdAt: String? = null,
+    /**
+     * A notice for the administrator who has just saved this user, in the answer to the save only (null everywhere else): the
+     * ČKAIT number of somebody who manages a project was changed or cleared. It is not stored and not part of the audit row.
+     */
+    val warning: String? = null,
 )
 
 /** Minimal user info for pickers (site manager, project members). */
@@ -43,6 +50,11 @@ data class UserOptionDto(
     val nickname: String,
     val displayName: String,
     val role: String,
+    /**
+     * Whether the person holds a ČKAIT number, which a manager of a project and a site manager must (decision D2): a picker
+     * offers only such people for those roles. The number itself is not in this list, it is personal data of the account.
+     */
+    val hasCkait: Boolean,
 )
 
 @Serializable
@@ -153,7 +165,7 @@ object UserService {
             PROJECT_MEMBERS.USERID.eq(actor.id).and(PROJECT_MEMBERS.ROLE.eq(DbRole.BOSS))
         )
         if (!actor.isAdmin && !can(actor, Action.ProjectCreate) && !managesAProject) throw ForbiddenException(Action.ProjectMemberManage)
-        return tx.select(USERS.ID, USERS.NICKNAME, USERS.DISPLAYNAME, USERS.ROLE)
+        return tx.select(USERS.ID, USERS.NICKNAME, USERS.DISPLAYNAME, USERS.ROLE, USERS.CKAITNUMBER)
             .from(USERS)
             .where(USERS.DELETEDAT.isNull)
             .and(USERS.ISACTIVE.eq(true))
@@ -165,6 +177,7 @@ object UserService {
                     nickname = r.get(USERS.NICKNAME)!!,
                     displayName = r.get(USERS.DISPLAYNAME)!!,
                     role = r.get(USERS.ROLE)!!.name,
+                    hasCkait = !r.get(USERS.CKAITNUMBER).isNullOrBlank(),
                 )
             }
     }
@@ -236,13 +249,20 @@ object UserService {
             if (id == actor.id && role != null && existing.role?.name != role.name) {
                 throw IllegalArgumentException("Nelze změnit vlastní roli")
             }
+            // The number is the qualification to manage a project and to sign (decision D2, D1): an administrator who could give
+            // themselves one would certify themselves, join any project as its manager and sign. The edit form sends the number
+            // along with every edit, so only an actual change is refused.
+            val ckaitChanged = req.ckaitNumber != null && ckaitNumber != existing.ckaitnumber?.trim()?.ifEmpty { null }
+            if (id == actor.id && ckaitChanged) {
+                throw ConflictException("Své vlastní číslo ČKAIT si administrátor měnit nemůže, jinak by si mohl kvalifikaci potvrdit sám. Požádejte jiného administrátora.")
+            }
             if (req.isAdmin == false) requireAnotherActiveAdminIfTargetIsOne(tx, id)
 
             val update = tx.update(USERS).set(USERS.UPDATEDAT, OffsetDateTime.now())
             if (displayName != null) update.set(USERS.DISPLAYNAME, displayName)
             if (role != null) update.set(USERS.ROLE, DbRole.valueOf(role.name))
             if (req.isAdmin != null) update.set(USERS.ISADMIN, req.isAdmin)
-            if (req.ckaitNumber != null) update.set(USERS.CKAITNUMBER, ckaitNumber)
+            if (ckaitChanged) update.set(USERS.CKAITNUMBER, ckaitNumber)
             val updated = update.where(USERS.ID.eq(id).and(USERS.DELETEDAT.isNull))
                 .returning()
                 .fetchOne()
@@ -254,7 +274,9 @@ object UserService {
             val rightsChanged = existing.role != updated.role || existing.isadmin != updated.isadmin
             if (rightsChanged) SessionService.revokeAllForUser(tx, id)
             AuditService.Audited(
-                result = toDto(updated),
+                // A number may be changed or cleared (an authorisation can be revoked, a number mistyped), but the editor is told
+                // when the person manages a project: signing reads the number at the moment of signing.
+                result = toDto(updated).copy(warning = if (ckaitChanged) ckaitWarning(tx, id, cleared = ckaitNumber == null) else null),
                 action = "user.update",
                 entityId = id.toString(),
                 before = existing.toSnapshot(),
@@ -269,7 +291,10 @@ object UserService {
 
         return AuditService.auditedWrite(actor, "user") { tx ->
             val existing = lockedUser(tx, id)
-            if (!active) requireAnotherActiveAdminIfTargetIsOne(tx, id)
+            if (!active) {
+                requireAnotherActiveAdminIfTargetIsOne(tx, id)
+                requireNotSiteManager(tx, id, "deaktivovat")
+            }
 
             val updated = tx.update(USERS)
                 .set(USERS.ISACTIVE, active)
@@ -299,6 +324,7 @@ object UserService {
         AuditService.auditedWrite(actor, "user") { tx ->
             val existing = lockedUser(tx, id)
             requireAnotherActiveAdminIfTargetIsOne(tx, id)
+            requireNotSiteManager(tx, id, "smazat")
 
             val now = OffsetDateTime.now()
             val updated = tx.update(USERS)
@@ -340,6 +366,74 @@ object UserService {
         if (targetIsActiveAdmin && !tx.fetchExists(USERS, activeAdmins().and(USERS.ID.ne(targetId)))) {
             throw IllegalStateException("Musí zůstat alespoň jeden aktivní administrátor")
         }
+    }
+
+    /** Projects that are not deleted, of which [userId] is the site manager (stavbyvedoucí), by name. */
+    private fun projectsAsSiteManager(tx: DSLContext, userId: UUID): List<String> =
+        tx.select(PROJECTS.NAME)
+            .from(PROJECTS)
+            .where(PROJECTS.SITEMANAGERID.eq(userId).and(PROJECTS.DELETEDAT.isNull))
+            .orderBy(PROJECTS.NAME.asc(), PROJECTS.CREATEDAT.asc())
+            .fetch(PROJECTS.NAME)
+            .filterNotNull()
+
+    /** Projects that are not deleted in which [userId] is a manager (BOSS) without being its site manager, by name. */
+    private fun projectsAsOtherManager(tx: DSLContext, userId: UUID): List<String> =
+        tx.select(PROJECTS.NAME)
+            .from(PROJECT_MEMBERS)
+            .join(PROJECTS).on(PROJECTS.ID.eq(PROJECT_MEMBERS.PROJECTID))
+            .where(PROJECT_MEMBERS.USERID.eq(userId).and(PROJECT_MEMBERS.ROLE.eq(DbRole.BOSS)))
+            .and(PROJECTS.DELETEDAT.isNull)
+            .and(PROJECTS.SITEMANAGERID.ne(userId))
+            .orderBy(PROJECTS.NAME.asc(), PROJECTS.CREATEDAT.asc())
+            .fetch(PROJECTS.NAME)
+            .filterNotNull()
+
+    /** The names of projects for a message, quoted, at most [MAX_NAMED_PROJECTS] of them. */
+    private fun namedProjects(names: List<String>): String {
+        val shown = names.take(MAX_NAMED_PROJECTS).joinToString(", ") { "„$it“" }
+        return if (names.size > MAX_NAMED_PROJECTS) "$shown a další (celkem ${names.size})" else shown
+    }
+
+    private const val MAX_NAMED_PROJECTS = 5
+
+    /**
+     * A site manager cannot be deactivated or deleted (decision D2): the diary of the project is signed by them, and a project
+     * always has one. The administrator first has the manager of the project replace the site manager
+     * (`PUT /projects/{id}/site-manager`); after that the user manages no project as its site manager. Called inside the
+     * audited transaction, so the answer cannot change before the user is changed.
+     */
+    private fun requireNotSiteManager(tx: DSLContext, userId: UUID, verb: String) {
+        val projects = projectsAsSiteManager(tx, userId)
+        if (projects.isEmpty()) return
+        val which = if (projects.size == 1) "projektu" else "projektů"
+        throw ConflictException(
+            "Uživatele nelze $verb: je stavbyvedoucím $which ${namedProjects(projects)}. " +
+                "Nejdřív nechte vedoucího projektu určit jiného stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu), pak to zopakujte."
+        )
+    }
+
+    /**
+     * The notice that goes with a saved change of a ČKAIT number ([cleared]: removed, otherwise replaced) when the person manages
+     * a project: as its site manager or as another of its managers. Null when they manage none. The change itself is allowed:
+     * an authorisation can be revoked or suspended and a number can be mistyped.
+     */
+    private fun ckaitWarning(tx: DSLContext, userId: UUID, cleared: Boolean): String? {
+        val asSiteManager = projectsAsSiteManager(tx, userId)
+        val asOtherManager = projectsAsOtherManager(tx, userId)
+        if (asSiteManager.isEmpty() && asOtherManager.isEmpty()) return null
+        val roles = listOfNotNull(
+            asSiteManager.takeIf { it.isNotEmpty() }?.let { "stavbyvedoucím ${if (it.size == 1) "projektu" else "projektů"} ${namedProjects(it)}" },
+            asOtherManager.takeIf { it.isNotEmpty() }?.let { "vedoucím (BOSS) ${if (it.size == 1) "projektu" else "projektů"} ${namedProjects(it)}" },
+        ).joinToString(" a ")
+        val what = if (cleared) "Číslo ČKAIT bylo odebráno" else "Číslo ČKAIT bylo změněno"
+        val consequence = if (cleared) {
+            "Bez čísla uživatel nemůže podepisovat záznamy těchto projektů. Doplňte číslo" +
+                if (asSiteManager.isNotEmpty()) ", nebo nechte v projektu určit jiného stavbyvedoucího." else "."
+        } else {
+            "Číslo se čte při každém podpisu: zkontrolujte, že patří téže osobě."
+        }
+        return "$what, ale uživatel je $roles. $consequence"
     }
 
     /**

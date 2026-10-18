@@ -71,13 +71,20 @@ object ProjectMemberService {
         }
     }
 
-    /** Whether the project still has a manager when [excluding] is left out of it. */
+    /**
+     * Whether the project still has a manager when [excluding] is left out of it. Only an ACTIVE user counts: a manager whose
+     * account is deactivated or deleted cannot sign in, so a project whose other managers are all like that has none.
+     */
     private fun anotherManagerExists(tx: DSLContext, projectId: UUID, excluding: UUID): Boolean =
         tx.fetchExists(
-            PROJECT_MEMBERS,
-            PROJECT_MEMBERS.PROJECTID.eq(projectId)
+            tx.selectOne()
+                .from(PROJECT_MEMBERS)
+                .join(USERS).on(USERS.ID.eq(PROJECT_MEMBERS.USERID))
+                .where(PROJECT_MEMBERS.PROJECTID.eq(projectId))
                 .and(PROJECT_MEMBERS.USERID.ne(excluding))
                 .and(PROJECT_MEMBERS.ROLE.eq(DbRole.BOSS))
+                .and(USERS.ISACTIVE.eq(true))
+                .and(USERS.DELETEDAT.isNull)
         )
 
     /**
@@ -113,7 +120,7 @@ object ProjectMemberService {
             }
             requireSiteManagerStaysManager(tx, projectId, userId, role)
             if (before == DbRole.BOSS && role != Role.BOSS && !anotherManagerExists(tx, projectId, userId)) {
-                throw ConflictException("Projekt musí mít alespoň jednoho vedoucího (BOSS)")
+                throw ConflictException("Projekt musí mít alespoň jednoho aktivního vedoucího (BOSS)")
             }
 
             tx.insertInto(PROJECT_MEMBERS)
@@ -146,7 +153,7 @@ object ProjectMemberService {
                 .fetchOne(PROJECT_MEMBERS.ROLE) ?: throw NotFoundException("Člen projektu nenalezen")
             requireSiteManagerStaysManager(tx, projectId, userId, newRole = null)
             if (before == DbRole.BOSS && !anotherManagerExists(tx, projectId, userId)) {
-                throw ConflictException("Projekt musí mít alespoň jednoho vedoucího (BOSS)")
+                throw ConflictException("Projekt musí mít alespoň jednoho aktivního vedoucího (BOSS)")
             }
             tx.deleteFrom(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
