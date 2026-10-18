@@ -11,35 +11,8 @@ import {
   removeDraft,
   saveDraft,
   type DraftScope,
-  type StorageLike,
 } from "./draftStore";
-
-/** localStorage in memory; `failing` makes every access throw, as a blocked or full storage does. */
-class MemoryStorage implements StorageLike {
-  readonly items = new Map<string, string>();
-  failing: "none" | "all" | "write" = "none";
-
-  get length(): number {
-    if (this.failing === "all") throw new Error("storage blocked");
-    return this.items.size;
-  }
-  key(index: number): string | null {
-    if (this.failing === "all") throw new Error("storage blocked");
-    return [...this.items.keys()][index] ?? null;
-  }
-  getItem(key: string): string | null {
-    if (this.failing === "all") throw new Error("storage blocked");
-    return this.items.get(key) ?? null;
-  }
-  setItem(key: string, value: string): void {
-    if (this.failing !== "none") throw new Error("QuotaExceededError");
-    this.items.set(key, value);
-  }
-  removeItem(key: string): void {
-    if (this.failing === "all") throw new Error("storage blocked");
-    this.items.delete(key);
-  }
-}
+import { MemoryStorage } from "./testStorage";
 
 interface Text {
   text: string;
@@ -195,7 +168,7 @@ describe("pruning when the application starts", () => {
     expect(storage.items.has("user")).toBe(true);
   });
 
-  it("drops the drafts of everybody else, and all of them when nobody is signed in", () => {
+  it("drops the drafts of everybody else when somebody is signed in", () => {
     const storage = new MemoryStorage();
     saveDraft(storage, scope, { baseUpdatedAt: null, values: { text: "mine" } }, NOW);
     saveDraft(storage, { ...scope, userId: "user-2" }, { baseUpdatedAt: null, values: { text: "theirs" } }, NOW);
@@ -203,9 +176,42 @@ describe("pruning when the application starts", () => {
     pruneDrafts(storage, { now: NOW, signedInUserId: "user-1" });
     expect(loadDraft(storage, scope, parseText)?.values.text).toBe("mine");
     expect(loadDraft(storage, { ...scope, userId: "user-2" }, parseText)).toBeNull();
+  });
+
+  it("when nobody is signed in (the login page was visited, or a logout happened elsewhere) removes only what is expired or damaged, never everything", () => {
+    const storage = new MemoryStorage();
+    const day = (n: number): DraftScope => ({ ...scope, day: `2026-09-${String(n).padStart(2, "0")}` });
+    saveDraft(storage, day(1), { baseUpdatedAt: null, values: { text: "31 days" } }, daysAgo(31));
+    saveDraft(storage, day(2), { baseUpdatedAt: null, values: { text: "yesterday" } }, daysAgo(1));
+    saveDraft(storage, { ...day(3), userId: "user-2" }, { baseUpdatedAt: null, values: { text: "somebody else, just now" } }, NOW);
+    storage.items.set(draftKey(day(4)), "garbage");
 
     pruneDrafts(storage, { now: NOW, signedInUserId: null });
-    expect(loadDraft(storage, scope, parseText)).toBeNull();
+
+    expect(loadDraft(storage, day(1), parseText)).toBeNull();
+    expect(loadDraft(storage, day(2), parseText)?.values.text).toBe("yesterday");
+    expect(loadDraft(storage, { ...day(3), userId: "user-2" }, parseText)?.values.text).toBe("somebody else, just now");
+    expect(storage.items.has(draftKey(day(4)))).toBe(false);
+  });
+
+  it("drops a draft dated in the future (a clock that was wrong would keep it for ever), but not one within a day's difference of clocks", () => {
+    const storage = new MemoryStorage();
+    const day = (n: number): DraftScope => ({ ...scope, day: `2026-09-${String(n).padStart(2, "0")}` });
+    const later = (hours: number): Date => new Date(NOW.getTime() + hours * 60 * 60 * 1000);
+    saveDraft(storage, day(1), { baseUpdatedAt: null, values: { text: "in 3 years" } }, later(3 * 365 * 24));
+    saveDraft(storage, day(2), { baseUpdatedAt: null, values: { text: "in 3 days" } }, later(72));
+    saveDraft(storage, day(3), { baseUpdatedAt: null, values: { text: "in 2 hours" } }, later(2));
+
+    expect(pruneDrafts(storage, { now: NOW, signedInUserId: "user-1" })).toBe(2);
+
+    expect(loadDraft(storage, day(1), parseText)).toBeNull();
+    expect(loadDraft(storage, day(2), parseText)).toBeNull();
+    expect(loadDraft(storage, day(3), parseText)?.values.text).toBe("in 2 hours");
+    // Also when nobody is signed in.
+    saveDraft(storage, day(4), { baseUpdatedAt: null, values: { text: "in 3 years" } }, later(3 * 365 * 24));
+    pruneDrafts(storage, { now: NOW, signedInUserId: null });
+    expect(loadDraft(storage, day(4), parseText)).toBeNull();
+    expect(loadDraft(storage, day(3), parseText)?.values.text).toBe("in 2 hours");
   });
 });
 

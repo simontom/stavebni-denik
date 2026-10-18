@@ -23,8 +23,9 @@ export function RootRoute() {
   return <Navigate to="/projects" replace />;
 }
 
-// When the application starts: drafts of daily entries that are older than 30 days, unreadable, or not the signed-in
-// person's are removed (they hold the names of people on site). Never allowed to stop the application from starting.
+// When the application starts: drafts of daily entries that are older than 30 days, dated in the future, unreadable, or (when
+// somebody is signed in) not that person's are removed (they hold the names of people on site). When nobody is signed in
+// nothing else goes: the login page forgets who was signed in without a logout. Never allowed to stop the application from starting.
 try {
   pruneDrafts(browserStorage(), { signedInUserId: currentUser()?.id ?? null });
 } catch {

@@ -191,18 +191,28 @@ export function clearDraftsExceptUser(storage: StorageLike | null, userId: strin
 }
 
 /**
+ * How far ahead of this device's clock a draft may be dated and still be believed (the clock may have been corrected since
+ * it was written). Dated later than that, it cannot be told how old it is: it would never expire, so it goes.
+ */
+export const DRAFT_MAX_FUTURE_SKEW_MS = DAY_MS;
+
+/**
  * Housekeeping when the application starts: removes drafts that are older than [DRAFT_MAX_AGE_DAYS] days (exactly that
- * old stays), that cannot be read, or that do not belong to the person who is signed in (all of them when nobody is).
- * Returns how many were removed.
+ * old stays), dated in the future (beyond [DRAFT_MAX_FUTURE_SKEW_MS]), or that cannot be read; and, when somebody is signed
+ * in, those of anybody else. When nobody is signed in it removes nothing else: the login page forgets who was signed in
+ * without a logout, and the same person who signs in again (or somebody else, whose sign-in clears the rest) decides what
+ * happens to the drafts. Returns how many were removed.
  */
 export function pruneDrafts(storage: StorageLike | null, options: { now?: Date; signedInUserId: string | null }): number {
   if (!storage) return 0;
   try {
     const now = (options.now ?? new Date()).getTime();
     const doomed = draftKeys(storage).filter((key) => {
-      if (options.signedInUserId === null || !keyBelongsToUser(key, options.signedInUserId)) return true;
+      if (options.signedInUserId !== null && !keyBelongsToUser(key, options.signedInUserId)) return true;
       const draft = parseDraft(storage.getItem(key) ?? "", (values) => values);
-      return draft === null || now - Date.parse(draft.savedAt) > DRAFT_MAX_AGE_DAYS * DAY_MS;
+      if (draft === null) return true;
+      const savedAt = Date.parse(draft.savedAt);
+      return now - savedAt > DRAFT_MAX_AGE_DAYS * DAY_MS || savedAt - now > DRAFT_MAX_FUTURE_SKEW_MS;
     });
     return removeKeys(storage, doomed);
   } catch {
