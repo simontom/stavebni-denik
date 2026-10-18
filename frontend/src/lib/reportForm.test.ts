@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Draft } from "./draftStore";
-import { DETAIL_FIELDS, decideDraft, emptyDetails, emptyForm, formFromEntry, keyOf, parseFormValues, type FormValues } from "./reportForm";
+import { DETAIL_FIELDS, decideDraft, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, normalizeForm, parseFormValues, temperatureOf, type FormValues } from "./reportForm";
 
 const filled = (): FormValues => ({
   workDescription: "Betonáž stropu",
@@ -193,7 +193,7 @@ describe("decideDraft, what to do with a draft when the day is opened", () => {
     values,
   });
   const decide = (over: Partial<Parameters<typeof decideDraft>[0]> = {}) =>
-    decideDraft({ draft: draft(edited, "v1"), loadedKey: keyOf(loaded), loadedUpdatedAt: "v1", canWrite: true, isSigned: false, ...over });
+    decideDraft({ draft: draft(edited, "v1"), loaded, loadedUpdatedAt: "v1", canWrite: true, isSigned: false, ...over });
 
   it("does nothing when there is no draft", () => {
     expect(decide({ draft: null })).toEqual({ action: "none" });
@@ -204,12 +204,37 @@ describe("decideDraft, what to do with a draft when the day is opened", () => {
   });
 
   it("offers a draft for a day that has no entry, when it holds anything", () => {
-    expect(decide({ draft: draft(edited, null), loadedKey: keyOf(emptyForm()), loadedUpdatedAt: null })).toEqual({ action: "offer", stale: false });
+    expect(decide({ draft: draft(edited, null), loaded: emptyForm(), loadedUpdatedAt: null })).toEqual({ action: "offer", stale: false });
   });
 
   it("does not offer, and drops, a draft that is identical to the stored entry (a save whose answer was lost)", () => {
     expect(decide({ draft: draft(filled(), "v1") })).toEqual({ action: "drop" });
-    expect(decide({ draft: draft(emptyForm(), null), loadedKey: keyOf(emptyForm()), loadedUpdatedAt: null })).toEqual({ action: "drop" });
+    expect(decide({ draft: draft(emptyForm(), null), loaded: emptyForm(), loadedUpdatedAt: null })).toEqual({ action: "drop" });
+  });
+
+  it("treats a draft as identical when it differs only by what the server tidies up, so no false warning is shown", () => {
+    // Typed: a trailing space after the trade, "Jan;Petr" without a space, an empty trade row, a count with a leading zero,
+    // a temperature with a comma. Stored (and loaded): the same entry as the server keeps it.
+    const stored: FormValues = {
+      ...emptyForm(),
+      workDescription: "Betonáž",
+      workers: [{ trade: "Zedník", count: "3", names: "Jan; Petr" }],
+      weatherCondition: "zataženo",
+      weatherMin: "8.5",
+    };
+    const typed: FormValues = {
+      ...stored,
+      workers: [
+        { trade: "Zedník ", count: "03", names: "Jan;Petr" },
+        { trade: "", count: "", names: "" },
+      ],
+      weatherCondition: "zataženo ",
+      weatherMin: "8,5",
+    };
+    // The entry was saved in between (its version moved on): without the tidying this would be offered as "stale".
+    expect(decide({ draft: draft(typed, null), loaded: stored, loadedUpdatedAt: "v2" })).toEqual({ action: "drop" });
+    // A real difference is still offered.
+    expect(decide({ draft: draft({ ...typed, workDescription: "Betonáž a bednění" }, null), loaded: stored, loadedUpdatedAt: "v2" })).toEqual({ action: "offer", stale: true });
   });
 
   it("says the draft is stale when the entry was saved by somebody else after it was typed, and still offers it", () => {
@@ -220,13 +245,95 @@ describe("decideDraft, what to do with a draft when the day is opened", () => {
 
   it("never keeps a draft of a signed entry", () => {
     expect(decide({ isSigned: true })).toEqual({ action: "drop" });
+    expect(decide({ isSigned: true, canWrite: null })).toEqual({ action: "drop" });
   });
 
-  it("never keeps a draft of somebody who may not write in the project", () => {
+  it("never keeps a draft of somebody whose role is known and may not write in the project", () => {
     expect(decide({ canWrite: false })).toEqual({ action: "drop" });
+  });
+
+  it("leaves a draft alone while the role is not known (the request failed or has not answered): it is neither offered nor dropped", () => {
+    expect(decide({ canWrite: null })).toEqual({ action: "none" });
+    // Not even one that would be dropped for being identical: nothing is decided without the role.
+    expect(decide({ canWrite: null, draft: draft(filled(), "v1") })).toEqual({ action: "none" });
   });
 
   it("has nothing to drop when there is no draft, whatever the role or the state of the entry", () => {
     expect(decide({ draft: null, canWrite: false, isSigned: true })).toEqual({ action: "none" });
+    expect(decide({ draft: null, canWrite: null })).toEqual({ action: "none" });
+  });
+});
+
+describe("namesOf and temperatureOf, as the save reads the form", () => {
+  it("namesOf splits at semicolons, trims, and leaves blanks out", () => {
+    expect(namesOf("Jan;Petr")).toEqual(["Jan", "Petr"]);
+    expect(namesOf(" Ing. Jan Novák, Ph.D. ;; Petr Svoboda ; ")).toEqual(["Ing. Jan Novák, Ph.D.", "Petr Svoboda"]);
+    expect(namesOf("  ")).toEqual([]);
+  });
+
+  it("temperatureOf reads a comma as a decimal point and an empty or unreadable field as nothing", () => {
+    expect(temperatureOf("8,5")).toBe(8.5);
+    expect(temperatureOf("-3")).toBe(-3);
+    expect(temperatureOf("")).toBeUndefined();
+    expect(temperatureOf("abc")).toBeUndefined();
+  });
+});
+
+describe("normalizeForm, the form as the server stores it", () => {
+  it("trims a trade and a head count, rewrites the names with one separator, and drops empty trade rows", () => {
+    const form: FormValues = {
+      ...emptyForm(),
+      workers: [
+        { trade: "Zedník ", count: " 003", names: "Jan;Petr" },
+        { trade: "", count: "", names: "" },
+        { trade: "Tesař", count: "0", names: " ; " },
+      ],
+    };
+    expect(normalizeForm(form).workers).toEqual([
+      { trade: "Zedník", count: "3", names: "Jan; Petr" },
+      { trade: "Tesař", count: "0", names: "" },
+    ]);
+  });
+
+  it("keeps one empty trade row when every row is empty (what a loaded entry without workers shows)", () => {
+    const form: FormValues = {
+      ...emptyForm(),
+      workers: [
+        { trade: " ", count: "", names: "" },
+        { trade: "", count: "", names: "" },
+      ],
+    };
+    expect(normalizeForm(form).workers).toEqual([{ trade: "", count: "", names: "" }]);
+  });
+
+  it("trims the weather text, the late-entry reason and every detail (the server does), and writes a temperature as the number it is", () => {
+    const form: FormValues = {
+      ...emptyForm(),
+      weatherCondition: " zataženo ",
+      weatherMin: "8,50",
+      weatherMax: "15",
+      lateEntryReason: " Deník byl jinde ",
+      details: { ...emptyDetails(), materials: "  Beton  ", defects: "   " },
+    };
+    const normalized = normalizeForm(form);
+    expect(normalized.weatherCondition).toBe("zataženo");
+    expect(normalized.weatherMin).toBe("8.5");
+    expect(normalized.weatherMax).toBe("15");
+    expect(normalized.lateEntryReason).toBe("Deník byl jinde");
+    expect(normalized.details.materials).toBe("Beton");
+    expect(normalized.details.defects).toBe("");
+  });
+
+  it("leaves the day's work and the construction object as they are (the server does not trim them)", () => {
+    const normalized = normalizeForm({ ...emptyForm(), workDescription: "  Betonáž \n", constructionObj: " SO-101 " });
+    expect(normalized.workDescription).toBe("  Betonáž \n");
+    expect(normalized.constructionObj).toBe(" SO-101 ");
+  });
+
+  it("is idempotent, and does not change what it is given", () => {
+    const form = filled();
+    const before = JSON.stringify(form);
+    expect(keyOf(normalizeForm(normalizeForm(form)))).toBe(keyOf(normalizeForm(form)));
+    expect(JSON.stringify(form)).toBe(before);
   });
 });

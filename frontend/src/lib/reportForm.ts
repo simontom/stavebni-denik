@@ -158,13 +158,65 @@ export function parseFormValues(raw: unknown): FormValues | null {
   };
 }
 
+/**
+ * "Jan Novák; Petr Svoboda" as the list the server expects; blanks are left out. Names are separated by semicolons, not
+ * commas: a name often has a comma in it ("Ing. Jan Novák, Ph.D.").
+ */
+export const namesOf = (text: string): string[] =>
+  text
+    .split(";")
+    .map((n) => n.trim())
+    .filter((n) => n !== "");
+
+/** A temperature field as the number the server expects, or undefined when it is empty (or no number). */
+export const temperatureOf = (value: string): number | undefined => {
+  const n = Number.parseFloat(value.replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/**
+ * The form as the server stores it, and so as a reload shows it: what a save does to the text is done here too (a trade
+ * and the texts are trimmed, a head count is the whole number it is, names are rewritten with one separator, empty trade
+ * rows are not kept, a temperature is the number it is), but never more than the save does (the day's work and the
+ * construction object are stored as typed). Compare two forms through this, never raw: a draft of an entry whose save went
+ * through, but whose answer was lost, differs from the stored entry only by this tidying and is not a different text.
+ */
+export function normalizeForm(v: FormValues): FormValues {
+  const rows = v.workers
+    .filter((r) => r.trade.trim() !== "" || r.count.trim() !== "" || r.names.trim() !== "")
+    .map((r) => {
+      const count = r.count.trim();
+      return { trade: r.trade.trim(), count: /^\d{1,6}$/.test(count) ? String(Number(count)) : count, names: namesOf(r.names).join("; ") };
+    });
+  const temperature = (value: string): string => {
+    const n = temperatureOf(value);
+    return n === undefined ? "" : String(n);
+  };
+  return {
+    workDescription: v.workDescription,
+    workers: rows.length > 0 ? rows : [{ trade: "", count: "", names: "" }],
+    isControlDay: v.isControlDay,
+    constructionObj: v.constructionObj,
+    weatherCondition: v.weatherCondition.trim(),
+    weatherMin: temperature(v.weatherMin),
+    weatherMax: temperature(v.weatherMax),
+    lateEntryReason: v.lateEntryReason.trim(),
+    details: Object.fromEntries(DETAIL_FIELDS.map((d) => [d.key, (v.details[d.key] ?? "").trim()])),
+  };
+}
+
 export type DraftDecision = { action: "none" } | { action: "drop" } | { action: "offer"; stale: boolean };
 
 /**
- * What to do with the draft of a day when the day has just been opened and the entry and the person's role are known.
+ * What to do with the draft of a day when the day has just been opened and the entry is loaded.
  *  - no draft: nothing;
- *  - a signed entry, or somebody who may not write in the project: the draft must not exist, drop it;
- *  - a draft identical to the stored entry (the save went through, only its answer was lost): nothing to restore, drop it;
+ *  - a signed entry: the draft must not exist, drop it (whatever the role: the entry says it is signed);
+ *  - the person's role is not known ([canWrite] null: the request failed or has not answered): nothing is decided, the draft
+ *    stays as it is. A failed request must never delete typed work, and a draft is not offered to somebody whose right to
+ *    write is not known;
+ *  - somebody whose role is known and may not write in the project: drop it;
+ *  - a draft identical to the stored entry (the save went through, only its answer was lost; compared after the tidying the
+ *    server does, see [normalizeForm]): nothing to restore, drop it;
  *  - otherwise offer it. `stale` is true when the entry has been saved by somebody else since the draft was typed (its
  *    version differs from the one the draft was typed on): restoring and saving would replace their newer text, so the
  *    person is told.
@@ -172,9 +224,17 @@ export type DraftDecision = { action: "none" } | { action: "drop" } | { action: 
  * The draft is compared with the entry by the version it was typed on, not by the time it was written: the clock of a
  * phone can be minutes off the server's, and a wrong guess here would throw typed work away.
  */
-export function decideDraft(input: { draft: Draft<FormValues> | null; loadedKey: string; loadedUpdatedAt: string | null; canWrite: boolean; isSigned: boolean }): DraftDecision {
+export function decideDraft(input: {
+  draft: Draft<FormValues> | null;
+  loaded: FormValues;
+  loadedUpdatedAt: string | null;
+  canWrite: boolean | null;
+  isSigned: boolean;
+}): DraftDecision {
   if (input.draft === null) return { action: "none" };
-  if (input.isSigned || !input.canWrite) return { action: "drop" };
-  if (keyOf(input.draft.values) === input.loadedKey) return { action: "drop" };
+  if (input.isSigned) return { action: "drop" };
+  if (input.canWrite === null) return { action: "none" };
+  if (!input.canWrite) return { action: "drop" };
+  if (keyOf(normalizeForm(input.draft.values)) === keyOf(normalizeForm(input.loaded))) return { action: "drop" };
   return { action: "offer", stale: input.draft.baseUpdatedAt !== input.loadedUpdatedAt };
 }

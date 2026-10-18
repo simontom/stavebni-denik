@@ -440,3 +440,161 @@ test("logging out removes the draft, and signing in again does not bring it back
   await expect(description(page)).toHaveValue("");
   await expect(draftBanner(page)).toHaveCount(0);
 });
+
+/** Lets the page render and run what the render started (two animation frames), so "nothing was written" is a statement about a settled page. */
+const settled = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+
+test("a failed request for the role keeps the draft, and the draft is offered once the role has loaded", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const projectId = projectIdOf(projectUrl);
+  const day = pragueDay(0);
+  const url = `${projectUrl}/reports/${day}`;
+
+  await opensDay(page, url);
+  await description(page).fill("Rozepsáno, než spadlo spojení");
+  await expectDraftKept(page);
+  const context = page.context();
+  await page.close();
+
+  // The entry loads, but the request for the person's role in the project fails (a bad connection).
+  const reopened = await context.newPage();
+  let roleFails = true;
+  await reopened.route(`**/api/projects/${projectId}`, (route) =>
+    roleFails && route.request().method() === "GET" ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }) : route.continue(),
+  );
+  const entryAnswered = reopened.waitForResponse((r) => r.url().includes(`/reports/${day}`) && r.request().method() === "GET");
+  const roleAnswered = reopened.waitForResponse((r) => r.url().endsWith(`/api/projects/${projectId}`));
+  await reopened.goto(url);
+  await Promise.all([entryAnswered, roleAnswered]);
+  await settled(reopened);
+
+  // Nothing was decided without the role: the draft is still on the device, the form is locked, and the page says what is wrong
+  // instead of claiming the entry can only be read.
+  expect(await draftKeys(reopened)).toHaveLength(1);
+  await expect(reopened.getByRole("alert").filter({ hasText: /roli/i })).toBeVisible({ timeout: 15_000 });
+  await expect(reopened.getByText(/můžete jen číst/i)).toHaveCount(0);
+  await expect(description(reopened)).toBeHidden();
+  await expect(draftBanner(reopened)).toHaveCount(0);
+
+  // The role loads on a retry: now the draft is offered, and it is the text that was typed.
+  roleFails = false;
+  await reopened.getByRole("button", { name: "Zkusit znovu", exact: true }).click();
+  await expect(draftBanner(reopened)).toBeVisible({ timeout: 15_000 });
+  await draftBanner(reopened).getByRole("button", { name: "Obnovit", exact: true }).click();
+  await expect(description(reopened)).toHaveValue("Rozepsáno, než spadlo spojení");
+});
+
+test("another tab cannot make this tab write one person's text under another person's draft", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+
+  await opensDay(page, `${projectUrl}/reports/${day}`);
+  await description(page).fill("Text osoby A, jména: Ing. Jan Novák");
+  await expectDraftKept(page);
+
+  // In a second tab of the same browser A logs out and the investor signs in; the first tab still holds A's unsaved text.
+  const second = await page.context().newPage();
+  await second.goto("/projects");
+  await second.getByRole("button", { name: "Odhlásit se", exact: true }).click();
+  await expect(second).toHaveURL(/\/login/, { timeout: 15_000 });
+  await login(second, INVESTOR_NICKNAME, INVESTOR_PASSWORD);
+  expect(await draftKeys(second)).toEqual([]);
+
+  // The first tab goes on typing: nothing is written, least of all under the investor's key.
+  await description(page).pressSequentially(" a další věta");
+  await settled(page);
+  expect(await draftKeys(second)).toEqual([]);
+});
+
+test("visiting the login page does not wipe the drafts, and the same person finds theirs after signing in", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  const url = `${projectUrl}/reports/${day}`;
+
+  await opensDay(page, url);
+  await description(page).fill("Rozepsáno, než jsem otevřel přihlašovací stránku");
+  await expectDraftKept(page);
+  const context = page.context();
+  await page.close();
+
+  // The login page forgets who was signed in; the application then starts again with nobody signed in.
+  const reopened = await context.newPage();
+  await reopened.goto("/login");
+  expect(await reopened.evaluate(() => localStorage.getItem("user"))).toBeNull();
+  await reopened.goto("/login");
+  expect(await draftKeys(reopened)).toHaveLength(1);
+
+  // The same person signs in: the draft is theirs and is offered.
+  await login(reopened);
+  expect(await draftKeys(reopened)).toHaveLength(1);
+  await reopened.goto(url);
+  await expect(draftBanner(reopened)).toBeVisible({ timeout: 15_000 });
+});
+
+test("a draft that differs from the stored entry only by what the server tidies up is not offered", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  const url = `${projectUrl}/reports/${day}`;
+
+  // The server stores the entry, but the answer never reaches the page (a connection that dropped).
+  await page.route(`**/api/projects/${projectIdOf(projectUrl)}/reports/${day}`, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const stored = await page.request.post(route.request().url(), { data: route.request().postDataJSON() });
+    expect(stored.ok()).toBeTruthy();
+    await route.abort("failed");
+  });
+  await opensDay(page, url);
+  await description(page).fill("Betonáž");
+  // A trailing space after the trade, names without a space after the semicolon, an empty second trade row, a temperature written as 8.50.
+  await page.locator('input[name="workerTrade"]').first().fill("Zedník ");
+  await page.locator('input[name="workerCount"]').first().fill("3");
+  await page.getByLabel("Jména pracovníků 1").fill("Jan;Petr");
+  await page.getByRole("button", { name: /přidat profesi/i }).click();
+  await page.locator('input[name="weatherMin"]').fill("8.50");
+  await saveButton(page).click();
+  await expect(page.getByRole("alert")).toContainText(/nepodařilo uložit/i, { timeout: 15_000 });
+  await expectDraftKept(page);
+  const context = page.context();
+  await page.close();
+
+  const reopened = await context.newPage();
+  await reopened.goto(url);
+
+  // The stored entry says what the draft says, in the server's form: no banner, no false "changed by somebody else".
+  await expect(reopened.getByLabel("Jména pracovníků 1")).toHaveValue("Jan; Petr", { timeout: 15_000 });
+  await expect(draftBanner(reopened)).toHaveCount(0);
+  await expect.poll(() => draftKeys(reopened)).toEqual([]);
+});
+
+test("an entry cannot be signed while a draft waits for the person's answer", async ({ page }) => {
+  test.setTimeout(90_000);
+  const projectUrl = await loginAndCreateProject(page);
+  const day = pragueDay(0);
+  const url = `${projectUrl}/reports/${day}`;
+  const sign = (p: Page) => p.getByRole("button", { name: /podepsat a uzamknout/i });
+
+  await opensDay(page, url);
+  await description(page).fill("Uložená verze");
+  const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes(`/reports/${day}`));
+  await saveButton(page).click();
+  expect((await saved).ok()).toBeTruthy();
+  await expect(sign(page)).toBeEnabled();
+  await description(page).fill("Rozepsaná verze, která se nesmí dostat do podpisu");
+  await expectDraftKept(page);
+  const context = page.context();
+  await page.close();
+
+  const reopened = await context.newPage();
+  await reopened.goto(url);
+  await expect(draftBanner(reopened)).toBeVisible({ timeout: 15_000 });
+
+  // The stored entry is unsaved-free and could be signed, but not before the person has answered the offer: otherwise "Obnovit"
+  // would put unsigned text into a form that says "Podepsáno".
+  await expect(sign(reopened)).toBeDisabled();
+  await draftBanner(reopened).getByRole("button", { name: "Zahodit", exact: true }).click();
+  await expect(sign(reopened)).toBeEnabled();
+});
