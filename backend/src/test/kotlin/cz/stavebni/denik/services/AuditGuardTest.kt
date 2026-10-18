@@ -25,7 +25,7 @@ class AuditGuardTest : BaseIntegrationTest() {
 
     private fun append(user: SessionUser, count: Int, from: Int = 1) = runBlocking {
         for (i in from until from + count) {
-            AuditService.auditedTransaction(actor = user, action = "a$i", entityType = "test", entityId = "$i") { i }
+            appendTestAuditRow(user, action = "a$i", entityId = "$i", after = Json.parseToJsonElement("""{"n":$i}"""))
         }
     }
 

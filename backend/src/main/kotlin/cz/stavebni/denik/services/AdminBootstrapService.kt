@@ -20,25 +20,19 @@ object AdminBootstrapService {
     /** Creates an active administrator, but only while the system has none: after that, administrators are made in the application. */
     suspend fun createFirstAdmin(nickname: String, displayName: String): Result {
         val nick = nickname.trim()
-        val name = displayName.trim()
         require(UserService.NICKNAME_PATTERN.matches(nick)) { "Přihlašovací jméno musí mít 3–64 znaků (písmena, číslice, . _ - @)" }
-        require(name.isNotEmpty()) { "Jméno a příjmení je povinné" }
+        val name = UserService.checkedDisplayName(displayName)
 
         val password = UserService.generatePassword()
         val hash = PasswordService.hash(password)
         // The audit lock is taken before the block runs, so two runs at once cannot both see "no administrator".
-        AuditService.auditedTransaction(
-            actor = null,
-            action = "user.bootstrap_admin",
-            entityType = "user",
-            entityId = nick,
-        ) { tx ->
+        AuditService.auditedWrite(actor = null, entityType = "user") { tx ->
             check(!tx.fetchExists(USERS, USERS.ISADMIN.eq(true).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))) {
                 "An active administrator already exists. Create further users in the application, or reset a password with 'reset-password'."
             }
             check(!tx.fetchExists(USERS, DSL.lower(USERS.NICKNAME).eq(nick.lowercase()))) { "A user named '$nick' already exists." }
             val now = OffsetDateTime.now()
-            tx.insertInto(USERS)
+            val record = tx.insertInto(USERS)
                 .set(USERS.NICKNAME, nick)
                 .set(USERS.DISPLAYNAME, name)
                 .set(USERS.PASSWORDHASH, hash)
@@ -49,7 +43,10 @@ object AdminBootstrapService {
                 .set(USERS.PASSWORDEXPIRESAT, now.plus(UserService.TEMPORARY_PASSWORD_LIFETIME))
                 .set(USERS.CREATEDAT, now)
                 .set(USERS.UPDATEDAT, now)
-                .execute()
+                .returning()
+                .fetchOne()
+                ?: throw IllegalStateException("The administrator could not be created.")
+            AuditService.Audited(result = Unit, action = "user.bootstrap_admin", entityId = record.id.toString(), after = record.toSnapshot())
         }
         return Result(nick, password)
     }
@@ -63,26 +60,23 @@ object AdminBootstrapService {
         val nick = nickname.trim()
         val password = UserService.generatePassword()
         val hash = PasswordService.hash(password)
-        AuditService.auditedTransaction(
-            actor = null,
-            action = "user.password_reset",
-            entityType = "user",
-            entityId = nick,
-        ) { tx ->
-            val id = tx.update(USERS)
-                .set(USERS.PASSWORDHASH, hash)
-                .setNull(USERS.PASSWORDCHANGEDAT) // a temporary password is not one the user chose
-                .set(USERS.PASSWORDEXPIRESAT, OffsetDateTime.now().plus(UserService.TEMPORARY_PASSWORD_LIFETIME))
-                .set(USERS.MUSTCHANGEPWD, true)
-                .set(USERS.UPDATEDAT, OffsetDateTime.now())
+        AuditService.auditedWrite(actor = null, entityType = "user") { tx ->
+            val existing = tx.selectFrom(USERS)
                 .where(USERS.NICKNAME.eq(nick).and(USERS.ISACTIVE.eq(true)).and(USERS.DELETEDAT.isNull))
-                .returning(USERS.ID)
+                .forUpdate()
                 .fetchOne()
-                ?.get(USERS.ID)
                 ?: throw IllegalStateException("No active user named '$nick'.")
-            SessionService.revokeAllForUser(tx, id)
+            val updated = UserService.issueTemporaryPassword(tx, existing, hash)
+            SessionService.revokeAllForUser(tx, updated.id!!)
             // The usual reason for a reset is that nobody can log in any more: lift a login lockout of the account too.
             RateLimiter.clear(tx, RateLimiter.Rules.LOGIN_USER, UserService.loginKey(nick))
+            AuditService.Audited(
+                result = Unit,
+                action = "user.password_reset",
+                entityId = updated.id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
         }
         return Result(nick, password)
     }

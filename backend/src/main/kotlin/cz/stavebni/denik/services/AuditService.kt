@@ -55,42 +55,6 @@ object AuditService {
     private val json = Json { encodeDefaults = true }
 
     /**
-     * Runs [block] in a transaction that first appends a hash-chained row to
-     * `audit_log`. Appends are serialised with a transaction-scoped advisory
-     * lock, so the chain stays linear under concurrency; a failing [block]
-     * rolls back the audit row together with the business change.
-     */
-    suspend fun <T> auditedTransaction(
-        actor: SessionUser?,
-        action: String,
-        entityType: String,
-        entityId: String,
-        before: JsonElement? = null,
-        after: JsonElement? = null,
-        ip: String? = null,
-        userAgent: String? = null,
-        block: suspend (DSLContext) -> T
-    ): T {
-        // Read here, in the caller's coroutine: the transaction below does not necessarily see its context.
-        val request = currentCoroutineContext()[RequestContext]
-        return withContext(NonCancellable + Dispatchers.IO) {
-            DatabaseFactory.dsl.transactionCoroutine { config ->
-                val tx = config.dsl()
-
-                // 1. Serialise appenders (same lock key as the original implementation)
-                tx.execute(AUDIT_LOCK_SQL)
-
-                // 2. The audit row is written before the business logic, so the caller has to
-                //    know the entity id (and any snapshots) up front.
-                appendRow(tx, actor, action, entityType, entityId, before, after, ip, userAgent, request)
-
-                // 3. Business logic in the same transaction
-                block(tx)
-            }
-        }
-    }
-
-    /**
      * Outcome of a [auditedWrite] block: the value to return plus what the audit row
      * should record. Everything here is only known once the change has been made
      * (the id of a row that was just created, its state after the change).
@@ -104,7 +68,8 @@ object AuditService {
     )
 
     /**
-     * The write path for changes that must be authorized, applied and audited as one unit.
+     * The write path for changes that must be authorized, applied and audited as one unit. **Every change to a record of
+     * the diary and to a user goes through it**; it is the only way an audit row is written.
      *
      * Takes the audit lock first, so concurrent writers are strictly serialised: [block]
      * can read the current state (lock flags, membership) and act on it without a
@@ -128,7 +93,7 @@ object AuditService {
                 val tx = config.dsl()
                 tx.execute(AUDIT_LOCK_SQL)
                 val outcome = block(tx)
-                appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, null, null, request)
+                appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, request)
                 outcome.result
             }
         }
@@ -139,6 +104,9 @@ object AuditService {
 
     /**
      * Appends one hash-chained row. Must run under [AUDIT_LOCK_SQL] in the caller's transaction.
+     *
+     * The `ip` and `user_agent` columns of the row itself are legacy: they stay empty and are hashed as null (the format of
+     * the hash is fixed, see [AuditHash]); the request's address lives in `audit_request_context`.
      *
      * When the change is made on behalf of a request, the address and user agent of that request are written to
      * `audit_request_context` in the same transaction. They are deliberately not part of the row or its hash: they are
@@ -152,8 +120,6 @@ object AuditService {
         entityId: String,
         before: JsonElement?,
         after: JsonElement?,
-        ip: String?,
-        userAgent: String?,
         request: RequestContext?,
     ) {
         // Previous hash (genesis for the first row)
@@ -176,8 +142,8 @@ object AuditService {
             actorId = actorId,
             before = before,
             after = after,
-            ip = ip,
-            userAgent = userAgent,
+            ip = null,
+            userAgent = null,
             prevHash = prevHash,
             ts = ts,
         )
@@ -190,8 +156,6 @@ object AuditService {
             .set(AUDIT_LOG.ENTITY_ID, entityId)
             .set(AUDIT_LOG.BEFORE, before?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
             .set(AUDIT_LOG.AFTER, after?.let { JSONB.jsonb(json.encodeToString(JsonElement.serializer(), it)) })
-            .set(AUDIT_LOG.IP, ip)
-            .set(AUDIT_LOG.USER_AGENT, userAgent)
             .set(AUDIT_LOG.PREV_HASH, prevHash)
             .set(AUDIT_LOG.ROW_HASH, rowHash)
             .returning(AUDIT_LOG.ID)

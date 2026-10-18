@@ -7,6 +7,7 @@ import cz.stavebni.denik.domain.Resource
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.AUTHORIZED_PERSONS
+import cz.stavebni.denik.util.Text
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -50,6 +51,10 @@ internal data class PersonSnapshot(
 
 object AuthorizedPersonService {
 
+    const val MAX_NAME_CHARS = 200
+    const val MAX_COMPANY_CHARS = 200
+    const val MAX_AUTHORIZATION_CHARS = 500
+
     fun list(tx: DSLContext, user: SessionUser, projectId: UUID): List<AuthorizedPersonDto> {
         ProjectAccess.requireAccess(tx, user, projectId)
         return tx.selectFrom(AUTHORIZED_PERSONS)
@@ -62,6 +67,9 @@ object AuthorizedPersonService {
     suspend fun create(actor: SessionUser, projectId: UUID, req: CreateAuthorizedPersonRequest): AuthorizedPersonDto {
         val name = req.name.trim()
         require(name.isNotEmpty()) { "Jméno pověřené osoby je povinné" }
+        Text.checked(name, "Jméno pověřené osoby", MAX_NAME_CHARS)
+        val company = req.company?.trim()?.ifEmpty { null }?.let { Text.checked(it, "Organizace", MAX_COMPANY_CHARS) }
+        val authorization = req.authorization?.trim()?.ifEmpty { null }?.let { Text.checked(it, "Rozsah pověření / Funkce", MAX_AUTHORIZATION_CHARS) }
         val linkedUserId = req.linkedUserId?.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "linkedUserId") }
 
         return AuditService.auditedWrite(actor, "authorizedPerson") { tx ->
@@ -70,8 +78,8 @@ object AuthorizedPersonService {
             val record = tx.insertInto(AUTHORIZED_PERSONS)
                 .set(AUTHORIZED_PERSONS.PROJECTID, projectId)
                 .set(AUTHORIZED_PERSONS.NAME, name)
-                .set(AUTHORIZED_PERSONS.COMPANY, req.company?.trim()?.ifEmpty { null })
-                .set(AUTHORIZED_PERSONS.AUTHORIZATION, req.authorization?.trim()?.ifEmpty { null })
+                .set(AUTHORIZED_PERSONS.COMPANY, company)
+                .set(AUTHORIZED_PERSONS.AUTHORIZATION, authorization)
                 .set(AUTHORIZED_PERSONS.LINKEDUSERID, linkedUserId)
                 .set(AUTHORIZED_PERSONS.UPDATEDAT, OffsetDateTime.now())
                 .returning()
