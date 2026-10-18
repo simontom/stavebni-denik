@@ -55,16 +55,34 @@ test.describe("Security headers", () => {
     }
   });
 
-  test("CSP connect-src allows Open-Meteo and nothing else external", async ({ request }) => {
+  test("CSP connect-src allows the own origin and nothing external", async ({ request }) => {
     const res = await request.get("/login");
     const csp = res.headers()["content-security-policy"];
 
-    // Open-Meteo is the only external API we call (weather widget).
-    expect(csp).toContain("connect-src 'self' https://api.open-meteo.com");
+    // The weather is typed by hand: no page talks to an external API (Open-Meteo is no longer listed).
+    expect(csp).toContain("connect-src 'self';");
+    expect(csp).not.toContain("open-meteo");
 
     // Should NOT allow arbitrary external connections.
     expect(csp).not.toContain("connect-src *");
     expect(csp).not.toContain("connect-src 'unsafe-eval'");
+  });
+
+  test("Permissions-Policy switches off camera, microphone and geolocation", async ({ request }) => {
+    const res = await request.get("/login");
+    // camera=() governs getUserMedia only; the photo field is a plain file input and still opens the camera app.
+    expect(res.headers()["permissions-policy"]).toBe("camera=(), microphone=(), geolocation=()");
+  });
+
+  test("Cross-Origin-Opener-Policy is same-origin", async ({ request }) => {
+    const res = await request.get("/login");
+    expect(res.headers()["cross-origin-opener-policy"]).toBe("same-origin");
+  });
+
+  test("Cross-Origin-Resource-Policy is same-site, not same-origin", async ({ request }) => {
+    const res = await request.get("/login");
+    // same-origin would break photo loads from an SPA host listed in CORS_ALLOWED_ORIGINS.
+    expect(res.headers()["cross-origin-resource-policy"]).toBe("same-site");
   });
 
   test("no CSP violations on login page load", async ({ page }) => {
