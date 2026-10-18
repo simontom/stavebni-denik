@@ -27,8 +27,16 @@ class SecurityHeadersTest : BaseIntegrationTest() {
         }
         assertFalse(csp!!.contains("unsafe-eval"), "$what: $csp")
         assertFalse(Regex("""script-src[^;]*'unsafe-inline'""").containsMatchIn(csp), "$what: scripts must not be inline: $csp")
-        // The weather service is the only external place a page may talk to.
-        assertTrue(csp.contains("connect-src 'self' https://api.open-meteo.com;"), "$what: $csp")
+        // A page talks to its own origin and to nobody else (the weather is typed by hand, nothing calls Open-Meteo).
+        assertTrue(csp.contains("connect-src 'self';"), "$what: $csp")
+        assertFalse(csp.contains("open-meteo"), "$what: $csp")
+
+        // The device features the application never uses are switched off for the page and everything it embeds.
+        // `camera=()` governs getUserMedia only: the photo field is a plain file input and still opens the camera app.
+        assertEquals("camera=(), microphone=(), geolocation=()", headers["Permissions-Policy"], what)
+        assertEquals("same-origin", headers["Cross-Origin-Opener-Policy"], what)
+        // `same-site`, not `same-origin`: photos have to stay loadable from an SPA host listed in CORS_ALLOWED_ORIGINS.
+        assertEquals("same-site", headers["Cross-Origin-Resource-Policy"], what)
     }
 
     @Test
@@ -53,25 +61,61 @@ class SecurityHeadersTest : BaseIntegrationTest() {
             assertEquals(HttpStatusCode.Forbidden, it.status)
             it.assertHardened("cross-site request (403)")
         }
+        // Refused by the body limit before any route or login: still a response of this server.
+        client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"nickname":"${"a".repeat(300_000)}","password":"x"}""")
+        }.also {
+            assertEquals(HttpStatusCode.PayloadTooLarge, it.status)
+            it.assertHardened("body over the limit (413)")
+        }
     }
 
     @Test
-    fun `the single page app is served with the same headers`() = testApplication {
-        val dir = Files.createTempDirectory("spa")
-        Files.writeString(dir.resolve("index.html"), """<!doctype html><div id="root"></div>""")
-        System.setProperty("STATIC_DIR", dir.toString())
+    fun `an answer to a CORS preflight carries the headers too`() = testApplication {
+        System.setProperty("CORS_ALLOWED_ORIGINS", "https://spa.example")
         try {
             application { module() }
 
-            val index = client.get("/")
-            assertEquals(HttpStatusCode.OK, index.status)
-            index.assertHardened("index")
-            // A route of the SPA that is not a file: the app is served and the headers are still there.
-            val deepLink = client.get("/projects/123")
-            assertEquals(HttpStatusCode.OK, deepLink.status)
-            deepLink.assertHardened("deep link")
+            val preflight = client.options("/api/projects") {
+                header(HttpHeaders.Origin, "https://spa.example")
+                header(HttpHeaders.AccessControlRequestMethod, "GET")
+            }
+            assertEquals("https://spa.example", preflight.headers[HttpHeaders.AccessControlAllowOrigin], "the preflight itself was answered")
+            preflight.assertHardened("CORS preflight")
+        } finally {
+            System.clearProperty("CORS_ALLOWED_ORIGINS")
+        }
+    }
+
+    @Test
+    fun `the single page app is served with the same headers`() {
+        val dir = Files.createTempDirectory("spa")
+        Files.writeString(dir.resolve("index.html"), """<!doctype html><div id="root"></div>""")
+        Files.createDirectories(dir.resolve("assets"))
+        Files.writeString(dir.resolve("assets/app.js"), "console.log('app');")
+        System.setProperty("STATIC_DIR", dir.toString())
+        try {
+            testApplication {
+                application { module() }
+
+                val index = client.get("/")
+                assertEquals(HttpStatusCode.OK, index.status)
+                index.assertHardened("index")
+                // A route of the SPA that is not a file: the app is served and the headers are still there.
+                val deepLink = client.get("/projects/123")
+                assertEquals(HttpStatusCode.OK, deepLink.status)
+                deepLink.assertHardened("deep link")
+                // A real file of the build (script, stylesheet, image) is a static response, not the index page.
+                val script = client.get("/assets/app.js")
+                assertEquals(HttpStatusCode.OK, script.status)
+                assertEquals("console.log('app');", script.bodyAsText())
+                script.assertHardened("static file")
+            }
         } finally {
             System.clearProperty("STATIC_DIR")
+            // Only now, with the application stopped: Ktor watches the files it serves and reads one again when it changes,
+            // so deleting the directory while the application runs can fail the test with a FileNotFoundException.
             dir.toFile().deleteRecursively()
         }
     }
