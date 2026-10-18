@@ -169,6 +169,25 @@ object ProjectService {
         val reason: String? = null,
     )
 
+    /**
+     * Decision D2, the part that does not depend on the project: whoever is named site manager is an existing user whose
+     * account is neither deactivated nor deleted. Every refusal is a 409 with a message that says why.
+     */
+    private fun requireActiveUser(tx: DSLContext, userId: UUID) {
+        val account = tx.select(USERS.ISACTIVE, USERS.DELETEDAT).from(USERS).where(USERS.ID.eq(userId)).fetchOne()
+            ?: throw ConflictException("Tento uživatel neexistuje, stavbyvedoucím být nemůže")
+        if (account.get(USERS.DELETEDAT) != null || account.get(USERS.ISACTIVE) != true) {
+            throw ConflictException("Tento uživatel je deaktivovaný nebo smazaný a stavbyvedoucím být nemůže")
+        }
+    }
+
+    /** Decision D2: the site manager signs the diary, and a signer holds a ČKAIT number (read here, as it is now). */
+    private fun requireCkaitNumber(tx: DSLContext, userId: UUID) {
+        if (!ProjectAccess.hasCkaitNumber(tx, userId)) {
+            throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+        }
+    }
+
     private fun siteManagerSnapshot(tx: DSLContext, projectId: UUID, userId: UUID, reason: String? = null): JsonElement {
         val person = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(userId)).fetchOne()
         return Json.encodeToJsonElement(
@@ -209,14 +228,11 @@ object ProjectService {
             }
             val previousId = existing.sitemanagerid!!
             if (newManagerId == previousId) throw ConflictException("Tento člen už je stavbyvedoucím")
-            val active = tx.fetchExists(USERS, USERS.ID.eq(newManagerId).and(USERS.DELETEDAT.isNull).and(USERS.ISACTIVE.eq(true)))
-            if (!active) throw ConflictException("Tento uživatel je deaktivovaný nebo smazaný a stavbyvedoucím být nemůže")
+            requireActiveUser(tx, newManagerId)
             if (ProjectAccess.roleIn(tx, newManagerId, projectId) != cz.stavebni.denik.domain.Role.BOSS) {
                 throw ConflictException("Stavbyvedoucím může být jen člen tohoto projektu s rolí vedoucího (BOSS)")
             }
-            if (!ProjectAccess.hasCkaitNumber(tx, newManagerId)) {
-                throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
-            }
+            requireCkaitNumber(tx, newManagerId)
             val updated = tx.update(PROJECTS)
                 .set(PROJECTS.SITEMANAGERID, newManagerId)
                 .set(PROJECTS.UPDATEDAT, OffsetDateTime.now())
@@ -264,12 +280,13 @@ object ProjectService {
         val fields = validated(data)
 
         return AuditService.auditedWrite(user, "project") { tx ->
-            // The site manager signs the diary and the creator becomes a manager of the project: both hold a ČKAIT number (decision D2).
-            if (!ProjectAccess.hasCkaitNumber(tx, siteManagerId)) {
-                throw IllegalArgumentException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
-            }
+            // Decision D2, judged here inside the transaction (the audit lock serialises every change of a user): the site
+            // manager exists, is active and holds a ČKAIT number, exactly as when the site manager is replaced; and the creator,
+            // who becomes a manager of the project too, holds a number. Every refusal is a 409 that says why.
+            requireActiveUser(tx, siteManagerId)
+            requireCkaitNumber(tx, siteManagerId)
             if (!ProjectAccess.hasCkaitNumber(tx, user.id)) {
-                throw IllegalArgumentException("Zakladatel projektu se stává jeho vedoucím a musí mít číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
+                throw ConflictException("Zakladatel projektu se stává jeho vedoucím a musí mít číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
             }
             val record = tx.insertInto(PROJECTS)
                 .set(PROJECTS.NAME, fields.name)
@@ -297,32 +314,31 @@ object ProjectService {
 
             val projectId = record.get(PROJECTS.ID)!!
 
-            // The creator and the site manager become project members.
+            // The creator and the site manager become managers (BOSS) of the project, whatever their account role says: the site
+            // manager signs the diary, and a role taken from the account would leave a person who holds no right to sign in the
+            // project until somebody promoted them. The project always keeps its site manager as a BOSS member (see
+            // ProjectMemberService), so it is that from the first moment.
             tx.insertInto(PROJECT_MEMBERS)
                 .set(PROJECT_MEMBERS.PROJECTID, projectId)
                 .set(PROJECT_MEMBERS.USERID, user.id)
-                .set(PROJECT_MEMBERS.ROLE, DbRole.valueOf(user.role.name))
+                .set(PROJECT_MEMBERS.ROLE, DbRole.BOSS)
                 .set(PROJECT_MEMBERS.ADDEDBYID, user.id)
                 .onConflictDoNothing()
                 .execute()
 
             if (siteManagerId != user.id) {
-                val managerRole = tx.select(USERS.ROLE).from(USERS)
-                    .where(USERS.ID.eq(siteManagerId))
-                    .fetchOne()?.value1() ?: DbRole.BOSS
                 tx.insertInto(PROJECT_MEMBERS)
                     .set(PROJECT_MEMBERS.PROJECTID, projectId)
                     .set(PROJECT_MEMBERS.USERID, siteManagerId)
-                    .set(PROJECT_MEMBERS.ROLE, managerRole)
+                    .set(PROJECT_MEMBERS.ROLE, DbRole.BOSS)
                     .set(PROJECT_MEMBERS.ADDEDBYID, user.id)
                     .onConflictDoNothing()
                     .execute()
             }
 
-            // The creator is a manager of the project they create (creating one needs the global role BOSS). The audit row
-            // names the project and keeps what was entered.
+            // The audit row names the project and keeps what was entered, with the site manager.
             AuditService.Audited(
-                result = toDto(record, DbRole.valueOf(user.role.name)),
+                result = toDto(record, DbRole.BOSS),
                 action = "project.create",
                 entityId = projectId.toString(),
                 after = snapshot(record),
