@@ -117,17 +117,29 @@ fun Application.module() {
     }
 }
 
+/** A page talks to its own origin only: the weather is typed by hand, nothing calls an external API. */
 private const val CONTENT_SECURITY_POLICY =
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-        "connect-src 'self' https://api.open-meteo.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        "connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
-/** Security headers for every response (API and SPA). HSTS only behind HTTPS in production. */
+/** Device features the application never uses. `camera=()` governs getUserMedia only: the photo field is a plain file input. */
+private const val PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=()"
+
+/**
+ * Security headers for every response (API and SPA). HSTS only behind HTTPS in production.
+ *
+ * `Cross-Origin-Resource-Policy` is `same-site`, not `same-origin`: photos have to stay loadable from an SPA host
+ * listed in `CORS_ALLOWED_ORIGINS`.
+ */
 fun Application.configureSecurityHeaders() {
     intercept(ApplicationCallPipeline.Plugins) {
         call.response.header("X-Content-Type-Options", "nosniff")
         call.response.header("X-Frame-Options", "DENY")
         call.response.header("Referrer-Policy", "strict-origin-when-cross-origin")
         call.response.header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        call.response.header("Permissions-Policy", PERMISSIONS_POLICY)
+        call.response.header("Cross-Origin-Opener-Policy", "same-origin")
+        call.response.header("Cross-Origin-Resource-Policy", "same-site")
         if (AppConfig.isProduction) {
             call.response.header("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         }
