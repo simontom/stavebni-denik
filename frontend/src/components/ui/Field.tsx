@@ -32,17 +32,17 @@ export function Field({
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
   return (
     <div className={className}>
-      <label htmlFor={id} className={labelHidden ? "sr-only" : "text-ink mb-1 block text-sm font-medium"}>
+      <label htmlFor={id} className={labelHidden ? "sr-only" : "mb-1 block text-sm font-medium text-ink"}>
         {label}
       </label>
       {hint && (
-        <p id={hintId} className="text-ink-muted mb-1 text-sm">
+        <p id={hintId} className="mb-1 text-sm text-ink-muted">
           {hint}
         </p>
       )}
       <FieldContext.Provider value={{ id, describedBy, invalid: Boolean(error) }}>{children}</FieldContext.Provider>
       {error && (
-        <p id={errorId} role="alert" className="text-danger-ink mt-1 text-sm font-medium">
+        <p id={errorId} role="alert" className="mt-1 text-sm font-medium text-danger-ink">
           {error}
         </p>
       )}

@@ -9,7 +9,7 @@ import { Link, type LinkProps } from "react-router-dom";
  */
 export function TabNav({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <nav aria-label={label} className="sm:border-line grid grid-cols-2 gap-2 sm:flex sm:gap-x-8 sm:gap-y-0 sm:border-b">
+    <nav aria-label={label} className="grid grid-cols-2 gap-2 sm:flex sm:gap-x-8 sm:gap-y-0 sm:border-b sm:border-line">
       {children}
     </nav>
   );

@@ -8,5 +8,5 @@ type CardProps<T extends ElementType> = { as?: T; className?: string } & Omit<Co
  */
 export function Card<T extends ElementType = "div">({ as, className, ...rest }: CardProps<T>) {
   const Tag: ElementType = as ?? "div";
-  return <Tag className={`border-line bg-surface rounded-lg border p-4 shadow-sm sm:p-6${className ? ` ${className}` : ""}`} {...rest} />;
+  return <Tag className={`rounded-lg border border-line bg-surface p-4 shadow-sm sm:p-6${className ? ` ${className}` : ""}`} {...rest} />;
 }

@@ -67,17 +67,17 @@ export function Modal({
         e.preventDefault();
         close(onCancel, { restoreFocus: true });
       }}
-      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${sizes[size]} bg-surface text-ink overflow-y-auto rounded-lg p-0 shadow-xl backdrop:bg-black/50`}
+      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${sizes[size]} overflow-y-auto rounded-lg bg-surface p-0 text-ink shadow-xl backdrop:bg-black/50`}
     >
       <ModalContext.Provider value={handle}>
         <div className="space-y-4 p-4 sm:p-6">
-          <h2 id={titleId} className="text-ink text-lg font-bold">
+          <h2 id={titleId} className="text-lg font-bold text-ink">
             {title}
           </h2>
-          <div id={bodyId} className="text-ink text-sm">
+          <div id={bodyId} className="text-sm text-ink">
             {children}
           </div>
-          {footer && <div className="border-line flex flex-wrap justify-end gap-2 border-t pt-3">{footer}</div>}
+          {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">{footer}</div>}
         </div>
       </ModalContext.Provider>
     </dialog>
