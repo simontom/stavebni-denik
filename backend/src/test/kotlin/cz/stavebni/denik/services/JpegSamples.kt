@@ -3,6 +3,8 @@ package cz.stavebni.denik.services
 import java.awt.Color
 import java.awt.GradientPaint
 import java.awt.image.BufferedImage
+import java.awt.image.DataBuffer
+import java.awt.image.Raster
 import java.io.ByteArrayOutputStream
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
@@ -98,6 +100,94 @@ internal object JpegSamples {
         }
         out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
         return out.toByteArray()
+    }
+
+    /**
+     * [jpeg], a progressive 3-component file made by [smooth], with extra scans appended so that it has [total] scans. Each
+     * extra scan is what a hostile file is made of: a valid initial AC scan of one component (all coefficients, no
+     * successive approximation) whose data is nothing but "end of band" runs that cover every block of the component. It is
+     * 12 bytes long, and yet the decoder walks every block of the image again for it.
+     */
+    fun withScansUpTo(jpeg: ByteArray, total: Int): ByteArray {
+        val frame = requireNotNull(JpegHeader.frameOf(jpeg)) { "not a JPEG the header walk understands" }
+        require(frame.scans <= total) { "the file already has ${frame.scans} scans" }
+        val extra = total - frame.scans
+        if (extra == 0) return jpeg
+
+        // The component ids, from the SOF segment, and the number of blocks of a full-size component.
+        var pos = 2
+        var ids = IntArray(0)
+        while (pos + 4 <= jpeg.size) {
+            val marker = jpeg[pos + 1].toInt() and 0xFF
+            val length = ((jpeg[pos + 2].toInt() and 0xFF) shl 8) or (jpeg[pos + 3].toInt() and 0xFF)
+            if (marker == 0xC2) {
+                ids = IntArray(frame.components) { jpeg[pos + 10 + 3 * it].toInt() and 0xFF }
+                break
+            }
+            pos += 2 + length
+        }
+        require(ids.isNotEmpty()) { "no progressive frame header" }
+        val blocks = ((frame.width + 7) / 8).toLong() * ((frame.height + 7) / 8)
+
+        // Symbol 0xE0 is "end of band run of 2^14 + 14 extra bits": up to 32,767 blocks per symbol.
+        val symbols = ((blocks + 32_766) / 32_767).toInt()
+        val bits = StringBuilder()
+        repeat(symbols) { bits.append('0').append("11111111111111") }
+        while (bits.length % 8 != 0) bits.append('1')
+        val data = ByteArrayOutputStream()
+        for (i in 0 until bits.length step 8) {
+            val b = bits.substring(i, i + 8).toInt(2)
+            data.write(b)
+            if (b == 0xFF) data.write(0) // byte stuffing
+        }
+        // DHT: an AC table 0 with one code of length 1, for the symbol 0xE0 (16 counts, one symbol).
+        val dht = byteArrayOf(0xFF.toByte(), 0xC4.toByte(), 0, 20, 0x10, 1) + ByteArray(15) + byteArrayOf(0xE0.toByte())
+
+        val out = ByteArrayOutputStream()
+        out.write(jpeg, 0, jpeg.size - 2) // everything but the closing EOI
+        for (i in 0 until extra) {
+            if (i == 0) out.write(dht) // the table persists for the scans after it
+            out.write(byteArrayOf(0xFF.toByte(), 0xDA.toByte(), 0, 8, 1, ids[i % ids.size].toByte(), 0x00, 1, 63, 0x00))
+            out.write(data.toByteArray())
+        }
+        out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+        return out.toByteArray()
+    }
+
+    /** [jpeg] with one more scan of component 1 whose data is exactly [data] (binary, for the header walk only; not decodable). */
+    fun withRawScan(jpeg: ByteArray, data: ByteArray): ByteArray {
+        val out = ByteArrayOutputStream()
+        out.write(jpeg, 0, jpeg.size - 2)
+        out.write(byteArrayOf(0xFF.toByte(), 0xDA.toByte(), 0, 8, 1, 1, 0x00, 1, 63, 0x00))
+        out.write(data)
+        out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+        return out.toByteArray()
+    }
+
+    /**
+     * A progressive JPEG of **four** components (a CMYK-like file), small. The JDK decodes such a file, and keeps 8 bytes per
+     * pixel for it, more than for a colour one.
+     */
+    fun fourComponents(width: Int, height: Int): ByteArray {
+        val raster = Raster.createInterleavedRaster(DataBuffer.TYPE_BYTE, width, height, 4, null)
+        val pixel = IntArray(4)
+        for (y in 0 until height) for (x in 0 until width) {
+            for (b in 0 until 4) pixel[b] = (x * 255 / width + b * 40) and 0xFF
+            raster.setPixel(x, y, pixel)
+        }
+        val writer = ImageIO.getImageWritersByFormatName("jpeg").next()
+        try {
+            val param = writer.defaultWriteParam
+            param.progressiveMode = ImageWriteParam.MODE_DEFAULT
+            val out = ByteArrayOutputStream()
+            ImageIO.createImageOutputStream(out).use { stream ->
+                writer.output = stream
+                writer.write(null, IIOImage(raster, null, null), param)
+            }
+            return out.toByteArray()
+        } finally {
+            writer.dispose()
+        }
     }
 
     /** The same JPEG with the size in its SOF header changed: a small file that claims a big picture. */

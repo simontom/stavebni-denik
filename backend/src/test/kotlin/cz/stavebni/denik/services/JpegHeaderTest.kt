@@ -92,6 +92,77 @@ class JpegHeaderTest {
         assertNull(JpegHeader.frameOf(plain.copyOfRange(0, 2) + byteArrayOf(0xFF.toByte(), 0xE1.toByte(), 0xFF.toByte(), 0xFF.toByte(), 1, 2, 3)))
     }
 
+    // --- the scans: what the decoder's CPU time depends on ------------------------------------------
+
+    @Test
+    fun `the scans of a file are counted`() {
+        assertEquals(1, frame(JpegSamples.smooth(300, 200)).scans, "a baseline photo has one scan")
+        assertEquals(3, frame(JpegSamples.nonInterleaved(300, 200)).scans, "one per component")
+        val progressive = frame(JpegSamples.smooth(300, 200, progressive = true)).scans
+        assertTrue(progressive in 8..12, "the JDK's progressive script has about ten scans, had $progressive")
+    }
+
+    @Test
+    fun `scans added to a file are counted, each as one`() {
+        val base = JpegSamples.smooth(300, 200, progressive = true)
+        val ordinary = frame(base).scans
+
+        assertEquals(32, frame(JpegSamples.withScansUpTo(base, 32)).scans)
+        assertEquals(33, frame(JpegSamples.withScansUpTo(base, 33)).scans)
+        assertEquals(ordinary, frame(JpegSamples.withScansUpTo(base, ordinary)).scans)
+    }
+
+    @Test
+    fun `bytes inside the data of a scan are not mistaken for the start of another one`() {
+        val base = JpegSamples.smooth(300, 200, progressive = true)
+        val ordinary = frame(base).scans
+        // The data of a scan is binary. A stuffed FF 00 followed by DA and what looks like a scan header is data; so are the
+        // restart markers FF D0..D7; fill bytes (FF FF) may come before the next real marker.
+        val lookalike = byteArrayOf(
+            0x12, 0xFF.toByte(), 0x00, 0xDA.toByte(), 0x00, 0x08, 0x01, 0x01, 0x00, 0x01, 0x3F, 0x00,
+            0xFF.toByte(), 0xD0.toByte(), 0x34, 0xFF.toByte(), 0xD7.toByte(), 0x56, 0xFF.toByte(), 0x00, 0xFF.toByte(), 0x00,
+            0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), // fill before the closing marker
+        )
+
+        val withData = JpegSamples.withRawScan(base, lookalike)
+
+        assertEquals(ordinary + 1, frame(withData).scans)
+    }
+
+    @Test
+    fun `a file made of hundreds of thousands of tiny scans is walked in well under a second`() {
+        // 12 bytes per scan: a 4 MB file of the kind that would keep a decoder busy for hours.
+        val hostile = JpegSamples.withScansUpTo(JpegSamples.smooth(1000, 1000, progressive = true), 300_000)
+        assertTrue(hostile.size < 5 * 1024 * 1024, "within the upload limit, was ${hostile.size}")
+
+        val started = System.nanoTime()
+        val f = frame(hostile)
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(300_000, f.scans)
+        assertTrue(millis < 1_000, "the walk took $millis ms")
+    }
+
+    @Test
+    fun `a file whose data ends before its closing marker is still counted up to there`() {
+        val base = JpegSamples.smooth(300, 200, progressive = true)
+        val cut = base.copyOf(base.size - 200) // the decoder copes with a truncated file, so do not refuse it as unreadable
+
+        assertTrue(frame(cut).scans >= 1)
+    }
+
+    // --- components -----------------------------------------------------------------------------
+
+    @Test
+    fun `the number of components is read, and a four component progressive file is multi-scan`() {
+        val four = frame(JpegSamples.fourComponents(200, 150))
+
+        assertEquals(4, four.components)
+        assertTrue(four.isMultiScan)
+        assertEquals(3, frame(JpegSamples.smooth(200, 150, progressive = true)).components)
+        assertEquals(1, frame(ByteArrayOutputStream().also { ImageIO.write(BufferedImage(64, 48, BufferedImage.TYPE_BYTE_GRAY), "jpeg", it) }.toByteArray()).components)
+    }
+
     private fun ByteArray.indexOfSequence(pattern: ByteArray): Int {
         outer@ for (i in 0..size - pattern.size) {
             for (j in pattern.indices) if (this[i + j] != pattern[j]) continue@outer

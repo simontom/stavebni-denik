@@ -62,6 +62,51 @@ class ImageDecodeLimitsTest {
         assertTrue(refusal(claiming).contains("64MP"))
     }
 
+    // --- the number of scans: the CPU time of a decoder that cannot be cancelled ---------------------
+
+    @Test
+    fun `the cap on scans is 32, which leaves room above the ten of an ordinary progressive file`() {
+        assertEquals(32, PhotoService.MAX_JPEG_SCANS)
+    }
+
+    @Test
+    fun `a progressive JPEG with exactly 32 scans is decoded, with one more it is refused from its header`() {
+        val base = JpegSamples.smooth(200, 150, progressive = true)
+
+        val image = PhotoService.decodeWithinLimits(JpegSamples.withScansUpTo(base, 32)) // the extra scans are valid ones
+        assertEquals(200, image.width)
+
+        val message = refusal(JpegSamples.withScansUpTo(base, 33))
+        assertTrue(message.contains("more than 32 scans"), message)
+    }
+
+    @Test
+    fun `a file of thousands of tiny scans is refused at once, before any of them is decoded`() {
+        // Every one of these scans makes a decoder walk all blocks of the image again. 5,000 of them on this small picture
+        // already take it many seconds; the header walk must not wait for them.
+        val hostile = JpegSamples.withScansUpTo(JpegSamples.smooth(1000, 1000, progressive = true), 5_000)
+
+        val started = System.nanoTime()
+        val message = refusal(hostile)
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(message.contains("more than 32 scans"), message)
+        assertTrue(millis < 1_000, "refused in $millis ms")
+    }
+
+    @Test
+    fun `a progressive JPEG with four components is refused, however small`() {
+        val message = refusal(JpegSamples.fourComponents(200, 150))
+
+        assertTrue(message.contains("more than 3 components"), message)
+    }
+
+    @Test
+    fun `a sequential file with one scan per component has three scans and is decoded`() {
+        // Far below the cap: for such a file it is the limit on pixels that matters (tested above).
+        assertEquals(200, PhotoService.decodeWithinLimits(JpegSamples.nonInterleaved(200, 150)).width)
+    }
+
     @Test
     fun `a progressive JPEG within the limit is decoded`() {
         val image = PhotoService.decodeWithinLimits(JpegSamples.smooth(1200, 800, progressive = true))

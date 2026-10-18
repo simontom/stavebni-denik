@@ -72,6 +72,12 @@ object PhotoService {
      * (`ProgressiveJpegMemoryTest`). A baseline JPEG is limited by [MAX_JPEG_PIXELS] instead.
      */
     const val MAX_PROGRESSIVE_JPEG_PIXELS = 16_000_000L
+
+    /** Scans a multi-scan JPEG may have. The ordinary progressive script has 10 (3 components); see [JpegHeader] for why. */
+    const val MAX_JPEG_SCANS = 32
+
+    /** Components a multi-scan JPEG may have: colour is 3 (6 bytes per pixel kept), a fourth would make it 8. */
+    const val MAX_MULTI_SCAN_COMPONENTS = 3
     private const val MAX_SIDE_PIXELS = 16_000 // longest side; a 1 x 16,000 image is fine, a 1 x 60,000,000 one is not
     /** Most pixels held in memory for one image. The JPEG reader skips pixels while decoding to stay below it. */
     private const val MAX_DECODED_PIXELS = 4_000_000L
@@ -109,7 +115,7 @@ object PhotoService {
                     if (pixels > maxPixels || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
                         throw IllegalArgumentException("Image dimensions exceed ${maxPixels / 1_000_000}MP limit")
                     }
-                    if (isJpeg && pixels > MAX_PROGRESSIVE_JPEG_PIXELS) requireSingleScan(bytes, width, height)
+                    if (isJpeg) requireBoundedJpeg(bytes, width, height, pixels)
                     val param = reader.defaultReadParam
                     if (pixels > MAX_DECODED_PIXELS) {
                         val step = ceil(sqrt(pixels.toDouble() / MAX_DECODED_PIXELS)).toInt()
@@ -126,20 +132,32 @@ object PhotoService {
     }
 
     /**
-     * A JPEG above [MAX_PROGRESSIVE_JPEG_PIXELS] must be an ordinary single-scan file, which the decoder streams. A progressive
-     * one (or one with a scan per component) makes it keep the coefficients of the whole image: about 6 bytes per pixel,
-     * 373 MiB for the 64 megapixels the header may claim, twice with the two decode slots (see [JpegHeader]).
+     * What a JPEG may cost the decoder, decided from the bytes before anything is decoded (see [JpegHeader]). An ordinary
+     * single-scan file is streamed and needs neither much memory nor much time, whatever its size. A file with several
+     * scans (progressive, or one scan per component) is not:
+     *  - the decoder keeps the coefficients of the whole image, about 6 bytes per pixel for 3 components, so it is limited to
+     *    [MAX_PROGRESSIVE_JPEG_PIXELS] (373 MiB for the 64 megapixels the header may claim, twice with the decode slots);
+     *  - a fourth component costs more again (8 bytes per pixel) and no phone makes such a file: not accepted;
+     *  - every scan makes it walk the whole image again and a scan can be a dozen bytes, so more than [MAX_JPEG_SCANS] scans
+     *    could keep a native decoder, which cannot be cancelled, busy for hours.
      *
-     * The answer comes from our own walk over the header. It must agree with what the decoder reported ([width] and
-     * [height]); a header that cannot be followed, or that the two read differently, is refused: when in doubt, not decoded.
+     * The answer comes from our own walk over the file. It must agree with what the decoder reported ([width] and [height]);
+     * a file that cannot be followed, or that the two read differently, is refused: when in doubt, not decoded.
      */
-    private fun requireSingleScan(bytes: ByteArray, width: Int, height: Int) {
+    private fun requireBoundedJpeg(bytes: ByteArray, width: Int, height: Int, pixels: Long) {
         val frame = JpegHeader.frameOf(bytes)
         if (frame == null || frame.width != width || frame.height != height) {
             throw IllegalArgumentException("Invalid or corrupted image data")
         }
-        if (frame.isMultiScan) {
+        if (!frame.isMultiScan) return
+        if (pixels > MAX_PROGRESSIVE_JPEG_PIXELS) {
             throw IllegalArgumentException("Progressive JPEG dimensions exceed ${MAX_PROGRESSIVE_JPEG_PIXELS / 1_000_000}MP limit")
+        }
+        if (frame.components > MAX_MULTI_SCAN_COMPONENTS) {
+            throw IllegalArgumentException("Progressive JPEG with more than $MAX_MULTI_SCAN_COMPONENTS components is not supported")
+        }
+        if (frame.scans > MAX_JPEG_SCANS) {
+            throw IllegalArgumentException("Progressive JPEG with more than $MAX_JPEG_SCANS scans is not supported")
         }
     }
 
