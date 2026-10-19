@@ -75,6 +75,12 @@
        the page wider than the screen. `anywhere`, unlike `break-word`, also counts in the minimum width of flex items. */
     overflow-wrap: anywhere;
   }
+  /* ...but the text of a button is short and has to stay whole: with `anywhere` a squeezed row shrinks "PDF" into "PD" and "F". */
+  button,
+  select,
+  summary {
+    overflow-wrap: normal;
+  }
 
   /* Tailwind 4's border without a colour is `currentColor`: a bare `border` turned into a black line. */
   *,
