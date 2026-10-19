@@ -13,32 +13,12 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.io.ByteArrayOutputStream
+import java.security.MessageDigest
 import java.time.OffsetDateTime
 import java.util.UUID
 
 class AuditHashTest {
-
-    // --- version 1: frozen ------------------------------------------------------------------------------------------------
-
-    @Test
-    fun `version 1 row hash is byte-compatible with the original TypeScript canonical scheme`() {
-        // Golden value produced by src/server/audit-hash.ts (computeRowHash) for the same payload.
-        // Version 1 is frozen: rows written under it keep verifying and anchors name them. This value must never change.
-        val after = Json.parseToJsonElement("""{"b":1,"a":"x\"y\n\u0001č"}""")
-        val hash = AuditHash.rowHashV1(
-            action = "user.create",
-            entityType = "user",
-            entityId = "novy.delnik",
-            actorId = "11111111-1111-1111-1111-111111111111",
-            before = null,
-            after = after,
-            ip = null,
-            userAgent = null,
-            prevHash = AuditHash.GENESIS_HASH,
-            ts = OffsetDateTime.parse("2026-09-30T12:34:56.789Z"),
-        )
-        assertEquals("c628aca1e82f81309993defd1fa6e497068be7704474704a9886297e3eb9eab2", hash)
-    }
 
     @Test
     fun `timestamps are hashed in UTC with millisecond precision`() {
@@ -46,44 +26,87 @@ class AuditHashTest {
         assertEquals("2026-09-30T12:34:56.000Z", AuditHash.formatTs(OffsetDateTime.parse("2026-09-30T12:34:56Z")))
     }
 
-    // --- version 2: golden vectors ----------------------------------------------------------------------------------------
+    // --- golden vectors ---------------------------------------------------------------------------------------------------
 
     /**
-     * Pinned inputs and outputs of version 2. They were computed by an independent implementation (a few lines of node's
-     * `crypto`, written from the specification in `PROJECT.md`, not from this code), so a verifier written in another language
-     * from that specification must produce exactly these values. A change here is a change of the format: it breaks every
-     * row already written, and every stub already handed over.
+     * Pinned inputs and outputs, in `audit-hash-v2-vectors.json`. They were computed by an independent implementation (a few
+     * lines of node's `crypto`, written from the specification in `PROJECT.md`, not from this code), and the same file is read by
+     * the Python reference verifier (`scripts/audit/verify-audit-hash.py`, run by [AuditSpecificationTest]), so a verifier in
+     * another language written from that specification must produce exactly these values. A change here is a change of the
+     * format: it breaks every row already written, and every stub already handed over.
      */
-    private object Golden {
-        const val SALT_A = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-        val PROJECT_A: UUID = UUID.fromString("01926c1e-3a54-7b2a-9d4e-5f6a7b8c9d0e")
-        const val PAYLOAD_A =
-            """{"action":"report.lock","actorId":"11111111-1111-1111-1111-111111111111","after":{"id":"r1","projectId":"01926c1e-3a54-7b2a-9d4e-5f6a7b8c9d0e","quantity":12.0,"signatureHash":"ab12","tiny":1e-7,"workDescription":"Betonáž stropu č. 3"},"before":null,"entityId":"r1","entityType":"report","ts":"2026-10-18T09:30:15.123Z"}"""
-        const val DIGEST_A = "b2fd3999670b54d54a5b0e29f67b139de31f5c8090a42e745d09121e3a922940"
-        const val HASH_A = "8715bd426e2fbbe70d6c5551bcf3a575e45a24559f5fc35ebccd7ce807af4cb7"
+    private class Vector(val salt: String, val projectId: UUID?, val payloadText: String, val prevHash: String, val digest: String, val rowHash: String)
 
-        // A row that belongs to no project (a user), chained after row A.
-        const val SALT_B = "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0"
-        const val PAYLOAD_B =
-            """{"action":"user.update","actorId":null,"after":{"role":"BOSS"},"before":{"role":"WORKER"},"entityId":"22222222-2222-2222-2222-222222222222","entityType":"user","ts":"2026-10-18T09:31:00.000Z"}"""
-        const val DIGEST_B = "1fd515d8d8c20e58c08bfcb855f1c902fa5dbcb8d75ce5fbe7692b4925e66239"
-        const val HASH_B = "12d38742fca3493ddf0c875fb6fe037686c841253bd616948ce47c96b85b7b66"
+    private fun vector(name: String): Vector {
+        val file = javaClass.getResourceAsStream("/audit-hash-v2-vectors.json")!!.use { Json.parseToJsonElement(it.readBytes().toString(Charsets.UTF_8)).jsonObject }
+        val v = file.getValue(name).jsonObject
+        fun text(key: String) = v.getValue(key).jsonPrimitive.content
+        return Vector(
+            text("salt"), v.getValue("projectId").takeUnless { it is JsonNull }?.jsonPrimitive?.content?.let { UUID.fromString(it) },
+            text("payloadText"), text("prevHash"), text("payloadDigest"), text("rowHash"),
+        )
+    }
+
+    private val a get() = vector("rowOfAProject")
+    private val b get() = vector("rowOfNoProject")
+
+    @Test
+    fun `golden vector of a row of a project`() {
+        assertEquals(AuditHash.GENESIS_HASH, a.prevHash)
+        assertEquals(a.digest, AuditHash.payloadDigestV2(a.salt, a.payloadText))
+        assertEquals(a.rowHash, AuditHash.rowHashV2(a.prevHash, a.projectId, a.digest))
     }
 
     @Test
-    fun `version 2 golden vector of a row of a project`() {
-        assertEquals(Golden.DIGEST_A, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A))
-        assertEquals(Golden.HASH_A, AuditHash.rowHashV2(AuditHash.GENESIS_HASH, Golden.PROJECT_A, Golden.DIGEST_A))
+    fun `golden vector of a row that belongs to no project, chained after the first`() {
+        assertEquals(a.rowHash, b.prevHash)
+        assertEquals(b.digest, AuditHash.payloadDigestV2(b.salt, b.payloadText))
+        assertEquals(b.rowHash, AuditHash.rowHashV2(b.prevHash, null, b.digest))
+    }
+
+    // --- the byte layout, written out ---------------------------------------------------------------------------------------
+
+    private fun lp(bytes: ByteArray): ByteArray {
+        val length = bytes.size
+        return byteArrayOf((length ushr 24).toByte(), (length ushr 16).toByte(), (length ushr 8).toByte(), length.toByte()) + bytes
+    }
+
+    private fun lp(text: String) = lp(text.toByteArray(Charsets.UTF_8))
+
+    private fun sha256(vararg parts: ByteArray): String {
+        val all = ByteArrayOutputStream().also { out -> parts.forEach { out.write(it) } }.toByteArray()
+        return MessageDigest.getInstance("SHA-256").digest(all).joinToString("") { "%02x".format(it) }
+    }
+
+    private fun hexBytes(hex: String) = ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+
+    @Test
+    fun `the digest is hashed over the tag, the DECODED 32 bytes of the salt, and the payload, each with its length in front`() {
+        val expected = sha256(lp("stavebni-denik/audit-payload"), lp(hexBytes(a.salt)), lp(a.payloadText))
+        assertEquals(expected, AuditHash.payloadDigestV2(a.salt, a.payloadText))
+        // The salt as hex text (64 characters) is a different input and gives a different digest: a verifier must decode it.
+        assertNotEquals(expected, sha256(lp("stavebni-denik/audit-payload"), lp(a.salt), lp(a.payloadText)))
+        assertEquals(32, hexBytes(a.salt).size)
     }
 
     @Test
-    fun `version 2 golden vector of a row that belongs to no project`() {
-        assertEquals(Golden.DIGEST_B, AuditHash.payloadDigestV2(Golden.SALT_B, Golden.PAYLOAD_B))
-        assertEquals(Golden.HASH_B, AuditHash.rowHashV2(Golden.HASH_A, null, Golden.DIGEST_B))
+    fun `the row hash is hashed over the tag, the version, the previous hash, the project and the digest, each with its length in front`() {
+        val withProject = sha256(lp("stavebni-denik/audit-row"), lp("2"), lp(a.prevHash), lp(a.projectId.toString()), lp(a.digest))
+        assertEquals(withProject, AuditHash.rowHashV2(a.prevHash, a.projectId, a.digest))
+        // No project is a field of length zero (00 00 00 00), not a missing field.
+        val noProject = sha256(lp("stavebni-denik/audit-row"), lp("2"), lp(b.prevHash), byteArrayOf(0, 0, 0, 0), lp(b.digest))
+        assertEquals(noProject, AuditHash.rowHashV2(b.prevHash, null, b.digest))
+        val omitted = sha256(lp("stavebni-denik/audit-row"), lp("2"), lp(b.prevHash), lp(b.digest))
+        assertNotEquals(omitted, AuditHash.rowHashV2(b.prevHash, null, b.digest), "an omitted field is another input")
+        // The lengths of the fixed fields, as the specification gives them.
+        assertEquals(28, "stavebni-denik/audit-payload".length)
+        assertEquals(24, "stavebni-denik/audit-row".length)
     }
 
+    // --- the payload --------------------------------------------------------------------------------------------------------
+
     @Test
-    fun `version 2 payload is the canonical text that the golden vector hashes, numbers and letters exactly as written`() {
+    fun `the payload is the canonical text that the golden vector hashes, numbers and letters exactly as written`() {
         // Keys are sorted at every level; 12.0 and 1e-7 are kept as written (jsonb would have changed the second, JavaScript
         // the first: backlog M10); letters with diacritics are written as they are, not as escapes.
         val after = Json.parseToJsonElement(
@@ -98,14 +121,14 @@ class AuditHashTest {
             after = after,
             ts = OffsetDateTime.parse("2026-10-18T11:30:15.123+02:00"),
         )
-        assertEquals(Golden.PAYLOAD_A, text)
+        assertEquals(a.payloadText, text)
 
         val user = AuditHash.payloadV2(
             action = "user.update", actorId = null, entityType = "user", entityId = "22222222-2222-2222-2222-222222222222",
             before = Json.parseToJsonElement("""{"role":"WORKER"}"""), after = Json.parseToJsonElement("""{"role":"BOSS"}"""),
             ts = OffsetDateTime.parse("2026-10-18T09:31:00Z"),
         )
-        assertEquals(Golden.PAYLOAD_B, user)
+        assertEquals(b.payloadText, user)
     }
 
     @Test
@@ -126,11 +149,12 @@ class AuditHashTest {
     }
 
     @Test
-    fun `a literal that is not JSON is refused instead of written into the payload`() {
-        val injected = buildJsonObject { put("n", JsonUnquotedLiteral("""1,"action":"x"""")) }
-        assertThrows<IllegalArgumentException> {
+    fun `a literal that is not JSON is refused instead of written into the payload, and the refusal does not echo it`() {
+        val injected = buildJsonObject { put("n", JsonUnquotedLiteral("""1,"action":"secret-value"""")) }
+        val error = assertThrows<IllegalArgumentException> {
             AuditHash.payloadV2("a", null, "user", "1", null, injected, OffsetDateTime.parse("2026-10-18T09:31:00Z"))
         }
+        assertFalse(error.message!!.contains("secret-value"), "the message is for the log and holds no content of the row: ${error.message}")
     }
 
     @Test
@@ -145,27 +169,22 @@ class AuditHashTest {
         assertTrue(text.contains("x?y"))
     }
 
-    // --- version 2: what a stub is ----------------------------------------------------------------------------------------
+    // --- what a stub is ---------------------------------------------------------------------------------------------------
 
     @Test
     fun `a stub carries everything needed to recompute the row hash and nothing of the payload`() {
         // The row hash is a function of three things only: where the row sits in the chain (prev_hash), which project it
         // belongs to, and the digest of what it says. A recipient of a stub has exactly these.
-        val digest = AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A)
-        val fromTheWholeRow = AuditHash.rowHashV2(AuditHash.GENESIS_HASH, Golden.PROJECT_A, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A))
-        val fromTheStub = AuditHash.rowHashV2(AuditHash.GENESIS_HASH, Golden.PROJECT_A, digest)
-        assertEquals(fromTheWholeRow, fromTheStub)
-        assertEquals(Golden.HASH_A, fromTheStub)
+        assertEquals(a.rowHash, AuditHash.rowHashV2(a.prevHash, a.projectId, a.digest))
+        assertEquals(b.rowHash, AuditHash.rowHashV2(b.prevHash, b.projectId, b.digest))
     }
 
     @Test
     fun `without the salt a guess about the payload cannot be confirmed from the digest`() {
         // What a recipient could do with a stub if the digest were not salted: hash a guess and compare.
-        val guess = Golden.PAYLOAD_A
-        val unsalted = AuditHash.sha256Hex(guess)
-        assertNotEquals(Golden.DIGEST_A, unsalted)
+        assertNotEquals(a.digest, AuditHash.sha256Hex(a.payloadText))
         // And the same text under another salt gives an unrelated digest: the digest of a row says nothing about another row.
-        assertNotEquals(Golden.DIGEST_A, AuditHash.payloadDigestV2(Golden.SALT_B, Golden.PAYLOAD_A))
+        assertNotEquals(a.digest, AuditHash.payloadDigestV2(b.salt, a.payloadText))
     }
 
     @Test
@@ -175,30 +194,30 @@ class AuditHashTest {
         assertEquals(50, salts.toSet().size, "every salt is new")
     }
 
-    // --- version 2: nothing can be changed without changing the hash ------------------------------------------------------
+    // --- nothing can be changed without changing the hash -------------------------------------------------------------------
 
     @Test
-    fun `every part of a version 2 row changes its hash`() {
-        val base = AuditHash.rowHashV2(Golden.HASH_B, Golden.PROJECT_A, Golden.DIGEST_A)
+    fun `every part of a row changes its hash`() {
+        val base = AuditHash.rowHashV2(b.rowHash, a.projectId, a.digest)
         val otherProject = UUID.fromString("01926c1e-3a54-7b2a-9d4e-5f6a7b8c9d0f")
-        val flippedDigest = Golden.DIGEST_A.replaceRange(0, 1, if (Golden.DIGEST_A[0] == '0') "1" else "0")
-        val flippedPrev = Golden.HASH_B.replaceRange(63, 64, if (Golden.HASH_B[63] == '0') "1" else "0")
+        val flippedDigest = a.digest.replaceRange(0, 1, if (a.digest[0] == '0') "1" else "0")
+        val flippedPrev = b.rowHash.replaceRange(63, 64, if (b.rowHash[63] == '0') "1" else "0")
 
-        assertNotEquals(base, AuditHash.rowHashV2(Golden.HASH_B, otherProject, Golden.DIGEST_A), "the project")
-        assertNotEquals(base, AuditHash.rowHashV2(Golden.HASH_B, null, Golden.DIGEST_A), "no project is not a project")
-        assertNotEquals(base, AuditHash.rowHashV2(Golden.HASH_B, Golden.PROJECT_A, flippedDigest), "the payload digest")
-        assertNotEquals(base, AuditHash.rowHashV2(flippedPrev, Golden.PROJECT_A, Golden.DIGEST_A), "the previous hash (the order)")
-        assertNotEquals(base, AuditHash.rowHashV2(Golden.DIGEST_A, Golden.PROJECT_A, Golden.HASH_B), "prev_hash and digest are not interchangeable")
+        assertNotEquals(base, AuditHash.rowHashV2(b.rowHash, otherProject, a.digest), "the project")
+        assertNotEquals(base, AuditHash.rowHashV2(b.rowHash, null, a.digest), "no project is not a project")
+        assertNotEquals(base, AuditHash.rowHashV2(b.rowHash, a.projectId, flippedDigest), "the payload digest")
+        assertNotEquals(base, AuditHash.rowHashV2(flippedPrev, a.projectId, a.digest), "the previous hash (the order)")
+        assertNotEquals(base, AuditHash.rowHashV2(a.digest, a.projectId, b.rowHash), "prev_hash and digest are not interchangeable")
     }
 
     @Test
     fun `every part of a payload changes its digest, one byte is enough`() {
-        val base = AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A)
-        assertNotEquals(base, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A.replace("Betonáž", "Betonaž")), "one letter of the text")
-        assertNotEquals(base, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A.replace("ab12", "ab13")), "one digit")
-        assertNotEquals(base, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A + " "), "a trailing space")
-        assertNotEquals(base, AuditHash.payloadDigestV2(Golden.SALT_A, Golden.PAYLOAD_A.replace("r1", "r2")), "the entity")
-        assertNotEquals(base, AuditHash.payloadDigestV2(Golden.SALT_A.replaceRange(63, 64, "e"), Golden.PAYLOAD_A), "one digit of the salt (it ends in f)")
+        val base = AuditHash.payloadDigestV2(a.salt, a.payloadText)
+        assertNotEquals(base, AuditHash.payloadDigestV2(a.salt, a.payloadText.replace("Betonáž", "Betonaž")), "one letter of the text")
+        assertNotEquals(base, AuditHash.payloadDigestV2(a.salt, a.payloadText.replace("ab12", "ab13")), "one digit")
+        assertNotEquals(base, AuditHash.payloadDigestV2(a.salt, a.payloadText + " "), "a trailing space")
+        assertNotEquals(base, AuditHash.payloadDigestV2(a.salt, a.payloadText.replace("r1", "r2")), "the entity")
+        assertNotEquals(base, AuditHash.payloadDigestV2(a.salt.replaceRange(63, 64, "e"), a.payloadText), "one digit of the salt (it ends in f)")
     }
 
     @Test
@@ -216,14 +235,14 @@ class AuditHashTest {
 
     @Test
     fun `values that are not in the exact form are refused, not hashed`() {
-        val digest = Golden.DIGEST_A
-        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(Golden.HASH_A.uppercase(), Golden.PROJECT_A, digest) }
-        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(Golden.HASH_A.dropLast(1), Golden.PROJECT_A, digest) }
-        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(Golden.HASH_A + "0", Golden.PROJECT_A, digest) }
-        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(Golden.HASH_A, Golden.PROJECT_A, digest.uppercase()) }
-        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(Golden.HASH_A, Golden.PROJECT_A, "x\",\"projectId\":\"") }
-        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2(Golden.SALT_A.uppercase(), Golden.PAYLOAD_A) }
-        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2(Golden.SALT_A.dropLast(2), Golden.PAYLOAD_A) }
-        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2("zz" + Golden.SALT_A.drop(2), Golden.PAYLOAD_A) }
+        val digest = a.digest
+        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(a.rowHash.uppercase(), a.projectId, digest) }
+        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(a.rowHash.dropLast(1), a.projectId, digest) }
+        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(a.rowHash + "0", a.projectId, digest) }
+        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(a.rowHash, a.projectId, digest.uppercase()) }
+        assertThrows<IllegalArgumentException> { AuditHash.rowHashV2(a.rowHash, a.projectId, "x\",\"projectId\":\"") }
+        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2(a.salt.uppercase(), a.payloadText) }
+        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2(a.salt.dropLast(2), a.payloadText) }
+        assertThrows<IllegalArgumentException> { AuditHash.payloadDigestV2("zz" + a.salt.drop(2), a.payloadText) }
     }
 }

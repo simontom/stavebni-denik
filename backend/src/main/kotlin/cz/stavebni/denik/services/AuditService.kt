@@ -1,6 +1,7 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.AuditWriteException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.AUDIT_REQUEST_CONTEXT
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.jooq.DSLContext
 import org.jooq.Record
+import org.jooq.impl.DSL
 import org.jooq.kotlin.coroutines.transactionCoroutine
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -108,21 +110,20 @@ object AuditService {
     private const val AUDIT_LOCK_SQL = "SELECT pg_advisory_xact_lock(42)"
 
     /**
-     * Appends one hash-chained row, in hash version 2 (see [AuditHash]). Must run under [AUDIT_LOCK_SQL] in the caller's
-     * transaction.
+     * Appends one hash-chained row (see [AuditHash]). Must run under [AUDIT_LOCK_SQL] in the caller's transaction.
      *
      * What the row says (action, actor, entity, time, before and after) is composed into **one text**, the payload, which is
      * hashed with a salt that is new for every row and **stored as that very text**: verification hashes what is stored and
      * never depends on a JSON or `jsonb` round trip. The columns `ts`, `actor_id`, `action`, `entity_type` and `entity_id`
-     * repeat the payload for searching (verification checks that they agree with it); `before` and `after` stay empty, so that
-     * nothing readable sits outside the hash. The project the row belongs to ([AuditProject]) is part of the row hash.
+     * repeat the payload for searching (verification checks that they agree with it); the table has no other column in which
+     * readable content could sit. The project the row belongs to ([AuditProject]) is part of the row hash.
      *
-     * The legacy `ip` and `user_agent` columns stay empty; the request's address lives in `audit_request_context`. When the
-     * change is made on behalf of a request, the address and user agent of that request are written there in the same
-     * transaction. They are deliberately not part of the row or its hash: they are personal data and are deleted after
-     * twelve months, which the chain could not survive (decision D7).
+     * A row that the application cannot write properly (no project for a row of a project, an entity type without a rule, a
+     * snapshot that is not JSON) is an [AuditWriteException]: a mistake of the code, which rolls the whole change back.
      *
-     * The previous hash links every row to the one before it **whatever that one's version is**: it is one chain.
+     * When the change is made on behalf of a request, the address and user agent of that request are written to
+     * `audit_request_context` in the same transaction. They are deliberately not part of the row or its hash: they are
+     * personal data and are deleted after twelve months, which the chain could not survive (decision D7).
      */
     private fun appendRow(
         tx: DSLContext,
@@ -150,7 +151,12 @@ object AuditService {
         // The timestamp is part of the payload, so it is stored explicitly with the same (millisecond) precision.
         val ts = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS)
         val actorId = actor?.id?.toString()
-        val payload = AuditHash.payloadV2(action, actorId, entityType, entityId, before, after, ts)
+        val payload = try {
+            AuditHash.payloadV2(action, actorId, entityType, entityId, before, after, ts)
+        } catch (e: IllegalArgumentException) {
+            // Its message says what was wrong and nothing of the snapshot; the original is not passed on to the client either way.
+            throw AuditWriteException("The audit payload of a row could not be written: ${e.message}", e)
+        }
         val salt = AuditHash.newSalt()
         val rowHash = AuditHash.rowHashV2(prevHash, projectId, AuditHash.payloadDigestV2(salt, payload))
 
@@ -179,16 +185,31 @@ object AuditService {
         }
     }
 
+    /** The most that [verifyChain] holds of the payloads of the rows in memory at once, unless told otherwise. */
+    const val DEFAULT_MAX_BATCH_BYTES = 8L * 1024 * 1024
+
     /**
-     * Walks the whole chain in id order and recomputes every row hash, **by the version the row says it is** (one chain can
-     * hold rows of both formats: rows of version 1 are checked by the old rule, rows of version 2 by the new one, and every
-     * row's `prev_hash` must be the hash of the row before it). Returns the first broken row, if any.
+     * Walks the whole chain in id order and checks every row: the hash is recomputed from the **stored** payload, salt, project
+     * and previous hash; the columns that repeat the payload must say what it says; and the project is worked out again from
+     * the payload by the rule of [AuditProject] and must be the one the row names (a row of project A that says it belongs to
+     * B, or to nobody, has right hashes and is found here). Every row's `prev_hash` must be the hash of the row before it.
+     * Returns the first broken row, if any. The messages say what is wrong and nothing of the row.
+     *
+     * A payload can be large (a snapshot of an entry with long texts), so the rows are read in pieces of at most [batchSize]
+     * rows **and** about [maxBatchBytes] of payload (one row at least): the size is asked first, then only that many rows are
+     * read.
      *
      * With an [anchor] recorded earlier outside the database it also proves that the log still contains
      * that very row: a log that was emptied, cut short or rewritten up to the anchor fails even though
-     * the rest of the chain is consistent. An anchor is `<id>:<row_hash>` in either version.
+     * the rest of the chain is consistent. An anchor is `<id>:<row_hash>`.
      */
-    fun verifyChain(tx: DSLContext, batchSize: Int = 1000, anchor: AuditAnchor? = null): AuditVerifyResult {
+    fun verifyChain(
+        tx: DSLContext,
+        batchSize: Int = 1000,
+        anchor: AuditAnchor? = null,
+        maxBatchBytes: Long = DEFAULT_MAX_BATCH_BYTES,
+    ): AuditVerifyResult {
+        require(batchSize > 0 && maxBatchBytes > 0) { "a batch needs rows and bytes" }
         var expectedPrev = AuditHash.GENESIS_HASH
         var lastId = 0L
         var total = 0L
@@ -197,10 +218,25 @@ object AuditService {
         val checkedAt = OffsetDateTime.now(ZoneOffset.UTC).toString()
 
         while (true) {
-            val rows = tx.selectFrom(AUDIT_LOG)
+            // What the next rows weigh (their ids and the size of their payloads), then as many of them as the bound allows.
+            val window = tx.select(AUDIT_LOG.ID, DSL.octetLength(AUDIT_LOG.PAYLOAD_TEXT))
+                .from(AUDIT_LOG)
                 .where(AUDIT_LOG.ID.gt(lastId))
                 .orderBy(AUDIT_LOG.ID.asc())
                 .limit(batchSize)
+                .fetch()
+            if (window.isEmpty()) break
+            var bytes = 0L
+            var upTo = lastId
+            for (entry in window) {
+                val size = (entry.value2() ?: 0).toLong()
+                if (bytes > 0 && bytes + size > maxBatchBytes) break
+                bytes += size
+                upTo = entry.value1()!!
+            }
+            val rows = tx.selectFrom(AUDIT_LOG)
+                .where(AUDIT_LOG.ID.gt(lastId).and(AUDIT_LOG.ID.le(upTo)))
+                .orderBy(AUDIT_LOG.ID.asc())
                 .fetch()
             if (rows.isEmpty()) break
 
@@ -212,11 +248,7 @@ object AuditService {
                 if (!AuditHash.hashesEqual(prevHash, expectedPrev)) {
                     return AuditVerifyResult(false, total, id, "prev_hash mismatch on id=$id", checkedAt, head)
                 }
-                val problem = when (val version = r.get(AUDIT_LOG.HASH_VERSION)!!.toInt()) {
-                    AuditHash.VERSION_1 -> checkVersion1(r, id, prevHash, storedHash)
-                    AuditHash.VERSION_2 -> checkVersion2(r, id, prevHash, storedHash)
-                    else -> "unknown hash_version $version on id=$id"
-                }
+                val problem = checkRow(r, id, prevHash, storedHash)
                 if (problem != null) {
                     return AuditVerifyResult(false, total, id, problem, checkedAt, head)
                 }
@@ -242,45 +274,21 @@ object AuditService {
         return AuditVerifyResult(true, total, null, null, checkedAt, head)
     }
 
-    /**
-     * A row of version 1: the whole row hashed with the snapshots as `jsonb` gives them back (the frozen rule of the original
-     * implementation). Returns what is wrong with it, or null. Such a row has none of the columns of version 2.
-     */
-    private fun checkVersion1(r: Record, id: Long, prevHash: String, storedHash: String): String? {
-        if (r.get(AUDIT_LOG.PROJECT_ID) != null || r.get(AUDIT_LOG.PAYLOAD_TEXT) != null || r.get(AUDIT_LOG.PAYLOAD_SALT) != null) {
-            return "row id=$id is version 1 but carries version 2 data (project, payload or salt)"
-        }
-        val recomputed = AuditHash.rowHashV1(
-            action = r.get(AUDIT_LOG.ACTION)!!,
-            entityType = r.get(AUDIT_LOG.ENTITY_TYPE)!!,
-            entityId = r.get(AUDIT_LOG.ENTITY_ID)!!,
-            actorId = r.get(AUDIT_LOG.ACTOR_ID),
-            before = r.get(AUDIT_LOG.BEFORE)?.data()?.let { Json.parseToJsonElement(it) },
-            after = r.get(AUDIT_LOG.AFTER)?.data()?.let { Json.parseToJsonElement(it) },
-            ip = r.get(AUDIT_LOG.IP),
-            userAgent = r.get(AUDIT_LOG.USER_AGENT),
-            prevHash = prevHash,
-            ts = r.get(AUDIT_LOG.TS)!!,
-        )
-        return if (AuditHash.hashesEqual(recomputed, storedHash)) null else "row_hash mismatch on id=$id"
-    }
-
-    /** The keys of the payload of version 2, exactly. */
+    /** The keys of a payload, exactly. */
     private val PAYLOAD_KEYS = setOf("action", "actorId", "after", "before", "entityId", "entityType", "ts")
 
     /**
-     * A row of version 2: the digest of the **stored** payload text under the stored salt, then the hash of the row from its
-     * previous hash, its project and that digest. Then the columns that repeat the payload must agree with it, because only
-     * the payload is under the hash. Nothing may sit in a column that no hash covers (`before`, `after`, `ip`, `user_agent`).
-     * Returns what is wrong with the row, or null.
+     * One row: the digest of the **stored** payload text under the stored salt, then the hash of the row from its previous
+     * hash, its project and that digest. Then the columns that repeat the payload must agree with it, because only the
+     * payload is under the hash, and the project must be the one that the payload gives. Returns what is wrong with the row, or
+     * null. The messages hold nothing of the row.
      */
-    private fun checkVersion2(r: Record, id: Long, prevHash: String, storedHash: String): String? {
+    private fun checkRow(r: Record, id: Long, prevHash: String, storedHash: String): String? {
+        val version = r.get(AUDIT_LOG.HASH_VERSION)!!.toInt()
+        if (version != AuditHash.VERSION_2) return "unknown hash_version $version on id=$id"
         val text = r.get(AUDIT_LOG.PAYLOAD_TEXT)
         val salt = r.get(AUDIT_LOG.PAYLOAD_SALT)
-        if (text == null || salt == null) return "row id=$id is version 2 but has no payload or no salt"
-        if (r.get(AUDIT_LOG.BEFORE) != null || r.get(AUDIT_LOG.AFTER) != null || r.get(AUDIT_LOG.IP) != null || r.get(AUDIT_LOG.USER_AGENT) != null) {
-            return "row id=$id holds data outside its hash (before, after, ip or user_agent)"
-        }
+        if (text == null || salt == null) return "row id=$id has no payload or no salt"
         val recomputed = try {
             AuditHash.rowHashV2(prevHash, r.get(AUDIT_LOG.PROJECT_ID), AuditHash.payloadDigestV2(salt, text))
         } catch (e: IllegalArgumentException) {
@@ -295,7 +303,7 @@ object AuditService {
         } catch (e: IllegalArgumentException) {
             null
         } ?: return "the payload of row id=$id is not a JSON object"
-        if (payload.keys != PAYLOAD_KEYS) return "the payload of row id=$id does not have the keys of a version 2 payload"
+        if (payload.keys != PAYLOAD_KEYS) return "the payload of row id=$id does not have the keys of a payload"
 
         fun text(key: String): String? = (payload.getValue(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
         val columns = mapOf(
@@ -312,6 +320,15 @@ object AuditService {
         if ((payload.getValue("actorId") is JsonNull) != (r.get(AUDIT_LOG.ACTOR_ID) == null)) {
             return "the actor id of row id=$id does not match its payload"
         }
+
+        // The project: worked out from the payload by the rule that fills it when a row is written.
+        val derived = try {
+            AuditProject.ofPayload(payload)
+        } catch (e: AuditWriteException) {
+            return "the project of row id=$id cannot be told from its payload"
+        }
+        if (derived != r.get(AUDIT_LOG.PROJECT_ID)) return "the project of row id=$id does not match its payload"
         return null
     }
 }
+

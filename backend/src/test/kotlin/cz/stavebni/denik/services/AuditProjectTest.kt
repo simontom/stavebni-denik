@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.AuditWriteException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -48,27 +49,53 @@ class AuditProjectTest {
 
     @Test
     fun `a row that cannot be given a project is refused`() {
-        val noProject = assertThrows<IllegalStateException> { AuditProject.of("report", "r", null, json("""{"id":"x"}""")) }
+        val noProject = assertThrows<AuditWriteException> { AuditProject.of("report", "r", null, json("""{"id":"x"}""")) }
         assertTrue(noProject.message!!.contains("report"), noProject.message)
-        assertThrows<IllegalStateException> { AuditProject.of("report", "r", null, null) }
-        assertThrows<IllegalStateException> { AuditProject.of("photo", "p", null, snapshot(null)) }
-        assertThrows<IllegalStateException> { AuditProject.of("photo", "p", null, json("""{"projectId":42}""")) }
-        assertThrows<IllegalStateException> { AuditProject.of("photo", "p", null, json("""{"projectId":"not-a-uuid"}""")) }
-        assertThrows<IllegalStateException> { AuditProject.of("photo", "p", null, json("""{"projectId":""}""")) }
-        assertThrows<IllegalStateException> { AuditProject.of("photo", "p", null, json("""["$project"]""")) }
-        assertThrows<IllegalStateException> { AuditProject.of("project", "123", null, null) }
-        assertThrows<IllegalStateException> { AuditProject.of("project", "", null, null) }
+        assertThrows<AuditWriteException> { AuditProject.of("report", "r", null, null) }
+        assertThrows<AuditWriteException> { AuditProject.of("photo", "p", null, snapshot(null)) }
+        assertThrows<AuditWriteException> { AuditProject.of("photo", "p", null, json("""{"projectId":42}""")) }
+        assertThrows<AuditWriteException> { AuditProject.of("photo", "p", null, json("""{"projectId":"not-a-uuid"}""")) }
+        assertThrows<AuditWriteException> { AuditProject.of("photo", "p", null, json("""{"projectId":""}""")) }
+        assertThrows<AuditWriteException> { AuditProject.of("photo", "p", null, json("""["$project"]""")) }
+        assertThrows<AuditWriteException> { AuditProject.of("project", "123", null, null) }
+        assertThrows<AuditWriteException> { AuditProject.of("project", "", null, null) }
     }
 
     @Test
     fun `a change that names two different projects is refused`() {
-        val error = assertThrows<IllegalStateException> { AuditProject.of("report", "r", snapshot(project), snapshot(other)) }
+        val error = assertThrows<AuditWriteException> { AuditProject.of("report", "r", snapshot(project), snapshot(other)) }
         assertTrue(error.message!!.contains("two different projects"), error.message)
     }
 
     @Test
+    fun `the project is read from a stored payload by the very same rule that fills it when the row is written`() {
+        val ts = java.time.OffsetDateTime.parse("2026-10-18T09:31:00Z")
+        fun payload(type: String, id: String, before: JsonElement?, after: JsonElement?) =
+            AuditHash.payloadV2("x.y", null, type, id, before, after, ts)
+
+        assertEquals(project, AuditProject.ofPayload(payload("report", "r", snapshot(project), snapshot(project))))
+        assertEquals(project, AuditProject.ofPayload(payload("photo", "p", null, snapshot(project))))
+        assertEquals(project, AuditProject.ofPayload(payload("project", project.toString(), null, json("""{"userId":"u"}"""))))
+        assertNull(AuditProject.ofPayload(payload("user", "u", null, snapshot(project))))
+        // What cannot be derived is refused, whatever the payload says elsewhere.
+        assertThrows<AuditWriteException> { AuditProject.ofPayload(payload("invoice", "1", null, snapshot(project))) }
+        assertThrows<AuditWriteException> { AuditProject.ofPayload(payload("report", "r", snapshot(project), snapshot(other))) }
+        assertThrows<AuditWriteException> { AuditProject.ofPayload("not json") }
+        assertThrows<AuditWriteException> { AuditProject.ofPayload("""{"entityType":"user"}""") }
+    }
+
+    @Test
+    fun `a refusal says what is wrong and nothing of the row`() {
+        val secret = "Tajný zápis č. 7"
+        val error = assertThrows<AuditWriteException> {
+            AuditProject.of("report", "r", null, json("""{"note":"$secret","projectId":"not-a-uuid"}"""))
+        }
+        assertTrue(!error.message!!.contains(secret) && !error.message!!.contains("not-a-uuid"), error.message)
+    }
+
+    @Test
     fun `an entity type that has no rule is refused, so that a new kind of row cannot silently belong to no project`() {
-        val error = assertThrows<IllegalStateException> { AuditProject.of("invoice", "1", null, snapshot(project)) }
+        val error = assertThrows<AuditWriteException> { AuditProject.of("invoice", "1", null, snapshot(project)) }
         assertTrue(error.message!!.contains("invoice"), error.message)
     }
 }

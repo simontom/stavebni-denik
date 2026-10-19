@@ -97,6 +97,8 @@ jobs:
       - name: Run Backend Integration Tests
         env:
           REQUIRE_TYPST: "1"
+          # AuditSpecificationTest runs the Python reference verifier of the audit hash against the golden vectors.
+          REQUIRE_PYTHON: "1"
         run: |
           set -o pipefail
           chmod +x gradlew

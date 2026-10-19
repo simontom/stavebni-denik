@@ -44,6 +44,22 @@ class ReportSchemaTest : BaseIntegrationTest() {
             .execute()
     }
 
+    // --- a project's id says nothing about when the project was made -----------------------
+
+    @Test
+    fun `a project's id is random and not time-ordered, because it appears in the audit stubs of the exports of other projects`() = runBlocking {
+        // The id of a project is part of every audit row of the project and is shown in the stubs of an export that is about
+        // another project. A UUIDv7 would tell the recipient when the project was created (its first 48 bits are a time).
+        val boss = createTestUser(role = Role.BOSS)
+        val ids = (1..6).map { createProjectId(boss) }
+
+        assertTrue(ids.all { it.version() == 4 }, "random (version 4) UUIDs: $ids")
+        assertEquals(
+            "gen_random_uuid()",
+            dsl.fetchValue("select column_default from information_schema.columns where table_name = 'projects' and column_name = 'id'"),
+        )
+    }
+
     // --- report date is a calendar day ---------------------------------------------------
 
     @Test

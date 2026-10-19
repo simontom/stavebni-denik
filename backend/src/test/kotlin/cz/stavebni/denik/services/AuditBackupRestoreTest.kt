@@ -8,17 +8,17 @@ import org.jooq.SQLDialect
 import org.jooq.impl.DSL
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.util.UUID
 
 /**
- * A backup of a database whose audit chain holds rows of both formats (version 1: written by an older version of the
- * application, here built by hand; version 2: every new row), made the way `backup.sh` makes it (`pg_dump`, custom format, no
- * owners) and restored into an empty database the way `restore.sh` does, verifies the same, and so does every anchor recorded
- * before the backup was made.
+ * A backup of a database with an audit chain, made the way `backup.sh` makes it (`pg_dump`, custom format, no owners) and
+ * restored into an empty database the way `restore.sh` does, holds the same rows to the byte, verifies, and so does every
+ * anchor recorded before the backup was made: the text of a payload and its salt come back exactly as they went in.
  */
 class AuditBackupRestoreTest : BaseIntegrationTest() {
 
     @Test
-    fun `a backup of a chain of both versions restores and verifies, anchors included`() {
+    fun `a backup of a chain restores to the same rows and verifies, anchors included`() {
         val scratch = "audit_backup_" + System.nanoTime()
         val restored = "audit_restored_" + System.nanoTime()
         dsl.execute("""create database "$scratch"""")
@@ -27,19 +27,16 @@ class AuditBackupRestoreTest : BaseIntegrationTest() {
         try {
             DatabaseFactory.migrate(pool)
             val source = DSL.using(pool, SQLDialect.POSTGRES)
-
-            // Two rows of the old format, then the application's own rows: the chain goes on from the last old row.
-            source.insertVersion1Row("legacy.create", "1", after = Json.parseToJsonElement("""{"role":"WORKER","n":1}"""))
-            source.insertVersion1Row("legacy.update", "1", before = Json.parseToJsonElement("""{"role":"WORKER"}"""), after = Json.parseToJsonElement("""{"role":"BOSS","note":"č"}"""))
-            val anchorOnOldRow = AuditService.verifyChain(source).head!!
             DatabaseFactory.initDirect(source)
+
+            val project = UUID.randomUUID()
             runBlocking {
-                appendTestAuditRow(null, "user.new", "2", after = Json.parseToJsonElement("""{"role":"BOSS","quantity":12.0,"tiny":1e-7}"""))
-                appendTestAuditRow(null, "user.newer", "3")
+                appendTestAuditRow(null, "user.new", "1", after = Json.parseToJsonElement("""{"role":"BOSS","quantity":12.0,"tiny":1e-7,"text":"č ž \u0000 \\ \" 😀"}"""))
+                appendTestAuditRow(null, "report.update", "r1", entityType = "report", after = Json.parseToJsonElement("""{"projectId":"$project","n":1}"""))
             }
-            val anchorOnNewRow = AuditService.verifyChain(source).head!!
-            assertEquals(listOf(1, 1, 2, 2), source.fetch("select hash_version from audit_log order by id").map { (it.get(0) as Number).toInt() })
-            assertEquals(anchorOnOldRow.rowHash, source.fetchValue("select prev_hash from audit_log where id = 3"), "chained across the two formats")
+            val anchorOnTheMiddle = AuditService.verifyChain(source).head!!
+            runBlocking { appendTestAuditRow(null, "user.newer", "2") }
+            val anchorOnTheHead = AuditService.verifyChain(source).head!!
 
             fun exec(vararg command: String) {
                 val outcome = postgres.execInContainer(*command)
@@ -52,16 +49,16 @@ class AuditBackupRestoreTest : BaseIntegrationTest() {
 
             DatabaseFactory.pool(postgres.jdbcUrl.replace(postgres.databaseName, restored), postgres.username, postgres.password, maxSize = 2).use { restoredPool ->
                 val afterRestore = DSL.using(restoredPool, SQLDialect.POSTGRES)
-                assertEquals(listOf(1, 1, 2, 2), afterRestore.fetch("select hash_version from audit_log order by id").map { (it.get(0) as Number).toInt() })
+                val columns = "id, ts, actor_id, action, entity_type, entity_id, prev_hash, row_hash, hash_version, project_id, payload_text, payload_salt"
                 assertEquals(
-                    source.fetch("select id, row_hash, prev_hash, payload_text, payload_salt from audit_log order by id").intoMaps(),
-                    afterRestore.fetch("select id, row_hash, prev_hash, payload_text, payload_salt from audit_log order by id").intoMaps(),
+                    source.fetch("select $columns from audit_log order by id").intoMaps(),
+                    afterRestore.fetch("select $columns from audit_log order by id").intoMaps(),
                     "the restored rows are the rows of the backup, to the byte",
                 )
-                for (anchor in listOf(anchorOnOldRow, anchorOnNewRow)) {
+                for (anchor in listOf(anchorOnTheMiddle, anchorOnTheHead)) {
                     val result = AuditService.verifyChain(afterRestore, anchor = anchor)
                     assertTrue(result.ok, result.reason)
-                    assertEquals(4L, result.totalRows)
+                    assertEquals(3L, result.totalRows)
                 }
             }
         } finally {

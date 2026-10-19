@@ -25,7 +25,6 @@ import org.jooq.ForeignKey
 import org.jooq.Identity
 import org.jooq.Index
 import org.jooq.InverseForeignKey
-import org.jooq.JSONB
 import org.jooq.Name
 import org.jooq.PlainSQL
 import org.jooq.QueryPart
@@ -112,26 +111,6 @@ open class AuditLog(
     val ENTITY_ID: TableField<AuditLogRecord, String?> = createField(DSL.name("entity_id"), SQLDataType.CLOB.nullable(false), this, "")
 
     /**
-     * The column <code>public.audit_log.before</code>.
-     */
-    val BEFORE: TableField<AuditLogRecord, JSONB?> = createField(DSL.name("before"), SQLDataType.JSONB, this, "")
-
-    /**
-     * The column <code>public.audit_log.after</code>.
-     */
-    val AFTER: TableField<AuditLogRecord, JSONB?> = createField(DSL.name("after"), SQLDataType.JSONB, this, "")
-
-    /**
-     * The column <code>public.audit_log.ip</code>.
-     */
-    val IP: TableField<AuditLogRecord, String?> = createField(DSL.name("ip"), SQLDataType.CLOB, this, "")
-
-    /**
-     * The column <code>public.audit_log.user_agent</code>.
-     */
-    val USER_AGENT: TableField<AuditLogRecord, String?> = createField(DSL.name("user_agent"), SQLDataType.CLOB, this, "")
-
-    /**
      * The column <code>public.audit_log.prev_hash</code>.
      */
     val PREV_HASH: TableField<AuditLogRecord, String?> = createField(DSL.name("prev_hash"), SQLDataType.CLOB.nullable(false), this, "")
@@ -154,12 +133,12 @@ open class AuditLog(
     /**
      * The column <code>public.audit_log.payload_text</code>.
      */
-    val PAYLOAD_TEXT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_text"), SQLDataType.CLOB, this, "")
+    val PAYLOAD_TEXT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_text"), SQLDataType.CLOB.nullable(false), this, "")
 
     /**
      * The column <code>public.audit_log.payload_salt</code>.
      */
-    val PAYLOAD_SALT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_salt"), SQLDataType.CLOB, this, "")
+    val PAYLOAD_SALT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_salt"), SQLDataType.CLOB.nullable(false), this, "")
 
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
@@ -184,7 +163,8 @@ open class AuditLog(
     override fun getIdentity(): Identity<AuditLogRecord, Long?> = super.getIdentity() as Identity<AuditLogRecord, Long?>
     override fun getPrimaryKey(): UniqueKey<AuditLogRecord> = AUDIT_LOG_PKEY
     override fun getChecks(): List<Check<AuditLogRecord>> = listOf(
-        Internal.createCheck(this, DSL.name("audit_log_hash_version_shape"), "((((hash_version = 1) AND (project_id IS NULL) AND (payload_text IS NULL) AND (payload_salt IS NULL)) OR ((hash_version = 2) AND (payload_text IS NOT NULL) AND (payload_salt IS NOT NULL) AND (payload_salt ~ '^[0-9a-f]{64}\$'::text) AND (before IS NULL) AND (after IS NULL) AND (ip IS NULL) AND (user_agent IS NULL))))", true)
+        Internal.createCheck(this, DSL.name("audit_log_hash_version_check"), "((hash_version = 2))", true),
+        Internal.createCheck(this, DSL.name("audit_log_payload_salt_check"), "((payload_salt ~ '^[0-9a-f]{64}\$'::text))", true)
     )
     override fun `as`(alias: String): AuditLog = AuditLog(DSL.name(alias), this)
     override fun `as`(alias: Name): AuditLog = AuditLog(alias, this)

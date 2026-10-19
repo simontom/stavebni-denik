@@ -8,7 +8,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.jooq.DSLContext
-import org.jooq.JSONB
 import org.jooq.Record
 import org.jooq.exception.DataAccessException
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -16,6 +15,7 @@ import org.junit.jupiter.api.assertThrows
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 /**
  * Appends one audit row through the real write path ([AuditService.auditedWrite]: the same transaction, lock and hash chain as
@@ -41,38 +41,42 @@ internal suspend fun appendTestAuditRow(
 }
 
 /**
- * Appends a row in the format the application used before hash version 2 (version 1, snapshots in `before` and `after`): the way
- * the rows of an older version of the application look. The application no longer writes such rows; the chain still has to
- * verify them. Needs the chain not to be written to at the same moment (tests are sequential).
+ * Appends a row that is **valid in every way except that it names the project [projectId] it is told to**, not the one its
+ * payload says: what somebody with the right to insert into `audit_log` (a stolen application password, or a bug) can write
+ * past [AuditService.auditedWrite]. Its hashes are right and it continues the chain, so only a check of the project against
+ * the payload can find it. Tests are sequential, so nothing writes to the chain at the same moment. Returns the row's id.
  */
-internal fun DSLContext.insertVersion1Row(
+internal fun DSLContext.insertRowNamingProject(
+    projectId: UUID?,
     action: String,
     entityId: String,
-    entityType: String = "user",
-    actorId: String? = null,
+    entityType: String,
     before: JsonElement? = null,
     after: JsonElement? = null,
+    actorId: String? = null,
 ): Long {
     val prevHash = select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.desc()).limit(1).fetchOne()?.value1() ?: AuditHash.GENESIS_HASH
     val ts = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS)
-    val rowHash = AuditHash.rowHashV1(action, entityType, entityId, actorId, before, after, null, null, prevHash, ts)
+    val payload = AuditHash.payloadV2(action, actorId, entityType, entityId, before, after, ts)
+    val salt = AuditHash.newSalt()
     return insertInto(AUDIT_LOG)
-        .set(AUDIT_LOG.HASH_VERSION, AuditHash.VERSION_1.toShort())
+        .set(AUDIT_LOG.HASH_VERSION, AuditHash.VERSION_2.toShort())
         .set(AUDIT_LOG.TS, ts)
         .set(AUDIT_LOG.ACTOR_ID, actorId)
         .set(AUDIT_LOG.ACTION, action)
         .set(AUDIT_LOG.ENTITY_TYPE, entityType)
         .set(AUDIT_LOG.ENTITY_ID, entityId)
-        .set(AUDIT_LOG.BEFORE, before?.let { JSONB.jsonb(Json.encodeToString(JsonElement.serializer(), it)) })
-        .set(AUDIT_LOG.AFTER, after?.let { JSONB.jsonb(Json.encodeToString(JsonElement.serializer(), it)) })
+        .set(AUDIT_LOG.PROJECT_ID, projectId)
+        .set(AUDIT_LOG.PAYLOAD_TEXT, payload)
+        .set(AUDIT_LOG.PAYLOAD_SALT, salt)
         .set(AUDIT_LOG.PREV_HASH, prevHash)
-        .set(AUDIT_LOG.ROW_HASH, rowHash)
+        .set(AUDIT_LOG.ROW_HASH, AuditHash.rowHashV2(prevHash, projectId, AuditHash.payloadDigestV2(salt, payload)))
         .returning(AUDIT_LOG.ID)
         .fetchSingle()
         .id!!
 }
 
-/** The payload of a version 2 row, the text its hash covers, as an object. Needs `payload_text` among the columns read. */
+/** The payload of a row, the text its hash covers, as an object. Needs `payload_text` among the columns read. */
 internal fun Record.auditPayload(): JsonObject = Json.parseToJsonElement(get(AUDIT_LOG.PAYLOAD_TEXT)!!).jsonObject
 
 private fun Record.auditPart(name: String): String? =
@@ -90,19 +94,19 @@ internal fun DSLContext.auditPartOf(action: String, part: String): String? =
         .takeUnless { it is JsonNull }?.let { Json.encodeToString(JsonElement.serializer(), it) }
 
 /**
- * Runs [body] with the CHECK constraint that gives a row one of the two valid shapes taken off, then puts it back exactly as it
- * was: the way to show what the verification does with a row that the database itself would have refused (an attacker who owns
- * the table can drop the constraint, like a trigger).
+ * Runs [body] with the CHECK constraint [name] of `audit_log` taken off, then puts it back exactly as it was: the way to show
+ * what the verification does with a row that the database itself would have refused (an attacker who owns the table can drop
+ * a constraint, like a trigger).
  */
-internal fun DSLContext.withoutRowShapeCheck(body: () -> Unit) {
-    val definition = (fetchValue("select pg_get_constraintdef(oid) from pg_constraint where conname = 'audit_log_hash_version_shape'") as String)
+internal fun DSLContext.withoutConstraint(name: String, body: () -> Unit) {
+    val definition = (fetchValue("select pg_get_constraintdef(oid) from pg_constraint where conname = ?", name) as String)
         .removeSuffix(" NOT VALID")
-    execute("ALTER TABLE \"audit_log\" DROP CONSTRAINT \"audit_log_hash_version_shape\"")
+    execute("ALTER TABLE \"audit_log\" DROP CONSTRAINT \"$name\"")
     try {
         body()
     } finally {
         // NOT VALID: the rows the test damaged are still there, and the constraint binds every row written from now on.
-        execute("ALTER TABLE \"audit_log\" ADD CONSTRAINT \"audit_log_hash_version_shape\" $definition NOT VALID")
+        execute("ALTER TABLE \"audit_log\" ADD CONSTRAINT \"$name\" $definition NOT VALID")
     }
 }
 

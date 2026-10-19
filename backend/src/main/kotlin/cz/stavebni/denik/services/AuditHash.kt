@@ -19,36 +19,26 @@ import java.util.HexFormat
 import java.util.UUID
 
 /**
- * Tamper-evident hash chain of `audit_log`. One chain, two row formats (`audit_log.hash_version`).
+ * Tamper-evident hash chain of `audit_log`: the bytes that are hashed. The specification, with an example and a reference
+ * verifier in Python, is in `PROJECT.md`, "Audit log"; the golden vectors are in `audit-hash-v2-vectors.json`.
  *
- * **Version 1** (the format of the application until hash version 2; no production row exists) is byte-compatible with the canonical scheme of the
- * original TypeScript implementation (removed with the Next.js app; it is in the git history). It is frozen: rows written
- * under it have to keep verifying, and so does every anchor that names one:
+ *   payload_digest = sha256_hex( lp("stavebni-denik/audit-payload") || lp(salt, the 32 decoded bytes) || lp(payload_text, UTF-8) )
+ *   row_hash       = sha256_hex( lp("stavebni-denik/audit-row") || lp("2") || lp(prev_hash) || lp(project_id, or nothing: 00 00 00 00) || lp(payload_digest) )
  *
- *   row_hash = sha256_hex( canonicalJSON({ action, actorId, after, before,
- *                                          entityId, entityType, ip, prevHash,
- *                                          ts, userAgent }) )
+ * where `lp(x)` is the 4-byte big-endian length of `x` followed by `x`, `prev_hash` and `payload_digest` are 64 lower-case hex
+ * characters, `project_id` is a lower-case UUID, and `payload_text` is the exact text stored in `audit_log.payload_text`: a
+ * compact JSON object with the keys action, actorId, after, before, entityId, entityType and ts. Hashing the stored text, not a
+ * re-encoding of it, is what keeps verification independent of any JSON library or of jsonb. `row_hash` needs nothing but
+ * `prev_hash`, `project_id` and `payload_digest`, so a row can be handed over as a stub that proves its place in the chain and
+ * reveals nothing else.
  *
- * where canonicalJSON sorts object keys at every level, keeps array order, maps missing values to `null`, and `ts` is the
- * row timestamp as `YYYY-MM-DDTHH:mm:ss.SSSZ` (UTC, millisecond precision - exactly what is stored in the `ts` column).
- *
- * **Version 2** (every new row) is described in `PROJECT.md`, "Audit log". In short:
- *
- *   payload_digest = sha256_hex( lp("stavebni-denik/audit-payload") || lp(salt, 32 bytes) || lp(payload_text, UTF-8) )
- *   row_hash       = sha256_hex( lp("stavebni-denik/audit-row") || lp("2") || lp(prev_hash) || lp(project_id or "") || lp(payload_digest) )
- *
- * where `lp(x)` is the 4-byte big-endian length of `x` followed by `x`, `prev_hash`, `payload_digest` are 64 lower-case hex
- * characters, `project_id` is a lower-case UUID (empty when the row belongs to no project), and `payload_text` is the exact
- * text stored in `audit_log.payload_text`: a canonical JSON object with the keys action, actorId, after, before, entityId,
- * entityType and ts. Hashing the stored text, not a re-encoding of it, is what keeps verification independent of any JSON
- * library or of jsonb. `row_hash` needs nothing but `prev_hash`, `project_id` and `payload_digest`, so a row can be handed
- * over as a stub that proves its place in the chain and reveals nothing else.
+ * There is one format. The "2" in the hash and `audit_log.hash_version` are there so that a later one can be told apart; a row
+ * that was written is never hashed again.
  */
 object AuditHash {
     const val GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
 
-    const val VERSION_1 = 1
-    /** The version every new row is written in. */
+    /** The format of the hash of every row. */
     const val VERSION_2 = 2
 
     private val json = Json { encodeDefaults = true }
@@ -56,6 +46,7 @@ object AuditHash {
 
     fun formatTs(ts: OffsetDateTime): String = ts.withOffsetSameInstant(ZoneOffset.UTC).format(TS_FORMAT)
 
+    // Used by the signature formats of an entry (ReportSignature), whose hashes are pinned by golden vectors: do not change.
     fun canonicalize(element: JsonElement): JsonElement = when (element) {
         is JsonObject -> JsonObject(element.keys.sorted().associateWith { canonicalize(element.getValue(it)) })
         is JsonArray -> JsonArray(element.map { canonicalize(it) })
@@ -64,38 +55,6 @@ object AuditHash {
 
     fun canonicalJson(element: JsonElement): String =
         json.encodeToString(JsonElement.serializer(), canonicalize(element))
-
-    // --- version 1 (frozen) -----------------------------------------------------------------------------------------------
-
-    /** The hash of a version 1 row. Frozen: only used to verify rows that were written in that format. */
-    fun rowHashV1(
-        action: String,
-        entityType: String,
-        entityId: String,
-        actorId: String?,
-        before: JsonElement?,
-        after: JsonElement?,
-        ip: String?,
-        userAgent: String?,
-        prevHash: String,
-        ts: OffsetDateTime,
-    ): String {
-        val payload = buildJsonObject {
-            put("action", action)
-            put("actorId", actorId)
-            put("after", after ?: JsonNull)
-            put("before", before ?: JsonNull)
-            put("entityId", entityId)
-            put("entityType", entityType)
-            put("ip", ip)
-            put("prevHash", prevHash)
-            put("ts", formatTs(ts))
-            put("userAgent", userAgent)
-        }
-        return sha256Hex(canonicalJson(payload))
-    }
-
-    // --- version 2 --------------------------------------------------------------------------------------------------------
 
     const val SALT_BYTES = 32
 
@@ -149,9 +108,10 @@ object AuditHash {
                 if (element.isString) {
                     out.append(element.toString())
                 } else {
-                    // A literal that is neither a number nor a boolean would not be JSON: refuse it instead of writing it.
+                    // A literal that is neither a number nor a boolean would not be JSON: refuse it instead of writing it. The
+                    // message is for the log and says nothing of the literal.
                     require(element.content == "true" || element.content == "false" || JSON_NUMBER.matches(element.content)) {
-                        "not a JSON number or boolean: ${element.content}"
+                        "a snapshot holds a literal that is not a JSON number or boolean"
                     }
                     out.append(element.content)
                 }

@@ -1,6 +1,7 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
+import cz.stavebni.denik.domain.AuditWriteException
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import kotlinx.coroutines.Dispatchers
@@ -80,11 +81,6 @@ class AuditServiceTest : BaseIntegrationTest() {
             log.get(AUDIT_LOG.PAYLOAD_TEXT),
             "the stored text is exactly what the writer composes from the row's own columns",
         )
-        // Nothing readable sits outside the hash.
-        assertNull(log.get(AUDIT_LOG.BEFORE))
-        assertNull(log.get(AUDIT_LOG.AFTER))
-        assertNull(log.get(AUDIT_LOG.IP))
-        assertNull(log.get(AUDIT_LOG.USER_AGENT))
 
         assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
         assertTrue(AuditService.verifyChain(dsl).ok)
@@ -115,14 +111,33 @@ class AuditServiceTest : BaseIntegrationTest() {
         val projectId = UUID.randomUUID()
         val noProjectInSnapshot = snapshot("""{"id":"r1"}""")
 
-        assertThrows<IllegalStateException> {
+        assertThrows<AuditWriteException> {
             appendTestAuditRow(user, "report.test", "r1", entityType = "report", after = noProjectInSnapshot) { tx -> insertProject(tx, projectId, user.id) }
         }
-        assertThrows<IllegalStateException> {
+        assertThrows<AuditWriteException> {
             appendTestAuditRow(user, "invoice.test", "i1", entityType = "invoice", after = snapshot("""{"projectId":"$projectId"}"""))
         }
 
         assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "a change whose row cannot be written is rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
+    fun `a snapshot that is not JSON is refused as an audit failure, with a message that holds none of it`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        val secret = "Tajný zápis"
+        val notJson = kotlinx.serialization.json.buildJsonObject {
+            put("projectId", kotlinx.serialization.json.JsonPrimitive(projectId.toString()))
+            put("n", kotlinx.serialization.json.JsonUnquotedLiteral("1, \"$secret\""))
+        }
+
+        val error = assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "report.test", "r1", entityType = "report", after = notJson) { tx -> insertProject(tx, projectId, user.id) }
+        }
+
+        assertFalse(error.message!!.contains(secret), "the message goes to the log: ${error.message}")
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
         assertEquals(0, dsl.fetchCount(AUDIT_LOG))
     }
 

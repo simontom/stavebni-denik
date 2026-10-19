@@ -5,17 +5,20 @@ import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import org.jooq.JSONB
+import org.jooq.ExecuteContext
+import org.jooq.ExecuteListener
 import org.jooq.Record
 import org.jooq.exception.DataAccessException
+import org.jooq.impl.DSL
+import org.jooq.impl.DefaultExecuteListenerProvider
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.util.UUID
 
 /**
- * `verifyChain` over the two row formats: what it detects, how it treats rows of the old format (version 1) next to new
- * ones, and that a project's part of the chain, with the rest as stubs, verifies on its own.
+ * `verifyChain`: what it detects, how it reads a long chain, and that a project's part of the chain, with the rest as stubs,
+ * verifies on its own.
  */
 class AuditChainVerificationTest : BaseIntegrationTest() {
 
@@ -39,14 +42,13 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
 
     private fun rows(): List<Record> = dsl.selectFrom(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch().toList()
 
+    private fun reportSnapshot(project: UUID, n: Int = 1) = snapshot("""{"id":"r1","projectId":"$project","n":$n}""")
+
     /** Three rows of the chain: two of project A (an entry and its signature) and one of a user. Returns their ids. */
     private fun threeRows(): List<Long> = runBlocking {
         val user = createTestUser()
-        appendTestAuditRow(user, "report.create", "r1", entityType = "report", after = snapshot("""{"id":"r1","projectId":"$projectA","n":1}"""))
-        appendTestAuditRow(
-            user, "report.lock", "r1", entityType = "report",
-            before = snapshot("""{"id":"r1","projectId":"$projectA","n":1}"""), after = snapshot("""{"id":"r1","projectId":"$projectA","n":2}"""),
-        )
+        appendTestAuditRow(user, "report.create", "r1", entityType = "report", after = reportSnapshot(projectA))
+        appendTestAuditRow(user, "report.lock", "r1", entityType = "report", before = reportSnapshot(projectA), after = reportSnapshot(projectA, 2))
         appendTestAuditRow(user, "user.update", "u1", entityType = "user", before = snapshot("""{"role":"WORKER"}"""), after = snapshot("""{"role":"BOSS"}"""))
         rows().map { it.get(AUDIT_LOG.ID)!! }
     }
@@ -58,19 +60,18 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
         if (reasonContains != null) assertTrue(result.reason!!.contains(reasonContains), "$what: ${result.reason}")
     }
 
-    // --- version 2: any change of a row is detected --------------------------------------------------------------------------
+    // --- any change of a row is detected -------------------------------------------------------------------------------------
 
     private val otherSalt = "a".repeat(64)
 
     @Test
-    fun `a change of any part of a version 2 row is detected at that row`() {
+    fun `a change of any part of a row is detected at that row`() {
         val changes: Map<String, (Long) -> String> = linkedMapOf(
             "one byte of the payload" to { id -> "update audit_log set payload_text = replace(payload_text, '\"n\":2', '\"n\":3') where id = $id" },
             "a character of the payload's text" to { id -> "update audit_log set payload_text = replace(payload_text, 'report.lock', 'report.lock ') where id = $id" },
             "the salt" to { id -> "update audit_log set payload_salt = '$otherSalt' where id = $id" },
             "the project, to another project" to { id -> "update audit_log set project_id = '$projectB' where id = $id" },
             "the project, removed" to { id -> "update audit_log set project_id = null where id = $id" },
-            "the version, 2 written as 1" to { id -> "update audit_log set hash_version = 1, project_id = null, payload_text = null, payload_salt = null where id = $id" },
             "the stored row hash" to { id -> "update audit_log set row_hash = '${"b".repeat(64)}' where id = $id" },
         )
         for ((what, sql) in changes) {
@@ -125,36 +126,80 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
         assertBrokenAt(again[1], "two rows that swapped places", "prev_hash mismatch")
     }
 
+    // --- only one version exists ---------------------------------------------------------------------------------------------
+
     @Test
-    fun `content outside the hash is refused by the database, and found by the verification if the constraint is gone`() {
-        val stray: Map<String, String> = linkedMapOf(
-            "after" to """after = '{"role":"WORKER"}'::jsonb""",
-            "before" to """"before" = '{"role":"WORKER"}'::jsonb""",
-            "ip" to "ip = '203.0.113.7'",
-            "user_agent" to "user_agent = 'Mozilla'",
-        )
-        for ((column, assignment) in stray) {
+    fun `a row of any version but 2 is refused by the database, and reported by the verification if it got in anyway`() {
+        for (version in listOf(0, 1, 3)) {
             clearTables()
             val ids = threeRows()
-            val refused = assertThrows<DataAccessException> { tamper("update audit_log set $assignment where id = ${ids[1]}") }
-            assertTrue(refused.message!!.contains("audit_log_hash_version_shape"), "$column: ${refused.message}")
-            assertTrue(AuditService.verifyChain(dsl).ok, "$column: the refused write left the row alone")
+            val refused = assertThrows<DataAccessException>("version $version") { tamper("update audit_log set hash_version = $version where id = ${ids[1]}") }
+            assertTrue(refused.message!!.contains("audit_log_hash_version_check"), "version $version: ${refused.message}")
+            assertTrue(AuditService.verifyChain(dsl).ok, "the refused write left the row alone")
 
-            dsl.withoutRowShapeCheck {
-                tamper("update audit_log set $assignment where id = ${ids[1]}")
-                assertBrokenAt(ids[1], "$column filled in a version 2 row", "outside its hash")
+            dsl.withoutConstraint("audit_log_hash_version_check") {
+                tamper("update audit_log set hash_version = $version where id = ${ids[1]}")
+                assertBrokenAt(ids[1], "a row of version $version", "unknown hash_version $version on id=${ids[1]}")
             }
         }
     }
 
+    // --- the project of a row must be the one its payload says -------------------------------------------------------------------
+
     @Test
-    fun `a row of a version this code does not know is reported, not skipped`() {
-        val ids = threeRows()
-        dsl.withoutRowShapeCheck {
-            tamper("update audit_log set hash_version = 3 where id = ${ids[1]}")
-            assertBrokenAt(ids[1], "an unknown version", "unknown hash_version 3")
+    fun `a row that names another project than its payload says is found, though its hashes are right`() {
+        // What somebody with the right to insert (a stolen application password, a bug) can write past the application:
+        // a row about project A that says it belongs to B (so it would leak into B's export and be a stub in A's), or to no
+        // project at all (so that it would be a stub in every export).
+        val labels: Map<String, (UUID) -> Triple<UUID?, String, String>> = linkedMapOf(
+            "an entry of project A labelled B" to { _ -> Triple(projectB, "report", "r1") },
+            "an entry of project A labelled with no project" to { _ -> Triple(null, "report", "r1") },
+            "a row of project A itself labelled B" to { project -> Triple(projectB, "project", project.toString()) },
+            "a row of project A itself labelled with no project" to { project -> Triple(null, "project", project.toString()) },
+        )
+        for ((what, label) in labels) {
+            clearTables()
+            val ids = threeRows()
+            val (named, type, entityId) = label(projectA)
+            val snapshot = if (type == "project") snapshot("""{"userId":"u","role":"BOSS"}""") else reportSnapshot(projectA, 9)
+            val id = dsl.insertRowNamingProject(named, "forged.update", entityId, type, after = snapshot)
+            dsl.insertRowNamingProject(null, "after.forged", "u1", "user")
+            assertBrokenAt(id, what, "the project of row id=$id does not match its payload")
+            assertTrue(ids.all { it < id })
         }
+
+        // A user's row cannot belong to a project either.
+        clearTables()
+        threeRows()
+        val userRow = dsl.insertRowNamingProject(projectA, "user.update", "u9", "user", after = snapshot("""{"role":"BOSS"}"""))
+        assertBrokenAt(userRow, "a user's row labelled with a project", "the project of row id=$userRow does not match its payload")
     }
+
+    @Test
+    fun `a row whose project cannot be told from its payload is reported, not skipped`() {
+        threeRows()
+        // An entity type that has no rule, and a row of a project whose snapshot names none.
+        val unknownType = dsl.insertRowNamingProject(null, "invoice.create", "i1", "invoice", after = snapshot("""{"projectId":"$projectA"}"""))
+        assertBrokenAt(unknownType, "an entity type without a rule", "the project of row id=$unknownType cannot be told from its payload")
+
+        clearTables()
+        threeRows()
+        val noProjectInSnapshot = dsl.insertRowNamingProject(projectA, "report.update", "r1", "report", after = snapshot("""{"id":"r1"}"""))
+        assertBrokenAt(noProjectInSnapshot, "a snapshot without a project", "cannot be told from its payload")
+    }
+
+    @Test
+    fun `the message about a mislabelled row holds nothing of the row`() {
+        val secret = "Tajný zápis"
+        val id = dsl.insertRowNamingProject(
+            projectB, "report.update", "r-secret", "report", after = snapshot("""{"projectId":"$projectA","text":"$secret"}"""),
+        )
+        val reason = AuditService.verifyChain(dsl).reason!!
+        assertTrue(reason.contains("id=$id"))
+        assertFalse(reason.contains(secret) || reason.contains("r-secret") || reason.contains(projectA.toString()) || reason.contains(projectB.toString()), reason)
+    }
+
+    // --- a forged tail ----------------------------------------------------------------------------------------------------
 
     @Test
     fun `a forged payload that is not what its columns say is found even when the hash is made to fit`() {
@@ -199,75 +244,45 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
         assertTrue(anchored.reason!!.contains("anchor mismatch"), anchored.reason)
     }
 
-    // --- the two formats in one chain ----------------------------------------------------------------------------------------
+    // --- a long chain is read in bounded pieces -----------------------------------------------------------------------------------
 
-    @Test
-    fun `a chain of version 1 rows followed by version 2 rows verifies, and an anchor on an old row stays valid`() = runBlocking {
-        val user = createTestUser()
-        val first = dsl.insertVersion1Row("legacy.a", "1", after = snapshot("""{"n":1}"""))
-        val second = dsl.insertVersion1Row("legacy.b", "2", actorId = user.id.toString(), before = snapshot("""{"n":1}"""), after = snapshot("""{"n":2,"s":"č"}"""))
-        val anchorOnOldRow = AuditService.verifyChain(dsl).head!!
-        assertEquals(second, anchorOnOldRow.id)
-
-        appendTestAuditRow(user, "new.c", "3", after = snapshot("""{"n":3}"""))
-        appendTestAuditRow(user, "new.d", "4")
-        // And one more of the old kind afterwards: the chain does not care in which order the formats come.
-        dsl.insertVersion1Row("legacy.e", "5")
-        appendTestAuditRow(user, "new.f", "6")
-
-        val all = rows()
-        assertEquals(listOf(1, 1, 2, 2, 1, 2), all.map { it.get(AUDIT_LOG.HASH_VERSION)!!.toInt() })
-        assertEquals(all[1].get(AUDIT_LOG.ROW_HASH), all[2].get(AUDIT_LOG.PREV_HASH), "the first row of the new format is chained to the last row of the old")
-        assertEquals(genesis, all[0].get(AUDIT_LOG.PREV_HASH))
-        val result = AuditService.verifyChain(dsl)
-        assertTrue(result.ok, result.reason)
-        assertEquals(6L, result.totalRows)
-        assertTrue(AuditService.verifyChain(dsl, anchor = anchorOnOldRow).ok, "an anchor recorded before the upgrade keeps working")
-        assertEquals(first, all[0].get(AUDIT_LOG.ID))
+    /** Counts the statements that a block runs. */
+    private fun statementsRun(block: (org.jooq.DSLContext) -> Unit): Int {
+        var count = 0
+        val listener = object : ExecuteListener {
+            override fun executeStart(ctx: ExecuteContext) { count++ }
+        }
+        block(DSL.using(dsl.configuration().derive(DefaultExecuteListenerProvider(listener))))
+        return count
     }
 
     @Test
-    fun `a version 1 row is still checked by the old rule, snapshot included`() = runBlocking {
-        val user = createTestUser()
-        val oldId = dsl.insertVersion1Row("legacy.a", "1", after = snapshot("""{"role":"BOSS"}"""))
-        appendTestAuditRow(user, "new.b", "2")
-        assertTrue(AuditService.verifyChain(dsl).ok)
+    fun `the chain is read in pieces bounded by their size in bytes, and verifies the same`() {
+        runBlocking {
+            val user = createTestUser()
+            repeat(8) { n -> appendTestAuditRow(user, "step", "$n", after = snapshot("""{"n":$n,"text":"${"x".repeat(2000)}"}""")) }
+        }
+        val anchor = AuditService.verifyChain(dsl).head!!
 
-        tamper("""update audit_log set after = '{"role":"WORKER"}'::jsonb where id = $oldId""")
+        val whole = statementsRun { AuditService.verifyChain(it, anchor = anchor).also { r -> assertTrue(r.ok, r.reason) } }
+        val small = statementsRun { AuditService.verifyChain(it, anchor = anchor, maxBatchBytes = 1).also { r -> assertTrue(r.ok, r.reason); assertEquals(8L, r.totalRows) } }
+        val bounded = statementsRun { AuditService.verifyChain(it, maxBatchBytes = 5_000).also { r -> assertTrue(r.ok, r.reason) } }
 
-        assertBrokenAt(oldId, "a changed snapshot of an old row", "row_hash mismatch on id=$oldId")
-    }
-
-    @Test
-    fun `an old row cannot be made to look like a new one, nor the reverse`() = runBlocking {
-        val user = createTestUser()
-        val oldId = dsl.insertVersion1Row("legacy.a", "1", after = snapshot("""{"n":1}"""))
-        appendTestAuditRow(user, "new.b", "2")
-        // Version 1 written as version 2, with a payload and a salt of the attacker's making.
-        tamper("""update audit_log set hash_version = 2, payload_text = '{"action":"legacy.a"}', payload_salt = '$otherSalt', after = null where id = $oldId""")
-        assertBrokenAt(oldId, "a version 1 row relabelled as version 2")
-
-        clearTables()
-        val user2 = createTestUser()
-        val oldId2 = dsl.insertVersion1Row("legacy.a", "1", after = snapshot("""{"n":1}"""))
-        appendTestAuditRow(user2, "new.b", "2")
-        dsl.withoutRowShapeCheck {
-            // Version 1 with the columns of version 2 as well: content that the old rule does not cover.
-            tamper("update audit_log set payload_text = '{}' where id = $oldId2")
-            assertBrokenAt(oldId2, "a version 1 row that carries a version 2 payload", "version 2")
+        assertTrue(small > whole, "one row at a time takes more reads ($small) than everything at once ($whole)")
+        assertTrue(bounded in (whole + 1) until small, "a few rows at a time is in between: $bounded")
+        // And damage is found whatever the pieces are.
+        val fourth = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).offset(3).limit(1).fetchOne()!!.value1()!!
+        tamper("update audit_log set entity_id = 'tampered' where id = $fourth")
+        for (bytes in listOf(1L, 5_000L, 10_000_000L)) {
+            val result = AuditService.verifyChain(dsl, maxBatchBytes = bytes)
+            assertFalse(result.ok)
+            assertEquals(fourth, result.brokenAtId)
         }
     }
 
     // --- what the database accepts -------------------------------------------------------------------------------------------
 
-    private fun insertRaw(
-        version: Short?,
-        projectId: UUID? = null,
-        payloadText: String? = null,
-        payloadSalt: String? = null,
-        before: JSONB? = null,
-        ip: String? = null,
-    ) {
+    private fun insertRaw(version: Short?, payloadText: String? = "{}", payloadSalt: String? = otherSalt, projectId: UUID? = null) {
         val query = dsl.insertInto(AUDIT_LOG)
             .set(AUDIT_LOG.TS, java.time.OffsetDateTime.now())
             .set(AUDIT_LOG.ACTION, "raw")
@@ -278,39 +293,45 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
             .set(AUDIT_LOG.PROJECT_ID, projectId)
             .set(AUDIT_LOG.PAYLOAD_TEXT, payloadText)
             .set(AUDIT_LOG.PAYLOAD_SALT, payloadSalt)
-            .set(AUDIT_LOG.BEFORE, before)
-            .set(AUDIT_LOG.IP, ip)
         if (version != null) query.set(AUDIT_LOG.HASH_VERSION, version)
         query.execute()
     }
 
     @Test
-    fun `the database only accepts the two shapes of a row`() {
-        // The two valid shapes ...
-        insertRaw(1, before = JSONB.jsonb("""{"n":1}"""))
-        insertRaw(2, projectId = projectA, payloadText = "{}", payloadSalt = otherSalt)
-        insertRaw(2, payloadText = "{}", payloadSalt = otherSalt)
-        assertEquals(3, dsl.fetchCount(AUDIT_LOG))
+    fun `the database only accepts the one shape of a row`() {
+        // The valid shape, with a project and without ...
+        insertRaw(2, projectId = projectA)
+        insertRaw(2)
+        assertEquals(2, dsl.fetchCount(AUDIT_LOG))
 
         // ... and everything else.
         val refused: Map<String, () -> Unit> = linkedMapOf(
-            "no version stated (a writer must say which format it writes)" to { insertRaw(null, payloadText = "{}", payloadSalt = otherSalt) },
-            "an unknown version" to { insertRaw(3, payloadText = "{}", payloadSalt = otherSalt) },
-            "version 2 without a payload" to { insertRaw(2, payloadSalt = otherSalt) },
-            "version 2 without a salt" to { insertRaw(2, payloadText = "{}") },
-            "version 2 with a short salt" to { insertRaw(2, payloadText = "{}", payloadSalt = otherSalt.drop(2)) },
-            "version 2 with an upper-case salt" to { insertRaw(2, payloadText = "{}", payloadSalt = otherSalt.uppercase()) },
-            "version 2 with a salt that is not hex" to { insertRaw(2, payloadText = "{}", payloadSalt = "z".repeat(64)) },
-            "version 2 with a before snapshot" to { insertRaw(2, payloadText = "{}", payloadSalt = otherSalt, before = JSONB.jsonb("{}")) },
-            "version 2 with an address" to { insertRaw(2, payloadText = "{}", payloadSalt = otherSalt, ip = "203.0.113.7") },
-            "version 1 with a project" to { insertRaw(1, projectId = projectA) },
-            "version 1 with a payload" to { insertRaw(1, payloadText = "{}") },
-            "version 1 with a salt" to { insertRaw(1, payloadSalt = otherSalt) },
+            "no version stated (a writer must say which format it writes)" to { insertRaw(null) },
+            "version 1, which no longer exists" to { insertRaw(1) },
+            "an unknown version" to { insertRaw(3) },
+            "no payload" to { insertRaw(2, payloadText = null) },
+            "no salt" to { insertRaw(2, payloadSalt = null) },
+            "a short salt" to { insertRaw(2, payloadSalt = otherSalt.drop(2)) },
+            "an upper-case salt" to { insertRaw(2, payloadSalt = otherSalt.uppercase()) },
+            "a salt that is not hex" to { insertRaw(2, payloadSalt = "z".repeat(64)) },
         )
         for ((what, insert) in refused) {
             assertThrows<DataAccessException>(what) { insert() }
         }
-        assertEquals(3, dsl.fetchCount(AUDIT_LOG), "none of them was stored")
+        assertEquals(2, dsl.fetchCount(AUDIT_LOG), "none of them was stored")
+    }
+
+    @Test
+    fun `a row has no column in which content could sit outside its hash`() {
+        val columns = dsl.fetch("select column_name from information_schema.columns where table_name = 'audit_log' order by ordinal_position").map { it.get(0) as String }
+        assertEquals(
+            listOf(
+                "id", "ts", "actor_id", "action", "entity_type", "entity_id", "prev_hash", "row_hash",
+                "hash_version", "project_id", "payload_text", "payload_salt",
+            ),
+            columns,
+            "the old before, after, ip and user_agent columns are gone: every readable column is the payload, or repeats it and is checked against it",
+        )
     }
 
     // --- a project's part of the chain, with the rest as stubs ---------------------------------------------------------------
