@@ -35,7 +35,7 @@ data class AddMemberRequest(
 @Serializable
 internal data class MemberSnapshot(val userId: String, val role: String)
 
-private fun memberSnapshot(userId: UUID, role: String): kotlinx.serialization.json.JsonElement =
+internal fun memberSnapshot(userId: UUID, role: String): kotlinx.serialization.json.JsonElement =
     kotlinx.serialization.json.Json.encodeToJsonElement(MemberSnapshot.serializer(), MemberSnapshot(userId.toString(), role))
 
 object ProjectMemberService {
@@ -108,7 +108,7 @@ object ProjectMemberService {
             if (!userExists) throw NotFoundException("Uživatel nenalezen")
             // The manager of a project signs its diary, and a signer has a ČKAIT number (decision D2).
             if (role == Role.BOSS && !ProjectAccess.hasCkaitNumber(tx, userId)) {
-                throw ConflictException("Vedoucí projektu (BOSS) musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+                throw ConflictException("Vedoucí projektu (BOSS) musí mít číslo ČKAIT. Číslo doplňuje administrátor v seznamu uživatelů: požádejte ho o to.")
             }
             val before = tx.select(PROJECT_MEMBERS.ROLE).from(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))

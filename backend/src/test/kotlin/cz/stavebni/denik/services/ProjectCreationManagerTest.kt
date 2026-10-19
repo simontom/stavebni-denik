@@ -50,8 +50,9 @@ class ProjectCreationManagerTest : BaseIntegrationTest() {
         val without = createTestUser(role = Role.BOSS, ckaitNumber = null)
         val blank = createTestUser(role = Role.BOSS, ckaitNumber = "   ")
 
-        assertRefused(creator, without.id, "ČKAIT")
-        assertRefused(creator, blank.id, "ČKAIT")
+        // Only an administrator can add the number: the message says so instead of sending the creator to an account they cannot edit.
+        assertRefused(creator, without.id, "ČKAIT", "administrátor")
+        assertRefused(creator, blank.id, "ČKAIT", "administrátor")
     }
 
     @Test
@@ -86,7 +87,7 @@ class ProjectCreationManagerTest : BaseIntegrationTest() {
         val qualified = createTestUser(role = Role.BOSS)
 
         // The creator becomes a manager of the project and has to hold a number just like the site manager.
-        assertRefused(creator, qualified.id, "Zakladatel", "ČKAIT")
+        assertRefused(creator, qualified.id, "Zakladatel", "ČKAIT", "administrátor")
     }
 
     // ------------------------------------------------------------------ who is added, and as what
@@ -108,6 +109,52 @@ class ProjectCreationManagerTest : BaseIntegrationTest() {
         assertEquals(creator.id, addedBy)
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("project.create")).fetchSingle()
         assertEquals(manager.id.toString(), Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["siteManagerId"]!!.jsonPrimitive.content)
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    // ------------------------------------------------------------------ the grants are in the audit chain
+
+    private fun auditRows() = dsl.selectFrom(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch()
+
+    private fun memberRowOf(row: org.jooq.Record): Triple<String?, String?, String?> {
+        val before = row.get(AUDIT_LOG.BEFORE)?.data()
+        val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        return Triple(before, after["userId"]!!.jsonPrimitive.content, after["role"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the signing right given to the site manager at creation is an audit row of its own, as is the creator's`() = runBlocking<Unit> {
+        val creator = createTestUser(role = Role.BOSS)
+        val manager = createTestUser(role = Role.WORKER, ckaitNumber = "0054321")
+
+        val created = ProjectService.createProject(creator, request(manager.id))
+
+        val rows = auditRows()
+        assertEquals(listOf("project.create", "project.member.add", "project.member.add"), rows.map { it.get(AUDIT_LOG.ACTION) })
+        val granted = rows.filter { it.get(AUDIT_LOG.ACTION) == "project.member.add" }
+        for (row in granted) {
+            assertEquals("project", row.get(AUDIT_LOG.ENTITY_TYPE))
+            assertEquals(created.id, row.get(AUDIT_LOG.ENTITY_ID), "names the project, as ProjectMemberService.addMember does")
+            assertEquals(creator.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
+        }
+        // The shape of addMember: no 'before' (they were not members), 'after' is the user and the role.
+        assertEquals(
+            setOf(Triple(null, creator.id.toString(), "BOSS"), Triple(null, manager.id.toString(), "BOSS")),
+            granted.map { memberRowOf(it) }.toSet(),
+        )
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `a creator who names themselves has one member row, not two`() = runBlocking<Unit> {
+        val creator = createTestUser(role = Role.BOSS)
+
+        val created = ProjectService.createProject(creator, request(creator.id))
+
+        val rows = auditRows()
+        assertEquals(listOf("project.create", "project.member.add"), rows.map { it.get(AUDIT_LOG.ACTION) })
+        assertEquals(Triple(null, creator.id.toString(), "BOSS"), memberRowOf(rows.last()))
+        assertEquals(created.id, rows.last().get(AUDIT_LOG.ENTITY_ID))
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 

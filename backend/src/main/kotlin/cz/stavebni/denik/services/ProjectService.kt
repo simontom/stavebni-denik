@@ -184,7 +184,7 @@ object ProjectService {
     /** Decision D2: the site manager signs the diary, and a signer holds a ČKAIT number (read here, as it is now). */
     private fun requireCkaitNumber(tx: DSLContext, userId: UUID) {
         if (!ProjectAccess.hasCkaitNumber(tx, userId)) {
-            throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Doplňte ho nejdřív u uživatele.")
+            throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Číslo doplňuje administrátor v seznamu uživatelů: požádejte ho o to.")
         }
     }
 
@@ -318,30 +318,33 @@ object ProjectService {
             // manager signs the diary, and a role taken from the account would leave a person who holds no right to sign in the
             // project until somebody promoted them. The project always keeps its site manager as a BOSS member (see
             // ProjectMemberService), so it is that from the first moment.
-            tx.insertInto(PROJECT_MEMBERS)
-                .set(PROJECT_MEMBERS.PROJECTID, projectId)
-                .set(PROJECT_MEMBERS.USERID, user.id)
-                .set(PROJECT_MEMBERS.ROLE, DbRole.BOSS)
-                .set(PROJECT_MEMBERS.ADDEDBYID, user.id)
-                .onConflictDoNothing()
-                .execute()
-
-            if (siteManagerId != user.id) {
+            val firstManagers = listOf(user.id, siteManagerId).distinct()
+            for (managerId in firstManagers) {
                 tx.insertInto(PROJECT_MEMBERS)
                     .set(PROJECT_MEMBERS.PROJECTID, projectId)
-                    .set(PROJECT_MEMBERS.USERID, siteManagerId)
+                    .set(PROJECT_MEMBERS.USERID, managerId)
                     .set(PROJECT_MEMBERS.ROLE, DbRole.BOSS)
                     .set(PROJECT_MEMBERS.ADDEDBYID, user.id)
-                    .onConflictDoNothing()
                     .execute()
             }
 
-            // The audit row names the project and keeps what was entered, with the site manager.
+            // The audit row names the project and keeps what was entered, with the site manager. Each BOSS membership given here
+            // is a row of its own, in the shape of ProjectMemberService.addMember (the project, the user, no role before and BOSS
+            // after): the signing right of a person other than the creator is in the chain, not only to be inferred by the rule.
             AuditService.Audited(
                 result = toDto(record, DbRole.BOSS),
                 action = "project.create",
                 entityId = projectId.toString(),
                 after = snapshot(record),
+                alsoRecorded = firstManagers.map { managerId ->
+                    AuditService.Audited(
+                        result = Unit,
+                        action = "project.member.add",
+                        entityId = projectId.toString(),
+                        before = null,
+                        after = memberSnapshot(managerId, DbRole.BOSS.name),
+                    )
+                },
             )
         }
     }
