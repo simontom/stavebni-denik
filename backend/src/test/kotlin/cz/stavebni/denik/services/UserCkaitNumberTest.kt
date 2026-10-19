@@ -39,7 +39,7 @@ class UserCkaitNumberTest : BaseIntegrationTest() {
 
     private fun storedNumber(id: UUID): String? = dsl.selectFrom(USERS).where(USERS.ID.eq(id)).fetchSingle().ckaitnumber
 
-    private fun obj(json: org.jooq.JSONB?): JsonObject? = json?.let { Json.parseToJsonElement(it.data()).jsonObject }
+    private fun obj(json: String?): JsonObject? = json?.let { Json.parseToJsonElement(it).jsonObject }
 
     private fun JsonObject.text(key: String): String? = get(key).let { if (it == null || it is JsonNull) null else it.jsonPrimitive.content }
 
@@ -203,7 +203,7 @@ class UserCkaitNumberTest : BaseIntegrationTest() {
 
         val rows = updateRows()
         assertEquals(4, rows.size, "one row for each edit")
-        val numbers = rows.map { obj(it.get(AUDIT_LOG.BEFORE))!!.text("ckaitNumber") to obj(it.get(AUDIT_LOG.AFTER))!!.text("ckaitNumber") }
+        val numbers = rows.map { obj(it.auditBeforeText())!!.text("ckaitNumber") to obj(it.auditAfterText())!!.text("ckaitNumber") }
         assertEquals(
             listOf("0012345" to "0099999", "0099999" to "0099999", "0099999" to null, null to "0055555"),
             numbers,

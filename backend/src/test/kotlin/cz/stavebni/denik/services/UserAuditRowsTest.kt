@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.jooq.JSONB
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -34,7 +33,7 @@ class UserAuditRowsTest : BaseIntegrationTest() {
 
     private fun rows(action: String) = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq(action)).orderBy(AUDIT_LOG.ID.asc()).fetch()
 
-    private fun obj(json: JSONB?): JsonObject? = json?.let { Json.parseToJsonElement(it.data()).jsonObject }
+    private fun obj(json: String?): JsonObject? = json?.let { Json.parseToJsonElement(it).jsonObject }
 
     private fun JsonObject.text(key: String): String? = get(key).let { if (it == null || it is JsonNull) null else it.jsonPrimitive.content }
 
@@ -72,8 +71,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         assertEquals(created.user.id, row.get(AUDIT_LOG.ENTITY_ID), "the user's id, not the nickname")
         assertEquals("user", row.get(AUDIT_LOG.ENTITY_TYPE))
         assertEquals(actor.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        assertNull(row.get(AUDIT_LOG.BEFORE), "a created user has no before")
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        assertNull(row.auditBeforeText(), "a created user has no before")
+        val after = obj(row.auditAfterText())!!
         assertEquals(created.user.id, after.text("id"))
         assertEquals("novy.stavbyvedouci", after.text("nickname"))
         assertEquals("Ing. Jan Novák", after.text("displayName"))
@@ -94,7 +93,7 @@ class UserAuditRowsTest : BaseIntegrationTest() {
             runBlocking { UserService.createUser(admin(), CreateUserRequest(nickname = "plain.worker", displayName = "Pavel Dělník")) }
         }
 
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        val after = obj(row.auditAfterText())!!
         assertEquals("WORKER", after.text("role"))
         assertFalse(after.flag("isAdmin"))
         assertTrue(after.containsKey("ckaitNumber"), "the field is there, null")
@@ -115,8 +114,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         }
 
         assertEquals(target.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
-        val before = obj(row.get(AUDIT_LOG.BEFORE))!!
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        val before = obj(row.auditBeforeText())!!
+        val after = obj(row.auditAfterText())!!
         assertEquals("Stará Jména" to "Nová Jména", before.text("displayName") to after.text("displayName"))
         assertEquals("WORKER" to "BOSS", before.text("role") to after.text("role"))
         assertEquals(false to true, before.flag("isAdmin") to after.flag("isAdmin"))
@@ -133,9 +132,9 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val on = oneRow("user.activate") { runBlocking { UserService.setActive(actor, target.id, active = true) } }
 
         assertEquals(target.id.toString(), off.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals(true to false, obj(off.get(AUDIT_LOG.BEFORE))!!.flag("isActive") to obj(off.get(AUDIT_LOG.AFTER))!!.flag("isActive"))
+        assertEquals(true to false, obj(off.auditBeforeText())!!.flag("isActive") to obj(off.auditAfterText())!!.flag("isActive"))
         assertEquals(target.id.toString(), on.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals(false to true, obj(on.get(AUDIT_LOG.BEFORE))!!.flag("isActive") to obj(on.get(AUDIT_LOG.AFTER))!!.flag("isActive"))
+        assertEquals(false to true, obj(on.auditBeforeText())!!.flag("isActive") to obj(on.auditAfterText())!!.flag("isActive"))
         assertEquals(actor.id.toString(), off.get(AUDIT_LOG.ACTOR_ID))
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
@@ -148,8 +147,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val row = oneRow("user.delete") { runBlocking { UserService.deleteUser(actor, target.id) } }
 
         assertEquals(target.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
-        val before = obj(row.get(AUDIT_LOG.BEFORE))!!
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        val before = obj(row.auditBeforeText())!!
+        val after = obj(row.auditAfterText())!!
         assertNull(before.text("deletedAt"))
         assertTrue(before.flag("isActive"))
         assertNotNull(OffsetDateTime.parse(after.text("deletedAt")))
@@ -169,8 +168,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
 
         assertEquals(user.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
         assertEquals(user.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        val before = obj(row.get(AUDIT_LOG.BEFORE))!!
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        val before = obj(row.auditBeforeText())!!
+        val after = obj(row.auditAfterText())!!
         assertTrue(before.flag("mustChangePwd"))
         assertNotNull(before.text("passwordExpiresAt"))
         assertNull(before.text("passwordChangedAt"))
@@ -191,8 +190,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
 
         assertEquals(target.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
         assertEquals(actor.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        val before = obj(row.get(AUDIT_LOG.BEFORE))!!
-        val after = obj(row.get(AUDIT_LOG.AFTER))!!
+        val before = obj(row.auditBeforeText())!!
+        val after = obj(row.auditAfterText())!!
         assertFalse(before.flag("mustChangePwd"))
         assertNotNull(before.text("passwordChangedAt"))
         assertTrue(after.flag("mustChangePwd"))
@@ -230,8 +229,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val createRow = rows("user.bootstrap_admin").single()
         assertEquals(id, createRow.get(AUDIT_LOG.ENTITY_ID), "the user's id, not the nickname")
         assertNull(createRow.get(AUDIT_LOG.ACTOR_ID))
-        assertNull(createRow.get(AUDIT_LOG.BEFORE))
-        val after = obj(createRow.get(AUDIT_LOG.AFTER))!!
+        assertNull(createRow.auditBeforeText())
+        val after = obj(createRow.auditAfterText())!!
         assertEquals("first.admin", after.text("nickname"))
         assertEquals("BOSS", after.text("role"))
         assertTrue(after.flag("isAdmin"))
@@ -241,8 +240,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         val resetRow = oneRow("user.password_reset") { runBlocking { AdminBootstrapService.resetPassword("first.admin") } }
         assertEquals(id, resetRow.get(AUDIT_LOG.ENTITY_ID))
         assertNull(resetRow.get(AUDIT_LOG.ACTOR_ID))
-        assertEquals("first.admin", obj(resetRow.get(AUDIT_LOG.BEFORE))!!.text("nickname"))
-        assertNotNull(obj(resetRow.get(AUDIT_LOG.AFTER))!!.text("passwordExpiresAt"))
+        assertEquals("first.admin", obj(resetRow.auditBeforeText())!!.text("nickname"))
+        assertNotNull(obj(resetRow.auditAfterText())!!.text("passwordExpiresAt"))
 
         val all = dsl.selectFrom(AUDIT_LOG).fetch().joinToString { it.formatJSON() }
         assertFalse(all.contains(created.password) || all.contains("argon2"))
@@ -287,8 +286,8 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         }
         val allowed = UserSnapshot.serializer().descriptor.elementNames.toSet()
         for (row in stored.filter { it.get(AUDIT_LOG.ENTITY_TYPE) == "user" }) {
-            for (column in listOf(AUDIT_LOG.BEFORE, AUDIT_LOG.AFTER)) {
-                val keys = obj(row.get(column))?.keys ?: continue
+            for (snapshot in listOf(row.auditBeforeText(), row.auditAfterText())) {
+                val keys = obj(snapshot)?.keys ?: continue
                 assertEquals(allowed, keys, "the stored JSON of row ${row.get(AUDIT_LOG.ID)} has exactly the fields of a UserSnapshot")
             }
         }

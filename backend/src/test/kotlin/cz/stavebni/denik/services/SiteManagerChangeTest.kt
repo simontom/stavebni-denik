@@ -53,8 +53,8 @@ class SiteManagerChangeTest : BaseIntegrationTest() {
         assertNotEquals(created.updatedAt, changed.updatedAt, "a new version of the project")
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("project.site_manager.change")).fetchSingle()
         assertEquals(created.id, row.get(AUDIT_LOG.ENTITY_ID))
-        val before = row.get(AUDIT_LOG.BEFORE)!!.data()
-        val after = row.get(AUDIT_LOG.AFTER)!!.data()
+        val before = row.auditBeforeText()!!
+        val after = row.auditAfterText()!!
         assertTrue(before.contains("Původní Vedoucí") && before.contains(boss.id.toString()), before)
         assertTrue(after.contains("Nový Vedoucí") && after.contains(deputy.id.toString()), after)
         assertTrue(after.contains("odešel ze společnosti"), "the reason is kept: $after")

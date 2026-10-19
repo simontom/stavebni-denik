@@ -52,8 +52,8 @@ class UserRoleChangeTest : BaseIntegrationTest() {
         assertEquals(0, openSessions(worker.id), "the new rights apply at once")
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("user.update")).fetchOne()!!
         assertEquals(worker.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
-        val before = Json.parseToJsonElement(row.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject
-        val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        val before = Json.parseToJsonElement(row.auditBeforeText()!!).jsonObject
+        val after = Json.parseToJsonElement(row.auditAfterText()!!).jsonObject
         assertEquals("WORKER", before["role"]!!.jsonPrimitive.content)
         assertEquals("BOSS", after["role"]!!.jsonPrimitive.content)
         assertFalse(row.formatJSON().contains("argon2"), "no password hash in the audit row")
@@ -68,7 +68,7 @@ class UserRoleChangeTest : BaseIntegrationTest() {
         UserService.updateUser(admin, other.id, UpdateUserRequest(isAdmin = true))
 
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("user.update")).fetchOne()!!
-        assertEquals("false", Json.parseToJsonElement(row.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject["isAdmin"]!!.jsonPrimitive.content)
-        assertEquals("true", Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["isAdmin"]!!.jsonPrimitive.content)
+        assertEquals("false", Json.parseToJsonElement(row.auditBeforeText()!!).jsonObject["isAdmin"]!!.jsonPrimitive.content)
+        assertEquals("true", Json.parseToJsonElement(row.auditAfterText()!!).jsonObject["isAdmin"]!!.jsonPrimitive.content)
     }
 }

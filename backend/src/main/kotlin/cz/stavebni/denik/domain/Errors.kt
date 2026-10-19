@@ -23,3 +23,13 @@ class TooManyRequestsException(val retryAfterSeconds: Long, message: String) : R
  * unlike a plain [ForbiddenException], tells the person why: they can fix it (an administrator fills the number in).
  */
 class SignerNotQualifiedException(message: String) : RuntimeException(message)
+
+/**
+ * An audit row could not be written because the application did not give it what it needs: no project for a row of a
+ * project, an entity type without a rule, a snapshot that is not JSON (see `AuditProject`, `AuditHash`). It is a mistake of
+ * the code, never of the client, so it maps to HTTP 500 with a generic text, and the change it belonged to is rolled back.
+ *
+ * The message goes to the log and says what is wrong **without any content of the row**: never put a snapshot, a text or a
+ * value of the change into it.
+ */
+class AuditWriteException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
