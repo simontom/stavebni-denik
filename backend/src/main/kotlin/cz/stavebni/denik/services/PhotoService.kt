@@ -25,11 +25,14 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
+import javax.imageio.event.IIOReadUpdateListener
 
 @Serializable
 data class PhotoDto(
@@ -66,14 +69,75 @@ object PhotoService {
     private const val MAX_JPEG_PIXELS = 64_000_000L
     /** Other formats (PNG ...) are decoded in full by the JDK, so they get a smaller limit. */
     private const val MAX_OTHER_PIXELS = 16_000_000L
+    /**
+     * What a JPEG that the decoder cannot stream (progressive, or with one scan per component) may claim: it keeps about
+     * 6 bytes per pixel for the whole image, measured at 98 MiB for exactly this many pixels
+     * (`ProgressiveJpegMemoryTest`). A baseline JPEG is limited by [MAX_JPEG_PIXELS] instead.
+     */
+    const val MAX_PROGRESSIVE_JPEG_PIXELS = 16_000_000L
+
+    /** Scans a multi-scan JPEG may have. The ordinary progressive script has 10 (3 components); see [JpegHeader] for why. */
+    const val MAX_JPEG_SCANS = 32
+
+    /** Components a multi-scan JPEG may have: colour is 3 (6 bytes per pixel kept), a fourth would make it 8. */
+    const val MAX_MULTI_SCAN_COMPONENTS = 3
+
+    /**
+     * Passes (one per scan of a progressive file, 7 for an interlaced PNG) a decode may make. The header walk caps a JPEG at
+     * [MAX_JPEG_SCANS]; this is the same limit enforced **inside the decoder**, for the day the walk and the decoder part ways.
+     */
+    const val MAX_DECODE_PASSES = 40
+
+    /**
+     * How long a decode may take. The worst file the airlock accepts (16 megapixels, 32 scans) takes about 5 s on the
+     * development machine; the machine that runs the service is slower, so there is room. Not a way to be slow on purpose:
+     * it is the bound for a file that gets past everything above.
+     */
+    val DECODE_DEADLINE: Duration = Duration.ofSeconds(20)
+
+    /** The three below are variables only so that tests can weaken or tighten them; the real values are the constants above. */
+    @Volatile internal var jpegWalker: (ByteArray) -> JpegHeader.Frame? = JpegHeader::frameOf
+    @Volatile internal var maxDecodePasses: Int = MAX_DECODE_PASSES
+    @Volatile internal var decodeDeadline: Duration = DECODE_DEADLINE
     private const val MAX_SIDE_PIXELS = 16_000 // longest side; a 1 x 16,000 image is fine, a 1 x 60,000,000 one is not
     /** Most pixels held in memory for one image. The JPEG reader skips pixels while decoding to stay below it. */
     private const val MAX_DECODED_PIXELS = 4_000_000L
 
-    /** Decoding and encoding are heavy: at most two images at the same time, whatever the number of uploads. */
-    private val imageSlots = Semaphore(2)
+    /** Decoding and encoding are heavy: at most this many images at the same time, whatever the number of uploads. */
+    const val IMAGE_SLOTS = 2
+    private val imageSlots = Semaphore(IMAGE_SLOTS)
 
     private class Encoded(val bytes: ByteArray, val width: Int, val height: Int)
+
+    /** A decode went on for longer than allowed (see [DecodeBound]). A client error: a photo that cannot be decoded in time. */
+    private class DecodeBoundException(message: String) : RuntimeException(message)
+
+    /**
+     * Throws [DecodeBoundException] when a decode makes more than [maxPasses] passes or has run for more than [deadline].
+     * The JDK's reader calls it at the start of every pass (a scan of a progressive file) and after every scanline it
+     * delivers, so the check is at most one scanline late, however slow the native decoder is in between.
+     */
+    private class DecodeBound(private val maxPasses: Int, private val deadline: Duration) : IIOReadUpdateListener {
+        private val started = System.nanoTime()
+        private var passes = 0
+
+        private fun checkTime() {
+            if (System.nanoTime() - started > deadline.toNanos()) {
+                throw DecodeBoundException("Image takes longer than ${deadline.toMillis() / 1000.0} s to decode")
+            }
+        }
+
+        override fun passStarted(source: ImageReader, theImage: BufferedImage?, pass: Int, minPass: Int, maxPass: Int, minX: Int, minY: Int, periodX: Int, periodY: Int, bands: IntArray?) {
+            if (++passes > maxPasses) throw DecodeBoundException("Image needs more than $maxPasses passes to decode")
+            checkTime()
+        }
+
+        override fun imageUpdate(source: ImageReader, theImage: BufferedImage?, minX: Int, minY: Int, width: Int, height: Int, periodX: Int, periodY: Int, bands: IntArray?) = checkTime()
+        override fun passComplete(source: ImageReader, theImage: BufferedImage?) {}
+        override fun thumbnailPassStarted(source: ImageReader, theThumbnail: BufferedImage?, pass: Int, minPass: Int, maxPass: Int, minX: Int, minY: Int, periodX: Int, periodY: Int, bands: IntArray?) {}
+        override fun thumbnailUpdate(source: ImageReader, theThumbnail: BufferedImage?, minX: Int, minY: Int, width: Int, height: Int, periodX: Int, periodY: Int, bands: IntArray?) {}
+        override fun thumbnailPassComplete(source: ImageReader, theThumbnail: BufferedImage?) {}
+    }
 
     /**
      * Decodes an image, but only after its dimensions were read from the file *header* and checked.
@@ -82,9 +146,10 @@ object PhotoService {
      *
      * A big photo is accepted and decoded already reduced: the reader skips pixels while decoding
      * (source subsampling), so what is held in memory never exceeds about [MAX_DECODED_PIXELS], whatever the
-     * size of the original. The stored picture is at most 1920 x 1080 anyway.
+     * size of the original. The stored picture is at most 1920 x 1080 anyway. That holds for a JPEG the decoder streams;
+     * one with several scans (progressive) is limited to [MAX_PROGRESSIVE_JPEG_PIXELS] (see [requireBoundedJpeg]).
      */
-    private fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
+    internal fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
         try {
             ImageIO.createImageInputStream(ByteArrayInputStream(bytes)).use { stream ->
                 val readers = ImageIO.getImageReaders(stream)
@@ -96,22 +161,63 @@ object PhotoService {
                     val height = reader.getHeight(0)
                     if (width <= 0 || height <= 0) throw IllegalArgumentException("Invalid or corrupted image data")
                     val pixels = width.toLong() * height.toLong()
-                    val maxPixels = if (reader.formatName.equals("JPEG", ignoreCase = true)) MAX_JPEG_PIXELS else MAX_OTHER_PIXELS
+                    val isJpeg = reader.formatName.equals("JPEG", ignoreCase = true)
+                    val maxPixels = if (isJpeg) MAX_JPEG_PIXELS else MAX_OTHER_PIXELS
                     if (pixels > maxPixels || width > MAX_SIDE_PIXELS || height > MAX_SIDE_PIXELS) {
                         throw IllegalArgumentException("Image dimensions exceed ${maxPixels / 1_000_000}MP limit")
                     }
+                    if (isJpeg) requireBoundedJpeg(bytes, width, height, pixels)
                     val param = reader.defaultReadParam
                     if (pixels > MAX_DECODED_PIXELS) {
                         val step = ceil(sqrt(pixels.toDouble() / MAX_DECODED_PIXELS)).toInt()
                         param.setSourceSubsampling(step, step, 0, 0)
                     }
-                    return reader.read(0, param) ?: throw IllegalArgumentException("Invalid or corrupted image data")
+                    // The last line of defence (the checks above are the first): the decoder reports every pass and every
+                    // scanline, and the bound throws out of those calls when the decode has run too long. An exception out
+                    // of a listener stops the native decoder at once; abort() does not (measured: the JDK clears the flag at
+                    // the start of each pass, and a one-shot abort from another thread changed nothing).
+                    reader.addIIOReadUpdateListener(DecodeBound(maxDecodePasses, decodeDeadline))
+                    return try {
+                        reader.read(0, param)
+                    } catch (e: DecodeBoundException) {
+                        throw IllegalArgumentException(e.message)
+                    } ?: throw IllegalArgumentException("Invalid or corrupted image data")
                 } finally {
                     reader.dispose()
                 }
             }
         } catch (e: IOException) {
             throw IllegalArgumentException("Invalid or corrupted image data")
+        }
+    }
+
+    /**
+     * What a JPEG may cost the decoder, decided from the bytes before anything is decoded (see [JpegHeader]). An ordinary
+     * single-scan file is streamed and needs neither much memory nor much time, whatever its size. A file with several
+     * scans (progressive, or one scan per component) is not:
+     *  - the decoder keeps the coefficients of the whole image, about 6 bytes per pixel for 3 components, so it is limited to
+     *    [MAX_PROGRESSIVE_JPEG_PIXELS] (373 MiB for the 64 megapixels the header may claim, twice with the decode slots);
+     *  - a fourth component costs more again (8 bytes per pixel) and no phone makes such a file: not accepted;
+     *  - every scan makes it walk the whole image again and a scan can be a dozen bytes, so more than [MAX_JPEG_SCANS] scans
+     *    could keep a native decoder, which cannot be cancelled, busy for hours.
+     *
+     * The answer comes from our own walk over the file. It must agree with what the decoder reported ([width] and [height]);
+     * a file that cannot be followed, or that the two read differently, is refused: when in doubt, not decoded.
+     */
+    private fun requireBoundedJpeg(bytes: ByteArray, width: Int, height: Int, pixels: Long) {
+        val frame = jpegWalker(bytes)
+        if (frame == null || frame.width != width || frame.height != height) {
+            throw IllegalArgumentException("Invalid or corrupted image data")
+        }
+        if (!frame.isMultiScan) return
+        if (pixels > MAX_PROGRESSIVE_JPEG_PIXELS) {
+            throw IllegalArgumentException("Progressive JPEG dimensions exceed ${MAX_PROGRESSIVE_JPEG_PIXELS / 1_000_000}MP limit")
+        }
+        if (frame.components > MAX_MULTI_SCAN_COMPONENTS) {
+            throw IllegalArgumentException("Progressive JPEG with more than $MAX_MULTI_SCAN_COMPONENTS components is not supported")
+        }
+        if (frame.scans > MAX_JPEG_SCANS) {
+            throw IllegalArgumentException("Progressive JPEG with more than $MAX_JPEG_SCANS scans is not supported")
         }
     }
 
@@ -156,6 +262,23 @@ object PhotoService {
         return isJpeg(bytes) || isPng(bytes) || isWebp(bytes)
     }
 
+    /**
+     * Whether [user] may add a photo to the entry right now (their role in its project, and the entry not being signed):
+     * one cheap query, no image work. The route asks it **before** the body of the upload is read, so that someone who may not
+     * upload is refused without their file being buffered; [uploadPhoto] asks again, and the decision that counts is the one
+     * inside its transaction, on the locked row.
+     */
+    fun requireMayUpload(user: SessionUser, reportId: UUID) {
+        val early = DatabaseFactory.dsl.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
+            .from(DAILY_REPORTS)
+            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
+            .fetchOne() ?: throw IllegalArgumentException("Report not found")
+        assertCan(
+            user, Action.PhotoUpload,
+            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
+        )
+    }
+
     suspend fun uploadPhoto(
         user: SessionUser,
         reportId: UUID,
@@ -179,14 +302,7 @@ object PhotoService {
 
         // An early, cheap look so that a request that cannot succeed does not make the server decode an image. The
         // decision that counts is made again inside the transaction below, on the locked report row.
-        val early = DatabaseFactory.dsl.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
-            .from(DAILY_REPORTS)
-            .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
-            .fetchOne() ?: throw IllegalArgumentException("Report not found")
-        assertCan(
-            user, Action.PhotoUpload,
-            Resource(role = ProjectAccess.roleIn(DatabaseFactory.dsl, user.id, early.get(DAILY_REPORTS.PROJECTID)!!), isLocked = early.get(DAILY_REPORTS.LOCKEDAT) != null)
-        )
+        requireMayUpload(user, reportId)
 
         // 3. Dimensions are checked from the header before any pixel is decoded (max 8 Megapixels);
         //    the image is then decoded exactly once.

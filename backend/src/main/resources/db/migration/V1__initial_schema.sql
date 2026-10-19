@@ -42,7 +42,9 @@ CREATE TABLE "sessions" (
 
 -- CreateTable
 CREATE TABLE "projects" (
-    "id" UUID NOT NULL DEFAULT uuidv7(),
+    -- A random UUID, not a UUIDv7 like the other tables: the id of a project is part of every audit row of the project and
+    -- is shown in the stubs of an export that is about another project, and the first 48 bits of a UUIDv7 are the time.
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "name" TEXT NOT NULL,
     "address" TEXT NOT NULL,
     "cadastralArea" TEXT NOT NULL,
@@ -221,6 +223,15 @@ CREATE TABLE "rate_limit_attempts" (
 );
 
 -- CreateTable
+-- The audit chain (the layout is in PROJECT.md, "Audit log", and in AuditHash.kt). Everything a row says is ONE text,
+-- "payload_text", hashed (with a random salt, "payload_salt") exactly as it is stored, so verification never depends on a
+-- jsonb round trip. The row hash is made of the previous hash, the project and the digest of the payload only. That is what
+-- lets one project's rows be handed over in full and every other row as a stub that still proves its place in the chain (the
+-- § 166(3) export), and what the project's id inside the hash is for.
+--
+-- There is no column in which readable content could sit outside the hash: the columns that repeat the payload (ts, actor_id,
+-- action, entity_type, entity_id) are there to be searched and are checked against it when the chain is verified; the address
+-- of a request is kept apart from the evidence (audit_request_context, decision D7).
 CREATE TABLE "audit_log" (
     "id" BIGSERIAL NOT NULL,
     "ts" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -228,14 +239,23 @@ CREATE TABLE "audit_log" (
     "action" TEXT NOT NULL,
     "entity_type" TEXT NOT NULL,
     "entity_id" TEXT NOT NULL,
-    "before" JSONB,
-    "after" JSONB,
-    "ip" TEXT,
-    "user_agent" TEXT,
     "prev_hash" TEXT NOT NULL,
     "row_hash" TEXT NOT NULL,
+    -- The format of the row hash. No default: a writer has to say which format it writes. Only 2 exists; a later format is a
+    -- new number and a new migration, never a change of a row that was written.
+    "hash_version" SMALLINT NOT NULL,
+    -- The project the row belongs to; part of the row hash. NULL for rows that belong to no project (users).
+    -- No foreign key, deliberately: the evidence outlives anything, and a key would add a second reason for a write to fail.
+    "project_id" UUID,
+    -- What the row says, as the exact text that was hashed: a JSON object with the keys action, actorId, after, before,
+    -- entityId, entityType and ts (the snapshots of the change are in it).
+    "payload_text" TEXT NOT NULL,
+    -- 32 random bytes, 64 lower-case hex characters, new for every row.
+    "payload_salt" TEXT NOT NULL,
 
-    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "audit_log_hash_version_check" CHECK ("hash_version" = 2),
+    CONSTRAINT "audit_log_payload_salt_check" CHECK ("payload_salt" ~ '^[0-9a-f]{64}$')
 );
 
 -- CreateTable

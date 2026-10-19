@@ -90,7 +90,7 @@ open class Projects(
     /**
      * The column <code>public.projects.id</code>.
      */
-    val ID: TableField<ProjectsRecord, UUID?> = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("uuidv7()"), SQLDataType.UUID)), this, "")
+    val ID: TableField<ProjectsRecord, UUID?> = createField(DSL.name("id"), SQLDataType.UUID.nullable(false).defaultValue(DSL.field(DSL.raw("gen_random_uuid()"), SQLDataType.UUID)), this, "")
 
     /**
      * The column <code>public.projects.name</code>.

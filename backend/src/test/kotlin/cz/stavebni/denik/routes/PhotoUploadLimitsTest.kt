@@ -7,6 +7,7 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.module
 import cz.stavebni.denik.services.DailyReportService
+import cz.stavebni.denik.services.JpegSamples
 import cz.stavebni.denik.services.PhotoStorage
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectService
@@ -192,6 +193,59 @@ class PhotoUploadLimitsTest : BaseIntegrationTest() {
 
         assertEquals(HttpStatusCode.BadRequest, response.status)
         assertTrue(response.bodyAsText().contains("MP limit"), "got: ${response.bodyAsText()}")
+        assertEquals(0, dsl.selectCount().from(PHOTOS).fetchOne(0, Int::class.java))
+        assertEquals(filesBefore, photoFiles(), "a rejected image must leave nothing on disk")
+    }
+
+    @Test
+    fun `a progressive or multi scan JPEG above 16 megapixels is refused with 400 and leaves nothing behind`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS)
+        val token = generateJwtToken(boss)
+        val reportId = createReport(boss)
+        val filesBefore = photoFiles()
+
+        // Small files whose headers claim 20 MP: one progressive, one sequential with a scan per component.
+        val progressive = JpegSamples.claiming(JpegSamples.smooth(200, 150, progressive = true), 5000, 4000)
+        val multiScan = JpegSamples.claiming(JpegSamples.nonInterleaved(200, 150), 5000, 4000)
+        for ((name, bytes) in mapOf("progressive" to progressive, "one scan per component" to multiScan)) {
+            val response = client.submitFormWithBinaryData(
+                url = "/api/photos/upload",
+                formData = formData {
+                    append("reportId", reportId)
+                    photoPart(this, "photo", bytes)
+                }
+            ) { header(HttpHeaders.Authorization, "Bearer $token") }
+
+            assertEquals(HttpStatusCode.BadRequest, response.status, "$name: ${response.bodyAsText()}")
+            assertTrue(response.bodyAsText().contains("Progressive JPEG") && response.bodyAsText().contains("16MP"), "$name: ${response.bodyAsText()}")
+        }
+        assertEquals(0, dsl.selectCount().from(PHOTOS).fetchOne(0, Int::class.java))
+        assertEquals(filesBefore, photoFiles(), "a rejected image must leave nothing on disk")
+    }
+
+    @Test
+    fun `a progressive file that hides thousands of scans behind a reserved marker is refused with 400 and leaves nothing behind`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS)
+        val token = generateJwtToken(boss)
+        val reportId = createReport(boss)
+        val filesBefore = photoFiles()
+        // 80 KB; libjpeg decodes it in 6,563 passes (66 s at a megapixel) although a walk by declared length sees ten scans.
+        val hostile = JpegSamples.withHiddenScans(JpegSamples.smooth(200, 200, progressive = true), 6_553)
+
+        val started = System.nanoTime()
+        val response = client.submitFormWithBinaryData(
+            url = "/api/photos/upload",
+            formData = formData {
+                append("reportId", reportId)
+                photoPart(this, "photo", hostile)
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer $token") }
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(millis < 3_000, "refused in $millis ms")
         assertEquals(0, dsl.selectCount().from(PHOTOS).fetchOne(0, Int::class.java))
         assertEquals(filesBefore, photoFiles(), "a rejected image must leave nothing on disk")
     }

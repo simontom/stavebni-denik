@@ -6,6 +6,7 @@ import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.jooq.tables.references.ACCESS_LOG
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.AUDIT_REQUEST_CONTEXT
+import cz.stavebni.denik.jooq.tables.references.RATE_LIMIT_ATTEMPTS
 import cz.stavebni.denik.module
 import cz.stavebni.denik.services.AccessLogService
 import cz.stavebni.denik.services.AuditService
@@ -59,10 +60,12 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
         assertEquals("Test-Agent/1.0", context.userAgent)
         assertFalse(context.ip.isNullOrBlank(), "the address of the request is recorded")
 
-        // The audit row itself, and so its hash, carries none of it: the chain can stay while the side row is deleted.
+        // The audit row itself, and so its hash, carries none of it (the table has no column for it, and the payload holds
+        // none): the chain can stay while the side row is deleted.
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ID.eq(auditId)).fetchSingle()
-        assertNull(row.ip)
-        assertNull(row.userAgent)
+        val stored = row.formatJSON()
+        assertFalse(stored.contains("Test-Agent"), "the user agent is not in the audit row")
+        assertFalse(stored.contains(context.ip!!), "the address is not in the audit row")
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
@@ -213,9 +216,37 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
+    private fun insertRateLimitAttempt(bucket: String, key: String, age: java.time.Duration) {
+        dsl.execute(
+            """insert into rate_limit_attempts (bucket, "key", created_at) values (?, ?, ?::timestamptz)""",
+            bucket, key, OffsetDateTime.now().minus(age),
+        )
+    }
+
+    @Test
+    fun `pruning also clears rate limit attempts that are older than a day, and only those`() {
+        // They only matter inside the longest window (15 minutes); a day is far beyond it. Keys that are never used again
+        // would otherwise stay for ever (only a new attempt of the same key cleans up its own old rows).
+        insertRateLimitAttempt("login:ip", "203.0.113.7", java.time.Duration.ofDays(40))
+        insertRateLimitAttempt("photo:upload", "gone-user", java.time.Duration.ofHours(25))
+        insertRateLimitAttempt("login:user", "someone", java.time.Duration.ofHours(23))
+        insertRateLimitAttempt("pdf:export", "busy-user", java.time.Duration.ofMinutes(1))
+
+        val pruned = AccessLogService.prune(dsl)
+
+        assertEquals(2, pruned.rateLimitAttempts)
+        assertEquals(
+            setOf("login:user" to "someone", "pdf:export" to "busy-user"),
+            dsl.select(RATE_LIMIT_ATTEMPTS.BUCKET, RATE_LIMIT_ATTEMPTS.KEY).from(RATE_LIMIT_ATTEMPTS).fetch().map { it.value1() to it.value2() }.toSet(),
+            "what is still inside a day is kept"
+        )
+        assertEquals(0, AccessLogService.prune(dsl).rateLimitAttempts, "nothing is left to prune")
+    }
+
     @Test
     fun `the operator command prunes and takes no arguments`() {
         insertAccessLog("login.success", OffsetDateTime.now().minusMonths(20))
+        insertRateLimitAttempt("login:ip", "203.0.113.7", java.time.Duration.ofDays(3))
         val out = mutableListOf<String>()
         val err = mutableListOf<String>()
 
@@ -223,6 +254,8 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
 
         assertEquals(0, code, err.toString())
         assertTrue(out.single().contains("Pruned 1 sign-in log rows"), out.toString())
+        assertTrue(out.single().contains("1 rate-limit attempts older than 1 day"), out.toString())
+        assertEquals(0, dsl.fetchCount(RATE_LIMIT_ATTEMPTS))
         assertTrue(AdminCli.hasValidShape(listOf("prune-access-records")))
         assertFalse(AdminCli.hasValidShape(listOf("prune-access-records", "3")))
         assertFalse(AdminCli.readsOnly(listOf("prune-access-records")))

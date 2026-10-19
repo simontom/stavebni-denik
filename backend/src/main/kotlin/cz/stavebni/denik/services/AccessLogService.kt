@@ -2,6 +2,7 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.jooq.tables.references.ACCESS_LOG
 import cz.stavebni.denik.jooq.tables.references.AUDIT_REQUEST_CONTEXT
+import cz.stavebni.denik.jooq.tables.references.RATE_LIMIT_ATTEMPTS
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
@@ -50,17 +51,28 @@ object AccessLogService {
     }
 
     /** How many rows [prune] removed from each table. */
-    class Pruned(val accessLog: Int, val auditRequestContext: Int)
+    class Pruned(val accessLog: Int, val auditRequestContext: Int, val rateLimitAttempts: Int)
 
     /**
-     * Deletes what is older than [RETENTION_MONTHS] months from both tables. The cutoff is the database's own clock, the
-     * one its guard uses, so the two cannot disagree; the database refuses anything younger.
+     * How long a rate-limit attempt is kept. An attempt only matters inside the window of its rule, 15 minutes at the
+     * longest, so a day is far more than enough (and is what `RateLimiter` itself already cleans up for a key it sees
+     * again). Only keys that are never seen again are left behind, and this is what removes them. They hold an address
+     * or an account name, so they should not stay for ever either. No trigger guards this table: whoever may write may delete.
+     */
+    const val RATE_LIMIT_RETENTION_DAYS = 1L
+
+    /**
+     * Deletes what is older than [RETENTION_MONTHS] months from `access_log` and `audit_request_context`, and the rate-limit
+     * attempts older than [RATE_LIMIT_RETENTION_DAYS] day. The cutoff is the database's own clock, the one its guard
+     * uses, so the two cannot disagree; the database refuses anything younger.
      * Run it regularly (see docs/DEPLOYMENT.md): the retention is a promise made in the privacy notice.
      */
     fun prune(db: DSLContext): Pruned {
         val cutoff = DSL.field("CURRENT_TIMESTAMP - INTERVAL '$RETENTION_MONTHS months'", OffsetDateTime::class.java)
         val accessLog = db.deleteFrom(ACCESS_LOG).where(ACCESS_LOG.RECORDED_AT.lt(cutoff)).execute()
         val context = db.deleteFrom(AUDIT_REQUEST_CONTEXT).where(AUDIT_REQUEST_CONTEXT.RECORDED_AT.lt(cutoff)).execute()
-        return Pruned(accessLog, context)
+        val rateLimitCutoff = DSL.field("CURRENT_TIMESTAMP - INTERVAL '$RATE_LIMIT_RETENTION_DAYS days'", OffsetDateTime::class.java)
+        val attempts = db.deleteFrom(RATE_LIMIT_ATTEMPTS).where(RATE_LIMIT_ATTEMPTS.CREATED_AT.lt(rateLimitCutoff)).execute()
+        return Pruned(accessLog, context, attempts)
     }
 }

@@ -77,6 +77,12 @@ class DatabaseRolesTest : BaseIntegrationTest() {
                 "truncate audit_log",
                 "delete from audit_log",
                 "update audit_log set action = 'x'",
+                // The columns of hash version 2 (`audit_log` in V1) are covered like the rest of the row.
+                "update audit_log set payload_text = 'x'",
+                "update audit_log set payload_salt = '${"0".repeat(64)}'",
+                "update audit_log set project_id = null",
+                "update audit_log set hash_version = 1",
+                "alter table audit_log drop constraint audit_log_hash_version_check",
                 "insert into flyway_schema_history (installed_rank, description, type, script, checksum, installed_by, execution_time, success) values (999, 'x', 'SQL', 'x', 0, 'x', 0, true)",
                 "delete from flyway_schema_history",
                 "alter role $role superuser",
@@ -113,6 +119,32 @@ class DatabaseRolesTest : BaseIntegrationTest() {
             } finally {
                 DatabaseFactory.initDirect(previous)
             }
+        }
+    }
+
+    @Test
+    fun `the prune command works under the application's role, rate limit rows and the guarded tables included`() {
+        withAppRole { app ->
+            // Rows as the owner wrote them: old enough to go, and young enough to stay.
+            dsl.execute("""insert into rate_limit_attempts (bucket, "key", created_at) values ('login:ip', '203.0.113.7', now() - interval '3 days')""")
+            dsl.execute("""insert into rate_limit_attempts (bucket, "key", created_at) values ('login:ip', '203.0.113.8', now() - interval '1 minute')""")
+            dsl.execute("""insert into access_log (event, recorded_at) values ('login.success', now() - interval '14 months')""")
+            dsl.execute("""insert into access_log (event, recorded_at) values ('login.success', now() - interval '1 month')""")
+
+            val previous = DatabaseFactory.dsl
+            DatabaseFactory.initDirect(app)
+            try {
+                val out = mutableListOf<String>()
+                val err = mutableListOf<String>()
+                val code = AdminCli.run(listOf("prune-access-records"), out::add, err::add)
+
+                assertEquals(0, code, "the role needs DELETE on these tables and nothing else: $err")
+                assertTrue(out.single().contains("Pruned 1 sign-in log rows") && out.single().contains("1 rate-limit attempts"), out.toString())
+            } finally {
+                DatabaseFactory.initDirect(previous)
+            }
+            assertEquals(1L, dsl.fetchValue("select count(*) from rate_limit_attempts"))
+            assertEquals(1L, dsl.fetchValue("select count(*) from access_log"), "the guard of the sign-in log still refuses anything younger than 12 months")
         }
     }
 

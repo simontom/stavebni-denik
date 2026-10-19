@@ -13,17 +13,18 @@ import cz.stavebni.denik.jooq.keys.AUDIT_LOG_PKEY
 import cz.stavebni.denik.jooq.tables.records.AuditLogRecord
 
 import java.time.OffsetDateTime
+import java.util.UUID
 
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
 import org.jooq.Identity
 import org.jooq.Index
 import org.jooq.InverseForeignKey
-import org.jooq.JSONB
 import org.jooq.Name
 import org.jooq.PlainSQL
 import org.jooq.QueryPart
@@ -110,26 +111,6 @@ open class AuditLog(
     val ENTITY_ID: TableField<AuditLogRecord, String?> = createField(DSL.name("entity_id"), SQLDataType.CLOB.nullable(false), this, "")
 
     /**
-     * The column <code>public.audit_log.before</code>.
-     */
-    val BEFORE: TableField<AuditLogRecord, JSONB?> = createField(DSL.name("before"), SQLDataType.JSONB, this, "")
-
-    /**
-     * The column <code>public.audit_log.after</code>.
-     */
-    val AFTER: TableField<AuditLogRecord, JSONB?> = createField(DSL.name("after"), SQLDataType.JSONB, this, "")
-
-    /**
-     * The column <code>public.audit_log.ip</code>.
-     */
-    val IP: TableField<AuditLogRecord, String?> = createField(DSL.name("ip"), SQLDataType.CLOB, this, "")
-
-    /**
-     * The column <code>public.audit_log.user_agent</code>.
-     */
-    val USER_AGENT: TableField<AuditLogRecord, String?> = createField(DSL.name("user_agent"), SQLDataType.CLOB, this, "")
-
-    /**
      * The column <code>public.audit_log.prev_hash</code>.
      */
     val PREV_HASH: TableField<AuditLogRecord, String?> = createField(DSL.name("prev_hash"), SQLDataType.CLOB.nullable(false), this, "")
@@ -138,6 +119,26 @@ open class AuditLog(
      * The column <code>public.audit_log.row_hash</code>.
      */
     val ROW_HASH: TableField<AuditLogRecord, String?> = createField(DSL.name("row_hash"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
+     * The column <code>public.audit_log.hash_version</code>.
+     */
+    val HASH_VERSION: TableField<AuditLogRecord, Short?> = createField(DSL.name("hash_version"), SQLDataType.SMALLINT.nullable(false), this, "")
+
+    /**
+     * The column <code>public.audit_log.project_id</code>.
+     */
+    val PROJECT_ID: TableField<AuditLogRecord, UUID?> = createField(DSL.name("project_id"), SQLDataType.UUID, this, "")
+
+    /**
+     * The column <code>public.audit_log.payload_text</code>.
+     */
+    val PAYLOAD_TEXT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_text"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
+     * The column <code>public.audit_log.payload_salt</code>.
+     */
+    val PAYLOAD_SALT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_salt"), SQLDataType.CLOB.nullable(false), this, "")
 
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
@@ -161,6 +162,10 @@ open class AuditLog(
     override fun getIndexes(): List<Index> = listOf(AUDIT_LOG_ACTION_TS_IDX, AUDIT_LOG_ACTOR_ID_TS_IDX, AUDIT_LOG_ENTITY_TYPE_ENTITY_ID_IDX, AUDIT_LOG_ROW_HASH_KEY)
     override fun getIdentity(): Identity<AuditLogRecord, Long?> = super.getIdentity() as Identity<AuditLogRecord, Long?>
     override fun getPrimaryKey(): UniqueKey<AuditLogRecord> = AUDIT_LOG_PKEY
+    override fun getChecks(): List<Check<AuditLogRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("audit_log_hash_version_check"), "((hash_version = 2))", true),
+        Internal.createCheck(this, DSL.name("audit_log_payload_salt_check"), "((payload_salt ~ '^[0-9a-f]{64}\$'::text))", true)
+    )
     override fun `as`(alias: String): AuditLog = AuditLog(DSL.name(alias), this)
     override fun `as`(alias: Name): AuditLog = AuditLog(alias, this)
     override fun `as`(alias: Table<*>): AuditLog = AuditLog(alias.qualifiedName, this)

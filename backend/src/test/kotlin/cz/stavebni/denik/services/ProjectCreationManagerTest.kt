@@ -108,7 +108,7 @@ class ProjectCreationManagerTest : BaseIntegrationTest() {
             .fetchSingle(PROJECT_MEMBERS.ADDEDBYID)
         assertEquals(creator.id, addedBy)
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("project.create")).fetchSingle()
-        assertEquals(manager.id.toString(), Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["siteManagerId"]!!.jsonPrimitive.content)
+        assertEquals(manager.id.toString(), Json.parseToJsonElement(row.auditAfterText()!!).jsonObject["siteManagerId"]!!.jsonPrimitive.content)
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
@@ -117,8 +117,8 @@ class ProjectCreationManagerTest : BaseIntegrationTest() {
     private fun auditRows() = dsl.selectFrom(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch()
 
     private fun memberRowOf(row: org.jooq.Record): Triple<String?, String?, String?> {
-        val before = row.get(AUDIT_LOG.BEFORE)?.data()
-        val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        val before = row.auditBeforeText()
+        val after = Json.parseToJsonElement(row.auditAfterText()!!).jsonObject
         return Triple(before, after["userId"]!!.jsonPrimitive.content, after["role"]!!.jsonPrimitive.content)
     }
 

@@ -1,6 +1,7 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
+import cz.stavebni.denik.domain.AuditWriteException
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import kotlinx.coroutines.Dispatchers
@@ -12,29 +13,24 @@ import kotlinx.serialization.json.JsonElement
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
-import org.jooq.JSONB
 import org.jooq.Record
 import java.util.UUID
 
-/** The write path: `auditedWrite` applies a change and appends its hash-chained row in one transaction. */
+/**
+ * The write path: `auditedWrite` applies a change and appends its hash-chained row (version 2) in one transaction.
+ * Tampering with a row, with the versions mixed, and a project's slice of the chain are in [AuditChainVerificationTest].
+ */
 class AuditServiceTest : BaseIntegrationTest() {
 
-    private val genesis = "0000000000000000000000000000000000000000000000000000000000000000"
+    private val genesis = AuditHash.GENESIS_HASH
 
     private fun snapshot(text: String): JsonElement = Json.parseToJsonElement(text)
 
-    /** Recomputes the canonical hash of a stored row (see AuditHash), snapshots included. */
-    private fun expectedHash(log: Record): String = AuditHash.rowHash(
-        action = log.get(AUDIT_LOG.ACTION)!!,
-        entityType = log.get(AUDIT_LOG.ENTITY_TYPE)!!,
-        entityId = log.get(AUDIT_LOG.ENTITY_ID)!!,
-        actorId = log.get(AUDIT_LOG.ACTOR_ID),
-        before = log.get(AUDIT_LOG.BEFORE)?.data()?.let { Json.parseToJsonElement(it) },
-        after = log.get(AUDIT_LOG.AFTER)?.data()?.let { Json.parseToJsonElement(it) },
-        ip = log.get(AUDIT_LOG.IP),
-        userAgent = log.get(AUDIT_LOG.USER_AGENT),
+    /** Recomputes the hash of a stored version 2 row from nothing but its stored columns, the way a verifier does. */
+    private fun expectedHash(log: Record): String = AuditHash.rowHashV2(
         prevHash = log.get(AUDIT_LOG.PREV_HASH)!!,
-        ts = log.get(AUDIT_LOG.TS)!!,
+        projectId = log.get(AUDIT_LOG.PROJECT_ID),
+        payloadDigest = AuditHash.payloadDigestV2(log.get(AUDIT_LOG.PAYLOAD_SALT)!!, log.get(AUDIT_LOG.PAYLOAD_TEXT)!!),
     )
 
     private fun insertProject(tx: org.jooq.DSLContext, id: UUID, siteManagerId: UUID) {
@@ -52,13 +48,13 @@ class AuditServiceTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `auditedWrite appends a row with the snapshots and establishes the genesis hash`() = runBlocking {
+    fun `auditedWrite appends a version 2 row whose payload is the text that was hashed, and nothing else holds content`() = runBlocking {
         val user = createTestUser()
         val before = snapshot("""{"state":"old","nested":{"b":1,"a":[1,2]}}""")
         val after = snapshot("""{"state":"nový č","nested":{"b":2,"a":[2,1]},"flag":true,"none":null}""")
 
-        val result = AuditService.auditedWrite(user, "project") { _ ->
-            AuditService.Audited(result = "success", action = "project.test", entityId = "123", before = before, after = after)
+        val result = AuditService.auditedWrite(user, "user") { _ ->
+            AuditService.Audited(result = "success", action = "user.test", entityId = "123", before = before, after = after)
         }
 
         assertEquals("success", result)
@@ -66,15 +62,113 @@ class AuditServiceTest : BaseIntegrationTest() {
         assertEquals(1, logs.size)
         val log = logs.first()
 
+        assertEquals(2, log.get(AUDIT_LOG.HASH_VERSION)!!.toInt(), "every new row is written in version 2")
         assertEquals(user.id.toString(), log.get(AUDIT_LOG.ACTOR_ID))
-        assertEquals("project.test", log.get(AUDIT_LOG.ACTION))
-        assertEquals("project", log.get(AUDIT_LOG.ENTITY_TYPE))
+        assertEquals("user.test", log.get(AUDIT_LOG.ACTION))
+        assertEquals("user", log.get(AUDIT_LOG.ENTITY_TYPE))
         assertEquals("123", log.get(AUDIT_LOG.ENTITY_ID))
         assertEquals(genesis, log.get(AUDIT_LOG.PREV_HASH))
-        assertEquals(before, snapshot(log.get(AUDIT_LOG.BEFORE)!!.data()))
-        assertEquals(after, snapshot(log.get(AUDIT_LOG.AFTER)!!.data()))
+        assertNull(log.get(AUDIT_LOG.PROJECT_ID), "a user belongs to no project")
+        assertTrue(Regex("[0-9a-f]{64}").matches(log.get(AUDIT_LOG.PAYLOAD_SALT)!!), "a salt of 32 bytes, as hex")
+
+        // The payload says everything the row says: the snapshots (as written, not as jsonb would return them) and the envelope.
+        val payload = log.auditPayload()
+        assertEquals(setOf("action", "actorId", "after", "before", "entityId", "entityType", "ts"), payload.keys)
+        assertEquals(before, payload["before"])
+        assertEquals(after, payload["after"])
+        assertEquals(
+            AuditHash.payloadV2("user.test", user.id.toString(), "user", "123", before, after, log.get(AUDIT_LOG.TS)!!),
+            log.get(AUDIT_LOG.PAYLOAD_TEXT),
+            "the stored text is exactly what the writer composes from the row's own columns",
+        )
+
         assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
-        assertTrue(AuditService.verifyChain(dsl).ok, "the hash covers the snapshots as the database returns them from jsonb")
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `a row of a project carries the project inside its hash`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        appendTestAuditRow(user, "report.test", "r1", entityType = "report", after = snapshot("""{"id":"r1","projectId":"$projectId"}"""))
+        appendTestAuditRow(user, "project.test", projectId.toString(), entityType = "project", after = snapshot("""{"id":"$projectId"}"""))
+        appendTestAuditRow(user, "user.test", "u1", entityType = "user", after = snapshot("""{"role":"BOSS"}"""))
+
+        val rows = dsl.selectFrom(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch()
+        assertEquals(listOf(projectId, projectId, null), rows.map { it.get(AUDIT_LOG.PROJECT_ID) })
+        // The project is in the hash: the same row with another project id (or none) hashes to something else.
+        val report = rows[0]
+        val digest = AuditHash.payloadDigestV2(report.get(AUDIT_LOG.PAYLOAD_SALT)!!, report.get(AUDIT_LOG.PAYLOAD_TEXT)!!)
+        assertEquals(report.get(AUDIT_LOG.ROW_HASH), AuditHash.rowHashV2(report.get(AUDIT_LOG.PREV_HASH)!!, projectId, digest))
+        assertNotEquals(report.get(AUDIT_LOG.ROW_HASH), AuditHash.rowHashV2(report.get(AUDIT_LOG.PREV_HASH)!!, UUID.randomUUID(), digest))
+        assertNotEquals(report.get(AUDIT_LOG.ROW_HASH), AuditHash.rowHashV2(report.get(AUDIT_LOG.PREV_HASH)!!, null, digest))
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `a row that cannot be given a project is refused, and the change is not made`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        val noProjectInSnapshot = snapshot("""{"id":"r1"}""")
+
+        assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "report.test", "r1", entityType = "report", after = noProjectInSnapshot) { tx -> insertProject(tx, projectId, user.id) }
+        }
+        assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "invoice.test", "i1", entityType = "invoice", after = snapshot("""{"projectId":"$projectId"}"""))
+        }
+
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "a change whose row cannot be written is rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
+    fun `a row whose action is not of its entity type is refused, and the change is not made`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        // The probe: an entry's action on a row said to be a user's (which belongs to no project, in every export).
+        val error = assertThrows<AuditWriteException> {
+            AuditService.auditedWrite(user, "user") { tx ->
+                insertProject(tx, projectId, user.id)
+                AuditService.Audited(Unit, "report.update", "r1", after = snapshot("""{"projectId":"$projectId"}"""))
+            }
+        }
+        assertFalse(error.message!!.contains(projectId.toString()), error.message)
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
+    fun `a snapshot nested too deeply is refused as an audit failure and the change is not made`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        var deep: JsonElement = kotlinx.serialization.json.JsonArray(emptyList())
+        repeat(AuditHash.MAX_JSON_DEPTH) { deep = kotlinx.serialization.json.JsonArray(listOf(deep)) }
+
+        assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "user.update", "1", after = deep) { tx -> insertProject(tx, projectId, user.id) }
+        }
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
+    fun `a snapshot that is not JSON is refused as an audit failure, with a message that holds none of it`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        val secret = "Tajný zápis"
+        val notJson = kotlinx.serialization.json.buildJsonObject {
+            put("projectId", kotlinx.serialization.json.JsonPrimitive(projectId.toString()))
+            put("n", kotlinx.serialization.json.JsonUnquotedLiteral("1, \"$secret\""))
+        }
+
+        val error = assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "report.test", "r1", entityType = "report", after = notJson) { tx -> insertProject(tx, projectId, user.id) }
+        }
+
+        assertFalse(error.message!!.contains(secret), "the message goes to the log: ${error.message}")
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
     }
 
     @Test
@@ -89,19 +183,64 @@ class AuditServiceTest : BaseIntegrationTest() {
 
         val log = dsl.selectFrom(AUDIT_LOG).fetchOne()!!
         assertEquals(projectId.toString(), log.get(AUDIT_LOG.ENTITY_ID))
+        assertEquals(projectId, log.get(AUDIT_LOG.PROJECT_ID))
         assertEquals(1, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)))
-        assertNull(log.get(AUDIT_LOG.BEFORE), "no before for a creation")
+        assertNull(log.auditBeforeText(), "no before for a creation")
     }
 
     @Test
     fun `a row without snapshots is still hashed and chained`() = runBlocking {
-        AuditService.auditedWrite(null, "test") { _ -> AuditService.Audited(Unit, "cli.test", "1") }
+        AuditService.auditedWrite(null, "user") { _ -> AuditService.Audited(Unit, "user.cli_test", "1") }
 
         val log = dsl.selectFrom(AUDIT_LOG).fetchOne()!!
         assertNull(log.get(AUDIT_LOG.ACTOR_ID), "a command-line action has no acting user")
-        assertNull(log.get(AUDIT_LOG.BEFORE))
-        assertNull(log.get(AUDIT_LOG.AFTER))
+        assertNull(log.auditBeforeText())
+        assertNull(log.auditAfterText())
+        assertEquals("null", log.auditPayload().getValue("actorId").toString())
         assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
+    }
+
+    @Test
+    fun `no two rows share a salt, not even rows that say the same`() = runBlocking {
+        val user = createTestUser()
+        repeat(5) { appendTestAuditRow(user, action = "same", entityId = "1", after = snapshot("""{"n":1}""")) }
+
+        val rows = dsl.selectFrom(AUDIT_LOG).fetch()
+        assertEquals(5, rows.map { it.get(AUDIT_LOG.PAYLOAD_SALT) }.toSet().size)
+        val digests = rows.map { AuditHash.payloadDigestV2(it.get(AUDIT_LOG.PAYLOAD_SALT)!!, it.get(AUDIT_LOG.PAYLOAD_TEXT)!!) }
+        assertEquals(5, digests.toSet().size, "so a stub of one row says nothing about whether another row said the same")
+    }
+
+    @Test
+    fun `what is stored is what was hashed, numbers included (a jsonb round trip would have changed them)`() = runBlocking {
+        val user = createTestUser()
+        // The premise of backlog M10: jsonb does not give back what it was given.
+        assertEquals("""{"tiny": 0.0000001}""", dsl.fetchValue("""select '{"tiny":1e-7}'::jsonb::text"""))
+
+        appendTestAuditRow(user, "n", "1", after = snapshot("""{"quantity":12.0,"tiny":1e-7,"big":123456789012345678901234567890}"""))
+
+        val log = dsl.selectFrom(AUDIT_LOG).fetchOne()!!
+        val text = log.get(AUDIT_LOG.PAYLOAD_TEXT)!!
+        assertTrue(text.contains(""""big":123456789012345678901234567890,"quantity":12.0,"tiny":1e-7"""), text)
+        assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `text that databases and encodings treat specially survives the round trip and verifies`() = runBlocking {
+        val user = createTestUser()
+        // A combining accent, an emoji, U+2028, a no-break space, a NUL, a backslash, a quote, a lone surrogate.
+        val tricky = "Á 😀     a\u0000b \\ \" \uD800 ž"
+        appendTestAuditRow(user, "t", "1", after = Json.parseToJsonElement(Json.encodeToString(JsonElement.serializer(), kotlinx.serialization.json.buildJsonObject {
+            put("text", kotlinx.serialization.json.JsonPrimitive(tricky))
+            put("č", kotlinx.serialization.json.JsonPrimitive("ž"))
+        })))
+
+        val log = dsl.selectFrom(AUDIT_LOG).fetchOne()!!
+        val stored = log.get(AUDIT_LOG.PAYLOAD_TEXT)!!
+        assertEquals(stored, String(stored.toByteArray(Charsets.UTF_8), Charsets.UTF_8), "nothing in the stored text is lost by encoding it")
+        assertEquals(expectedHash(log), log.get(AUDIT_LOG.ROW_HASH))
+        assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
     @Test
@@ -173,8 +312,7 @@ class AuditServiceTest : BaseIntegrationTest() {
                     appendTestAuditRow(
                         user,
                         action = "concurrent.action",
-                        entityId = "step_$step",
-                        entityType = "worker_$workerIdx",
+                        entityId = "worker_${workerIdx}_step_$step",
                         after = snapshot("""{"worker":$workerIdx,"step":$step}"""),
                     )
                 }
@@ -195,49 +333,6 @@ class AuditServiceTest : BaseIntegrationTest() {
 
             expectedPrevHash = log.get(AUDIT_LOG.ROW_HASH)!!
         }
-    }
-
-    /** What an attacker with DDL rights can do: the append-only trigger blocks UPDATEs, so switch it off for a moment. */
-    private fun tamper(update: () -> Unit) {
-        dsl.execute("ALTER TABLE \"audit_log\" DISABLE TRIGGER audit_log_no_update")
-        try {
-            update()
-        } finally {
-            dsl.execute("ALTER TABLE \"audit_log\" ENABLE TRIGGER audit_log_no_update")
-        }
-    }
-
-    @Test
-    fun `verifyChain detects a tampered row`() = runBlocking {
-        val user = createTestUser()
-        appendTestAuditRow(user, action = "a1", entityId = "1")
-        appendTestAuditRow(user, action = "a2", entityId = "2")
-        appendTestAuditRow(user, action = "a3", entityId = "3")
-
-        val intact = AuditService.verifyChain(dsl)
-        assertTrue(intact.ok)
-        assertEquals(3L, intact.totalRows)
-
-        val secondId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).offset(1).limit(1).fetchOne()!!.value1()!!
-        tamper { dsl.update(AUDIT_LOG).set(AUDIT_LOG.ENTITY_ID, "tampered").where(AUDIT_LOG.ID.eq(secondId)).execute() }
-
-        val broken = AuditService.verifyChain(dsl)
-        assertFalse(broken.ok)
-        assertEquals(secondId, broken.brokenAtId)
-    }
-
-    @Test
-    fun `verifyChain detects a changed snapshot`() = runBlocking {
-        val user = createTestUser()
-        appendTestAuditRow(user, action = "user.update", entityId = "1", entityType = "user", before = snapshot("""{"role":"WORKER"}"""), after = snapshot("""{"role":"BOSS"}"""))
-        appendTestAuditRow(user, action = "a2", entityId = "2")
         assertTrue(AuditService.verifyChain(dsl).ok)
-
-        val firstId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).limit(1).fetchOne()!!.value1()!!
-        tamper { dsl.update(AUDIT_LOG).set(AUDIT_LOG.AFTER, JSONB.jsonb("""{"role":"WORKER"}""")).where(AUDIT_LOG.ID.eq(firstId)).execute() }
-
-        val broken = AuditService.verifyChain(dsl)
-        assertFalse(broken.ok, "what a row says a user became is covered by its hash")
-        assertEquals(firstId, broken.brokenAtId)
     }
 }
