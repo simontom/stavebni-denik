@@ -24,6 +24,7 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -141,6 +142,15 @@ class PhotoUploadGateRoutesTest : BaseIntegrationTest() {
             }
         }
 
+    /** One ordinary upload, so that the application and the connection pool are warm before a test arms a short deadline. */
+    private suspend fun ApplicationTestBuilder.warmUp(s: Site) {
+        assertEquals(HttpStatusCode.OK, upload(s.boss, s.reportId).status)
+    }
+
+    /** Completes when [flow] has had [value], whatever happens to it afterwards. Call it BEFORE the request that changes it. */
+    private fun seen(flow: kotlinx.coroutines.flow.StateFlow<Int>, value: Int) =
+        CoroutineScope(Dispatchers.Default).async { flow.first { it == value } }
+
     private suspend fun awaitUploads(gate: UploadGate, expected: Int) {
         withTimeout(20_000) { gate.uploads.first { it == expected } }
     }
@@ -229,12 +239,14 @@ class PhotoUploadGateRoutesTest : BaseIntegrationTest() {
         application { module() }
         val s = site()
         val gate = UploadGate(maxBodies = 1, maxPerUser = 1).also { UploadLimits.gate = it }
-        UploadLimits.preFileTimeout = Duration.ofMillis(500) // a controllable deadline: the real one is 30 s
+        warmUp(s) // the first request of a process is slow; the deadline below must not run out before the handler has started
+        UploadLimits.preFileTimeout = Duration.ofSeconds(2) // a controllable deadline: the real one is 30 s
         val release = CompletableDeferred<Unit>() // never completed while the server waits
         val status = CompletableDeferred<HttpStatusCode>()
+        val inProgress = seen(gate.uploads, 1) // subscribed before the request exists, so that the state cannot be missed
 
         val job = launchUpload(s.boss, stalledUpload(s.reportId, fileBytes = null, release), status)
-        awaitUploads(gate, 1)
+        withTimeout(20_000) { inProgress.await() }
         awaitUploads(gate, 0) // the short deadline is what ends it
         release.complete(Unit)
         job.join()
@@ -310,12 +322,14 @@ class PhotoUploadGateRoutesTest : BaseIntegrationTest() {
         application { module() }
         val s = site()
         val gate = UploadGate(maxBodies = 1, maxPerUser = 1).also { UploadLimits.gate = it }
-        UploadLimits.bodyTimeout = Duration.ofMillis(1500)
+        warmUp(s)
+        UploadLimits.bodyTimeout = Duration.ofSeconds(3)
         val release = CompletableDeferred<Unit>() // never completed while the server waits
         val status = CompletableDeferred<HttpStatusCode>()
+        val held = seen(gate.bodies, 1)
 
         val job = launchUpload(s.boss, stalledUpload(s.reportId, fileBytes = 200, release), status)
-        awaitBodies(gate, 1)
+        withTimeout(20_000) { held.await() }
         awaitBodies(gate, 0) // the time limit is what ends it
         awaitUploads(gate, 0)
         release.complete(Unit)
