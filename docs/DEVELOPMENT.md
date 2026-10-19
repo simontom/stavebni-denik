@@ -28,6 +28,7 @@ Konfigurace backendu jde přes proměnné prostředí (tabulka v `PROJECT.md`, k
 ./gradlew :backend:shadowJar
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt create-admin <přezdívka> "<jméno>"
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt reset-password <přezdívka>
+java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt set-ckait <přezdívka> <číslo ČKAIT>
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-head
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
 java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
@@ -36,7 +37,7 @@ java -cp backend/build/libs/backend-all.jar cz.stavebni.denik.cli.AdminCliKt pru
 
 Příkaz `migrate` (s údaji vlastníka databáze) migruje schéma a nastaví roli aplikace; lokálně ho nepotřebujete, backend migruje při startu. V produkci je to naopak: aplikace schéma nemigruje a běží pod rolí, která nic nevlastní (viz `PROJECT.md`, „Database roles“).
 
-Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `audit-head`, `audit-verify` a `verify-signatures` jen čtou (nemigrují schéma; `verify-signatures` čte i soubory fotek v `UPLOADS_DIR`). `prune-access-records` maže záznamy v `access_log` a `audit_request_context` starší než 12 měsíců. S `APP_ENV=production` nemigruje schéma žádný příkaz kromě `migrate` a každý odmítne běžet nad schématem, které není aktuální. Návratové kódy jsou v `PROJECT.md`, kapitola „First administrator and operator CLI“.
+Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí změnit. `set-ckait` nastaví nebo nahradí číslo ČKAIT účtu (administrátor si své číslo v aplikaci měnit nemůže, jediný administrátor, který má i podepisovat, si ho tedy nastaví jen tímto příkazem); neukončí relace a zapíše se do audit logu. `audit-head`, `audit-verify` a `verify-signatures` jen čtou (nemigrují schéma; `verify-signatures` čte i soubory fotek v `UPLOADS_DIR`). `prune-access-records` maže záznamy v `access_log` a `audit_request_context` starší než 12 měsíců. S `APP_ENV=production` nemigruje schéma žádný příkaz kromě `migrate` a každý odmítne běžet nad schématem, které není aktuální. Návratové kódy jsou v `PROJECT.md`, kapitola „First administrator and operator CLI“.
 
 ## Testy
 

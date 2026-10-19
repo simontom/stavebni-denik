@@ -70,6 +70,11 @@ object AuditService {
         val entityId: String,
         val before: JsonElement? = null,
         val after: JsonElement? = null,
+        /**
+         * Further rows of the same change, appended right after this one in the same transaction, with the same actor, entity
+         * type and request: for a change that is several facts, such as a project created together with its first members.
+         */
+        val alsoRecorded: List<Audited<Unit>> = emptyList(),
     )
 
     /**
@@ -101,6 +106,9 @@ object AuditService {
                 tx.execute(AUDIT_LOCK_SQL)
                 val outcome = block(tx)
                 appendRow(tx, actor, outcome.action, entityType, outcome.entityId, outcome.before, outcome.after, request)
+                for (also in outcome.alsoRecorded) {
+                    appendRow(tx, actor, also.action, entityType, also.entityId, also.before, also.after, request)
+                }
                 outcome.result
             }
         }

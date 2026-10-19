@@ -325,11 +325,11 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         assertEquals(result.totalRows, actions.size.toLong())
         assertEquals(
             listOf(
-                "user.create", "project.create", "report.create", "user.update", "report.lock",
+                "user.create", "project.create", "project.member.add", "report.create", "user.update", "report.lock",
                 "user.deactivate", "user.activate", "user.password_reset", "user.password_change", "user.delete",
             ),
             actions,
-            "one row for each operation, in the order they were made",
+            "one row for each operation, in the order they were made (a project also records its first manager)",
         )
     }
 

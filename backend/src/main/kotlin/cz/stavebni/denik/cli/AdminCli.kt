@@ -18,10 +18,15 @@ import kotlin.system.exitProcess
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt migrate
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin <nickname> <displayName>
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt reset-password <nickname>
+ *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt set-ckait <nickname> <number>
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-head
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt audit-verify [<id>:<hash>]
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt verify-signatures
  *     java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt prune-access-records
+ *
+ * `set-ckait` sets or replaces the ČKAIT number of an account (not deleted). It exists because an administrator cannot change
+ * their own number in the application: on a fresh installation whose only administrator also has to sign, nobody else could.
+ * It ends no session and needs no password; the audit log records it (`user.update`, no acting user, the number before and after).
  *
  * `prune-access-records` deletes the addresses and user agents kept with audit rows and the sign-in log once they are older
  * than twelve months (decision D7; the database refuses to delete anything younger). Run it regularly: the retention is a
@@ -93,6 +98,7 @@ object AdminCli {
   migrate                                 migrate the schema as the owner role (DB_MIGRATE_USER / DB_MIGRATE_PASSWORD) and grant DB_APP_ROLE
   create-admin <nickname> <displayName>   create the first administrator (only while there is none)
   reset-password <nickname>               give an active user a new temporary password
+  set-ckait <nickname> <number>           set or replace the ČKAIT number of an account (an administrator cannot do it for themselves)
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
   audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
   verify-signatures                       hash every signed entry and photo file again and compare with what was recorded
@@ -104,6 +110,7 @@ object AdminCli {
             "migrate" -> args.size == 1
             "create-admin" -> args.size == 3
             "reset-password" -> args.size == 2
+            "set-ckait" -> args.size == 3
             "audit-head" -> args.size == 1
             "verify-signatures" -> args.size == 1
             "prune-access-records" -> args.size == 1
@@ -149,6 +156,16 @@ object AdminCli {
                 attempt(err) { AdminBootstrapService.resetPassword(args[1]) }
                     ?.also { show(it, "Password reset. All sessions of the user ended.", out) }
                     ?.let { 0 } ?: 1
+            }
+            "set-ckait" -> {
+                if (args.size != 3) return usage()
+                val nickname = args[1].trim()
+                val number = args[2].trim()
+                when (attempt(err) { AdminBootstrapService.setCkaitNumber(nickname, number) }) {
+                    true -> { out("ČKAIT number of '$nickname' set to '$number'."); 0 }
+                    false -> { out("ČKAIT number of '$nickname' is already '$number': unchanged."); 0 }
+                    null -> 1
+                }
             }
             "audit-head" -> {
                 if (args.size != 1) return usage()
@@ -217,7 +234,7 @@ object AdminCli {
         return 0
     }
 
-    private fun attempt(err: (String) -> Unit, block: suspend () -> AdminBootstrapService.Result): AdminBootstrapService.Result? =
+    private fun <T : Any> attempt(err: (String) -> Unit, block: suspend () -> T): T? =
         try {
             runBlocking { block() }
         } catch (e: IllegalArgumentException) {
