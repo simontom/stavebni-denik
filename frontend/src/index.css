@@ -96,6 +96,12 @@
     outline-offset: 2px;
   }
 
+  /* While a modal dialog is open the page behind does not scroll (components/ui/scrollLock.ts); the gutter stays, so nothing shifts. */
+  html.modal-open {
+    overflow: hidden;
+    scrollbar-gutter: stable;
+  }
+
   /* Dates and numbers keep their width, so columns of them line up and a counter does not jitter. */
   input[type="number"],
   input[type="date"],

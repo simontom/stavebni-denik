@@ -28,9 +28,14 @@ export function ConfirmDialog({
 }) {
   const cancelButton = useRef<HTMLButtonElement>(null);
   return (
-    <Modal title={title} onCancel={onCancel} initialFocus={cancelButton} footer={<Answers {...{ confirmLabel, cancelLabel, onConfirm, onCancel, cancelButton }} />}>
-      {children}
-    </Modal>
+    // The question is short: it is the dialog's description. Escape answers "no" (onCancel) and is never refused.
+    <Modal
+      title={title}
+      description={children}
+      onCancel={onCancel}
+      initialFocus={cancelButton}
+      footer={<Answers {...{ confirmLabel, cancelLabel, onConfirm, onCancel, cancelButton }} />}
+    />
   );
 }
 
