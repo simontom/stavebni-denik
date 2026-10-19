@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -105,6 +106,67 @@ class ImageDecodeLimitsTest {
     fun `a sequential file with one scan per component has three scans and is decoded`() {
         // Far below the cap: for such a file it is the limit on pixels that matters (tested above).
         assertEquals(200, PhotoService.decodeWithinLimits(JpegSamples.nonInterleaved(200, 150)).width)
+    }
+
+    // --- two lines of defence: the header walk, and a bound inside the decoder ----------------------
+
+    @AfterEach
+    fun restoreTheRealLimits() {
+        PhotoService.jpegWalker = JpegHeader::frameOf
+        PhotoService.maxDecodePasses = PhotoService.MAX_DECODE_PASSES
+        PhotoService.decodeDeadline = PhotoService.DECODE_DEADLINE
+    }
+
+    /** A progressive file that libjpeg decodes in thousands of passes, which a walk by declared length counts as 10 scans. */
+    private fun hostile(): ByteArray = JpegSamples.withHiddenScans(JpegSamples.smooth(200, 200, progressive = true), 6_553)
+
+    /** What a walk would say if it were fooled the way the file fools a walk by length: the file is a plain progressive one. */
+    private val fooledWalk: (ByteArray) -> JpegHeader.Frame? = { JpegHeader.Frame(200, 200, 3, 2, 3, scans = 10) }
+
+    @Test
+    fun `a file that hides thousands of scans behind a reserved marker is refused by the header walk, at once`() {
+        val started = System.nanoTime()
+        val message = refusal(hostile())
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(message.contains("Invalid or corrupted"), message)
+        assertTrue(millis < 1_000, "refused in $millis ms (decoding it takes tens of seconds at a megapixel)")
+    }
+
+    @Test
+    fun `a file that gets past the header walk is stopped inside the decoder by the pass bound`() {
+        PhotoService.jpegWalker = fooledWalk
+
+        val started = System.nanoTime()
+        val message = refusal(hostile())
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(message.contains("more than ${PhotoService.MAX_DECODE_PASSES} passes"), message)
+        assertTrue(millis < 5_000, "stopped after $millis ms; without the bound it makes 6,563 passes")
+    }
+
+    @Test
+    fun `a file that gets past the header walk is stopped inside the decoder by the deadline`() {
+        PhotoService.jpegWalker = fooledWalk
+        PhotoService.maxDecodePasses = Int.MAX_VALUE // only the clock is left
+        PhotoService.decodeDeadline = java.time.Duration.ofMillis(300)
+
+        val started = System.nanoTime()
+        val message = refusal(hostile())
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(message.contains("longer than"), message)
+        assertTrue(millis < 2_500, "stopped after $millis ms; without the bound the decode takes several seconds more")
+    }
+
+    @Test
+    fun `the bounds are far above what an honest file needs`() {
+        // 10 scans, as a phone or an editor writes a progressive photo; the worst accepted file (32 scans, 16 MP) is in
+        // ProgressiveJpegMemoryTest.
+        val image = PhotoService.decodeWithinLimits(JpegSamples.smooth(2000, 1500, progressive = true))
+
+        assertEquals(2000, image.width)
+        assertTrue(PhotoService.MAX_DECODE_PASSES > PhotoService.MAX_JPEG_SCANS, "an accepted file never reaches the pass bound")
     }
 
     @Test

@@ -154,6 +154,51 @@ internal object JpegSamples {
         return out.toByteArray()
     }
 
+    /**
+     * [jpeg] (a progressive file made by [smooth]) turned into a file in which a walk that skips an unknown marker "by its
+     * declared length" misses [hiddenScans] scans, and libjpeg does not.
+     *
+     * A restart interval is set; the last scan has its data cut off; and after its header comes a **reserved marker**
+     * (`FF 02`, in 0x02..0xBF) that declares a length of 65,535 bytes, whose "payload" is nothing but bare scan headers. A
+     * walk that trusts the length skips all of it and sees the closing EOI. libjpeg, running out of data in that scan, comes
+     * to a restart boundary with the reserved marker pending, takes it for garbage, and scans forward to the next marker:
+     * the first scan header in the payload, and then the next, and the next. At most 6,553 headers fit.
+     */
+    fun withHiddenScans(jpeg: ByteArray, hiddenScans: Int): ByteArray {
+        require(hiddenScans in 1..6_553) { "a reserved marker holds at most 6,553 scan headers" }
+        // The last FF DA of a valid file is its last scan header: inside entropy data FF is always followed by 00 or a marker.
+        var sos = -1
+        for (i in jpeg.size - 2 downTo 2) if (jpeg[i] == 0xFF.toByte() && jpeg[i + 1] == 0xDA.toByte()) { sos = i; break }
+        require(sos > 0) { "no scan header" }
+        val headerEnd = sos + 2 + (((jpeg[sos + 2].toInt() and 0xFF) shl 8) or (jpeg[sos + 3].toInt() and 0xFF))
+
+        val dri = byteArrayOf(0xFF.toByte(), 0xDD.toByte(), 0, 4, 0, 4) // restart interval: 4 MCUs
+        val bareScan = byteArrayOf(0xFF.toByte(), 0xDA.toByte(), 0, 8, 1, 1, 0x00, 1, 63, 0x00) // component 1, AC 1..63, no refinement
+        val payload = ByteArrayOutputStream()
+        repeat(hiddenScans) { payload.write(bareScan) }
+        while (payload.size() < 65_533) payload.write(0) // the declared length counts its own two bytes: 65,535 - 2
+
+        val out = ByteArrayOutputStream()
+        out.write(jpeg, 0, 2)
+        out.write(dri)
+        out.write(jpeg, 2, headerEnd - 2)
+        out.write(byteArrayOf(0xFF.toByte(), 0x02, 0xFF.toByte(), 0xFF.toByte()))
+        out.write(payload.toByteArray())
+        out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+        return out.toByteArray()
+    }
+
+    /** [jpeg] with a segment of [marker] (FF marker, 2-byte length, [payload]) put right before the closing EOI. */
+    fun withSegmentBeforeEnd(jpeg: ByteArray, marker: Int, payload: ByteArray): ByteArray {
+        val length = payload.size + 2
+        val out = ByteArrayOutputStream()
+        out.write(jpeg, 0, jpeg.size - 2)
+        out.write(byteArrayOf(0xFF.toByte(), marker.toByte(), (length shr 8).toByte(), length.toByte()))
+        out.write(payload)
+        out.write(byteArrayOf(0xFF.toByte(), 0xD9.toByte()))
+        return out.toByteArray()
+    }
+
     /** [jpeg] with one more scan of component 1 whose data is exactly [data] (binary, for the header walk only; not decodable). */
     fun withRawScan(jpeg: ByteArray, data: ByteArray): ByteArray {
         val out = ByteArrayOutputStream()

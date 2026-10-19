@@ -151,6 +151,47 @@ class JpegHeaderTest {
         assertTrue(frame(cut).scans >= 1)
     }
 
+    // --- a walk must agree with the decoder, or refuse ----------------------------------------------
+
+    @Test
+    fun `a reserved marker with a long declared length cannot hide scans from the walk`() {
+        // libjpeg takes a reserved marker found in entropy data at a restart boundary for garbage and resyncs to the next
+        // marker, so the "payload" of such a segment is decoded; a walk that skipped it by its length saw none of it.
+        val hostile = JpegSamples.withHiddenScans(JpegSamples.smooth(200, 200, progressive = true), 6_553)
+
+        assertNull(JpegHeader.frameOf(hostile), "a marker the walk does not understand ends the walk with a refusal, not a guess")
+    }
+
+    @Test
+    fun `every marker that is not a segment the decoder reads the same way refuses the file`() {
+        val base = JpegSamples.smooth(200, 200, progressive = true)
+        val ordinary = frame(base).scans
+        // The markers the decoder knows as length-prefixed segments are skipped by their length, and the walk is as good as
+        // before; every other one (reserved 02..BF, JPG0, DNL, JPG1..13) is where the two could part ways.
+        for (marker in listOf(0x02, 0x50, 0xBF, 0xC8, 0xDC, 0xF0, 0xF7, 0xFD)) {
+            val file = JpegSamples.withSegmentBeforeEnd(base, marker, ByteArray(4))
+            assertNull(JpegHeader.frameOf(file), "marker 0x${marker.toString(16)} after the first scan")
+        }
+        for (marker in listOf(0xE0, 0xE1, 0xEF, 0xFE, 0xDB, 0xDD, 0xC4)) {
+            // A comment, an APP segment, a table or a restart interval after the first scan is ordinary.
+            val payload = when (marker) { 0xDD -> byteArrayOf(0, 8); else -> ByteArray(4) }
+            val file = JpegSamples.withSegmentBeforeEnd(base, marker, payload)
+            assertEquals(ordinary, frame(file).scans, "marker 0x${marker.toString(16)} is a segment and is skipped by its length")
+        }
+    }
+
+    @Test
+    fun `a baseline photo is judged by its first scan, whatever follows it`() {
+        // libjpeg reads no further markers of a single-scan file (a second scan header is an error there), so what a camera
+        // or an editor appends after the scan, before EOI, is no concern of the walk.
+        val photo = JpegSamples.withSegmentBeforeEnd(JpegSamples.smooth(300, 200), 0x02, ByteArray(100))
+
+        val f = frame(photo)
+
+        assertEquals(1, f.scans)
+        assertFalse(f.isMultiScan)
+    }
+
     // --- components -----------------------------------------------------------------------------
 
     @Test

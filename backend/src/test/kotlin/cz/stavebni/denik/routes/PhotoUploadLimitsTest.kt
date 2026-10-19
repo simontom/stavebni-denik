@@ -225,6 +225,32 @@ class PhotoUploadLimitsTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `a progressive file that hides thousands of scans behind a reserved marker is refused with 400 and leaves nothing behind`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS)
+        val token = generateJwtToken(boss)
+        val reportId = createReport(boss)
+        val filesBefore = photoFiles()
+        // 80 KB; libjpeg decodes it in 6,563 passes (66 s at a megapixel) although a walk by declared length sees ten scans.
+        val hostile = JpegSamples.withHiddenScans(JpegSamples.smooth(200, 200, progressive = true), 6_553)
+
+        val started = System.nanoTime()
+        val response = client.submitFormWithBinaryData(
+            url = "/api/photos/upload",
+            formData = formData {
+                append("reportId", reportId)
+                photoPart(this, "photo", hostile)
+            }
+        ) { header(HttpHeaders.Authorization, "Bearer $token") }
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertEquals(HttpStatusCode.BadRequest, response.status, response.bodyAsText())
+        assertTrue(millis < 3_000, "refused in $millis ms")
+        assertEquals(0, dsl.selectCount().from(PHOTOS).fetchOne(0, Int::class.java))
+        assertEquals(filesBefore, photoFiles(), "a rejected image must leave nothing on disk")
+    }
+
+    @Test
     fun `an extremely long thin image is rejected even though its pixel count is small`() = testApplication {
         application { module() }
         val boss = createTestUser(role = Role.BOSS)

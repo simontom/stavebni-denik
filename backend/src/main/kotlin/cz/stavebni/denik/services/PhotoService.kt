@@ -25,11 +25,14 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.sqrt
 import javax.imageio.ImageIO
+import javax.imageio.ImageReader
+import javax.imageio.event.IIOReadUpdateListener
 
 @Serializable
 data class PhotoDto(
@@ -78,6 +81,24 @@ object PhotoService {
 
     /** Components a multi-scan JPEG may have: colour is 3 (6 bytes per pixel kept), a fourth would make it 8. */
     const val MAX_MULTI_SCAN_COMPONENTS = 3
+
+    /**
+     * Passes (one per scan of a progressive file, 7 for an interlaced PNG) a decode may make. The header walk caps a JPEG at
+     * [MAX_JPEG_SCANS]; this is the same limit enforced **inside the decoder**, for the day the walk and the decoder part ways.
+     */
+    const val MAX_DECODE_PASSES = 40
+
+    /**
+     * How long a decode may take. The worst file the airlock accepts (16 megapixels, 32 scans) takes about 5 s on the
+     * development machine; the machine that runs the service is slower, so there is room. Not a way to be slow on purpose:
+     * it is the bound for a file that gets past everything above.
+     */
+    val DECODE_DEADLINE: Duration = Duration.ofSeconds(20)
+
+    /** The three below are variables only so that tests can weaken or tighten them; the real values are the constants above. */
+    @Volatile internal var jpegWalker: (ByteArray) -> JpegHeader.Frame? = JpegHeader::frameOf
+    @Volatile internal var maxDecodePasses: Int = MAX_DECODE_PASSES
+    @Volatile internal var decodeDeadline: Duration = DECODE_DEADLINE
     private const val MAX_SIDE_PIXELS = 16_000 // longest side; a 1 x 16,000 image is fine, a 1 x 60,000,000 one is not
     /** Most pixels held in memory for one image. The JPEG reader skips pixels while decoding to stay below it. */
     private const val MAX_DECODED_PIXELS = 4_000_000L
@@ -88,6 +109,36 @@ object PhotoService {
 
     private class Encoded(val bytes: ByteArray, val width: Int, val height: Int)
 
+    /** A decode went on for longer than allowed (see [DecodeBound]). A client error: a photo that cannot be decoded in time. */
+    private class DecodeBoundException(message: String) : RuntimeException(message)
+
+    /**
+     * Throws [DecodeBoundException] when a decode makes more than [maxPasses] passes or has run for more than [deadline].
+     * The JDK's reader calls it at the start of every pass (a scan of a progressive file) and after every scanline it
+     * delivers, so the check is at most one scanline late, however slow the native decoder is in between.
+     */
+    private class DecodeBound(private val maxPasses: Int, private val deadline: Duration) : IIOReadUpdateListener {
+        private val started = System.nanoTime()
+        private var passes = 0
+
+        private fun checkTime() {
+            if (System.nanoTime() - started > deadline.toNanos()) {
+                throw DecodeBoundException("Image takes longer than ${deadline.toMillis() / 1000.0} s to decode")
+            }
+        }
+
+        override fun passStarted(source: ImageReader, theImage: BufferedImage?, pass: Int, minPass: Int, maxPass: Int, minX: Int, minY: Int, periodX: Int, periodY: Int, bands: IntArray?) {
+            if (++passes > maxPasses) throw DecodeBoundException("Image needs more than $maxPasses passes to decode")
+            checkTime()
+        }
+
+        override fun imageUpdate(source: ImageReader, theImage: BufferedImage?, minX: Int, minY: Int, width: Int, height: Int, periodX: Int, periodY: Int, bands: IntArray?) = checkTime()
+        override fun passComplete(source: ImageReader, theImage: BufferedImage?) {}
+        override fun thumbnailPassStarted(source: ImageReader, theThumbnail: BufferedImage?, pass: Int, minPass: Int, maxPass: Int, minX: Int, minY: Int, periodX: Int, periodY: Int, bands: IntArray?) {}
+        override fun thumbnailUpdate(source: ImageReader, theThumbnail: BufferedImage?, minX: Int, minY: Int, width: Int, height: Int, periodX: Int, periodY: Int, bands: IntArray?) {}
+        override fun thumbnailPassComplete(source: ImageReader, theThumbnail: BufferedImage?) {}
+    }
+
     /**
      * Decodes an image, but only after its dimensions were read from the file *header* and checked.
      * A tiny file can claim billions of pixels (a decompression bomb); decoding it first would
@@ -96,7 +147,7 @@ object PhotoService {
      * A big photo is accepted and decoded already reduced: the reader skips pixels while decoding
      * (source subsampling), so what is held in memory never exceeds about [MAX_DECODED_PIXELS], whatever the
      * size of the original. The stored picture is at most 1920 x 1080 anyway. That holds for a JPEG the decoder streams;
-     * one with several scans (progressive) is limited to [MAX_PROGRESSIVE_JPEG_PIXELS] (see [requireSingleScan]).
+     * one with several scans (progressive) is limited to [MAX_PROGRESSIVE_JPEG_PIXELS] (see [requireBoundedJpeg]).
      */
     internal fun decodeWithinLimits(bytes: ByteArray): BufferedImage {
         try {
@@ -121,7 +172,16 @@ object PhotoService {
                         val step = ceil(sqrt(pixels.toDouble() / MAX_DECODED_PIXELS)).toInt()
                         param.setSourceSubsampling(step, step, 0, 0)
                     }
-                    return reader.read(0, param) ?: throw IllegalArgumentException("Invalid or corrupted image data")
+                    // The last line of defence (the checks above are the first): the decoder reports every pass and every
+                    // scanline, and the bound throws out of those calls when the decode has run too long. An exception out
+                    // of a listener stops the native decoder at once; abort() does not (measured: the JDK clears the flag at
+                    // the start of each pass, and a one-shot abort from another thread changed nothing).
+                    reader.addIIOReadUpdateListener(DecodeBound(maxDecodePasses, decodeDeadline))
+                    return try {
+                        reader.read(0, param)
+                    } catch (e: DecodeBoundException) {
+                        throw IllegalArgumentException(e.message)
+                    } ?: throw IllegalArgumentException("Invalid or corrupted image data")
                 } finally {
                     reader.dispose()
                 }
@@ -145,7 +205,7 @@ object PhotoService {
      * a file that cannot be followed, or that the two read differently, is refused: when in doubt, not decoded.
      */
     private fun requireBoundedJpeg(bytes: ByteArray, width: Int, height: Int, pixels: Long) {
-        val frame = JpegHeader.frameOf(bytes)
+        val frame = jpegWalker(bytes)
         if (frame == null || frame.width != width || frame.height != height) {
             throw IllegalArgumentException("Invalid or corrupted image data")
         }

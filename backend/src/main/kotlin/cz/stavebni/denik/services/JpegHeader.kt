@@ -48,6 +48,9 @@ internal object JpegHeader {
     private const val DHT = 0xC4
     private const val JPG = 0xC8
     private const val DAC = 0xCC
+    private const val DQT = 0xDB
+    private const val DRI = 0xDD
+    private const val COM = 0xFE
     private const val TEM = 0x01
 
     /** The frame and scans the file describes, or `null` when it cannot be followed up to its first scan. */
@@ -80,13 +83,19 @@ internal object JpegHeader {
                     if (length < 6 || scanComponents < 1 || scanComponents > 4 || pos + length > b.size) {
                         return finished(width, height, components, sofType, firstScanComponents, scans)
                     }
-                    if (scans == 0) firstScanComponents = scanComponents
+                    if (scans == 0) {
+                        firstScanComponents = scanComponents
+                        // A sequential file whose one scan holds every component is read to its end by libjpeg and not a
+                        // marker further (a second scan header is an error there): nothing after it concerns the walk.
+                        val singleScan = (sofType == 0 || sofType == 1) && scanComponents >= components
+                        if (singleScan) return Frame(width, height, components, sofType, scanComponents, 1)
+                    }
                     scans++
                     pos += length
                 }
                 marker == EOI -> return finished(width, height, components, sofType, firstScanComponents, scans)
                 marker == SOI -> return null // a second start
-                marker in 0xC0..0xCF && marker != DHT && marker != JPG && marker != DAC -> {
+                marker in 0xC0..0xCF && marker != DHT && marker != JPG && marker != DAC -> { // a frame header (SOF0..SOF15)
                     if (sofType >= 0) return null // a second frame header: the decoder refuses the file
                     if (pos + 8 > b.size) return null
                     val length = u16(b, pos)
@@ -100,7 +109,8 @@ internal object JpegHeader {
                     pos += length
                 }
                 marker in 0xD0..0xD7 || marker == TEM -> {} // markers without a payload
-                else -> { // every other segment carries its own length, which includes the two length bytes
+                marker == DHT || marker == DAC || marker == DQT || marker == DRI || marker in 0xE0..0xEF || marker == COM -> {
+                    // The segments libjpeg reads, or skips, by their declared length, which includes the two length bytes.
                     if (pos + 2 > b.size) return finished(width, height, components, sofType, firstScanComponents, scans)
                     // libjpeg reads the length, then skips `length - 2` bytes if that is positive: a declared length below 2
                     // is a segment without data, not a broken file.
@@ -108,6 +118,13 @@ internal object JpegHeader {
                     if (pos + length > b.size) return finished(width, height, components, sofType, firstScanComponents, scans)
                     pos += length
                 }
+                // Anything else: the reserved markers 02..BF, JPG0 (C8), DNL (DC), JPG1..13 (F0..FD). Where libjpeg meets
+                // one decides what it does: as a segment of a header it is an error, but a reserved marker that turns up in
+                // entropy data at a restart boundary is garbage to it, and it scans forward for the next marker, which may
+                // be inside what a walk by the declared length would have skipped (a "segment" of 65,535 bytes made of scan
+                // headers: measured, 66 s of decoding for a file the walk counted as 10 scans). A walk that cannot be sure to
+                // see what the decoder sees refuses the file; it is never an ordinary photo, no camera writes these.
+                else -> return null
             }
         }
     }
