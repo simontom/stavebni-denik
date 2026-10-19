@@ -1,6 +1,7 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.BaseIntegrationTest
+import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
@@ -162,7 +163,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val noNumber = createTestUser(nickname = "no_number", role = Role.BOSS, ckaitNumber = null)
         val p = project(boss)
 
-        // As a site manager of a new project.
+        // As a site manager of a new project: a conflict (409), like every other refusal of decision D2.
         val failure = runCatching {
             ProjectService.createProject(
                 boss,
@@ -172,10 +173,10 @@ class SignatureRoutesTest : BaseIntegrationTest() {
                 )
             )
         }
-        assertTrue(failure.exceptionOrNull() is IllegalArgumentException, failure.toString())
+        assertTrue(failure.exceptionOrNull() is ConflictException, failure.toString())
 
         // As a creator of a project (who becomes its manager).
-        assertTrue(runCatching { project(noNumber) }.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(runCatching { project(noNumber) }.exceptionOrNull() is ConflictException)
 
         // As a member with the manager role.
         val response = client.post("/api/projects/$p/members") {

@@ -149,6 +149,76 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
         assertThrows<IllegalStateException> { AdminBootstrapService.resetPassword("removed_user") }
     }
 
+    // --- set-ckait ------------------------------------------------------------------------------
+
+    private fun ckaitOf(nickname: String) = user(nickname)!!.ckaitnumber
+
+    private fun updateRows() = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("user.update")).orderBy(AUDIT_LOG.ID.asc()).fetch()
+
+    @Test
+    fun `set-ckait gives an account its number, audited without an actor, with the number before and after`() = runBlocking<Unit> {
+        val admin = createTestUser(nickname = "only_admin", role = Role.BOSS, isAdmin = true, ckaitNumber = null)
+        generateJwtToken(admin) // an open session
+        val passwordBefore = user("only_admin")!!.passwordhash
+
+        val changed = AdminBootstrapService.setCkaitNumber(" only_admin ", " 0012345 ")
+
+        assertTrue(changed)
+        assertEquals("0012345", ckaitOf("only_admin"), "trimmed, like any ČKAIT number")
+        val row = user("only_admin")!!
+        assertEquals(passwordBefore, row.passwordhash, "the password is not touched")
+        assertFalse(row.mustchangepwd!!)
+        assertEquals(1, dsl.fetchCount(SESSIONS, SESSIONS.USERID.eq(admin.id).and(SESSIONS.REVOKEDAT.isNull)), "no session ends")
+        val audit = updateRows().single()
+        assertNull(audit.get(AUDIT_LOG.ACTOR_ID))
+        assertEquals(admin.id.toString(), audit.get(AUDIT_LOG.ENTITY_ID), "the user's id, as for every other user row")
+        val before = kotlinx.serialization.json.Json.parseToJsonElement(audit.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject
+        val after = kotlinx.serialization.json.Json.parseToJsonElement(audit.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        assertTrue(before["ckaitNumber"] is kotlinx.serialization.json.JsonNull, "no number before")
+        assertEquals("0012345", after["ckaitNumber"]!!.jsonPrimitive.content)
+        assertFalse(audit.formatJSON().contains("argon2"))
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `set-ckait replaces a number, and writes nothing when the number is already that one`() = runBlocking<Unit> {
+        createTestUser(nickname = "signer", role = Role.BOSS, ckaitNumber = "0000001")
+
+        assertTrue(AdminBootstrapService.setCkaitNumber("signer", "0000002"))
+        assertFalse(AdminBootstrapService.setCkaitNumber("signer", "0000002"))
+
+        assertEquals("0000002", ckaitOf("signer"))
+        assertEquals(1, updateRows().size, "an unchanged number leaves no row of before = after")
+    }
+
+    @Test
+    fun `set-ckait also works for a deactivated account`() = runBlocking<Unit> {
+        createTestUser(nickname = "on_leave", role = Role.BOSS, ckaitNumber = null)
+        dsl.update(USERS).set(USERS.ISACTIVE, false).where(USERS.NICKNAME.eq("on_leave")).execute()
+
+        assertTrue(AdminBootstrapService.setCkaitNumber("on_leave", "0000009"))
+
+        assertEquals("0000009", ckaitOf("on_leave"))
+    }
+
+    @Test
+    fun `set-ckait refuses an unknown or deleted user, a blank number and one over the limit, and changes nothing`() = runBlocking<Unit> {
+        createTestUser(nickname = "kept", role = Role.BOSS, ckaitNumber = "0000001")
+        createTestUser(nickname = "removed", role = Role.BOSS, ckaitNumber = "0000002")
+        dsl.update(USERS).set(USERS.DELETEDAT, java.time.OffsetDateTime.now()).where(USERS.NICKNAME.eq("removed")).execute()
+
+        assertThrows<IllegalStateException> { AdminBootstrapService.setCkaitNumber("nobody", "0000003") }
+        assertThrows<IllegalStateException> { AdminBootstrapService.setCkaitNumber("removed", "0000003") }
+        assertThrows<IllegalArgumentException> { AdminBootstrapService.setCkaitNumber("kept", "   ") }
+        assertThrows<IllegalArgumentException> { AdminBootstrapService.setCkaitNumber("kept", "") }
+        val tooLong = assertThrows<IllegalArgumentException> { AdminBootstrapService.setCkaitNumber("kept", "1".repeat(51)) }
+
+        assertTrue(tooLong.message!!.contains("nejvýše 50 znaků"), tooLong.message)
+        assertEquals("0000001", ckaitOf("kept"))
+        assertEquals("0000002", user("removed")!!.ckaitnumber)
+        assertEquals(0, updateRows().size, "refused: no row")
+    }
+
     // --- the command line -----------------------------------------------------------------------
 
     private class Run(val code: Int, val out: List<String>, val err: List<String>)
@@ -184,7 +254,10 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
 
     @Test
     fun `wrong usage exits 2 and prints the usage`() {
-        for (args in listOf(emptyArray(), arrayOf("create-admin"), arrayOf("create-admin", "only-nick"), arrayOf("reset-password"), arrayOf("delete-everything"))) {
+        for (args in listOf(
+            emptyArray(), arrayOf("create-admin"), arrayOf("create-admin", "only-nick"), arrayOf("reset-password"), arrayOf("delete-everything"),
+            arrayOf("set-ckait"), arrayOf("set-ckait", "only-nick"), arrayOf("set-ckait", "nick", "0012345", "extra"),
+        )) {
             val run = cli(*args)
             assertEquals(2, run.code, args.toList().toString())
             assertTrue(run.err.single().contains("Usage:"))
@@ -202,5 +275,55 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
         val password = run.out.first { it.startsWith("Password:") }.removePrefix("Password:").trim()
         assertTrue(PasswordService.verify(user("forgetful")!!.passwordhash!!, password))
         assertEquals(1, cli("reset-password", "nobody").code)
+    }
+
+    @Test
+    fun `set-ckait through the command line`() {
+        createTestUser(nickname = "only_admin", role = Role.BOSS, isAdmin = true, ckaitNumber = null)
+
+        val run = cli("set-ckait", "only_admin", "0012345")
+
+        assertEquals(0, run.code, run.err.toString())
+        assertEquals("0012345", ckaitOf("only_admin"))
+        assertTrue(run.out.any { it.contains("only_admin") && it.contains("0012345") }, run.out.toString())
+        assertTrue(run.err.isEmpty())
+        // Again with the same number: done, and it says that nothing changed.
+        val again = cli("set-ckait", "only_admin", "0012345")
+        assertEquals(0, again.code, again.err.toString())
+        assertTrue(again.out.single().contains("unchanged", ignoreCase = true), again.out.toString())
+    }
+
+    @Test
+    fun `a refused set-ckait exits 1 with the reason on stderr`() {
+        createTestUser(nickname = "kept", role = Role.BOSS, ckaitNumber = "0000001")
+
+        for (args in listOf(arrayOf("set-ckait", "nobody", "0000003"), arrayOf("set-ckait", "kept", "  "), arrayOf("set-ckait", "kept", "1".repeat(51)))) {
+            val run = cli(*args)
+            assertEquals(1, run.code, args.toList().toString())
+            assertTrue(run.err.single().startsWith("Refused:"), run.err.toString())
+            assertTrue(run.out.isEmpty())
+        }
+        assertEquals("0000001", ckaitOf("kept"))
+    }
+
+    @Test
+    fun `set-ckait takes exactly a nickname and a number, and is not a read-only command`() {
+        assertTrue(AdminCli.hasValidShape(listOf("set-ckait", "alice", "0012345")))
+        assertFalse(AdminCli.hasValidShape(listOf("set-ckait", "alice")))
+        assertFalse(AdminCli.hasValidShape(listOf("set-ckait")))
+        assertFalse(AdminCli.hasValidShape(listOf("set-ckait", "alice", "0012345", "x")))
+        assertFalse(AdminCli.readsOnly(listOf("set-ckait", "alice", "0012345")))
+        assertTrue(AdminCli.USAGE.contains("set-ckait"))
+    }
+
+    @Test
+    fun `set-ckait that cannot reach the database is exit code 3`() {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+
+        val code = AdminCli.runGuarded(listOf("set-ckait", "alice", "0012345"), out::add, err::add) { error("no connection") }
+
+        assertEquals(3, code)
+        assertTrue(out.isEmpty())
     }
 }
