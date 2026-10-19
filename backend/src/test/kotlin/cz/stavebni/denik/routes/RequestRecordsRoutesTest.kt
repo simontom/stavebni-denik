@@ -72,7 +72,8 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
 
         ProjectService.createProject(boss, projectBody(boss.id.toString()))
 
-        assertEquals(1, dsl.fetchCount(AUDIT_LOG))
+        // The project and its first manager: two audit rows (project.create, project.member.add), and no request, so no side row.
+        assertEquals(2, dsl.fetchCount(AUDIT_LOG))
         assertEquals(0, dsl.fetchCount(AUDIT_REQUEST_CONTEXT))
     }
 
@@ -89,8 +90,9 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
             setBody(projectBody(boss.id.toString()))
         }
 
-        val stored = dsl.select(AUDIT_REQUEST_CONTEXT.USER_AGENT).from(AUDIT_REQUEST_CONTEXT).fetchSingle(AUDIT_REQUEST_CONTEXT.USER_AGENT)!!
-        assertEquals(256, stored.length)
+        // One side row for each audit row of the request: the project and its first manager.
+        val stored = dsl.select(AUDIT_REQUEST_CONTEXT.USER_AGENT).from(AUDIT_REQUEST_CONTEXT).fetch(AUDIT_REQUEST_CONTEXT.USER_AGENT)
+        assertEquals(listOf(256, 256), stored.map { it!!.length })
     }
 
     @Test
@@ -106,7 +108,11 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
             setBody(projectBody(boss.id.toString()))
         }
 
-        assertEquals("AgentWithTabs/1", dsl.select(AUDIT_REQUEST_CONTEXT.USER_AGENT).from(AUDIT_REQUEST_CONTEXT).fetchSingle(AUDIT_REQUEST_CONTEXT.USER_AGENT))
+        assertEquals(
+            listOf("AgentWithTabs/1", "AgentWithTabs/1"),
+            dsl.select(AUDIT_REQUEST_CONTEXT.USER_AGENT).from(AUDIT_REQUEST_CONTEXT).fetch(AUDIT_REQUEST_CONTEXT.USER_AGENT),
+            "one side row for each audit row of the request: the project and its first manager",
+        )
     }
 
     // --- the sign-in log -------------------------------------------------------------------------------------------
@@ -178,7 +184,7 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
     fun `the request records of audit rows are guarded the same way`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         ProjectService.createProject(boss, projectBody(boss.id.toString()))
-        val auditId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).fetchSingle(AUDIT_LOG.ID)!!
+        val auditId = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("project.create")).fetchSingle(AUDIT_LOG.ID)!!
         dsl.execute("""insert into audit_request_context (audit_id, ip, recorded_at) values (?, '1.2.3.4', ?::timestamptz)""", auditId, OffsetDateTime.now().minusMonths(2))
 
         assertThrows(DataAccessException::class.java) { dsl.execute("""update audit_request_context set ip = '9.9.9.9'""") }
@@ -191,7 +197,7 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         ProjectService.createProject(boss, projectBody(boss.id.toString()))
         ProjectService.createProject(boss, projectBody(boss.id.toString()).copy(name = "Druhý"))
-        val auditIds = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.asc()).fetch(AUDIT_LOG.ID).filterNotNull()
+        val auditIds = dsl.select(AUDIT_LOG.ID).from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("project.create")).orderBy(AUDIT_LOG.ID.asc()).fetch(AUDIT_LOG.ID).filterNotNull()
         dsl.execute("""insert into audit_request_context (audit_id, ip, recorded_at) values (?, '1.1.1.1', ?::timestamptz)""", auditIds[0], OffsetDateTime.now().minusMonths(13))
         dsl.execute("""insert into audit_request_context (audit_id, ip, recorded_at) values (?, '2.2.2.2', ?::timestamptz)""", auditIds[1], OffsetDateTime.now().minusMonths(11))
         insertAccessLog("login.success", OffsetDateTime.now().minusMonths(14))
@@ -203,7 +209,7 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
         assertEquals(1, pruned.auditRequestContext)
         assertEquals(listOf("login.failure"), accessEvents())
         assertEquals("2.2.2.2", dsl.select(AUDIT_REQUEST_CONTEXT.IP).from(AUDIT_REQUEST_CONTEXT).fetchSingle(AUDIT_REQUEST_CONTEXT.IP))
-        assertEquals(2, dsl.fetchCount(AUDIT_LOG), "the audit chain itself is never pruned")
+        assertEquals(4, dsl.fetchCount(AUDIT_LOG), "the audit chain itself is never pruned (two projects, and the first manager of each)")
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
