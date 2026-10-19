@@ -48,12 +48,12 @@ jobs:
           chmod +x gradlew
           ./gradlew assemble --console=plain 2>&1 | tee /tmp/gradle.log
 
-      - name: Frontend install, lint & build
+      - name: Frontend install, lint, unit tests & build
         run: |
           set -o pipefail
           cd frontend
           # The committed lockfile is the source of truth: a package.json that disagrees with it fails here.
-          { pnpm install --frozen-lockfile && pnpm lint && pnpm build; } 2>&1 | tee /tmp/frontend.log
+          { pnpm install --frozen-lockfile && pnpm lint && pnpm test && pnpm build; } 2>&1 | tee /tmp/frontend.log
 
       - name: Failure summary
         if: failure()
@@ -556,3 +556,25 @@ jobs:
             /tmp/e2e-image-app.log
             /tmp/playwright-image.log
           retention-days: 14
+
+  immutable-migrations:
+    name: Released migrations never change
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # The check compares with the newest v* tag, so it needs the whole history and every tag: a shallow checkout would
+      # make it pass for the wrong reason (the script refuses one).
+      - name: Checkout (full history and tags)
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      # Throwaway git repositories: no tag, an added, modified, deleted and renamed migration, a shallow clone, ...
+      - name: Test the check itself
+        run: bash scripts/ci/check-immutable-migrations.test.sh
+
+      # Not active until the first v* tag (it says so and passes); from then on the migrations of a release are frozen.
+      - name: Check the migrations of this commit against the newest v* tag
+        run: bash scripts/ci/check-immutable-migrations.sh

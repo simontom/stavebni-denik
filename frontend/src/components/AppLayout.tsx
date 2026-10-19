@@ -1,10 +1,18 @@
-import React from "react";
-import { Link, useLocation, useNavigate, Navigate } from "react-router-dom";
+import { useState } from "react";
+import { Link, Outlet, useBlocker, useLocation, useNavigate, Navigate } from "react-router-dom";
+import { hasUnsavedWork, setUnsavedWork, unsavedWorkIsKeptAsDraft } from "../lib/api";
+import { clearAllDrafts, browserStorage } from "../lib/draftStore";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { SessionExpiredDialog } from "./SessionExpiredDialog";
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+/** The frame of every page after sign-in (a layout route: the page is its `<Outlet />`). */
+export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [confirmingLogout, setConfirmingLogout] = useState(false);
+  // A link inside the application (or the browser's Back button) away from a page with unsaved changes asks first. The
+  // page says it has unsaved work (setUnsavedWork); a page that is only reloaded or closed is covered by the browser's own question.
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => hasUnsavedWork() && currentLocation.pathname !== nextLocation.pathname);
   const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
   if (!userStr) {
     return <Navigate to="/login" replace />;
@@ -16,15 +24,20 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     return <Navigate to="/change-password" replace />;
   }
 
-  const handleLogout = async () => {
+  const logout = async () => {
+    // Confirmed, or nothing to lose: the leave guard must let the redirect to the login page through.
+    setUnsavedWork(false);
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {
       // ignore
     }
+    // Drafts hold personal data (the names of the people on site): none stays on a device after a logout.
+    clearAllDrafts(browserStorage());
     localStorage.removeItem("user");
     navigate("/login");
   };
+  const handleLogout = () => (hasUnsavedWork() ? setConfirmingLogout(true) : void logout());
 
   return (
     <div className="flex min-h-screen flex-col bg-gray-50">
@@ -68,7 +81,30 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <SessionExpiredDialog />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      {blocker.state === "blocked" && (
+        <ConfirmDialog title="Neuložené změny" cancelLabel="Zůstat" confirmLabel="Odejít bez uložení" onCancel={() => blocker.reset()} onConfirm={() => blocker.proceed()}>
+          {unsavedWorkIsKeptAsDraft()
+            ? "Tento záznam má neuložené změny. Když odejdete, rozepsaný text zůstane jako koncept v tomto zařízení a při dalším otevření dne vám ho nabídneme."
+            : "Stránka má neuložené změny. Když odejdete, ztratí se."}
+        </ConfirmDialog>
+      )}
+      {confirmingLogout && (
+        <ConfirmDialog
+          title="Odhlásit se?"
+          cancelLabel="Zůstat"
+          confirmLabel="Odhlásit a zahodit změny"
+          onCancel={() => setConfirmingLogout(false)}
+          onConfirm={() => {
+            setConfirmingLogout(false);
+            void logout();
+          }}
+        >
+          Stránka má neuložené změny. Po odhlášení se ztratí{unsavedWorkIsKeptAsDraft() ? ", i s konceptem uloženým v tomto zařízení" : ""}.
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

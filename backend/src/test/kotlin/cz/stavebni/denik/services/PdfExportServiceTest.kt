@@ -10,6 +10,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.*
@@ -18,6 +21,8 @@ import org.junit.jupiter.api.assertThrows
 import java.io.File
 import java.nio.file.Path
 import java.time.Duration
+import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -64,7 +69,68 @@ class PdfExportServiceTest : BaseIntegrationTest() {
         val json = Json.parseToJsonElement(data).jsonObject
         assertEquals(hostileName, json["projectName"]!!.jsonPrimitive.content)
         assertEquals(hostileText, json["workDescription"]!!.jsonPrimitive.content)
-        assertEquals("2026-09-28", json["date"]!!.jsonPrimitive.content)
+        // Dates are for people: Czech, with the weekday (28 September 2026 is a Monday).
+        assertEquals("28. 9. 2026", json["date"]!!.jsonPrimitive.content)
+        assertEquals("pondělí", json["weekday"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `the note about the identification names days in Prague, not in UTC`() {
+        val today = LocalDate.of(2026, 10, 17)
+        val signed = OffsetDateTime.parse("2026-09-01T10:00:00Z")
+
+        // 22:30 UTC on 27 September is 00:30 on 28 September in Prague (decision D10).
+        val changedAtNight = OffsetDateTime.parse("2026-09-27T22:30:00Z")
+        assertEquals(
+            "Údaje o stavbě platné ke dni 17. 10. 2026 (nejsou součástí podpisu záznamu). Po podpisu tohoto záznamu byly změněny dne 28. 9. 2026.",
+            PdfExportService.projectInfoNote(today, signed, changedAtNight),
+        )
+        // A draft has no signature to be outside of, and a change before the signature is not mentioned.
+        assertEquals("Údaje o stavbě platné ke dni 17. 10. 2026.", PdfExportService.projectInfoNote(today, null, changedAtNight))
+        assertEquals(
+            "Údaje o stavbě platné ke dni 17. 10. 2026 (nejsou součástí podpisu záznamu).",
+            PdfExportService.projectInfoNote(today, signed, OffsetDateTime.parse("2026-08-01T10:00:00Z")),
+        )
+    }
+
+    @Test
+    fun `typst is given times in Prague time with the zone, and the hash of the row of the signature`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val reportId = createReport(boss)
+        DailyReportService.signReport(boss, reportId)
+        val lockRowHash = dsl.fetchValue("""select row_hash from audit_log where action = 'report.lock' and entity_id = ?""", reportId.toString()) as String
+        var data = ""
+        PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->
+            data = File(dir, "data.json").readText()
+            pdfFile.writeBytes(MINIMAL_PDF)
+        }
+
+        PdfExportService.generateReportPdf(dsl, reportId)
+
+        val json = Json.parseToJsonElement(data).jsonObject
+        assertEquals(lockRowHash, json["auditRowHash"]!!.jsonPrimitive.content)
+        assertEquals(reportId.toString(), json["entryId"]!!.jsonPrimitive.content)
+        // The format the entry was signed in: the template explains a missing hash as "old" only for format 1.
+        assertEquals(ReportSignature.CURRENT_FORMAT, json["signatureFormat"]!!.jsonPrimitive.int)
+        assertTrue(Regex("""\d{1,2}\. \d{1,2}\. \d{4} \d{2}:\d{2}:\d{2} SE?L?Č \(UTC\+[12]\)""").matches(json["signedAt"]!!.jsonPrimitive.content), json["signedAt"].toString())
+        assertEquals(0, json["photos"]!!.jsonArray.size, "no photos on this entry")
+    }
+
+    @Test
+    fun `a draft is given no signature and no audit row`() = runBlocking<Unit> {
+        val reportId = createReport()
+        var data = ""
+        PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->
+            data = File(dir, "data.json").readText()
+            pdfFile.writeBytes(MINIMAL_PDF)
+        }
+
+        PdfExportService.generateReportPdf(dsl, reportId)
+
+        val json = Json.parseToJsonElement(data).jsonObject
+        assertEquals(false, json["isSigned"]!!.jsonPrimitive.boolean)
+        for (key in listOf("signedBy", "signedAt", "signatureHash", "auditRowHash")) assertEquals("", json[key]!!.jsonPrimitive.content, key)
+        assertTrue(json["signatureFormat"] is kotlinx.serialization.json.JsonNull, "a draft is not signed in any format")
     }
 
     @Test

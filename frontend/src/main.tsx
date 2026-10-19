@@ -1,16 +1,18 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { LoginPage } from "./pages/auth/LoginPage";
 import { ChangePasswordPage } from "./pages/auth/ChangePasswordPage";
 import { ProjectList } from "./pages/projects/ProjectList";
 import { NewProject } from "./pages/projects/NewProject";
 import { EditProject } from "./pages/projects/EditProject";
 import { ProjectDetail } from "./pages/ProjectDetail";
-import { DailyReport } from "./pages/DailyReport";
+import { DailyReportPage } from "./pages/DailyReport";
 import { AdminUsers } from "./pages/AdminUsers";
 import { AuditLogViewer } from "./pages/AuditLogViewer";
 import { AppLayout } from "./components/AppLayout";
+import { currentUser } from "./lib/api";
+import { browserStorage, pruneDrafts } from "./lib/draftStore";
 import "./index.css";
 
 export function RootRoute() {
@@ -21,86 +23,40 @@ export function RootRoute() {
   return <Navigate to="/projects" replace />;
 }
 
+// When the application starts: drafts of daily entries that are older than 30 days, dated in the future, unreadable, or (when
+// somebody is signed in) not that person's are removed (they hold the names of people on site). When nobody is signed in
+// nothing else goes: the login page forgets who was signed in without a logout. Never allowed to stop the application from starting.
+try {
+  pruneDrafts(browserStorage(), { signedInUserId: currentUser()?.id ?? null });
+} catch {
+  // the application works without drafts
+}
+
+// A data router (not <BrowserRouter>): only it can block a navigation (useBlocker), which the pages with unsaved
+// work need (AppLayout asks before they are left).
+const router = createBrowserRouter([
+  { path: "/login", element: <LoginPage /> },
+  { path: "/", element: <RootRoute /> },
+  {
+    element: <AppLayout />,
+    children: [
+      { path: "/change-password", element: <ChangePasswordPage /> },
+      { path: "/projects", element: <ProjectList /> },
+      { path: "/projects/new", element: <NewProject /> },
+      { path: "/projects/:id/edit", element: <EditProject /> },
+      { path: "/projects/:id", element: <ProjectDetail /> },
+      // The same page for every day: it is mounted per day (DailyReportPage), so one day's text never ends up in another.
+      { path: "/projects/:projectId/reports/:reportId", element: <DailyReportPage /> },
+      { path: "/projects/:projectId/reports/new", element: <DailyReportPage /> },
+      { path: "/admin/users", element: <AdminUsers /> },
+      { path: "/admin/audit", element: <AuditLogViewer /> },
+    ],
+  },
+  { path: "*", element: <Navigate to="/" replace /> },
+]);
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<RootRoute />} />
-        <Route
-          path="/change-password"
-          element={
-            <AppLayout>
-              <ChangePasswordPage />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects"
-          element={
-            <AppLayout>
-              <ProjectList />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects/new"
-          element={
-            <AppLayout>
-              <NewProject />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects/:id/edit"
-          element={
-            <AppLayout>
-              <EditProject />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects/:id"
-          element={
-            <AppLayout>
-              <ProjectDetail />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects/:projectId/reports/:reportId"
-          element={
-            <AppLayout>
-              <DailyReport />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/projects/:projectId/reports/new"
-          element={
-            <AppLayout>
-              <DailyReport />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/admin/users"
-          element={
-            <AppLayout>
-              <AdminUsers />
-            </AppLayout>
-          }
-        />
-        <Route
-          path="/admin/audit"
-          element={
-            <AppLayout>
-              <AuditLogViewer />
-            </AppLayout>
-          }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <RouterProvider router={router} />
   </React.StrictMode>,
 );

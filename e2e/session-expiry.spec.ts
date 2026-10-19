@@ -98,3 +98,67 @@ test("leaving from the dialog goes to the login page", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
 });
+
+/** The keys of the drafts of daily entries kept on this device (frontend/src/lib/draftStore.ts). */
+const draftKeys = (page: Page): Promise<string[]> => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("denik:draft:")));
+
+test("a session that ends keeps the draft: signing in again from the dialog does not remove it", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const projectUrl = await createProject(page);
+  const day = pragueToday();
+  const description = page.locator('textarea[name="workDescription"]');
+  const dialog = page.getByRole("dialog", { name: /přihlášení vypršelo/i });
+  const url = `${projectUrl}/reports/${day}`;
+
+  await page.goto(url);
+  await expect(description).toBeEditable({ timeout: 15_000 });
+  await description.fill("Rozepsáno, když vypršelo přihlášení");
+  await expect.poll(() => draftKeys(page).then((keys) => keys.length)).toBe(1);
+
+  await page.context().clearCookies();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+  await expect(dialog).toContainText(/uložený i v tomto zařízení/i);
+  expect(await draftKeys(page)).toHaveLength(1);
+
+  // Signing in again as the same person: the page and the draft stay as they were.
+  await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+  await dialog.getByRole("button", { name: /přihlásit se/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+  await expect(description).toHaveValue("Rozepsáno, když vypršelo přihlášení");
+  expect(await draftKeys(page)).toHaveLength(1);
+
+  // The tab is lost before the person saved: the draft comes back, for the same person.
+  const context = page.context();
+  await page.close();
+  const reopened = await context.newPage();
+  await reopened.goto(url);
+  const banner = reopened.getByRole("region", { name: /rozepsaný záznam/i });
+  await expect(banner).toBeVisible({ timeout: 15_000 });
+  await banner.getByRole("button", { name: "Obnovit", exact: true }).click();
+  await expect(reopened.locator('textarea[name="workDescription"]')).toHaveValue("Rozepsáno, když vypršelo přihlášení");
+});
+
+test("leaving from the dialog with unsaved text says what is thrown away, and throws the draft away", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const projectUrl = await createProject(page);
+  const day = pragueToday();
+  const description = page.locator('textarea[name="workDescription"]');
+  const dialog = page.getByRole("dialog", { name: /přihlášení vypršelo/i });
+
+  await page.goto(`${projectUrl}/reports/${day}`);
+  await expect(description).toBeEditable({ timeout: 15_000 });
+  await description.fill("Rozepsáno, než se odhlásím z dialogu");
+  await expect.poll(() => draftKeys(page).then((keys) => keys.length)).toBe(1);
+
+  await page.context().clearCookies();
+  await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
+  await expect(dialog).toBeVisible({ timeout: 15_000 });
+
+  await dialog.getByRole("button", { name: /odhlásit a zahodit změny/i }).click();
+  await expect(page).toHaveURL(/\/login/, { timeout: 15_000 });
+  expect(await draftKeys(page)).toEqual([]);
+  expect(await page.evaluate(() => localStorage.getItem("user"))).toBeNull();
+});

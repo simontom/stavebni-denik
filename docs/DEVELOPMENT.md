@@ -44,6 +44,7 @@ Heslo se vypíše jednou a platí 7 dní; při prvním přihlášení se musí z
 ./gradlew test                                    # celý backend; potřebuje Docker
 ./gradlew :backend:test --tests '*SomeTest'       # jeden test
 pnpm --prefix frontend lint
+pnpm --prefix frontend test                       # unit testy (Vitest) čisté logiky v frontend/src/lib
 pnpm --prefix frontend build                      # tsc + vite build
 ```
 
