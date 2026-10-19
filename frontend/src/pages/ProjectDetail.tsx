@@ -301,6 +301,8 @@ export const ProjectDetail: React.FC = () => {
   };
 
   const selectedUser = userOptions.find((u) => u.id === selectedUserId);
+  // A manager of a project (BOSS) signs its diary and so holds a ČKAIT number (the server refuses otherwise): say so up front.
+  const managerNeedsCkait = selectedRole === "BOSS" && selectedUser !== undefined && !selectedUser.hasCkait;
 
   const siteManagerName = members.find((m) => m.userId === project?.siteManagerId)?.displayName;
   // Whoever can sign: a manager (role BOSS) of this project other than the present site manager. The server checks the rest
@@ -435,11 +437,15 @@ export const ProjectDetail: React.FC = () => {
                     className="w-full rounded-md border border-gray-300 p-2"
                   >
                     <option value="">Vyberte…</option>
-                    {siteManagerCandidates.map((m) => (
-                      <option key={m.userId} value={m.userId}>
-                        {m.displayName} ({m.nickname})
-                      </option>
-                    ))}
+                    {siteManagerCandidates.map((m) => {
+                      // The list of users says who holds a ČKAIT number: a manager without one is shown, but cannot be chosen.
+                      const withoutNumber = userOptions.some((u) => u.id === m.userId && !u.hasCkait);
+                      return (
+                        <option key={m.userId} value={m.userId} disabled={withoutNumber}>
+                          {m.displayName} ({m.nickname}){withoutNumber ? " – bez čísla ČKAIT" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                   <label htmlFor="siteManagerReason" className="block text-xs text-gray-600">
                     Důvod změny (nepovinné, zůstane v záznamu o změnách)
@@ -910,7 +916,14 @@ export const ProjectDetail: React.FC = () => {
                 )}
               </div>
 
-              <Button onClick={() => void handleAddMember()}>Přidat</Button>
+              <Button disabled={managerNeedsCkait} onClick={() => void handleAddMember()}>
+                Přidat
+              </Button>
+              {managerNeedsCkait && (
+                <p role="status" className="basis-full text-sm text-amber-800">
+                  {selectedUser?.displayName} nemá číslo ČKAIT, a proto nemůže být vedoucím projektu (podepisuje záznamy). Číslo doplní administrátor v seznamu uživatelů.
+                </p>
+              )}
             </div>
 
             {/* A list on a phone (table-cards, index.css): the nickname, the name and the role one under the other. */}
