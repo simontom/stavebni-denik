@@ -65,7 +65,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core:$flywayVersion")
     implementation("org.flywaydb:flyway-database-postgresql:$flywayVersion")
 
-    implementation("com.auth0:java-jwt:4.6.1")
+    implementation("com.auth0:java-jwt:4.6.2")
     implementation("de.mkammerer:argon2-jvm:2.12")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
