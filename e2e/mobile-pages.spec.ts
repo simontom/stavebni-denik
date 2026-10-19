@@ -1,4 +1,4 @@
-import { expect, request as playwrightRequest, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD, INVESTOR_NICKNAME, INVESTOR_PASSWORD } from "./global-setup";
 
 /**
@@ -29,13 +29,6 @@ const PARCELS = Array.from({ length: 30 }, (_, i) => `450/${i + 1}`).join(", ");
 const NO_BREAK = "SO-101-Hrubá-stavba-včetně-základových-pasů-a-podkladních-betonů-a-izolací";
 
 const ids = { project: "", second: "", third: "", signedDay: pragueDay(-1), draftDay: pragueDay(0), lateDay: pragueDay(-3) };
-
-/** Signs in through the API and returns the signed-in user (the cookie stays in [api]). */
-async function apiLogin(api: APIRequestContext, nickname: string, password: string): Promise<{ id: string }> {
-  const res = await api.post("/api/auth/login", { data: { nickname, password } });
-  expect(res.ok(), `login of ${nickname}`).toBeTruthy();
-  return (await res.json()).user;
-}
 
 async function post<T = unknown>(api: APIRequestContext, path: string, data: unknown): Promise<T> {
   const res = await api.post(path, { data });
@@ -80,10 +73,15 @@ const entryBody = (date: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-test.beforeAll(async () => {
-  const api = await playwrightRequest.newContext({ baseURL: BASE_URL });
+// Signed in through the page (a real browser context takes the session cookie the way the application does, also a Secure one on the
+// built image), then the data is made with that context's API requests.
+test.beforeAll(async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: BASE_URL });
   try {
-    const admin = await apiLogin(api, ADMIN_NICKNAME, ADMIN_PASSWORD);
+    const page = await context.newPage();
+    await signIn(page);
+    const admin = JSON.parse((await page.evaluate(() => localStorage.getItem("user"))) ?? "null") as { id: string };
+    const api = context.request;
     ids.project = (await post<{ id: string }>(api, "/api/projects", projectBody(LONG_NAME, admin.id))).id;
     ids.second = (await post<{ id: string }>(api, "/api/projects", projectBody("Dům U Lípy", admin.id))).id;
     ids.third = (await post<{ id: string }>(api, "/api/projects", projectBody("Hala 7", admin.id))).id;
@@ -115,7 +113,7 @@ test.beforeAll(async () => {
     const signed = await post<{ updatedAt: string }>(api, `/api/projects/${ids.project}/reports/${ids.signedDay}`, entryBody(ids.signedDay));
     await post(api, `/api/projects/${ids.project}/reports/${ids.signedDay}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: signed.updatedAt });
   } finally {
-    await api.dispose();
+    await context.close();
   }
 });
 
