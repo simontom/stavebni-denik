@@ -30,7 +30,10 @@ class BoundedRequestBodyConfig {
 val BoundedRequestBody = createApplicationPlugin("BoundedRequestBody", ::BoundedRequestBodyConfig) {
     val bodyLimit = pluginConfig.bodyLimit
 
-    onCall { call ->
+    // The Validators phase, like Ktor's own plugin, and not `onCall` (the Plugins phase): there the refusal came before the
+    // interceptor that sets the security headers had run, so the 413 had none of them, and the headers interceptor then
+    // failed on a response that was already sent and logged an error for every such request.
+    onCallValidators { call ->
         val limit = bodyLimit(call)
         val contentLength = call.request.contentLength()
         if (contentLength != null && contentLength > limit) throw PayloadTooLargeException(limit)

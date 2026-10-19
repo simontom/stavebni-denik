@@ -20,6 +20,12 @@ import org.jooq.exception.IntegrityConstraintViolationException
 fun Application.configureStatusPages() {
     install(StatusPages) {
         exception<Throwable> { call, cause ->
+            // A body that grows past the limit without having announced its size is only noticed while it is being read, and
+            // then the JSON reader hands us its own exception with the real one as the cause: still a 413, not a 400.
+            if (cause !is PayloadTooLargeException && generateSequence(cause.cause) { it.cause }.take(8).any { it is PayloadTooLargeException }) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Požadavek je příliš velký"))
+                return@exception
+            }
             when (cause) {
                 is UnauthenticatedException -> call.respond(HttpStatusCode.Unauthorized, mapOf("error" to (cause.message ?: "Unauthenticated")))
                 // The exception names the denied action for the logs; the client only learns that it is not allowed.
