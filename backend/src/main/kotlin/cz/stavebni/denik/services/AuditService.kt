@@ -145,6 +145,7 @@ object AuditService {
     ) {
         // Which project the row belongs to is decided before anything is written: a row that cannot be assigned fails the
         // whole transaction, change included.
+        AuditProject.requireActionOf(entityType, action)
         val projectId = AuditProject.of(entityType, entityId, before, after)
 
         // Previous hash (genesis for the first row)
@@ -304,12 +305,18 @@ object AuditService {
         }
         if (!AuditHash.hashesEqual(recomputed, storedHash)) return "row_hash mismatch on id=$id"
 
+        // A parser recurses, and whoever may insert a row can write one nested a million levels deep: the depth is counted first,
+        // without parsing, and a payload deeper than the writer ever writes is a failed verification with its row. (The
+        // StackOverflowError is caught as well, for whatever the count does not see: it is an Error, which nothing above catches.)
+        if (AuditHash.isNestedDeeperThan(text, AuditHash.MAX_JSON_DEPTH)) return "the payload of row id=$id is nested too deeply"
         val payload = try {
             Json.parseToJsonElement(text) as? JsonObject
         } catch (e: SerializationException) {
             null
         } catch (e: IllegalArgumentException) {
             null
+        } catch (e: StackOverflowError) {
+            return "the payload of row id=$id is nested too deeply"
         } ?: return "the payload of row id=$id is not a JSON object"
         if (payload.keys != PAYLOAD_KEYS) return "the payload of row id=$id does not have the keys of a payload"
 
@@ -329,7 +336,13 @@ object AuditService {
             return "the actor id of row id=$id does not match its payload"
         }
 
-        // The project: worked out from the payload by the rule that fills it when a row is written.
+        // The action belongs to the entity type (the writer chooses the type, and a user's row has no project) ...
+        try {
+            AuditProject.requireActionOf(r.get(AUDIT_LOG.ENTITY_TYPE)!!, r.get(AUDIT_LOG.ACTION)!!)
+        } catch (e: AuditWriteException) {
+            return "the action of row id=$id does not belong to its entity type"
+        }
+        // ... and the project: worked out from the payload by the rule that fills it when a row is written.
         val derived = try {
             AuditProject.ofPayload(payload)
         } catch (e: AuditWriteException) {

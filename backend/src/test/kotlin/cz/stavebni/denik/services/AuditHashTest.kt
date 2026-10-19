@@ -157,6 +157,42 @@ class AuditHashTest {
         assertFalse(error.message!!.contains("secret-value"), "the message is for the log and holds no content of the row: ${error.message}")
     }
 
+    private fun nested(containers: Int): kotlinx.serialization.json.JsonElement {
+        var element: kotlinx.serialization.json.JsonElement = kotlinx.serialization.json.JsonArray(emptyList())
+        repeat(containers - 1) { element = kotlinx.serialization.json.JsonArray(listOf(element)) }
+        return element
+    }
+
+    @Test
+    fun `a snapshot nested deeper than the limit is refused, and the refusal says nothing of it`() {
+        val ts = OffsetDateTime.parse("2026-10-18T09:31:00Z")
+        // The object of the payload is the first level, so a snapshot of MAX - 1 containers makes the deepest payload allowed.
+        val written = AuditHash.payloadV2("a.b", null, "user", "1", null, nested(AuditHash.MAX_JSON_DEPTH - 1), ts)
+        assertFalse(AuditHash.isNestedDeeperThan(written, AuditHash.MAX_JSON_DEPTH), "what the writer writes, the verifier accepts")
+        assertTrue(AuditHash.isNestedDeeperThan(written, AuditHash.MAX_JSON_DEPTH - 1))
+
+        val error = assertThrows<IllegalArgumentException> {
+            AuditHash.payloadV2("a.b", null, "user", "1", nested(AuditHash.MAX_JSON_DEPTH), null, ts)
+        }
+        assertTrue(error.message!!.contains("nested"), error.message)
+        // And a snapshot that would take the writer's own recursion down is refused after a few levels, not after all of them.
+        assertThrows<IllegalArgumentException> { AuditHash.payloadV2("a.b", null, "user", "1", nested(5_000), null, ts) }
+    }
+
+    @Test
+    fun `the depth of a text is counted without parsing it, and brackets inside strings do not count`() {
+        assertFalse(AuditHash.isNestedDeeperThan("[[[]]]", 3))
+        assertTrue(AuditHash.isNestedDeeperThan("[[[[]]]]", 3))
+        assertFalse(AuditHash.isNestedDeeperThan("""{"a":[1,2,{"b":null}]}""", 3))
+        assertTrue(AuditHash.isNestedDeeperThan("""{"a":[1,2,{"b":null}]}""", 2))
+        // Brackets and braces in strings, escaped quotes and escaped backslashes.
+        assertFalse(AuditHash.isNestedDeeperThan("""{"a":"[[[[[[[[","b":"\"[[[[[","c":"\\"}""", 1))
+        assertFalse(AuditHash.isNestedDeeperThan("""["\\", "[[[["]""", 1))
+        assertFalse(AuditHash.isNestedDeeperThan("", 1))
+        // Hundreds of thousands of levels: answered, not overflowed.
+        assertTrue(AuditHash.isNestedDeeperThan("[".repeat(500_000) + "]".repeat(500_000), AuditHash.MAX_JSON_DEPTH))
+    }
+
     @Test
     fun `a payload with a character that has no UTF-8 form is stored as what is hashed`() {
         // A lone surrogate cannot be written as UTF-8: the encoder would turn it into '?' when hashing and the database

@@ -85,6 +85,23 @@ class AuditProjectTest {
     }
 
     @Test
+    fun `an action has to start with its entity type, so that the type cannot be chosen to hide a row of a project`() {
+        for ((type, action) in listOf(
+            "report" to "report.update", "project" to "project.member.add", "photo" to "photo.upload", "siteHandover" to "siteHandover.sign",
+            "authorizedPerson" to "authorizedPerson.revoke", "user" to "user.activate", "user" to "user.password_reset",
+        )) {
+            AuditProject.requireActionOf(type, action)
+        }
+        // A row about an entry that says it is a user's would belong to no project, in every export.
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("user", "report.update") }
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("user", "project.member.add") }
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("report", "user.update") }
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("report", "reports.update") }
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("report", "report") }
+        assertThrows<AuditWriteException> { AuditProject.requireActionOf("report", "Report.update") }
+    }
+
+    @Test
     fun `a refusal says what is wrong and nothing of the row`() {
         val secret = "Tajný zápis č. 7"
         val error = assertThrows<AuditWriteException> {

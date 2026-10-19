@@ -58,6 +58,40 @@ object AuditHash {
 
     const val SALT_BYTES = 32
 
+    /**
+     * The deepest nesting of arrays and objects a payload may have, the payload's own object being the first level. A snapshot
+     * has a few levels; the bound exists because whoever may insert a row (the application's role) could write one that takes a
+     * recursive parser down with a `StackOverflowError`, which no command line catches. The writer refuses more, and the
+     * verifier reports a row that has more ([isNestedDeeperThan]) without parsing it.
+     */
+    const val MAX_JSON_DEPTH = 64
+
+    /**
+     * Whether [json] nests arrays and objects deeper than [limit] levels. Counted by one pass over the characters, **without
+     * parsing**, so that it holds for any text however deep: brackets inside strings (and escaped quotes) do not count.
+     */
+    fun isNestedDeeperThan(json: String, limit: Int): Boolean {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (c in json) {
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    c == '\\' -> escaped = true
+                    c == '"' -> inString = false
+                }
+            } else {
+                when (c) {
+                    '"' -> inString = true
+                    '[', '{' -> if (++depth > limit) return true
+                    ']', '}' -> depth--
+                }
+            }
+        }
+        return false
+    }
+
     private const val PAYLOAD_TAG = "stavebni-denik/audit-payload"
     private const val ROW_TAG = "stavebni-denik/audit-row"
     private val HEX_64 = Regex("[0-9a-f]{64}")
@@ -95,13 +129,19 @@ object AuditHash {
             put("entityType", entityType)
             put("ts", formatTs(ts))
         }
-        return String(StringBuilder().also { appendCompact(it, payload) }.toString().utf8(), Charsets.UTF_8)
+        return String(StringBuilder().also { appendCompact(it, payload, 1) }.toString().utf8(), Charsets.UTF_8)
     }
 
     private val JSON_NUMBER = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
 
-    /** Compact JSON, object keys sorted, strings quoted and escaped as `kotlinx` does, numbers and literals exactly as they are. */
-    private fun appendCompact(out: StringBuilder, element: JsonElement) {
+    private fun requireDepth(depth: Int) = require(depth <= MAX_JSON_DEPTH) { "a snapshot is nested deeper than $MAX_JSON_DEPTH levels" }
+
+    /**
+     * Compact JSON, object keys sorted, strings quoted and escaped as `kotlinx` does, numbers and literals exactly as they are.
+     * [depth] is the level of [element]; one deeper than [MAX_JSON_DEPTH] is refused before it is entered, so this recursion
+     * is as shallow as the bound whatever it is given.
+     */
+    private fun appendCompact(out: StringBuilder, element: JsonElement, depth: Int) {
         when (element) {
             is JsonNull -> out.append("null")
             is JsonPrimitive -> {
@@ -117,16 +157,18 @@ object AuditHash {
                 }
             }
             is JsonArray -> {
+                requireDepth(depth)
                 out.append('[')
-                element.forEachIndexed { i, item -> if (i > 0) out.append(','); appendCompact(out, item) }
+                element.forEachIndexed { i, item -> if (i > 0) out.append(','); appendCompact(out, item, depth + 1) }
                 out.append(']')
             }
             is JsonObject -> {
+                requireDepth(depth)
                 out.append('{')
                 element.keys.sorted().forEachIndexed { i, key ->
                     if (i > 0) out.append(',')
                     out.append(JsonPrimitive(key).toString()).append(':')
-                    appendCompact(out, element.getValue(key))
+                    appendCompact(out, element.getValue(key), depth + 1)
                 }
                 out.append('}')
             }

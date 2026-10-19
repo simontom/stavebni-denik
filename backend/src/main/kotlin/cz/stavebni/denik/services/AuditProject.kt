@@ -50,8 +50,22 @@ internal object AuditProject {
         )
     }
 
+    /**
+     * An action starts with its entity type (`report.lock` is an action of the type `report`; every action of the application
+     * does). **The writer chooses the entity type, and [of] gives a user's row no project**, so without this a row about project
+     * A that says it is a user's would pass: its project would be derived as none, and it would be a stub in every export, hiding
+     * A's row from A's slice. Checked when a row is written and again when the chain is verified. The message holds nothing of
+     * the row.
+     */
+    fun requireActionOf(entityType: String, action: String) {
+        if (entityType.isEmpty() || !action.startsWith("$entityType.")) {
+            throw AuditWriteException("The action of an audit row does not belong to its entity type")
+        }
+    }
+
     /** The same, from the payload text of a stored row (the way [AuditHash.payloadV2] wrote it). */
     fun ofPayload(payloadText: String): UUID? {
+        if (AuditHash.isNestedDeeperThan(payloadText, AuditHash.MAX_JSON_DEPTH)) throw AuditWriteException("An audit payload is nested too deeply")
         val payload = try {
             Json.parseToJsonElement(payloadText) as? JsonObject
         } catch (e: SerializationException) {

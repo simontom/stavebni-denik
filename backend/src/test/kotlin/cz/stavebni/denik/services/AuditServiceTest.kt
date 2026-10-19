@@ -123,6 +123,36 @@ class AuditServiceTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `a row whose action is not of its entity type is refused, and the change is not made`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        // The probe: an entry's action on a row said to be a user's (which belongs to no project, in every export).
+        val error = assertThrows<AuditWriteException> {
+            AuditService.auditedWrite(user, "user") { tx ->
+                insertProject(tx, projectId, user.id)
+                AuditService.Audited(Unit, "report.update", "r1", after = snapshot("""{"projectId":"$projectId"}"""))
+            }
+        }
+        assertFalse(error.message!!.contains(projectId.toString()), error.message)
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
+    fun `a snapshot nested too deeply is refused as an audit failure and the change is not made`() = runBlocking {
+        val user = createTestUser()
+        val projectId = UUID.randomUUID()
+        var deep: JsonElement = kotlinx.serialization.json.JsonArray(emptyList())
+        repeat(AuditHash.MAX_JSON_DEPTH) { deep = kotlinx.serialization.json.JsonArray(listOf(deep)) }
+
+        assertThrows<AuditWriteException> {
+            appendTestAuditRow(user, "user.update", "1", after = deep) { tx -> insertProject(tx, projectId, user.id) }
+        }
+        assertEquals(0, dsl.fetchCount(PROJECTS, PROJECTS.ID.eq(projectId)), "rolled back")
+        assertEquals(0, dsl.fetchCount(AUDIT_LOG))
+    }
+
+    @Test
     fun `a snapshot that is not JSON is refused as an audit failure, with a message that holds none of it`() = runBlocking {
         val user = createTestUser()
         val projectId = UUID.randomUUID()
@@ -160,7 +190,7 @@ class AuditServiceTest : BaseIntegrationTest() {
 
     @Test
     fun `a row without snapshots is still hashed and chained`() = runBlocking {
-        AuditService.auditedWrite(null, "user") { _ -> AuditService.Audited(Unit, "cli.test", "1") }
+        AuditService.auditedWrite(null, "user") { _ -> AuditService.Audited(Unit, "user.cli_test", "1") }
 
         val log = dsl.selectFrom(AUDIT_LOG).fetchOne()!!
         assertNull(log.get(AUDIT_LOG.ACTOR_ID), "a command-line action has no acting user")

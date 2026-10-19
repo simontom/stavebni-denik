@@ -162,8 +162,8 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
             val ids = threeRows()
             val (named, type, entityId) = label(projectA)
             val snapshot = if (type == "project") snapshot("""{"userId":"u","role":"BOSS"}""") else reportSnapshot(projectA, 9)
-            val id = dsl.insertRowNamingProject(named, "forged.update", entityId, type, after = snapshot)
-            dsl.insertRowNamingProject(null, "after.forged", "u1", "user")
+            val id = dsl.insertRowNamingProject(named, "$type.update", entityId, type, after = snapshot)
+            dsl.insertRowNamingProject(null, "user.after_forged", "u1", "user")
             assertBrokenAt(id, what, "the project of row id=$id does not match its payload")
             assertTrue(ids.all { it < id })
         }
@@ -197,6 +197,82 @@ class AuditChainVerificationTest : BaseIntegrationTest() {
         val reason = AuditService.verifyChain(dsl).reason!!
         assertTrue(reason.contains("id=$id"))
         assertFalse(reason.contains(secret) || reason.contains("r-secret") || reason.contains(projectA.toString()) || reason.contains(projectB.toString()), reason)
+    }
+
+    // --- the action belongs to the entity type --------------------------------------------------------------------------------
+
+    @Test
+    fun `a row whose action does not belong to its entity type is found, so a row of a project cannot pass as a row of a user`() {
+        // The writer chooses the entity type, and a user's row belongs to no project: a row about project A, called a user's,
+        // would be a stub in every export and hide A's row from A's. Every action starts with its entity type.
+        for (action in listOf("report.update", "project.member.add", "photo.upload", "siteHandover.sign", "authorizedPerson.revoke")) {
+            clearTables()
+            threeRows()
+            val id = dsl.insertRowNamingProject(null, action, "r1", "user", after = reportSnapshot(projectA, 9))
+            assertBrokenAt(id, "the action $action on a row of a user", "the action of row id=$id does not belong to its entity type")
+        }
+        // The other way round, a user's action on a row of a project.
+        clearTables()
+        threeRows()
+        val id = dsl.insertRowNamingProject(projectA, "user.update", "r1", "report", after = reportSnapshot(projectA, 9))
+        assertBrokenAt(id, "a user's action on an entry", "does not belong to its entity type")
+    }
+
+    // --- a payload cannot be made to crash the verification ---------------------------------------------------------------------
+
+    private fun payloadNestedDeep(levels: Int, ts: java.time.OffsetDateTime): String =
+        """{"action":"user.update","actorId":null,"after":null,"before":${"[".repeat(levels)}${"]".repeat(levels)},"entityId":"u1","entityType":"user","ts":"${AuditHash.formatTs(ts)}"}"""
+
+    private fun insertDeepRow(levels: Int): Long {
+        val ts = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC).truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
+        return dsl.insertRowWithPayload(payloadNestedDeep(levels, ts), ts, null, "user.update", "u1", "user")
+    }
+
+    @Test
+    fun `a payload nested hundreds of thousands of levels deep is a failed verification with its row, not a crash`() {
+        // The 256 KiB limit is the limit of a request; the application's role can insert a row of any size. Parsing such a text
+        // recursively would end in a StackOverflowError, which is not an Exception and no command line catches.
+        threeRows()
+        val id = insertDeepRow(200_000)
+
+        val result = AuditService.verifyChain(dsl)
+
+        assertFalse(result.ok)
+        assertEquals(id, result.brokenAtId)
+        assertTrue(result.reason!!.contains("the payload of row id=$id is nested too deeply"), result.reason)
+    }
+
+    @Test
+    fun `the limit of the nesting is the one the writer keeps, 64 containers with the payload itself the first`() {
+        threeRows()
+        insertDeepRow(AuditHash.MAX_JSON_DEPTH - 1)   // the object of the payload and 63 arrays: 64 levels
+        assertTrue(AuditService.verifyChain(dsl).ok, "the deepest payload the writer would write verifies")
+
+        val tooDeep = insertDeepRow(AuditHash.MAX_JSON_DEPTH)
+        assertBrokenAt(tooDeep, "one level more", "nested too deeply")
+    }
+
+    private class Run(val code: Int, val out: List<String>, val err: List<String>)
+
+    private fun cli(vararg args: String): Run {
+        val out = mutableListOf<String>()
+        val err = mutableListOf<String>()
+        return Run(cz.stavebni.denik.cli.AdminCli.run(args.toList(), out::add, err::add), out, err)
+    }
+
+    @Test
+    fun `the command line answers 1 and names the row for a hostile payload, it does not die`() {
+        threeRows()
+        val before = cli("audit-head")
+        assertEquals(0, before.code, before.err.toString())
+        val id = insertDeepRow(200_000)
+
+        for (command in listOf(arrayOf("audit-verify"), arrayOf("audit-verify", before.out.single()), arrayOf("audit-head"))) {
+            val run = cli(*command)
+            assertEquals(1, run.code, "${command.toList()}: ${run.err}")
+            assertTrue(run.err.single().startsWith("Audit log BROKEN:") && run.err.single().contains("id=$id"), run.err.toString())
+            assertTrue(run.out.none { it.contains("OK") }, run.out.toString())
+        }
     }
 
     // --- a forged tail ----------------------------------------------------------------------------------------------------

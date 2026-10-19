@@ -34,9 +34,11 @@ internal suspend fun appendTestAuditRow(
     after: JsonElement? = null,
     change: (DSLContext) -> Unit = {},
 ) {
+    // An action belongs to its entity type (`report.lock` is a row of type `report`): a bare name is given the prefix.
+    val named = if (action.startsWith("$entityType.")) action else "$entityType.$action"
     AuditService.auditedWrite(actor, entityType) { tx ->
         change(tx)
-        AuditService.Audited(result = Unit, action = action, entityId = entityId, before = before, after = after)
+        AuditService.Audited(result = Unit, action = named, entityId = entityId, before = before, after = after)
     }
 }
 
@@ -55,9 +57,27 @@ internal fun DSLContext.insertRowNamingProject(
     after: JsonElement? = null,
     actorId: String? = null,
 ): Long {
-    val prevHash = select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.desc()).limit(1).fetchOne()?.value1() ?: AuditHash.GENESIS_HASH
     val ts = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS)
-    val payload = AuditHash.payloadV2(action, actorId, entityType, entityId, before, after, ts)
+    return insertRowWithPayload(
+        AuditHash.payloadV2(action, actorId, entityType, entityId, before, after, ts), ts, projectId, action, entityId, entityType, actorId,
+    )
+}
+
+/**
+ * Appends a row whose payload text is **given as it is** (not composed by [AuditHash.payloadV2], which refuses what a writer
+ * must not write): valid hashes, the chain continued. What somebody with the right to insert can write past the application,
+ * for example a payload nested a hundred thousand levels deep. Returns the row's id.
+ */
+internal fun DSLContext.insertRowWithPayload(
+    payload: String,
+    ts: OffsetDateTime,
+    projectId: UUID?,
+    action: String,
+    entityId: String,
+    entityType: String,
+    actorId: String? = null,
+): Long {
+    val prevHash = select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG).orderBy(AUDIT_LOG.ID.desc()).limit(1).fetchOne()?.value1() ?: AuditHash.GENESIS_HASH
     val salt = AuditHash.newSalt()
     return insertInto(AUDIT_LOG)
         .set(AUDIT_LOG.HASH_VERSION, AuditHash.VERSION_2.toShort())
