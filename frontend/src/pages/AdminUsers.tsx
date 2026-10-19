@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, json, ROLE_LABELS } from "../lib/api";
+import { Button } from "../components/ui";
 
 interface User {
   id: string;
@@ -159,23 +160,22 @@ export const AdminUsers: React.FC = () => {
   );
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
       {/* Title & Actions */}
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-2xl font-bold text-gray-900">Uživatelé</div>
           <p className="mt-1 text-sm text-gray-500">Správa uživatelských účtů a oprávnění v systému.</p>
         </div>
-        <button type="button" onClick={handleOpenCreate} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-          Nový uživatel
-        </button>
+        <Button onClick={handleOpenCreate}>Nový uživatel</Button>
       </div>
 
       {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
 
       {/* Users Table */}
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200">
+        {/* A list of users on a phone (table-cards, index.css); the actions of a user are a row of buttons of 44 px. */}
+        <table className="table-cards min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
               <th scope="col" className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase">
@@ -226,7 +226,7 @@ export const AdminUsers: React.FC = () => {
                   <button type="button" onClick={() => void handleResetPassword(user)} className="text-gray-600 hover:text-gray-900">
                     Obnovit heslo
                   </button>
-                  <button type="button" onClick={() => void handleToggleActive(user)} className="text-amber-600 hover:text-amber-900">
+                  <button type="button" onClick={() => void handleToggleActive(user)} className="text-amber-700 hover:text-amber-900">
                     {user.isActive ? "Deaktivovat" : "Aktivovat"}
                   </button>
                   <button type="button" onClick={() => void handleDeleteUser(user)} className="text-red-600 hover:text-red-900">

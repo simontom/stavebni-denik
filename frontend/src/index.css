@@ -154,4 +154,8 @@
     margin-left: 0;
     padding-inline: 0.5rem;
   }
+  /* The first one's text lines up with the text above it, its padding hangs out into the margin. */
+  .table-cards > tbody > tr > td > :is(button, a):first-child {
+    margin-left: -0.5rem;
+  }
 }
