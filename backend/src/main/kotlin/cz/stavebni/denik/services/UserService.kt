@@ -291,10 +291,9 @@ object UserService {
 
         return AuditService.auditedWrite(actor, "user") { tx ->
             val existing = lockedUser(tx, id)
-            if (!active) {
-                requireAnotherActiveAdminIfTargetIsOne(tx, id)
-                requireNotSiteManager(tx, id, "deaktivovat")
-            }
+            // Deactivating is the emergency switch (a compromised account, a person who left): it is not held back for a site
+            // manager. The answer says which projects are left without an active one.
+            if (!active) requireAnotherActiveAdminIfTargetIsOne(tx, id)
 
             val updated = tx.update(USERS)
                 .set(USERS.ISACTIVE, active)
@@ -307,7 +306,7 @@ object UserService {
             // Reactivating an account must not bring back sessions from before it was deactivated.
             if (!active) SessionService.revokeAllForUser(tx, id)
             AuditService.Audited(
-                result = toDto(updated),
+                result = toDto(updated).copy(warning = if (active) null else deactivationWarning(tx, id)),
                 action = if (active) "user.activate" else "user.deactivate",
                 entityId = id.toString(),
                 before = existing.toSnapshot(),
@@ -324,7 +323,7 @@ object UserService {
         AuditService.auditedWrite(actor, "user") { tx ->
             val existing = lockedUser(tx, id)
             requireAnotherActiveAdminIfTargetIsOne(tx, id)
-            requireNotSiteManager(tx, id, "smazat")
+            requireNotSiteManager(tx, id)
 
             val now = OffsetDateTime.now()
             val updated = tx.update(USERS)
@@ -398,19 +397,36 @@ object UserService {
     private const val MAX_NAMED_PROJECTS = 5
 
     /**
-     * A site manager cannot be deactivated or deleted (decision D2): the diary of the project is signed by them, and a project
-     * always has one. The administrator first has the manager of the project replace the site manager
+     * A site manager cannot be deleted (decision D2): a project always has one, and the audit rows and signed entries refer to
+     * the person. The administrator first has the manager of the project replace the site manager
      * (`PUT /projects/{id}/site-manager`); after that the user manages no project as its site manager. Called inside the
-     * audited transaction, so the answer cannot change before the user is changed.
+     * audited transaction, so the answer cannot change before the user is deleted. Deactivating is not held back: see
+     * [deactivationWarning].
      */
-    private fun requireNotSiteManager(tx: DSLContext, userId: UUID, verb: String) {
+    private fun requireNotSiteManager(tx: DSLContext, userId: UUID) {
         val projects = projectsAsSiteManager(tx, userId)
         if (projects.isEmpty()) return
         val which = if (projects.size == 1) "projektu" else "projektů"
         throw ConflictException(
-            "Uživatele nelze $verb: je stavbyvedoucím $which ${namedProjects(projects)}. " +
+            "Uživatele nelze smazat: je stavbyvedoucím $which ${namedProjects(projects)}. " +
                 "Nejdřív nechte vedoucího projektu určit jiného stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu), pak to zopakujte."
         )
+    }
+
+    /**
+     * The notice that goes with the deactivation of a user who is the site manager of projects that are not deleted: they are
+     * left without an active site manager. Null when the user is the site manager of none. The deactivation itself is the
+     * emergency switch and is never refused for this. What it means for signing: the user has no session any more, and an
+     * entry is signed by an active manager (BOSS) of the project who holds a ČKAIT number, the site manager or another one.
+     */
+    private fun deactivationWarning(tx: DSLContext, userId: UUID): String? {
+        val projects = projectsAsSiteManager(tx, userId)
+        if (projects.isEmpty()) return null
+        val single = projects.size == 1
+        return "Uživatel byl deaktivován, ale je stavbyvedoucím ${if (single) "projektu" else "projektů"} ${namedProjects(projects)}: " +
+            "${if (single) "ten zůstává" else "ty zůstávají"} bez aktivního stavbyvedoucího. " +
+            "Záznamy teď může podepisovat jen jiný aktivní vedoucí projektu (BOSS) s číslem ČKAIT. " +
+            "Nechte vedoucího projektu určit jiného stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu, v API PUT /projects/{id}/site-manager)."
     }
 
     /**

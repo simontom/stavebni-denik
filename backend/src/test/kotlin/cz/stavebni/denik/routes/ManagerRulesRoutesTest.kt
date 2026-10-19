@@ -4,10 +4,12 @@ import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
+import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import cz.stavebni.denik.module
+import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectService
 import io.ktor.client.request.*
@@ -168,7 +170,7 @@ class ManagerRulesRoutesTest : BaseIntegrationTest() {
     // ------------------------------------------------------------------ users who are site managers
 
     @Test
-    fun `a site manager cannot be deactivated or deleted until the project has another, and then both work`() = testApplication {
+    fun `a site manager can be switched off at once and the answer warns, deleting is refused until the project has another`() = testApplication {
         application { module() }
         val admin = createTestUser(nickname = "admin", role = Role.BOSS, isAdmin = true)
         val boss = createTestUser(nickname = "boss", role = Role.BOSS)
@@ -176,17 +178,52 @@ class ManagerRulesRoutesTest : BaseIntegrationTest() {
         val created = newProject(boss, name = "Bytový dům Špitálka")
         addMember(UUID.fromString(created.id), deputy, Role.BOSS)
 
-        val deactivate = send(admin, HttpMethod.Post, "/api/users/${boss.id}/deactivate")
         val delete = send(admin, HttpMethod.Delete, "/api/users/${boss.id}")
-        assertEquals(HttpStatusCode.Conflict, deactivate.status, deactivate.bodyAsText())
-        assertTrue(errorOf(deactivate.bodyAsText()).contains("Bytový dům Špitálka"), deactivate.bodyAsText())
         assertEquals(HttpStatusCode.Conflict, delete.status, delete.bodyAsText())
-        assertTrue(dsl.selectFrom(USERS).where(USERS.ID.eq(boss.id)).fetchSingle().isactive!!)
+        assertTrue(errorOf(delete.bodyAsText()).contains("Bytový dům Špitálka"), delete.bodyAsText())
 
-        val replaced = send(boss, HttpMethod.Put, "/api/projects/${created.id}/site-manager", """{"siteManagerId":"${deputy.id}","updatedAt":"${created.updatedAt}"}""")
+        val deactivate = send(admin, HttpMethod.Post, "/api/users/${boss.id}/deactivate")
+        assertEquals(HttpStatusCode.OK, deactivate.status, deactivate.bodyAsText())
+        val warning = Json.parseToJsonElement(deactivate.bodyAsText()).jsonObject.text("warning")
+        assertNotNull(warning, "the admin is told which project is left without an active site manager: ${deactivate.bodyAsText()}")
+        assertTrue(warning!!.contains("Bytový dům Špitálka"), warning)
+        assertFalse(dsl.selectFrom(USERS).where(USERS.ID.eq(boss.id)).fetchSingle().isactive!!)
+
+        // The deputy, an active manager of the project, replaces the switched-off site manager; after that the user can be deleted.
+        val replaced = send(deputy, HttpMethod.Put, "/api/projects/${created.id}/site-manager", """{"siteManagerId":"${deputy.id}","updatedAt":"${created.updatedAt}"}""")
         assertEquals(HttpStatusCode.OK, replaced.status, replaced.bodyAsText())
+        assertEquals(HttpStatusCode.NoContent, send(admin, HttpMethod.Delete, "/api/users/${boss.id}").status)
+    }
+
+    @Test
+    fun `a switched-off site manager cannot sign, and the project is signed again only by an active qualified manager`() = testApplication {
+        application { module() }
+        val admin = createTestUser(nickname = "admin", role = Role.BOSS, isAdmin = true)
+        val boss = createTestUser(nickname = "boss", role = Role.BOSS)
+        val worker = createTestUser(nickname = "worker", role = Role.WORKER)
+        val successor = createTestUser(nickname = "successor", role = Role.WORKER, ckaitNumber = "0054321")
+        val created = newProject(boss)
+        val projectId = UUID.fromString(created.id)
+        addMember(projectId, worker, Role.WORKER)
+        val report = DailyReportService.createReport(boss, projectId, "2026-09-29", workDescription = "Betonáž")
+        val password = """{"password":"Password123!"}"""
+        val bossToken = generateJwtToken(boss)
 
         assertEquals(HttpStatusCode.OK, send(admin, HttpMethod.Post, "/api/users/${boss.id}/deactivate").status)
-        assertEquals(HttpStatusCode.NoContent, send(admin, HttpMethod.Delete, "/api/users/${boss.id}").status)
+
+        // The site manager's session ended with the deactivation; the only other member is a worker: nobody can sign.
+        val old = client.post("/api/reports/${report.id}/sign") {
+            header(HttpHeaders.Authorization, "Bearer $bossToken")
+            contentType(ContentType.Application.Json)
+            setBody(password)
+        }
+        assertEquals(HttpStatusCode.Unauthorized, old.status, old.bodyAsText())
+        assertEquals(HttpStatusCode.Forbidden, send(worker, HttpMethod.Post, "/api/reports/${report.id}/sign", password).status)
+        assertNull(dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(report.id))).fetchSingle().lockedat, "nothing was signed")
+
+        // Signing needs an active manager of the project who holds a ČKAIT number, not specifically the site manager:
+        // the administrator adds one (decision D1) and that person signs.
+        assertEquals(HttpStatusCode.OK, send(admin, HttpMethod.Post, "/api/projects/$projectId/members", """{"userId":"${successor.id}","role":"BOSS"}""").status)
+        assertEquals(HttpStatusCode.OK, send(successor, HttpMethod.Post, "/api/reports/${report.id}/sign", password).status)
     }
 }

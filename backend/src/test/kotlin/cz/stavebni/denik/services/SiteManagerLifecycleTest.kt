@@ -6,6 +6,7 @@ import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
+import cz.stavebni.denik.jooq.tables.references.SESSIONS
 import cz.stavebni.denik.jooq.tables.references.USERS
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.*
@@ -39,25 +40,45 @@ class SiteManagerLifecycleTest : BaseIntegrationTest() {
         ProjectService.changeSiteManager(boss, UUID.fromString(p.id), SiteManagerChangeRequest(newManager.id.toString(), "Střídání", p.updatedAt))
     }
 
-    // ------------------------------------------------------------------ N5: the current site manager stays
+    // ------------------------------------------------------------------ N5: the current site manager
+
+    private fun openSessions(userId: UUID) = dsl.fetchCount(SESSIONS, SESSIONS.USERID.eq(userId).and(SESSIONS.REVOKEDAT.isNull))
 
     @Test
-    fun `the current site manager cannot be deactivated, and the refusal names the project`() = runBlocking<Unit> {
+    fun `deactivating the current site manager is allowed, ends their sessions and warns, naming the project`() = runBlocking<Unit> {
         val actor = admin()
         val manager = createTestUser(role = Role.BOSS)
         project(manager, manager, name = "Bytový dům Špitálka")
+        generateJwtToken(manager) // an open session
+        assertEquals(1, openSessions(manager.id))
 
-        val refused = assertThrows<ConflictException> { UserService.setActive(actor, manager.id, active = false) }
+        val answer = UserService.setActive(actor, manager.id, active = false)
 
-        assertTrue(refused.message!!.contains("Bytový dům Špitálka"), refused.message)
-        assertTrue(refused.message!!.contains("stavbyvedouc"), "says why: ${refused.message}")
-        assertTrue(refused.message!!.contains("jiného"), "says what to do first: ${refused.message}")
-        assertTrue(stored(manager.id).isactive!!, "still active")
-        assertEquals(0, count("user.deactivate"), "no row for what did not happen")
+        assertFalse(answer.isActive, "the emergency switch works: a compromised or departed site manager can be switched off")
+        assertFalse(stored(manager.id).isactive!!)
+        assertEquals(0, openSessions(manager.id))
+        assertEquals(1, count("user.deactivate"))
+        val warning = answer.warning
+        assertNotNull(warning, "but the admin is told what is left behind")
+        assertTrue(warning!!.contains("Bytový dům Špitálka"), warning)
+        assertTrue(warning.contains("stavbyvedouc") && warning.contains("jiného"), "says to replace the site manager: $warning")
+        assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
     @Test
-    fun `the current site manager cannot be deleted either`() = runBlocking<Unit> {
+    fun `the warning of a deactivated manager of several projects names all of them`() = runBlocking<Unit> {
+        val actor = admin()
+        val manager = createTestUser(role = Role.BOSS)
+        project(manager, manager, name = "První stavba")
+        project(manager, manager, name = "Druhá stavba")
+
+        val warning = UserService.setActive(actor, manager.id, active = false).warning!!
+
+        assertTrue(warning.contains("První stavba") && warning.contains("Druhá stavba"), warning)
+    }
+
+    @Test
+    fun `the current site manager cannot be deleted, and the refusal names the project`() = runBlocking<Unit> {
         val actor = admin()
         val manager = createTestUser(role = Role.BOSS)
         project(manager, manager, name = "Rekonstrukce školy")
@@ -65,38 +86,39 @@ class SiteManagerLifecycleTest : BaseIntegrationTest() {
         val refused = assertThrows<ConflictException> { UserService.deleteUser(actor, manager.id) }
 
         assertTrue(refused.message!!.contains("Rekonstrukce školy"), refused.message)
+        assertTrue(refused.message!!.contains("stavbyvedouc") && refused.message!!.contains("jiného"), "says why and what to do first: ${refused.message}")
         assertNull(stored(manager.id).deletedat, "not deleted")
-        assertEquals(0, count("user.delete"))
+        assertEquals(0, count("user.delete"), "no row for what did not happen")
     }
 
     @Test
-    fun `a manager of several projects is refused with all of them named`() = runBlocking<Unit> {
+    fun `a manager of several projects cannot be deleted, with all of them named`() = runBlocking<Unit> {
         val actor = admin()
         val manager = createTestUser(role = Role.BOSS)
         project(manager, manager, name = "První stavba")
         project(manager, manager, name = "Druhá stavba")
 
-        val refused = assertThrows<ConflictException> { UserService.setActive(actor, manager.id, active = false) }
+        val refused = assertThrows<ConflictException> { UserService.deleteUser(actor, manager.id) }
 
         assertTrue(refused.message!!.contains("První stavba") && refused.message!!.contains("Druhá stavba"), refused.message)
     }
 
     @Test
-    fun `once the project has another site manager, the user can be deactivated and deleted, and both are audited`() = runBlocking<Unit> {
+    fun `once the project has another site manager the user is deactivated without a warning and can be deleted`() = runBlocking<Unit> {
         val actor = admin()
         val boss = createTestUser(role = Role.BOSS)
         val deputy = createTestUser(role = Role.BOSS)
         val created = project(boss, boss)
         addMember(UUID.fromString(created.id), deputy, Role.BOSS)
-        assertThrows<ConflictException> { UserService.setActive(actor, boss.id, active = false) }
+        assertThrows<ConflictException> { UserService.deleteUser(actor, boss.id) }
 
         replace(boss, created, deputy)
 
         val off = UserService.setActive(actor, boss.id, active = false)
         assertFalse(off.isActive)
+        assertNull(off.warning, "the project has an active site manager")
         assertEquals(1, count("user.deactivate"))
-        // ... and the new site manager is now the one who is held back.
-        assertThrows<ConflictException> { UserService.setActive(actor, deputy.id, active = false) }
+        // ... and the new site manager is now the one whose deletion is held back.
         assertThrows<ConflictException> { UserService.deleteUser(actor, deputy.id) }
 
         UserService.setActive(actor, boss.id, active = true)
@@ -107,14 +129,17 @@ class SiteManagerLifecycleTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `a member who is a manager but not the site manager can be deactivated`() = runBlocking<Unit> {
+    fun `a manager who is not the site manager is deactivated without a warning`() = runBlocking<Unit> {
         val actor = admin()
         val boss = createTestUser(role = Role.BOSS)
         val deputy = createTestUser(role = Role.BOSS)
         val created = project(boss, boss)
         addMember(UUID.fromString(created.id), deputy, Role.BOSS)
 
-        assertFalse(UserService.setActive(actor, deputy.id, active = false).isActive)
+        val off = UserService.setActive(actor, deputy.id, active = false)
+
+        assertFalse(off.isActive)
+        assertNull(off.warning)
     }
 
     @Test
@@ -124,31 +149,59 @@ class SiteManagerLifecycleTest : BaseIntegrationTest() {
         val created = project(manager, manager)
         dsl.execute("""update projects set "deletedAt" = now() where id = ?""", UUID.fromString(created.id))
 
-        assertFalse(UserService.setActive(actor, manager.id, active = false).isActive)
+        val off = UserService.setActive(actor, manager.id, active = false)
+        assertFalse(off.isActive)
+        assertNull(off.warning, "no project is left without a site manager")
+        UserService.deleteUser(actor, manager.id)
+        assertNotNull(stored(manager.id).deletedat)
     }
 
     @Test
-    fun `reactivating a user is not held back`() = runBlocking<Unit> {
+    fun `reactivating a user is not held back and does not warn`() = runBlocking<Unit> {
         val actor = admin()
         val manager = createTestUser(role = Role.BOSS)
         project(manager, manager)
-        dsl.update(USERS).set(USERS.ISACTIVE, false).where(USERS.ID.eq(manager.id)).execute() // legacy data: deactivated before this rule
+        UserService.setActive(actor, manager.id, active = false)
 
-        assertTrue(UserService.setActive(actor, manager.id, active = true).isActive)
+        val on = UserService.setActive(actor, manager.id, active = true)
+
+        assertTrue(on.isActive)
+        assertNull(on.warning)
+    }
+
+    // ------------------------------------------------------------------ the last administrator, who is also a site manager
+
+    @Test
+    fun `the last active administrator is protected first, whether or not they are a site manager`() = runBlocking<Unit> {
+        val adminA = createTestUser(nickname = "admin_a", role = Role.BOSS, isAdmin = true)
+        val adminB = createTestUser(nickname = "admin_b", role = Role.BOSS, isAdmin = true)
+        project(adminA, adminA) // the last administrator is also the site manager of a project
+        UserService.setActive(adminA, adminB.id, active = false) // adminB manages nothing, so this is not held back
+        val rowsBefore = dsl.fetchCount(AUDIT_LOG)
+
+        // adminB's request started while it still was an administrator: only the guards refuse. adminA is the last one.
+        val deactivate = assertThrows<IllegalStateException> { UserService.setActive(adminB, adminA.id, active = false) }
+        val delete = assertThrows<IllegalStateException> { UserService.deleteUser(adminB, adminA.id) }
+
+        // The guard of the last administrator (an IllegalStateException), not the site manager rule (a ConflictException): it comes first.
+        assertTrue(deactivate.message!!.contains("administrátor"), deactivate.message)
+        assertTrue(delete.message!!.contains("administrátor"), delete.message)
+        assertTrue(stored(adminA.id).isactive!!)
+        assertNull(stored(adminA.id).deletedat)
+        assertEquals(rowsBefore, dsl.fetchCount(AUDIT_LOG), "the refused changes left no row")
     }
 
     @Test
-    fun `the last active administrator is still protected, whether or not they manage a project`() = runBlocking<Unit> {
+    fun `an administrator who is a site manager but not the last administrator is deactivated with the warning and not deleted`() = runBlocking<Unit> {
         val adminA = createTestUser(nickname = "admin_a", role = Role.BOSS, isAdmin = true)
         val adminB = createTestUser(nickname = "admin_b", role = Role.BOSS, isAdmin = true)
-        project(adminA, adminA)
-        UserService.setActive(adminA, adminB.id, active = false) // adminB manages nothing: allowed
+        project(adminA, adminA, name = "Stavba administrátora")
 
-        // adminB's request started while it still was an administrator: only the guards refuse. adminA is the last one.
-        assertThrows<RuntimeException> { UserService.setActive(adminB, adminA.id, active = false) }
-        assertThrows<RuntimeException> { UserService.deleteUser(adminB, adminA.id) }
-        assertTrue(stored(adminA.id).isactive!!)
-        assertNull(stored(adminA.id).deletedat)
+        assertThrows<ConflictException> { UserService.deleteUser(adminB, adminA.id) }
+        val off = UserService.setActive(adminB, adminA.id, active = false)
+
+        assertFalse(off.isActive)
+        assertTrue(off.warning!!.contains("Stavba administrátora"), off.warning)
     }
 
     // ------------------------------------------------------------------ "another manager" means an active one
