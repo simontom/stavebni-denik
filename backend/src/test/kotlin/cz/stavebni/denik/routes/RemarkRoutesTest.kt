@@ -13,6 +13,7 @@ import cz.stavebni.denik.services.PdfExportService
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectService
 import cz.stavebni.denik.services.TypstCompiler
+import cz.stavebni.denik.services.auditAfterText
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -170,11 +171,12 @@ class RemarkRoutesTest : BaseIntegrationTest() {
         val s = site(sign = true)
         post(s.boss, s.reportId, body("Kontrola BOZP bez závad", externalAuthor = "OIP, Ing. Svoboda"))
 
-        val row = dsl.select(AUDIT_LOG.ACTION, AUDIT_LOG.ENTITY_ID, AUDIT_LOG.AFTER, AUDIT_LOG.ACTOR_ID)
+        val row = dsl.select(AUDIT_LOG.ACTION, AUDIT_LOG.ENTITY_ID, AUDIT_LOG.PAYLOAD_TEXT, AUDIT_LOG.ACTOR_ID, AUDIT_LOG.PROJECT_ID)
             .from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.remark.add")).fetchOne()!!
         assertEquals(s.reportId, row.get(AUDIT_LOG.ENTITY_ID))
         assertEquals(s.boss.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        val after = row.get(AUDIT_LOG.AFTER)!!.data()
+        assertEquals(s.projectId, row.get(AUDIT_LOG.PROJECT_ID), "the entry of another party is a row of the entry's project")
+        val after = row.auditAfterText()!!
         assertTrue(after.contains("Kontrola BOZP bez závad") && after.contains("OIP, Ing. Svoboda") && after.contains("EXTERNAL_ENTRY"), after)
         assertTrue(AuditService.verifyChain(dsl).ok)
     }

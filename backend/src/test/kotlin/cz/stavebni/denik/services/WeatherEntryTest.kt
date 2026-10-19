@@ -150,7 +150,7 @@ class WeatherEntryTest : BaseIntegrationTest() {
 
         DailyReportService.createReport(boss, projectId, "2026-09-28", weather = WeatherData(8.5, 15.0, "zataženo"))
 
-        val snapshot = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.create")).fetchOne()!!.get(AUDIT_LOG.AFTER)!!.data()
+        val snapshot = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.create")).fetchOne()!!.auditAfterText()!!
         val after = Json.parseToJsonElement(snapshot).jsonObject
         assertEquals("zataženo, 8,5 až 15 °C", after["weather"]!!.jsonPrimitive.content)
         assertTrue(AuditService.verifyChain(dsl).ok)

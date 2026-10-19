@@ -127,7 +127,7 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
 
         val row = auditRows("photo.upload").single()
         assertEquals(photo.id.toString(), row.get(AUDIT_LOG.ENTITY_ID))
-        val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        val after = Json.parseToJsonElement(row.auditAfterText()!!).jsonObject
         assertEquals(s.reportId.toString(), after["reportId"]!!.jsonPrimitive.content)
         assertEquals(64, after["sha256Original"]!!.jsonPrimitive.content.length)
         assertEquals(64, after["sha256Thumbnail"]!!.jsonPrimitive.content.length)
@@ -147,8 +147,8 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
         assertNotNull(SiteHandoverService.createHandover(admin, handoverDto(s.projectId)), "as a member the administrator may write")
         val row = auditRows("project.member.add").single()
         assertEquals(s.projectId.toString(), row.get(AUDIT_LOG.ENTITY_ID))
-        assertNull(row.get(AUDIT_LOG.BEFORE), "there was no membership before")
-        val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        assertNull(row.auditBeforeText(), "there was no membership before")
+        val after = Json.parseToJsonElement(row.auditAfterText()!!).jsonObject
         assertEquals(admin.id.toString(), after["userId"]!!.jsonPrimitive.content)
         assertEquals("BOSS", after["role"]!!.jsonPrimitive.content)
     }
@@ -162,11 +162,11 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
         ProjectMemberService.removeMember(s.owner, s.projectId, worker.id)
 
         val adds = auditRows("project.member.add")
-        val change = Json.parseToJsonElement(adds.last().get(AUDIT_LOG.BEFORE)!!.data()).jsonObject
+        val change = Json.parseToJsonElement(adds.last().auditBeforeText()!!).jsonObject
         assertEquals("WORKER", change["role"]!!.jsonPrimitive.content)
         val removal = auditRows("project.member.remove").single()
-        assertEquals("INSPECTOR", Json.parseToJsonElement(removal.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject["role"]!!.jsonPrimitive.content)
-        assertNull(removal.get(AUDIT_LOG.AFTER))
+        assertEquals("INSPECTOR", Json.parseToJsonElement(removal.auditBeforeText()!!).jsonObject["role"]!!.jsonPrimitive.content)
+        assertNull(removal.auditAfterText())
         assertEquals(0, dsl.fetchCount(PROJECT_MEMBERS, PROJECT_MEMBERS.USERID.eq(worker.id)))
     }
 
@@ -180,7 +180,7 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
 
         val createRow = auditRows("authorizedPerson.create").single()
         assertEquals(person.id, createRow.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals("Ing. Dozor", Json.parseToJsonElement(createRow.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["name"]!!.jsonPrimitive.content)
+        assertEquals("Ing. Dozor", Json.parseToJsonElement(createRow.auditAfterText()!!).jsonObject["name"]!!.jsonPrimitive.content)
 
         val revoked = AuthorizedPersonService.revoke(s.owner, id)
         val firstRevokedAt = dsl.selectFrom(AUTHORIZED_PERSONS).fetchOne()!!.revokedat

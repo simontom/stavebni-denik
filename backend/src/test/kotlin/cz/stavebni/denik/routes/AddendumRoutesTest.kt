@@ -13,6 +13,7 @@ import cz.stavebni.denik.services.PdfExportService
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectService
 import cz.stavebni.denik.services.TypstCompiler
+import cz.stavebni.denik.services.auditAfterText
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -150,11 +151,12 @@ class AddendumRoutesTest : BaseIntegrationTest() {
         val s = site()
         post(s.boss, s.reportId, text("Oprava údaje o počasí"))
 
-        val row = dsl.select(AUDIT_LOG.ACTION, AUDIT_LOG.ENTITY_ID, AUDIT_LOG.AFTER, AUDIT_LOG.ACTOR_ID)
+        val row = dsl.select(AUDIT_LOG.ACTION, AUDIT_LOG.ENTITY_ID, AUDIT_LOG.PAYLOAD_TEXT, AUDIT_LOG.ACTOR_ID, AUDIT_LOG.PROJECT_ID)
             .from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.addendum.add")).fetchOne()!!
         assertEquals(s.reportId, row.get(AUDIT_LOG.ENTITY_ID))
         assertEquals(s.boss.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        assertTrue(row.get(AUDIT_LOG.AFTER)!!.data().contains("Oprava údaje o počasí"))
+        assertEquals(s.projectId, row.get(AUDIT_LOG.PROJECT_ID), "the addendum is a row of the entry's project")
+        assertTrue(row.auditAfterText()!!.contains("Oprava údaje o počasí"))
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 

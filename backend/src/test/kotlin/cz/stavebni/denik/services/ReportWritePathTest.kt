@@ -69,8 +69,8 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val row = auditRows("report.lock").single()
         assertEquals(created.id, row.get(AUDIT_LOG.ENTITY_ID), "the audit row must name the report")
         assertEquals(boss.id.toString(), row.get(AUDIT_LOG.ACTOR_ID))
-        val before = parse(row.get(AUDIT_LOG.BEFORE)?.data())
-        val after = parse(row.get(AUDIT_LOG.AFTER)?.data())
+        val before = parse(row.auditBeforeText())
+        val after = parse(row.auditAfterText())
         assertTrue(before["lockedAt"] is JsonNull, "the report was not locked before the signature")
         assertNotNull(after["lockedAt"]!!.jsonPrimitive.content)
         assertEquals("Betonáž", after["workDescription"]!!.jsonPrimitive.content)
@@ -254,13 +254,13 @@ class ReportWritePathTest : BaseIntegrationTest() {
 
         val createRow = auditRows("report.create").single()
         assertEquals(created.id, createRow.get(AUDIT_LOG.ENTITY_ID), "the audit row must name the new report")
-        assertNull(createRow.get(AUDIT_LOG.BEFORE))
-        assertEquals("První verze", parse(createRow.get(AUDIT_LOG.AFTER)?.data())["workDescription"]!!.jsonPrimitive.content)
+        assertNull(createRow.auditBeforeText())
+        assertEquals("První verze", parse(createRow.auditAfterText())["workDescription"]!!.jsonPrimitive.content)
 
         val updateRow = auditRows("report.update").single()
         assertEquals(created.id, updateRow.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals("První verze", parse(updateRow.get(AUDIT_LOG.BEFORE)?.data())["workDescription"]!!.jsonPrimitive.content)
-        assertEquals("Druhá verze", parse(updateRow.get(AUDIT_LOG.AFTER)?.data())["workDescription"]!!.jsonPrimitive.content)
+        assertEquals("První verze", parse(updateRow.auditBeforeText())["workDescription"]!!.jsonPrimitive.content)
+        assertEquals("Druhá verze", parse(updateRow.auditAfterText())["workDescription"]!!.jsonPrimitive.content)
 
         assertTrue(AuditService.verifyChain(dsl).ok)
     }

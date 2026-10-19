@@ -111,7 +111,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
 
         save(boss, projectId, details = mapOf("defects" to "Trhlina v omítce"))
 
-        val after = dsl.select(AUDIT_LOG.AFTER).from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.create")).fetchSingle(AUDIT_LOG.AFTER)!!.data()
+        val after = dsl.auditPartOf("report.create", "after")!!
         assertTrue(after.contains("Trhlina v omítce"), after)
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
@@ -268,15 +268,14 @@ class EntryDetailsTest : BaseIntegrationTest() {
         save(boss, projectId, details = mapOf("materials" to "Písek"))
         DailyReportService.signReport(boss, UUID.fromString(saved.id))
 
-        fun json(action: String, column: org.jooq.TableField<*, org.jooq.JSONB?>) =
-            dsl.select(column).from(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq(action)).fetchSingle().get(0, org.jooq.JSONB::class.java)!!.data()
+        fun json(action: String, part: String) = dsl.auditPartOf(action, part)!!
 
-        val update = json("report.update", AUDIT_LOG.AFTER)
+        val update = json("report.update", "after")
         assertTrue(update.contains("Písek"), update)
-        assertTrue(json("report.update", AUDIT_LOG.BEFORE).contains("Cement"))
+        assertTrue(json("report.update", "before").contains("Cement"))
         // Signing keeps what was there on both sides of the audit row.
-        assertTrue(json("report.lock", AUDIT_LOG.BEFORE).contains("Písek"))
-        assertTrue(json("report.lock", AUDIT_LOG.AFTER).contains("Písek"))
+        assertTrue(json("report.lock", "before").contains("Písek"))
+        assertTrue(json("report.lock", "after").contains("Písek"))
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 

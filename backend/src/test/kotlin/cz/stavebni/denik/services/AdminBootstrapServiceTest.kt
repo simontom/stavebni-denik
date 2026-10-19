@@ -50,8 +50,9 @@ class AdminBootstrapServiceTest : BaseIntegrationTest() {
         assertEquals(1, rows.size)
         assertNull(rows[0].get(AUDIT_LOG.ACTOR_ID))
         assertEquals(user("first.admin")!!.id.toString(), rows[0].get(AUDIT_LOG.ENTITY_ID), "the user's id, as for every other user row")
-        assertNull(rows[0].get(AUDIT_LOG.BEFORE))
-        val after = kotlinx.serialization.json.Json.parseToJsonElement(rows[0].get(AUDIT_LOG.AFTER)!!.data()).jsonObject
+        assertNull(rows[0].get(AUDIT_LOG.PROJECT_ID), "a user belongs to no project")
+        assertNull(rows[0].auditBeforeText())
+        val after = kotlinx.serialization.json.Json.parseToJsonElement(rows[0].auditAfterText()!!).jsonObject
         assertEquals("true", after["isAdmin"]!!.jsonPrimitive.content, "the row records what was created")
         assertEquals("first.admin", after["nickname"]!!.jsonPrimitive.content)
         val json = auditJson("user.bootstrap_admin").single()

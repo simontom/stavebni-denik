@@ -7,6 +7,7 @@ package cz.stavebni.denik.jooq.tables.records
 import cz.stavebni.denik.jooq.tables.AuditLog
 
 import java.time.OffsetDateTime
+import java.util.UUID
 
 import org.jooq.JSONB
 import org.jooq.Record1
@@ -67,6 +68,22 @@ open class AuditLogRecord() : UpdatableRecordImpl<AuditLogRecord>(AuditLog.AUDIT
         set(value): Unit = set(11, value)
         get(): String? = get(11) as String?
 
+    open var hashVersion: Short?
+        set(value): Unit = set(12, value)
+        get(): Short? = get(12) as Short?
+
+    open var projectId: UUID?
+        set(value): Unit = set(13, value)
+        get(): UUID? = get(13) as UUID?
+
+    open var payloadText: String?
+        set(value): Unit = set(14, value)
+        get(): String? = get(14) as String?
+
+    open var payloadSalt: String?
+        set(value): Unit = set(15, value)
+        get(): String? = get(15) as String?
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -76,7 +93,7 @@ open class AuditLogRecord() : UpdatableRecordImpl<AuditLogRecord>(AuditLog.AUDIT
     /**
      * Create a detached, initialised AuditLogRecord
      */
-    constructor(id: Long? = null, ts: OffsetDateTime? = null, actorId: String? = null, action: String? = null, entityType: String? = null, entityId: String? = null, before: JSONB? = null, after: JSONB? = null, ip: String? = null, userAgent: String? = null, prevHash: String? = null, rowHash: String? = null): this() {
+    constructor(id: Long? = null, ts: OffsetDateTime? = null, actorId: String? = null, action: String? = null, entityType: String? = null, entityId: String? = null, before: JSONB? = null, after: JSONB? = null, ip: String? = null, userAgent: String? = null, prevHash: String? = null, rowHash: String? = null, hashVersion: Short? = null, projectId: UUID? = null, payloadText: String? = null, payloadSalt: String? = null): this() {
         this.id = id
         this.ts = ts
         this.actorId = actorId
@@ -89,6 +106,10 @@ open class AuditLogRecord() : UpdatableRecordImpl<AuditLogRecord>(AuditLog.AUDIT
         this.userAgent = userAgent
         this.prevHash = prevHash
         this.rowHash = rowHash
+        this.hashVersion = hashVersion
+        this.projectId = projectId
+        this.payloadText = payloadText
+        this.payloadSalt = payloadSalt
         resetTouchedOnNotNull()
     }
 }

@@ -221,6 +221,15 @@ CREATE TABLE "rate_limit_attempts" (
 );
 
 -- CreateTable
+-- The audit chain has two row formats ("hash_version"); the layout of both is in PROJECT.md ("Audit log") and AuditHash.kt.
+--
+--   version 1  the whole row is hashed, with the snapshots in "before" and "after" as jsonb gives them back. Frozen: the
+--              application no longer writes it, and the chain still verifies such a row (tests build them by hand).
+--   version 2  everything the row says is ONE text, "payload_text", hashed (with a random salt, "payload_salt") exactly as
+--              it is stored, so verification never depends on a jsonb round trip; the row hash is then made of the
+--              previous hash, the project and the digest of the payload only. That is what lets one project's rows be
+--              handed over in full and every other row as a stub that still proves its place in the chain (the
+--              § 166(3) export), and what the project's id inside the hash is for.
 CREATE TABLE "audit_log" (
     "id" BIGSERIAL NOT NULL,
     "ts" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -234,8 +243,34 @@ CREATE TABLE "audit_log" (
     "user_agent" TEXT,
     "prev_hash" TEXT NOT NULL,
     "row_hash" TEXT NOT NULL,
+    -- No default: a writer has to say which format it writes (an insert that forgets is refused, not taken for version 1).
+    "hash_version" SMALLINT NOT NULL,
+    -- The project the row belongs to; part of the version 2 row hash. NULL for rows that belong to no project (users).
+    -- No foreign key, deliberately: the evidence outlives anything, and a key would add a second reason for a write to fail.
+    "project_id" UUID,
+    -- What the row says, as the exact text that was hashed (version 2 only): a JSON object with the keys action, actorId,
+    -- after, before, entityId, entityType and ts. The columns of the same names repeat it for searching and are checked
+    -- against it when the chain is verified.
+    "payload_text" TEXT,
+    -- 32 random bytes, 64 lower-case hex characters, new for every row (version 2 only).
+    "payload_salt" TEXT,
 
-    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id"),
+    -- The two shapes a row can have. Nothing readable may sit in a row without being covered by its hash: a version 2 row
+    -- keeps before, after, ip and user_agent empty (in version 2 the payload says it all, and the address of a request is
+    -- kept apart from the evidence, decision D7), and a version 1 row has none of the version 2 columns.
+    CONSTRAINT "audit_log_hash_version_shape" CHECK (
+        (
+            "hash_version" = 1
+            AND "project_id" IS NULL AND "payload_text" IS NULL AND "payload_salt" IS NULL
+        ) OR (
+            "hash_version" = 2
+            AND "payload_text" IS NOT NULL
+            -- A CHECK passes when its condition is NULL, so a missing salt needs its own test: `NULL ~ ...` is NULL.
+            AND "payload_salt" IS NOT NULL AND "payload_salt" ~ '^[0-9a-f]{64}$'
+            AND "before" IS NULL AND "after" IS NULL AND "ip" IS NULL AND "user_agent" IS NULL
+        )
+    )
 );
 
 -- CreateTable

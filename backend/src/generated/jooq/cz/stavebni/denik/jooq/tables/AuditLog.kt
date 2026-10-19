@@ -13,10 +13,12 @@ import cz.stavebni.denik.jooq.keys.AUDIT_LOG_PKEY
 import cz.stavebni.denik.jooq.tables.records.AuditLogRecord
 
 import java.time.OffsetDateTime
+import java.util.UUID
 
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -139,6 +141,26 @@ open class AuditLog(
      */
     val ROW_HASH: TableField<AuditLogRecord, String?> = createField(DSL.name("row_hash"), SQLDataType.CLOB.nullable(false), this, "")
 
+    /**
+     * The column <code>public.audit_log.hash_version</code>.
+     */
+    val HASH_VERSION: TableField<AuditLogRecord, Short?> = createField(DSL.name("hash_version"), SQLDataType.SMALLINT.nullable(false), this, "")
+
+    /**
+     * The column <code>public.audit_log.project_id</code>.
+     */
+    val PROJECT_ID: TableField<AuditLogRecord, UUID?> = createField(DSL.name("project_id"), SQLDataType.UUID, this, "")
+
+    /**
+     * The column <code>public.audit_log.payload_text</code>.
+     */
+    val PAYLOAD_TEXT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_text"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.audit_log.payload_salt</code>.
+     */
+    val PAYLOAD_SALT: TableField<AuditLogRecord, String?> = createField(DSL.name("payload_salt"), SQLDataType.CLOB, this, "")
+
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?): this(alias, null, null, null, aliased, null, null)
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?, parameters: Array<Field<*>?>?): this(alias, null, null, null, aliased, parameters, null)
     private constructor(alias: Name, aliased: Table<AuditLogRecord>?, where: Condition?): this(alias, null, null, null, aliased, null, where)
@@ -161,6 +183,9 @@ open class AuditLog(
     override fun getIndexes(): List<Index> = listOf(AUDIT_LOG_ACTION_TS_IDX, AUDIT_LOG_ACTOR_ID_TS_IDX, AUDIT_LOG_ENTITY_TYPE_ENTITY_ID_IDX, AUDIT_LOG_ROW_HASH_KEY)
     override fun getIdentity(): Identity<AuditLogRecord, Long?> = super.getIdentity() as Identity<AuditLogRecord, Long?>
     override fun getPrimaryKey(): UniqueKey<AuditLogRecord> = AUDIT_LOG_PKEY
+    override fun getChecks(): List<Check<AuditLogRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("audit_log_hash_version_shape"), "((((hash_version = 1) AND (project_id IS NULL) AND (payload_text IS NULL) AND (payload_salt IS NULL)) OR ((hash_version = 2) AND (payload_text IS NOT NULL) AND (payload_salt IS NOT NULL) AND (payload_salt ~ '^[0-9a-f]{64}\$'::text) AND (before IS NULL) AND (after IS NULL) AND (ip IS NULL) AND (user_agent IS NULL))))", true)
+    )
     override fun `as`(alias: String): AuditLog = AuditLog(DSL.name(alias), this)
     override fun `as`(alias: Name): AuditLog = AuditLog(alias, this)
     override fun `as`(alias: Table<*>): AuditLog = AuditLog(alias.qualifiedName, this)
