@@ -53,6 +53,20 @@ export default defineConfig({
         hasTouch: true,
       },
     },
+    {
+      // The same phone held sideways: 780 x 360. It is wider than the 640 px of `sm`, so a layout that decides by width alone
+      // would take it for a desktop; it still has a finger, which is what the touch rules (16 px text, 44 px controls) follow.
+      name: "mobile-landscape",
+      testMatch: MOBILE_SPECS,
+      use: {
+        ...devices["Pixel 5"],
+        viewport: { width: 780, height: 360 },
+        screen: { width: 780, height: 360 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
+    },
   ],
   webServer: process.env.BASE_URL
     ? undefined
