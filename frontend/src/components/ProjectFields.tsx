@@ -46,7 +46,7 @@ export const ProjectFields: React.FC<{
     </div>
     {SECTIONS.map((section) => (
       <div key={section.title} className="mt-4 border-t border-line pt-4">
-        <h2 className="text-md mb-3 font-semibold text-ink">{section.title}</h2>
+        <h2 className="mb-3 text-base font-semibold text-ink">{section.title}</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {section.fields.map((spec) => (
             <ProjectField key={spec.key} spec={spec} values={values} onChange={onChange} />

@@ -143,30 +143,188 @@ describe("boundaries of fields and buttons, and the focus ring", () => {
   });
 });
 
-describe("the components use only tokens that exist", () => {
-  const uiDir = fileURLToPath(new URL("../components/ui/", import.meta.url));
-  const sources: Record<string, string> = Object.fromEntries(
-    readdirSync(uiDir)
-      .filter((f) => f.endsWith(".tsx"))
-      .map((f) => [f, readFileSync(`${uiDir}${f}`, "utf8")]),
-  );
-  // A semantic colour utility: `bg-danger-soft`, `text-ink-muted/80`, `border-input`, `hover:bg-primary-hover`
-  const ours = new Set([...tokens.keys()].filter((n) => !/^(gray|red|green|amber|blue|indigo|emerald|purple)-\d+$/.test(n)));
-  const prefixes = ["ink", "primary", "danger", "success", "warning", "info", "neutral", "surface", "page", "line", "input", "focus"];
+// ---------------------------------------------------------------------------------------------------------------------------------
+// What the source says. Every `.ts` and `.tsx` file of src/components and src/pages (tests excepted) is read, the string literals
+// are taken out (comments are not text of the page), and each class in them is looked at.
+// ---------------------------------------------------------------------------------------------------------------------------------
 
-  it("finds the components", () => {
-    expect(Object.keys(sources).length).toBeGreaterThan(0);
+const srcDir = fileURLToPath(new URL("..", import.meta.url));
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}${entry.name}`;
+    if (entry.isDirectory()) return sourceFiles(`${path}/`);
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+/** The string literals of a source file, without its comments (a word in a comment is not a class). */
+export function stringLiterals(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[\s;,{(])\/\/.*$/gm, "$1");
+  return [...code.matchAll(/"([^"\n\\]*(?:\\.[^"\n\\]*)*)"|'([^'\n\\]*(?:\\.[^'\n\\]*)*)'|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
+
+interface ParsedClass {
+  /** The whole class as written, for the message of a failure. */
+  written: string;
+  /** The variants before the utility: `hover`, `sm`, `aria-invalid`. */
+  variants: string[];
+  family: string;
+  /** What follows the family: `ink-muted` in `text-ink-muted/80`. */
+  name: string;
+}
+
+const FAMILIES = /^(bg|text|border|border-[xytblrse]|ring|outline|divide|placeholder)-([a-z0-9][a-z0-9-]*)(?:\/\d+)?$/;
+
+function parseClass(written: string): ParsedClass | null {
+  const parts = written.replace(/^!/, "").split(":");
+  const utility = parts.pop() ?? "";
+  const m = FAMILIES.exec(utility);
+  return m ? { written, variants: parts, family: m[1], name: m[2] } : null;
+}
+
+const classesIn = (source: string): ParsedClass[] =>
+  stringLiterals(source)
+    .flatMap((literal) => literal.split(/\s+/))
+    .filter((word) => /^[!a-z][a-z0-9:\-/[\].%]*$/.test(word))
+    .map(parseClass)
+    .filter((c): c is ParsedClass => c !== null);
+
+/** The tokens of index.css: `--color-gray-300` and the like are Tailwind's palette, not ours. */
+const ours = new Set([...tokens.keys()].filter((n) => !/^(gray|red|green|amber|blue|indigo|emerald|purple)-\d+$/.test(n)));
+
+// What a colour family may be followed by when it is not a colour (`text-sm`, `border-solid`, `bg-cover`), or is a colour that is not ours.
+const NOT_A_TOKEN: Record<string, RegExp> = {
+  text: /^(xs|sm|base|lg|xl|left|center|right|justify|start|end|wrap|nowrap|balance|pretty|ellipsis|clip|transparent|current|inherit|black|white)$/,
+  bg: /^(none|auto|cover|contain|fixed|local|scroll|center|top|bottom|left|right|repeat|no-repeat|transparent|current|inherit|black|white|(clip|origin|blend|linear|radial|conic|gradient)-.+)$/,
+  border: /^(x|y|t|b|l|r|s|e|solid|dashed|dotted|double|hidden|none|collapse|separate|spacing-.+|transparent|current|inherit|black|white)$/,
+  ring: /^(inset|offset-.+|transparent|current|inherit|black|white)$/,
+  outline: /^(none|dashed|dotted|double|solid|offset-.+|transparent|current|inherit|black|white)$/,
+  divide: /^(x|y|x-reverse|y-reverse|solid|dashed|dotted|double|none|transparent|current|inherit|black|white)$/,
+  placeholder: /^(transparent|current|inherit|black|white)$/,
+};
+
+describe("the class names in the source", () => {
+  const files = [...sourceFiles(`${srcDir}components/`), ...sourceFiles(`${srcDir}pages/`)];
+  const classes = new Map(files.map((file) => [file, classesIn(readFileSync(file, "utf8"))]));
+
+  it("reads the files (and the helper that the shared components take their classes from)", () => {
+    expect(files.length).toBeGreaterThan(20);
+    expect(files.some((f) => f.endsWith("buttonClasses.ts"))).toBe(true);
+    expect(files.some((f) => f.endsWith("uiClasses.ts"))).toBe(true);
+    expect([...classes.values()].flat().length).toBeGreaterThan(500);
   });
 
-  it("has no colour utility that names a token the stylesheet lacks (a typo would silently do nothing)", () => {
+  it("has no colour utility with a name that is neither one of the tokens nor a Tailwind keyword (a typo does nothing, silently)", () => {
     const unknown: string[] = [];
-    for (const [file, source] of Object.entries(sources)) {
-      for (const m of source.matchAll(/\b(?:bg|text|border|ring|outline|divide|placeholder|fill|stroke|accent|caret)-([a-z]+(?:-[a-z]+)*)(?:\/\d+)?\b/g)) {
-        const name = m[1];
-        if (!prefixes.some((p) => name === p || name.startsWith(`${p}-`))) continue;
-        if (!ours.has(name)) unknown.push(`${file}: ${m[0]}`);
+    for (const [file, list] of classes) {
+      for (const c of list) {
+        // A name with a digit is the palette (`gray-300`) or a size (`2xl`): Tailwind knows those, and a wrong one is not a token typo.
+        if (/[0-9[]/.test(c.name)) continue;
+        const keyword = NOT_A_TOKEN[c.family.startsWith("border") ? "border" : c.family];
+        if (ours.has(c.name) || keyword.test(c.name)) continue;
+        unknown.push(`${file.slice(srcDir.length)}: ${c.written}`);
       }
     }
     expect(unknown).toEqual([]);
+  });
+
+  it("finds a typo (the check itself can fail)", () => {
+    for (const typo of ['className="bg-primry text-surface"', 'cn("text-ink-mutd")', "`border-inpt`", "'hover:bg-primary-hovr'"]) {
+      const found = classesIn(typo).filter((c) => !/[0-9[]/.test(c.name) && !ours.has(c.name) && !NOT_A_TOKEN[c.family.startsWith("border") ? "border" : c.family].test(c.name));
+      expect(found.length, typo).toBe(1);
+    }
+    expect(stringLiterals("// bg-primry in a comment\n/* text-nope */ const a = 1;")).toEqual([]);
+  });
+
+  // The pairs the components really put together, read from their class strings instead of a list somebody has to keep up.
+  //   - in one string, `text-X` goes with `bg-Y`; a `hover:` or `disabled:` or `aria-invalid:` or `placeholder:` class is judged in its own
+  //     state, falling back to the plain one for what it does not set;
+  //   - a text colour with no background of its own sits on the surface or on the page, and has to read on both;
+  //   - a border in one of our colours is a boundary and has to be 3:1 on both, unless it is the decorative `line`.
+  const STATES = new Set(["hover", "focus", "focus-visible", "active", "disabled", "aria-invalid", "placeholder"]);
+
+  interface Pair {
+    where: string;
+    state: string;
+    fg: string;
+    bg: string | null;
+  }
+
+  function pairsIn(literal: string): { text: Pair[]; borders: string[] } {
+    const byState = new Map<string, { text?: string; bg?: string }>();
+    const borders: string[] = [];
+    for (const word of literal.split(/\s+/)) {
+      const c = parseClass(word);
+      if (!c || !ours.has(c.name)) continue;
+      const state = c.variants.filter((v) => STATES.has(v)).join(":");
+      const slot = byState.get(state) ?? {};
+      if (c.family === "text") slot.text = c.name;
+      else if (c.family === "bg") slot.bg = c.name;
+      else if (c.family.startsWith("border") && c.name !== "line") borders.push(c.name);
+      byState.set(state, slot);
+    }
+    const base = byState.get("") ?? {};
+    const text: Pair[] = [];
+    for (const [state, slot] of byState) {
+      const fg = slot.text ?? (state === "placeholder" ? undefined : base.text);
+      const bg = slot.bg ?? base.bg;
+      // a state that only sets a background (`hover:bg-x`) is judged with the plain text colour on it, and the reverse
+      if (fg && (slot.text || slot.bg || state === "")) text.push({ where: literal, state: state || "plain", fg, bg: bg ?? null });
+    }
+    return { text, borders };
+  }
+
+  it("every text colour reads (4.5:1) on the background it is used on, in every state", () => {
+    const failures: string[] = [];
+    let checked = 0;
+    for (const [file, source] of files.map((f) => [f, readFileSync(f, "utf8")] as const)) {
+      for (const literal of stringLiterals(source)) {
+        for (const pair of pairsIn(literal).text) {
+          const backgrounds = pair.bg ? [pair.bg] : ["surface", "page"];
+          for (const bg of backgrounds) {
+            // `text-current`, palette colours and the like are not tokens: only token pairs are judged
+            if (!tokens.has(pair.fg) || !tokens.has(bg)) continue;
+            checked++;
+            const r = ratio(pair.fg, bg);
+            if (r < AA_TEXT) failures.push(`${file.slice(srcDir.length)} [${pair.state}] text-${pair.fg} on bg-${bg}: ${r.toFixed(2)}:1 in "${pair.where}"`);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(30);
+    expect(failures).toEqual([]);
+  });
+
+  it("every border in one of our colours is a visible boundary (3:1) on the surface and on the page", () => {
+    const failures: string[] = [];
+    let checked = 0;
+    for (const [file, source] of files.map((f) => [f, readFileSync(f, "utf8")] as const)) {
+      for (const literal of stringLiterals(source)) {
+        for (const name of pairsIn(literal).borders) {
+          for (const bg of ["surface", "page"]) {
+            checked++;
+            const r = ratio(name, bg);
+            if (r < AA_BOUNDARY) failures.push(`${file.slice(srcDir.length)} border-${name} on ${bg}: ${r.toFixed(2)}:1 in "${literal}"`);
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+    expect(failures).toEqual([]);
+  });
+
+  it("finds a pair that does not read (the check itself can fail)", () => {
+    // white on the tinted warning background: 1.3:1
+    const bad = pairsIn("bg-warning-soft text-surface").text;
+    expect(bad.map((p) => ratio(p.fg, p.bg ?? "surface") < AA_TEXT)).toEqual([true]);
+    // a hover colour is judged in its own state, against the plain text colour
+    const hover = pairsIn("bg-surface text-ink hover:bg-ink").text;
+    expect(hover.some((p) => p.state === "hover" && ratio(p.fg, p.bg ?? "surface") < AA_TEXT)).toBe(true);
+    // a text colour alone sits on the surface or the page
+    expect(pairsIn("text-ink-muted").text).toEqual([{ where: "text-ink-muted", state: "plain", fg: "ink-muted", bg: null }]);
+    // the decorative line is not a boundary; any other colour of border is
+    expect(pairsIn("border border-line").borders).toEqual([]);
+    expect(pairsIn("border border-input hover:border-danger").borders).toEqual(["input", "danger"]);
   });
 });
