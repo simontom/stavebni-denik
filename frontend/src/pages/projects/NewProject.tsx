@@ -8,9 +8,7 @@ export const NewProject: React.FC = () => {
   const navigate = useNavigate();
 
   const [fields, setFields] = useState<ProjectFieldValues>(emptyProjectFields());
-  const me = currentUser();
-  const [siteManagerId, setSiteManagerId] = useState(me?.id ?? "");
-  const [siteManagerName, setSiteManagerName] = useState(me ? `${me.displayName} (${me.nickname})` : "");
+  const myId = currentUser()?.id;
   const [showDropdown, setShowDropdown] = useState(false);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
 
@@ -20,8 +18,17 @@ export const NewProject: React.FC = () => {
       .catch(() => setUserOptions([]));
   }, []);
 
+  // Who the person picked; null until they pick. The creator is the usual site manager, so they are preselected: but only when
+  // they hold a ČKAIT number, which the list tells. Otherwise nothing is selected (a selected person that the list itself
+  // shows as unavailable would be a trap).
+  const [pickedId, setPickedId] = useState<string | null>(null);
+  const mine = userOptions.find((u) => u.id === myId);
+  const siteManagerId = pickedId ?? (mine?.hasCkait ? mine.id : "");
+  const siteManager = userOptions.find((u) => u.id === siteManagerId);
+  const siteManagerName = siteManager ? `${siteManager.displayName} (${siteManager.nickname})` : "";
+
   // The creator becomes a manager of the project too, so they need a ČKAIT number as well (the server refuses otherwise).
-  const myNumberMissing = me !== null && userOptions.some((u) => u.id === me.id && !u.hasCkait);
+  const myNumberMissing = mine !== undefined && !mine.hasCkait;
 
   const [error, setError] = useState("");
   // The form is long: an error is brought into view, also when it is the same text as the last one.
@@ -69,8 +76,8 @@ export const NewProject: React.FC = () => {
 
       {myNumberMissing && (
         <div role="status" className="mb-4 rounded bg-amber-100 p-3 text-sm text-amber-900">
-          Váš účet nemá číslo ČKAIT, takže projekt založit nemůžete: zakladatel se stává jeho vedoucím a vedoucí musí mít číslo. Požádejte administrátora, aby ho u vašeho účtu
-          doplnil.
+          Váš účet nemá číslo ČKAIT, takže projekt založit nemůžete: zakladatel se stává jeho vedoucím a vedoucí musí mít číslo. Číslo doplňuje administrátor (v seznamu uživatelů);
+          požádejte ho o to.
         </div>
       )}
 
@@ -97,8 +104,7 @@ export const NewProject: React.FC = () => {
                       role="option"
                       aria-selected={siteManagerId === u.id}
                       onClick={() => {
-                        setSiteManagerId(u.id);
-                        setSiteManagerName(`${u.displayName} (${u.nickname})`);
+                        setPickedId(u.id);
                         setShowDropdown(false);
                       }}
                       className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
@@ -123,8 +129,8 @@ export const NewProject: React.FC = () => {
           </button>
           <button
             type="submit"
-            disabled={loading}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500"
+            disabled={loading || myNumberMissing}
+            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 focus:ring-2 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? "Ukládám..." : "Založit zakázku"}
           </button>

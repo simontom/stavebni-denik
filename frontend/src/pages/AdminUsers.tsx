@@ -10,7 +10,7 @@ interface User {
   isActive: boolean;
   /** Professional authorization (ČKAIT); a person who manages a project or signs its diary needs one. */
   ckaitNumber?: string | null;
-  /** In the answer to a save only: the number of somebody who manages a project was changed or removed. */
+  /** In the answer to a save or a deactivation only: the ČKAIT number of somebody who manages a project was changed or removed, or a site manager was deactivated. */
   warning?: string | null;
 }
 
@@ -23,7 +23,8 @@ export const AdminUsers: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // What the server wants the administrator to know after a save (a changed ČKAIT number of a manager of a project).
+  // What the server wants the administrator to know after a save (a changed ČKAIT number of a manager of a project) or a
+  // deactivation (projects left without an active site manager).
   const [notice, setNotice] = useState("");
 
   // Create User Modal State
@@ -128,7 +129,9 @@ export const AdminUsers: React.FC = () => {
     if (!window.confirm(`Opravdu chcete uživatele ${actionName}?`)) return;
     try {
       const updated = await api<User>(`/api/users/${user.id}/${user.isActive ? "deactivate" : "activate"}`, { method: "POST" });
-      replaceUser(updated);
+      replaceUser({ ...updated, warning: undefined });
+      // Deactivating a site manager is allowed, and the answer says which projects are left without an active one.
+      setNotice(updated.warning ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Akce se nezdařila");
     }
