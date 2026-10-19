@@ -117,49 +117,43 @@ test.beforeAll(async ({ browser }) => {
 
   const context = await browser.newContext({ baseURL: BASE_URL });
   seedContext = context;
-  {
-    const page = await context.newPage();
-    await signIn(page);
-    const admin = JSON.parse((await page.evaluate(() => localStorage.getItem("user"))) ?? "null") as { id: string };
-    const api = context.request;
-    data.project = (await post<{ id: string }>(api, "/api/projects", projectBody(data.projectName, admin.id))).id;
-    await post(api, "/api/projects", projectBody("Dům U Lípy", admin.id));
-    await post(api, "/api/projects", projectBody("Hala 7", admin.id));
+  const page = await context.newPage();
+  await signIn(page);
+  const admin = JSON.parse((await page.evaluate(() => localStorage.getItem("user"))) ?? "null") as { id: string };
+  const api = context.request;
+  data.project = (await post<{ id: string }>(api, "/api/projects", projectBody(data.projectName, admin.id))).id;
+  await post(api, "/api/projects", projectBody("Dům U Lípy", admin.id));
+  await post(api, "/api/projects", projectBody("Hala 7", admin.id));
 
-    // A person whose login name and e-mail address have no place to break, a manager, a worker and the investor.
-    const created = await post<{ user: { id: string } }>(api, "/api/users", { nickname: data.nickname, displayName: data.displayName, role: "WORKER", ckaitNumber: "" });
-    data.userId = created.user.id;
-    await post(api, `/api/projects/${data.project}/members`, { userId: data.userId, role: "WORKER" });
-    await post(api, `/api/projects/${data.project}/members`, { userId: "44444444-4444-4444-4444-444444444444", role: "BOSS" });
-    await post(api, `/api/projects/${data.project}/members`, { userId: "55555555-5555-5555-5555-555555555555", role: "WORKER" });
-    await post(api, `/api/projects/${data.project}/members`, { userId: "22222222-2222-2222-2222-222222222222", role: "INVESTOR" });
-    await post(api, `/api/projects/${data.project}/authorized-persons`, {
-      name: data.authorizedPerson,
-      company: "Architekti Černý a partneři s.r.o.",
-      authorization: "Autorský dozor projektanta podle § 152 stavebního zákona, včetně účasti na kontrolních prohlídkách",
-    });
-    await post(api, `/api/projects/${data.project}/handovers`, {
-      projectId: data.project,
-      type: "Předání staveniště zhotoviteli",
-      date: pragueDay(-20),
-      participants: data.participants,
-      meterStates: [
-        { medium: "Elektřina VT", serialNumber: "EL-98765-4321", state: "12450 kWh" },
-        { medium: "Voda studená", serialNumber: "VO-1122", state: "310 m3" },
-      ],
-      notes: "Staveniště předáno bez výhrad, přístupová cesta přes vrata ve dvoře.",
-    });
+  // A person whose login name and e-mail address have no place to break, a manager, a worker and the investor.
+  const created = await post<{ user: { id: string } }>(api, "/api/users", { nickname: data.nickname, displayName: data.displayName, role: "WORKER", ckaitNumber: "" });
+  data.userId = created.user.id;
+  await post(api, `/api/projects/${data.project}/members`, { userId: data.userId, role: "WORKER" });
+  await post(api, `/api/projects/${data.project}/members`, { userId: "44444444-4444-4444-4444-444444444444", role: "BOSS" });
+  await post(api, `/api/projects/${data.project}/members`, { userId: "55555555-5555-5555-5555-555555555555", role: "WORKER" });
+  await post(api, `/api/projects/${data.project}/members`, { userId: "22222222-2222-2222-2222-222222222222", role: "INVESTOR" });
+  await post(api, `/api/projects/${data.project}/authorized-persons`, {
+    name: data.authorizedPerson,
+    company: "Architekti Černý a partneři s.r.o.",
+    authorization: "Autorský dozor projektanta podle § 152 stavebního zákona, včetně účasti na kontrolních prohlídkách",
+  });
+  await post(api, `/api/projects/${data.project}/handovers`, {
+    projectId: data.project,
+    type: "Předání staveniště zhotoviteli",
+    date: pragueDay(-20),
+    participants: data.participants,
+    meterStates: [
+      { medium: "Elektřina VT", serialNumber: "EL-98765-4321", state: "12450 kWh" },
+      { medium: "Voda studená", serialNumber: "VO-1122", state: "310 m3" },
+    ],
+    notes: "Staveniště předáno bez výhrad, přístupová cesta přes vrata ve dvoře.",
+  });
 
-    // Entries: a signed one, a draft for today and a late one, so the list and the page of an entry have something in them.
-    await post(api, `/api/projects/${data.project}/reports/${data.draftDay}`, entryBody(data.draftDay));
-    await post(
-      api,
-      `/api/projects/${data.project}/reports/${data.lateDay}`,
-      entryBody(data.lateDay, { lateEntryReason: "Doplněno po návratu z nemoci, zápis nebyl možný dříve." }),
-    );
-    const signed = await post<{ updatedAt: string }>(api, `/api/projects/${data.project}/reports/${data.signedDay}`, entryBody(data.signedDay));
-    await post(api, `/api/projects/${data.project}/reports/${data.signedDay}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: signed.updatedAt });
-  }
+  // Entries: a signed one, a draft for today and a late one, so the list and the page of an entry have something in them.
+  await post(api, `/api/projects/${data.project}/reports/${data.draftDay}`, entryBody(data.draftDay));
+  await post(api, `/api/projects/${data.project}/reports/${data.lateDay}`, entryBody(data.lateDay, { lateEntryReason: "Doplněno po návratu z nemoci, zápis nebyl možný dříve." }));
+  const signed = await post<{ updatedAt: string }>(api, `/api/projects/${data.project}/reports/${data.signedDay}`, entryBody(data.signedDay));
+  await post(api, `/api/projects/${data.project}/reports/${data.signedDay}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: signed.updatedAt });
 });
 
 // The account made for the run is deleted again (its project stays: every run gives its project a name of its own).

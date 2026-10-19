@@ -57,7 +57,7 @@ pnpm exec playwright install chromium
 pnpm typecheck                                    # TypeScript E2E kódu
 pnpm test:seed-guard                              # zkouška pojistky, že seed nepoběží proti cizí databázi
 pnpm test:e2e                                     # spustí si Vite sám, backend musí běžet na :8080
-pnpm exec playwright test --project=mobile      # jen telefon 360 x 780 (e2e/mobile-*.spec.ts); pnpm test:e2e pouští oba projekty
+pnpm exec playwright test --project=mobile --project=mobile-landscape   # jen telefon, na výšku (360 x 780) a na šířku (780 x 360); pnpm test:e2e pouští všechny projekty
 ```
 
 Stejnou sadu spustí CI i **proti sestavenému produkčnímu obrazu** (`scripts/ci/e2e-image.sh`: obraz s `APP_ENV=production`, role databáze bez vlastnictví, schéma migrované vlastníkem, SPA servírovaná Ktorem). Lokálně: `docker build -t stavebni-denik:e2e .` a potom `IMAGE=stavebni-denik:e2e E2E_PG_PORT=55436 bash scripts/ci/e2e-image.sh` (potřebuje Docker a volný port 8080).
