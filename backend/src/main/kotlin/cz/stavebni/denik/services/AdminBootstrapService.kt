@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.jooq.tables.references.USERS
 import org.jooq.impl.DSL
@@ -7,11 +8,12 @@ import java.time.OffsetDateTime
 import cz.stavebni.denik.jooq.enums.Role as DbRole
 
 /**
- * The two things an operator has to be able to do before anyone can log in, or when nobody can any more:
- * create the first administrator, and give an administrator a new temporary password.
+ * The things an operator has to be able to do before anyone can log in, or when nobody can any more: create the first
+ * administrator, give an administrator a new temporary password, and set the ČKAIT number of an account (the only
+ * administrator, who also has to sign, cannot set their own in the application).
  *
- * Both run outside any request (see `cli/AdminCli.kt`), so there is no acting user: the audit rows have no
- * actor. Both produce a generated password that is shown once and has to be changed at the first login.
+ * All run outside any request (see `cli/AdminCli.kt`), so there is no acting user: the audit rows have no actor. The
+ * first two produce a generated password that is shown once and has to be changed at the first login.
  */
 object AdminBootstrapService {
 
@@ -79,5 +81,46 @@ object AdminBootstrapService {
             )
         }
         return Result(nick, password)
+    }
+
+    /**
+     * Sets or replaces the ČKAIT number of an account (not deleted; a deactivated one too). The way a fresh installation gets
+     * its first number: an administrator cannot change their own number in the application (they could otherwise certify
+     * themselves), so the only administrator, who has to sign the diary, has nobody to do it for them. The operator has
+     * the database, which is the trust this command rests on. The audit row (`user.update`, no actor) holds the account
+     * as it was and as it became. No session ends and no password is needed or touched.
+     *
+     * Returns false, and writes nothing, when the account already holds this number.
+     */
+    suspend fun setCkaitNumber(nickname: String, number: String): Boolean {
+        val nick = nickname.trim()
+        val ckait = UserService.checkedCkaitNumber(number) ?: throw IllegalArgumentException("Číslo ČKAIT je povinné")
+        // Read first, so that the same number again leaves no row of "before = after"; the write below reads again, under the lock.
+        val current = DatabaseFactory.dsl.select(USERS.CKAITNUMBER).from(USERS)
+            .where(USERS.NICKNAME.eq(nick).and(USERS.DELETEDAT.isNull))
+            .fetchOne(USERS.CKAITNUMBER)?.trim()
+        if (current == ckait) return false
+        AuditService.auditedWrite(actor = null, entityType = "user") { tx ->
+            val existing = tx.selectFrom(USERS)
+                .where(USERS.NICKNAME.eq(nick).and(USERS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne()
+                ?: throw IllegalStateException("No user named '$nick'.")
+            val updated = tx.update(USERS)
+                .set(USERS.CKAITNUMBER, ckait)
+                .set(USERS.UPDATEDAT, OffsetDateTime.now())
+                .where(USERS.ID.eq(existing.id!!))
+                .returning()
+                .fetchOne()
+                ?: throw IllegalStateException("No user named '$nick'.")
+            AuditService.Audited(
+                result = Unit,
+                action = "user.update",
+                entityId = updated.id.toString(),
+                before = existing.toSnapshot(),
+                after = updated.toSnapshot(),
+            )
+        }
+        return true
     }
 }

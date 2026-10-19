@@ -145,7 +145,10 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
         ProjectMemberService.addMember(admin, s.projectId, AddMemberRequest(userId = admin.id.toString(), role = "BOSS"))
 
         assertNotNull(SiteHandoverService.createHandover(admin, handoverDto(s.projectId)), "as a member the administrator may write")
-        val row = auditRows("project.member.add").single()
+        // The first row is the owner's, made with the project; the administrator's is the one that follows.
+        val rows = auditRows("project.member.add")
+        assertEquals(2, rows.size)
+        val row = rows.last()
         assertEquals(s.projectId.toString(), row.get(AUDIT_LOG.ENTITY_ID))
         assertNull(row.get(AUDIT_LOG.BEFORE), "there was no membership before")
         val after = Json.parseToJsonElement(row.get(AUDIT_LOG.AFTER)!!.data()).jsonObject

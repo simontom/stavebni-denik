@@ -49,7 +49,7 @@ Nová databáze nemá uživatele. Příkaz běží uvnitř běžícího stroje:
 fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt create-admin alice 'Alice Nováková'"
 ```
 
-Vypíše vygenerované heslo (jednou, jen na standardní výstup). Platí 7 dní a při prvním přihlášení se musí změnit. Zapomenuté heslo jediného administrátora obnoví `reset-password <přezdívka>`. Další uživatele zakládá administrátor v aplikaci.
+Vypíše vygenerované heslo (jednou, jen na standardní výstup). Platí 7 dní a při prvním přihlášení se musí změnit. Zapomenuté heslo jediného administrátora obnoví `reset-password <přezdívka>`. Další uživatele zakládá administrátor v aplikaci. Administrátor, který má i podepisovat záznamy (stavbyvedoucí), potřebuje číslo ČKAIT a své vlastní číslo v aplikaci měnit nemůže, proto mu ho nastaví `fly ssh console --app stavebni-denik -C "java -cp /app/app.jar cz.stavebni.denik.cli.AdminCliKt set-ckait alice 0012345"` (zapíše se do audit logu, relace neukončí).
 
 ## Ověření deníku
 
