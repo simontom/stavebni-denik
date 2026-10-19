@@ -1,3 +1,5 @@
+import { cn } from "./cn";
+
 export type ButtonVariant = "primary" | "secondary" | "danger" | "danger-quiet" | "quiet";
 export type ButtonSize = "md" | "sm";
 
@@ -16,15 +18,17 @@ const variants: Record<ButtonVariant, string> = {
   quiet: "border-transparent bg-transparent text-primary-ink hover:bg-primary-soft",
 };
 
-// A thumb needs 44 px: every size is that high on a phone. From `sm` up a button may be a little lower.
+// A thumb needs 44 px: every size is that high for a finger (a coarse pointer, at any width) and on any screen under `sm`. Only a
+// mouse on a wide screen gets the lower button.
 const sizes: Record<ButtonSize, string> = {
-  md: "min-h-11 px-4 py-2 text-sm sm:min-h-10",
-  sm: "min-h-11 px-3 py-1.5 text-sm sm:min-h-9",
+  md: "min-h-11 px-4 py-2 text-sm sm:pointer-fine:min-h-10",
+  sm: "min-h-11 px-3 py-1.5 text-sm sm:pointer-fine:min-h-9",
 };
 
 /**
  * The classes of a button, for what is not a `<button>`: a link that looks like one
- * (`<Link to="/projects/new" className={buttonClasses({ variant: "primary" })}>`).
+ * (`<Link to="/projects/new" className={buttonClasses({ variant: "primary" })}>`). The caller's `className` comes last and wins
+ * over the button's own classes (`w-auto` over `w-full`, `px-1` over `px-4`).
  */
 export function buttonClasses({
   variant = "primary",
@@ -32,5 +36,5 @@ export function buttonClasses({
   block = false,
   className = "",
 }: { variant?: ButtonVariant; size?: ButtonSize; block?: boolean; className?: string } = {}): string {
-  return [base, variants[variant], sizes[size], block ? "w-full" : "", className].filter(Boolean).join(" ");
+  return cn(base, variants[variant], sizes[size], block && "w-full", className);
 }

@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { useFieldControl } from "./fieldContext";
-import { controlClasses } from "./TextInput";
+import { controlClassName } from "./uiClasses";
 
 export type TextAreaProps = ComponentProps<"textarea">;
 
@@ -8,5 +8,5 @@ export type TextAreaProps = ComponentProps<"textarea">;
 export function TextArea({ className, rows = 3, ...rest }: TextAreaProps) {
   const field = useFieldControl();
   const describedBy = [field["aria-describedby"], rest["aria-describedby"]].filter(Boolean).join(" ") || undefined;
-  return <textarea rows={rows} {...rest} {...field} aria-describedby={describedBy} className={`${controlClasses}${className ? ` ${className}` : ""}`} />;
+  return <textarea rows={rows} {...rest} {...field} aria-describedby={describedBy} className={controlClassName(className)} />;
 }

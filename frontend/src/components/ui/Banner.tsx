@@ -1,13 +1,7 @@
 import type { ReactNode } from "react";
+import { bannerClassName } from "./uiClasses";
 
 export type BannerTone = "info" | "success" | "warning" | "danger";
-
-const tones: Record<BannerTone, string> = {
-  info: "border-info bg-info-soft text-info-ink",
-  success: "border-success bg-success-soft text-success-ink",
-  warning: "border-warning bg-warning-soft text-warning-ink",
-  danger: "border-danger bg-danger-soft text-danger-ink",
-};
 
 /**
  * A message that stands on the page: an error, a warning, a confirmation, a notice. An error is announced the moment it
@@ -28,7 +22,7 @@ export function Banner({
   children?: ReactNode;
 }) {
   return (
-    <div role={role ?? (tone === "danger" ? "alert" : "status")} className={`rounded-md border-l-4 p-3 text-sm ${tones[tone]}${className ? ` ${className}` : ""}`}>
+    <div role={role ?? (tone === "danger" ? "alert" : "status")} className={bannerClassName({ tone, className })}>
       {title && <p className="font-semibold">{title}</p>}
       {children}
     </div>

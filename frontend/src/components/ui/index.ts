@@ -12,4 +12,6 @@ export { Select, type SelectProps } from "./Select";
 export { StatusBadge, type BadgeTone } from "./StatusBadge";
 export { TabLink, TabNav } from "./TabNav";
 export { TextArea, type TextAreaProps } from "./TextArea";
-export { controlClasses, TextInput, type TextInputProps } from "./TextInput";
+export { TextInput, type TextInputProps } from "./TextInput";
+export { cn } from "./cn";
+export { controlClasses } from "./uiClasses";

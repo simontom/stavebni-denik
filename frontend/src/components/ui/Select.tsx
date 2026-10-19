@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
 import { useFieldControl } from "./fieldContext";
-import { controlClasses } from "./TextInput";
+import { controlClassName } from "./uiClasses";
 
 export type SelectProps = ComponentProps<"select">;
 
@@ -11,5 +11,5 @@ export type SelectProps = ComponentProps<"select">;
 export function Select({ className, ...rest }: SelectProps) {
   const field = useFieldControl();
   const describedBy = [field["aria-describedby"], rest["aria-describedby"]].filter(Boolean).join(" ") || undefined;
-  return <select {...rest} {...field} aria-describedby={describedBy} className={`${controlClasses} min-h-11 sm:min-h-10${className ? ` ${className}` : ""}`} />;
+  return <select {...rest} {...field} aria-describedby={describedBy} className={controlClassName(className, true)} />;
 }
