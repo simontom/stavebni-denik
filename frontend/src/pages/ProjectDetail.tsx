@@ -611,13 +611,13 @@ export const ProjectDetail: React.FC = () => {
                       type="button"
                       onClick={() => void handleDownloadPdf(r)}
                       aria-label={`Stáhnout PDF záznamu z ${r.date}`}
-                      className="inline-flex min-h-11 items-center px-2 text-sm text-ink-muted underline hover:text-ink sm:min-h-0 sm:px-0"
+                      className="inline-flex min-h-11 items-center px-2 text-sm text-ink-muted underline hover:text-ink sm:px-0 sm:pointer-fine:min-h-0"
                     >
                       PDF
                     </button>
                     <Link
                       to={`/projects/${id}/reports/${r.date}`}
-                      className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-primary-ink hover:underline sm:min-h-0 sm:px-0"
+                      className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-primary-ink hover:underline sm:px-0 sm:pointer-fine:min-h-0"
                     >
                       Zobrazit záznam →
                     </Link>
@@ -927,7 +927,7 @@ export const ProjectDetail: React.FC = () => {
             </div>
 
             {/* A list on a phone (table-cards, index.css): the nickname, the name and the role one under the other. */}
-            <table className="table-cards min-w-full divide-y divide-line">
+            <table className="min-w-full divide-y divide-line max-sm:table-cards">
               <thead>
                 <tr>
                   <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Uživatel</th>
@@ -939,8 +939,10 @@ export const ProjectDetail: React.FC = () => {
                 {members.map((m) => (
                   <tr key={m.userId}>
                     <td className="py-2 text-sm font-medium text-ink">{m.nickname}</td>
-                    <td className="py-2 text-sm text-ink">{m.displayName}</td>
-                    <td className="py-2 text-sm text-ink-muted">
+                    <td data-label="Jméno" className="py-2 text-sm text-ink">
+                      {m.displayName}
+                    </td>
+                    <td data-label="Role" className="py-2 text-sm text-ink-muted">
                       {ROLE_LABELS[m.role] ?? m.role}
                       {m.userId === project.siteManagerId && (
                         <StatusBadge tone="primary" className="ml-2">

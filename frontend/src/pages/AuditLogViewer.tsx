@@ -73,7 +73,7 @@ export const AuditLogViewer: React.FC = () => {
 
       {/* A list of events on a phone (table-cards, index.css); the table of the desktop scrolls inside its box if it must. */}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="table-cards min-w-full divide-y divide-gray-200 text-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm max-sm:table-cards">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Čas</th>
@@ -101,13 +101,17 @@ export const AuditLogViewer: React.FC = () => {
             {logs.map((log) => (
               <tr key={log.id}>
                 <td className="px-4 py-2 whitespace-nowrap text-gray-700 tabular-nums">{new Date(log.ts).toLocaleString("cs-CZ")}</td>
-                <td className="px-4 py-2 text-gray-700">{log.actorNickname ?? log.actorId ?? "systém"}</td>
-                <td className="px-4 py-2 font-medium text-gray-900">{log.action}</td>
-                <td className="px-4 py-2 text-gray-600">
+                <td data-label="Uživatel" className="px-4 py-2 text-gray-700">
+                  {log.actorNickname ?? log.actorId ?? "systém"}
+                </td>
+                <td data-label="Akce" className="px-4 py-2 font-medium text-gray-900">
+                  {log.action}
+                </td>
+                <td data-label="Entita" className="px-4 py-2 text-gray-600">
                   {log.entityType}
                   {log.entityId ? `: ${log.entityId}` : ""}
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
+                <td data-label="Hash" className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
                   {log.rowHash.slice(0, 12)}…
                 </td>
               </tr>

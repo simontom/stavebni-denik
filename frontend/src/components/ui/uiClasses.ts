@@ -65,7 +65,7 @@ export function bannerClassName({ tone, className }: { tone: BannerTone; classNa
  */
 export function tabLinkClassName({ active, className }: { active: boolean; className?: string }): string {
   return cn(
-    "flex min-h-11 items-center justify-center rounded-md border px-3 text-center text-sm sm:min-h-0 sm:rounded-none sm:border-0 sm:border-b-2 sm:px-1 sm:pt-0 sm:pb-4",
+    "flex min-h-11 items-center justify-center rounded-md border px-3 text-center text-sm sm:pointer-fine:min-h-0 sm:rounded-none sm:border-0 sm:border-b-2 sm:px-1 sm:pt-0 sm:pb-4",
     active
       ? "border-primary bg-primary-soft font-semibold text-primary-ink underline decoration-2 underline-offset-4 sm:bg-transparent sm:no-underline"
       : "border-input font-medium text-ink-muted hover:bg-neutral-soft hover:text-ink sm:border-transparent sm:hover:border-input sm:hover:bg-transparent",

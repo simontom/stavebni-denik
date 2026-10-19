@@ -58,15 +58,18 @@ export function AppLayout() {
     <div className="flex min-h-screen flex-col bg-page">
       <header className="border-b border-line bg-surface">
         {/*
-          One row from `sm` up. On a phone it wraps into rows that all fit in 360 px: the name of the application with the logout
-          button on the first row (`order`), the pages below it, the signed-in person last. The order in the markup is the
-          order of the wide layout (and of the Tab key); only logout is lifted to the top on a phone, where it must be in reach.
+          A grid, so that every part has its place at every width and logout never wraps away from the top right corner:
+            - under 640 px: the name of the application and logout on the first row, the pages on the second, the way to one's
+              own password and the signed-in person on the third;
+            - 640 to 1023 px: the first row as above, the pages on the left of the second row, the person on the right of it;
+            - from 1024 px: all of it in one row.
+          The order in the markup is the order of the one row (and of the Tab key); only the grid lifts logout to the top.
         */}
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-2 px-4 py-1 sm:min-h-16 sm:gap-x-4 sm:px-6 lg:px-8">
-          <Link to="/projects" className="order-1 flex min-h-11 items-center gap-2 text-xl font-bold text-primary-ink sm:order-none">
+        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto] items-center gap-x-4 px-4 py-1 sm:px-6 lg:min-h-16 lg:grid-cols-[auto_1fr_auto_auto] lg:px-8">
+          <Link to="/projects" className="col-start-1 row-start-1 flex min-h-11 items-center gap-2 text-xl font-bold text-primary-ink">
             🏗️ Stavební deník
           </Link>
-          <nav aria-label="Hlavní" className="order-3 -mx-3 flex w-full flex-wrap sm:order-none sm:mx-0 sm:mr-auto sm:w-auto">
+          <nav aria-label="Hlavní" className="col-span-2 row-start-2 -mx-3 flex flex-wrap sm:col-span-1 sm:col-start-1 lg:col-start-2 lg:row-start-1 lg:mx-0">
             {!mustChangePwd && <NavItem to="/projects">Projekty</NavItem>}
             {!mustChangePwd && user?.isAdmin && (
               <>
@@ -75,12 +78,12 @@ export function AppLayout() {
               </>
             )}
           </nav>
-          {/* Who is signed in, and the way to their own password: one row on a phone, the name on the right. */}
-          <div className="order-4 -mx-3 flex w-full items-center justify-between gap-2 sm:order-none sm:mx-0 sm:w-auto sm:gap-4">
+          {/* Who is signed in, and the way to their own password. */}
+          <div className="col-span-2 row-start-3 -mx-3 flex items-center justify-between gap-2 sm:col-span-1 sm:col-start-2 sm:row-start-2 sm:justify-end lg:col-start-3 lg:row-start-1 lg:mx-0 lg:gap-4">
             {!mustChangePwd && <NavItem to="/change-password">Změnit heslo</NavItem>}
-            {user && <span className="min-w-0 px-3 text-right text-sm text-ink-muted sm:px-0">{user.displayName || user.nickname}</span>}
+            {user && <span className="max-w-[14rem] min-w-0 truncate px-3 text-right text-sm text-ink-muted lg:px-0">{user.displayName || user.nickname}</span>}
           </div>
-          <Button variant="secondary" size="sm" onClick={handleLogout} className="order-2 ml-auto sm:order-none sm:ml-0">
+          <Button variant="secondary" size="sm" onClick={handleLogout} className="col-start-2 row-start-1 lg:col-start-4">
             Odhlásit se
           </Button>
         </div>
