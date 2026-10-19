@@ -1,0 +1,20 @@
+{
+  "comment": "Golden vectors of audit hash version 2. Computed by an independent implementation (node's crypto, written from the specification in PROJECT.md). Read by AuditHashTest (Kotlin) and by scripts/audit/verify-audit-hash.py (Python, standard library only), so the documentation, the verifier and the code cannot drift apart. A change here is a change of the format: it breaks every row and every stub already written.",
+  "genesis": "0000000000000000000000000000000000000000000000000000000000000000",
+  "rowOfAProject": {
+    "salt": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "projectId": "01926c1e-3a54-7b2a-9d4e-5f6a7b8c9d0e",
+    "payloadText": "{\"action\":\"report.lock\",\"actorId\":\"11111111-1111-1111-1111-111111111111\",\"after\":{\"id\":\"r1\",\"projectId\":\"01926c1e-3a54-7b2a-9d4e-5f6a7b8c9d0e\",\"quantity\":12.0,\"signatureHash\":\"ab12\",\"tiny\":1e-7,\"workDescription\":\"Betonáž stropu č. 3\"},\"before\":null,\"entityId\":\"r1\",\"entityType\":\"report\",\"ts\":\"2026-10-18T09:30:15.123Z\"}",
+    "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "payloadDigest": "b2fd3999670b54d54a5b0e29f67b139de31f5c8090a42e745d09121e3a922940",
+    "rowHash": "8715bd426e2fbbe70d6c5551bcf3a575e45a24559f5fc35ebccd7ce807af4cb7"
+  },
+  "rowOfNoProject": {
+    "salt": "fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e0",
+    "projectId": null,
+    "payloadText": "{\"action\":\"user.update\",\"actorId\":null,\"after\":{\"role\":\"BOSS\"},\"before\":{\"role\":\"WORKER\"},\"entityId\":\"22222222-2222-2222-2222-222222222222\",\"entityType\":\"user\",\"ts\":\"2026-10-18T09:31:00.000Z\"}",
+    "prevHash": "8715bd426e2fbbe70d6c5551bcf3a575e45a24559f5fc35ebccd7ce807af4cb7",
+    "payloadDigest": "1fd515d8d8c20e58c08bfcb855f1c902fa5dbcb8d75ce5fbe7692b4925e66239",
+    "rowHash": "12d38742fca3493ddf0c875fb6fe037686c841253bd616948ce47c96b85b7b66"
+  }
+}

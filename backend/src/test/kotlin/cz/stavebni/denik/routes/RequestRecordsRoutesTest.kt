@@ -60,10 +60,12 @@ class RequestRecordsRoutesTest : BaseIntegrationTest() {
         assertEquals("Test-Agent/1.0", context.userAgent)
         assertFalse(context.ip.isNullOrBlank(), "the address of the request is recorded")
 
-        // The audit row itself, and so its hash, carries none of it: the chain can stay while the side row is deleted.
+        // The audit row itself, and so its hash, carries none of it (the table has no column for it, and the payload holds
+        // none): the chain can stay while the side row is deleted.
         val row = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ID.eq(auditId)).fetchSingle()
-        assertNull(row.ip)
-        assertNull(row.userAgent)
+        val stored = row.formatJSON()
+        assertFalse(stored.contains("Test-Agent"), "the user agent is not in the audit row")
+        assertFalse(stored.contains(context.ip!!), "the address is not in the audit row")
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 

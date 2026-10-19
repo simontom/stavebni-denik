@@ -104,7 +104,7 @@ class EntryDateWindowTest : BaseIntegrationTest() {
         assertTrue(late.isLateEntry)
         assertEquals("Deník byl na jiné stavbě", late.lateEntryReason)
         assertTrue(row(late.id).islateentry!!)
-        val snapshot = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.create")).fetchOne()!!.get(AUDIT_LOG.AFTER)!!.data()
+        val snapshot = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("report.create")).fetchOne()!!.auditAfterText()!!
         val after = Json.parseToJsonElement(snapshot).jsonObject
         assertEquals("true", after["isLateEntry"]!!.jsonPrimitive.content)
         assertEquals("Deník byl na jiné stavbě", after["lateEntryReason"]!!.jsonPrimitive.content)

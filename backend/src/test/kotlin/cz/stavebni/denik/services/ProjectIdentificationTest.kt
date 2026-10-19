@@ -71,12 +71,12 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
 
         val createRow = auditOf("project.create").single()
         assertEquals(created.id, createRow.get(AUDIT_LOG.ENTITY_ID), "the creation names the project (it used to name none)")
-        assertTrue(createRow.get(AUDIT_LOG.AFTER)!!.data().contains("Karlova 15, Brno"))
+        assertTrue(createRow.auditAfterText()!!.contains("Karlova 15, Brno"))
 
         val updateRow = auditOf("project.update").single()
         assertEquals(created.id, updateRow.get(AUDIT_LOG.ENTITY_ID))
-        val before = updateRow.get(AUDIT_LOG.BEFORE)!!.data()
-        val after = updateRow.get(AUDIT_LOG.AFTER)!!.data()
+        val before = updateRow.auditBeforeText()!!
+        val after = updateRow.auditAfterText()!!
         assertTrue(before.contains("Karlova 15, Brno") && !before.contains("SZ/1"), before)
         assertTrue(after.contains("Nová 1, Brno") && after.contains("SZ/1"), after)
         assertTrue(AuditService.verifyChain(dsl).ok)

@@ -205,14 +205,14 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
 
         val create = auditRows("siteHandover.create").single()
         assertEquals(created.id, create.get(AUDIT_LOG.ENTITY_ID))
-        assertNull(create.get(AUDIT_LOG.BEFORE))
+        assertNull(create.auditBeforeText())
         val update = auditRows("siteHandover.update").single()
-        assertEquals("PROTOCOL", Json.parseToJsonElement(update.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject["type"]!!.jsonPrimitive.content)
-        assertEquals("ZMĚNA", Json.parseToJsonElement(update.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("PROTOCOL", Json.parseToJsonElement(update.auditBeforeText()!!).jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("ZMĚNA", Json.parseToJsonElement(update.auditAfterText()!!).jsonObject["type"]!!.jsonPrimitive.content)
         val sign = auditRows("siteHandover.sign").single()
         assertEquals(created.id, sign.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals("null", Json.parseToJsonElement(sign.get(AUDIT_LOG.BEFORE)!!.data()).jsonObject["signedAt"].toString())
-        assertNotEquals("null", Json.parseToJsonElement(sign.get(AUDIT_LOG.AFTER)!!.data()).jsonObject["signedAt"].toString())
+        assertEquals("null", Json.parseToJsonElement(sign.auditBeforeText()!!).jsonObject["signedAt"].toString())
+        assertNotEquals("null", Json.parseToJsonElement(sign.auditAfterText()!!).jsonObject["signedAt"].toString())
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 }

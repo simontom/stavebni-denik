@@ -77,6 +77,12 @@ class DatabaseRolesTest : BaseIntegrationTest() {
                 "truncate audit_log",
                 "delete from audit_log",
                 "update audit_log set action = 'x'",
+                // The columns of hash version 2 (`audit_log` in V1) are covered like the rest of the row.
+                "update audit_log set payload_text = 'x'",
+                "update audit_log set payload_salt = '${"0".repeat(64)}'",
+                "update audit_log set project_id = null",
+                "update audit_log set hash_version = 1",
+                "alter table audit_log drop constraint audit_log_hash_version_check",
                 "insert into flyway_schema_history (installed_rank, description, type, script, checksum, installed_by, execution_time, success) values (999, 'x', 'SQL', 'x', 0, 'x', 0, true)",
                 "delete from flyway_schema_history",
                 "alter role $role superuser",
