@@ -4,7 +4,6 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.netty.*
-import io.ktor.server.plugins.bodylimit.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
 import io.ktor.server.request.*
@@ -20,6 +19,7 @@ import cz.stavebni.denik.routes.reportRoutes
 import cz.stavebni.denik.routes.photoRoutes
 import cz.stavebni.denik.routes.userRoutes
 import cz.stavebni.denik.routes.auditRoutes
+import cz.stavebni.denik.plugins.BoundedRequestBody
 import cz.stavebni.denik.plugins.CrossSiteRequestGuard
 import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureRequestContext
@@ -76,7 +76,8 @@ fun Application.module() {
 
     // Nothing may make the server buffer an unbounded request body, not even before login. JSON
     // requests are small; a photo upload carries one file of at most 5 MB plus multipart framing.
-    install(RequestBodyLimit) {
+    // (Not Ktor's RequestBodyLimit: that one holds back what it copies until 1 MiB has piled up, see BoundedRequestBody.)
+    install(BoundedRequestBody) {
         bodyLimit { call -> if (call.request.path() == "/api/photos/upload") UPLOAD_BODY_LIMIT_BYTES else JSON_BODY_LIMIT_BYTES }
     }
 

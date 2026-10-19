@@ -24,6 +24,12 @@ private val statusLog = LoggerFactory.getLogger("cz.stavebni.denik.plugins.Statu
 fun Application.configureStatusPages() {
     install(StatusPages) {
         exception<Throwable> { call, cause ->
+            // A body that grows past the limit without having announced its size is only noticed while it is being read, and
+            // then the JSON reader hands us its own exception with the real one as the cause: still a 413, not a 400.
+            if (cause !is PayloadTooLargeException && generateSequence(cause.cause) { it.cause }.take(8).any { it is PayloadTooLargeException }) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Požadavek je příliš velký"))
+                return@exception
+            }
             when (cause) {
                 // An audit row that the application could not write is a mistake of the code, not of the client: no conflict, no
                 // bad request, nothing internal in the answer. The message holds nothing of the row, so it may go to the log.

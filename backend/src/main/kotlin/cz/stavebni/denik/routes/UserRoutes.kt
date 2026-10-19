@@ -1,10 +1,13 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
+import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.services.CreateUserRequest
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.RateLimiter
 import cz.stavebni.denik.services.UpdateUserRequest
 import cz.stavebni.denik.services.UserService
 import io.ktor.http.*
@@ -54,6 +57,10 @@ fun Application.userRoutes() {
                     post("/reset-password") {
                         val actor = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                         val id = ProjectAccess.parseId(call.parameters["id"])
+                        // Asked first, so that a request that is refused for who is asking is never charged to the limit.
+                        assertCan(actor, Action.UserPasswordReset)
+                        // Per acting administrator, every attempt counts: a reset is a deliberate act, not a bulk one.
+                        RateLimiter.reserveOrRefuse(DatabaseFactory.dsl, RateLimiter.Rules.ADMIN_PASSWORD_RESET, actor.id.toString(), "Příliš mnoho obnovení hesel.")
                         // The new password is in the body: neither the browser nor a proxy may keep a copy.
                         call.response.header(HttpHeaders.CacheControl, "no-store")
                         call.respond(UserService.resetPassword(actor, id))

@@ -1,29 +1,25 @@
 package cz.stavebni.denik.routes
 
-import cz.stavebni.denik.UPLOAD_BODY_LIMIT_BYTES
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
+import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
-import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.services.PhotoDto
 import cz.stavebni.denik.services.PhotoService
 import cz.stavebni.denik.services.PhotoStorage
 import cz.stavebni.denik.services.ProjectAccess
+import cz.stavebni.denik.services.RateLimiter
+import cz.stavebni.denik.services.UploadLimits
 import kotlinx.serialization.Serializable
 import io.ktor.http.*
-import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
-import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.IOException
-import java.util.UUID
+import kotlinx.coroutines.TimeoutCancellationException
 
 @Serializable
 data class PhotoUploadResponse(
@@ -34,99 +30,54 @@ data class PhotoUploadResponse(
     val photo: PhotoDto
 )
 
-/** A photo upload has one file and a couple of small text fields. */
-private const val MAX_PARTS = 8
-private const val MAX_TEXT_FIELD_CHARS = 256
-
-/**
- * Ktor applies this one limit to the body of *every* part, files included, so it cannot be a "small text field"
- * size. It equals the request body limit (see `Application.module()`), which already bounds every part, so the parser
- * never trips over it: the file limit is enforced exactly below and text fields by [MAX_TEXT_FIELD_CHARS]. If it were
- * lower, the parser would fail while we are still answering a 400 for the file, and the client would see a 500.
- */
-private const val MULTIPART_PART_LIMIT_BYTES = UPLOAD_BODY_LIMIT_BYTES
-
 fun Application.photoRoutes() {
     routing {
         authenticate("auth-jwt") {
             post("/api/photos/upload") {
                 val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
-                val multipart = call.receiveMultipart(formFieldLimit = MULTIPART_PART_LIMIT_BYTES)
-                var fileBytes: ByteArray? = null
-                var fileName = "photo.jpg"
-                var mimeType = "image/jpeg"
-                var reportIdStr: String? = null
-                var projectIdStr: String? = null
-                var partCount = 0
+                val gate = UploadLimits.gate
 
-                try {
-                    multipart.forEachPart { part ->
-                        if (++partCount > MAX_PARTS) throw IllegalArgumentException("Too many parts in the upload")
-                        when (part) {
-                            is PartData.FileItem -> {
-                                if (fileBytes != null) throw IllegalArgumentException("Only one photo per upload")
-                                fileName = part.originalFileName ?: "photo.jpg"
-                                mimeType = part.contentType?.toString() ?: "image/jpeg"
-                                // Never hold more than the limit (+1 byte, to notice an excess) in memory. The stream is
-                                // not closed here: closing it would cancel the multipart channel under the parser.
-                                // A slow sender makes this read wait: it must not be one of the few request threads that wait.
-                                val bytes = withContext(Dispatchers.IO) { part.streamProvider().readNBytes(PhotoService.MAX_UPLOAD_BYTES + 1) }
-                                if (bytes.size > PhotoService.MAX_UPLOAD_BYTES) throw IllegalArgumentException("File size exceeds 5MB limit")
-                                fileBytes = bytes
-                            }
-                            is PartData.FormItem -> {
-                                if (part.value.length > MAX_TEXT_FIELD_CHARS) throw IllegalArgumentException("Form field '${part.name}' is too long")
-                                when (part.name) {
-                                    "reportId" -> reportIdStr = part.value
-                                    "projectId" -> projectIdStr = part.value
-                                }
-                            }
-                            else -> {}
-                        }
-                        part.dispose()
+                // First stage: an upload in progress, per user, before anything of the body is read. A refused request is
+                // answered at once.
+                val entered = gate.tryEnter(user.id)
+                    ?: throw TooManyRequestsException(UploadLimits.RETRY_AFTER_SECONDS, "Právě se nahrává další vaše fotografie. Počkejte, až skončí, a zkuste to znovu.")
+                // Closed on every way out: the answer, an error, a client that went away, a time limit.
+                entered.use {
+                    // Volume per person, counted before anything is read: every attempt counts, whatever becomes of it.
+                    RateLimiter.reserveOrRefuse(DatabaseFactory.dsl, RateLimiter.Rules.PHOTO_UPLOAD, user.id.toString(), "Příliš mnoho nahrávání fotografií.")
+
+                    // Second stage, inside readUpload: the body in memory, for the whole server, taken only for a person who
+                    // has been shown to be allowed to add a photo to that entry, and before the file is read.
+                    val upload = try {
+                        readUpload(call, user, gate)
+                    } catch (e: TimeoutCancellationException) {
+                        call.respond(HttpStatusCode.RequestTimeout, mapOf("error" to "Nahrávání fotografie trvalo příliš dlouho, zkuste to znovu"))
+                        return@post
+                    } catch (e: UploadBusyException) {
+                        call.response.header(HttpHeaders.RetryAfter, UploadLimits.RETRY_AFTER_SECONDS.toString())
+                        call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Server právě přijímá mnoho fotografií, zkuste to za chvíli", "code" to "UPLOAD_BUSY"))
+                        return@post
                     }
-                } catch (e: IOException) {
-                    // The multipart parser's own failures (a part over its limit, a broken body) are the client's fault.
-                    throw IllegalArgumentException("Invalid upload: send one image of at most 5MB as multipart/form-data")
+
+                    // The body stays in memory until the photo is stored: its permit is given back then.
+                    upload.permit.use {
+                        val photo = PhotoService.uploadPhoto(
+                            user = user,
+                            reportId = upload.reportId,
+                            fileBytes = upload.bytes,
+                            mimeType = upload.mimeType,
+                            originalName = upload.fileName
+                        )
+
+                        call.respond(HttpStatusCode.OK, PhotoUploadResponse(
+                            status = "ok",
+                            id = photo.id.toString(),
+                            url = "/api/photos/${photo.id}",
+                            name = upload.fileName,
+                            photo = photo
+                        ))
+                    }
                 }
-
-                if (fileBytes == null) {
-                    throw IllegalArgumentException("Missing photo file")
-                }
-
-                val tx = DatabaseFactory.dsl
-                val projectUuid = projectIdStr?.takeIf { it.isNotBlank() }?.let { ProjectAccess.parseId(it, "projectId") }
-                // The photo belongs to the entry the client names. No guessing ("the newest entry of the project" put photos
-                // on the wrong day), and a bare date needs the project it is in (dates repeat across projects).
-                val reportRef = reportIdStr?.trim().orEmpty()
-                if (reportRef.isEmpty()) throw IllegalArgumentException("Chybí reportId: fotografii lze přidat jen k uloženému záznamu")
-                val isUuid = runCatching { UUID.fromString(reportRef) }.isSuccess
-                if (!isUuid && projectUuid == null) throw IllegalArgumentException("Datum záznamu je nutné zadat spolu s projectId")
-                val reportUuid: UUID = try {
-                    resolveReportId(tx, reportRef, projectUuid)
-                } catch (e: NotFoundException) {
-                    throw e
-                } catch (e: IllegalArgumentException) {
-                    // Only the client's mistake is told; nothing the database or a library said is passed on.
-                    throw IllegalArgumentException("Neplatný odkaz na záznam")
-                }
-                ProjectAccess.requireReportAccess(tx, user, reportUuid)
-
-                val photo = PhotoService.uploadPhoto(
-                    user = user,
-                    reportId = reportUuid,
-                    fileBytes = fileBytes!!,
-                    mimeType = mimeType,
-                    originalName = fileName
-                )
-
-                call.respond(HttpStatusCode.OK, PhotoUploadResponse(
-                    status = "ok",
-                    id = photo.id.toString(),
-                    url = "/api/photos/${photo.id}",
-                    name = fileName,
-                    photo = photo
-                ))
             }
 
             // Photos are evidence from the site: only logged-in members of the

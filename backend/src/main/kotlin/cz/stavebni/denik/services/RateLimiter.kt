@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.jooq.tables.references.RATE_LIMIT_ATTEMPTS
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
@@ -49,6 +50,19 @@ object RateLimiter {
     fun release(db: DSLContext, reservation: Reservation) {
         if (reservation.ids.isEmpty()) return
         db.deleteFrom(RATE_LIMIT_ATTEMPTS).where(RATE_LIMIT_ATTEMPTS.ID.`in`(reservation.ids)).execute()
+    }
+
+    /**
+     * Counts one attempt of [key] against [rule] for good (no [release] unless the caller gives it back): a limit on volume,
+     * not on failures. At the limit the answer is `429` with `Retry-After` and "[message] Zkuste to znovu za N minut.",
+     * and nothing is recorded. Returns the reservation, for a caller that wants to give the attempt back (see [release]).
+     */
+    fun reserveOrRefuse(db: DSLContext, rule: Rule, key: String, message: String): Reservation {
+        val reservation = reserve(db, listOf(rule to key))
+        reservation.refusedFor?.let { wait ->
+            throw TooManyRequestsException(maxOf(1L, (wait.toMillis() + 999) / 1000), "$message Zkuste to znovu za ${describeWait(wait)}.")
+        }
+        return reservation
     }
 
     /**
@@ -148,5 +162,22 @@ object RateLimiter {
 
         /** Wrong passwords given to confirm a signature. */
         val SIGNATURE_PASSWORD = Rule("signpw:user", maxFailures = 5, window = Duration.ofMinutes(15))
+
+        // The volume limits below count every attempt, whatever its outcome (`maxFailures` is the number of attempts here).
+
+        /**
+         * Photo uploads per user: 60 per 5 minutes. A person adding photos to a day's entry sends a handful; this stops a
+         * script from keeping the two image slots busy. An attempt refused for another reason still counts.
+         */
+        val PHOTO_UPLOAD = Rule("photo:upload", maxFailures = 60, window = Duration.ofMinutes(5))
+
+        /**
+         * PDF exports per user: 20 per 5 minutes. An export that is refused because the server is busy or the tool is
+         * missing is given back (it is not the user's doing); one that fails for another reason still counts.
+         */
+        val PDF_EXPORT = Rule("pdf:export", maxFailures = 20, window = Duration.ofMinutes(5))
+
+        /** Password resets per acting administrator: 10 per 15 minutes. A reset is a deliberate act, not a bulk one. */
+        val ADMIN_PASSWORD_RESET = Rule("pwreset:admin", maxFailures = 10, window = Duration.ofMinutes(15))
     }
 }

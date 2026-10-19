@@ -30,7 +30,8 @@ import kotlin.system.exitProcess
  *
  * `prune-access-records` deletes the addresses and user agents kept with audit rows and the sign-in log once they are older
  * than twelve months (decision D7; the database refuses to delete anything younger). Run it regularly: the retention is a
- * promise made in the privacy notice.
+ * promise made in the privacy notice. It also removes spent rate-limit attempts (older than a day: they only count inside a
+ * window of 15 minutes at most; they hold addresses and account names).
  *
  * `verify-signatures` hashes every signed entry again and every photo file under UPLOADS_DIR, and compares them with what
  * was recorded when the entry was signed and the photo uploaded. It reads only. It is what a restore from a backup runs to
@@ -102,7 +103,7 @@ object AdminCli {
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
   audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
   verify-signatures                       hash every signed entry and photo file again and compare with what was recorded
-  prune-access-records                    delete addresses and user agents older than twelve months (sign-in log, audit request context)"""
+  prune-access-records                    delete addresses and user agents older than twelve months (sign-in log, audit request context) and rate-limit attempts older than a day"""
 
     /** Whether [args] name a command with the right number of arguments. */
     fun hasValidShape(args: List<String>): Boolean =
@@ -181,7 +182,10 @@ object AdminCli {
             "prune-access-records" -> {
                 if (args.size != 1) return usage()
                 val pruned = AccessLogService.prune(DatabaseFactory.dsl)
-                out("Pruned ${pruned.accessLog} sign-in log rows and ${pruned.auditRequestContext} audit request records older than ${AccessLogService.RETENTION_MONTHS} months.")
+                out(
+                    "Pruned ${pruned.accessLog} sign-in log rows and ${pruned.auditRequestContext} audit request records older than ${AccessLogService.RETENTION_MONTHS} months, " +
+                        "and ${pruned.rateLimitAttempts} rate-limit attempts older than ${AccessLogService.RATE_LIMIT_RETENTION_DAYS} day."
+                )
                 0
             }
             "verify-signatures" -> {
