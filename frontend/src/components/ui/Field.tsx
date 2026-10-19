@@ -10,8 +10,10 @@ import { FieldContext } from "./fieldContext";
  *     </Field>
  *
  * [labelHidden] keeps the label for screen readers only, where the design has no room for it (it is still the control's name).
+ * The control's `id` is made up; pass [id] when something else has to name it (a test, a link that points at the field).
  */
 export function Field({
+  id: given,
   label,
   hint,
   error,
@@ -19,6 +21,7 @@ export function Field({
   className,
   children,
 }: {
+  id?: string;
   label: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
@@ -26,7 +29,8 @@ export function Field({
   className?: string;
   children: ReactNode;
 }) {
-  const id = useId();
+  const generated = useId();
+  const id = given ?? generated;
   const hintId = `${id}-hint`;
   const errorId = `${id}-error`;
   const describedBy = [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;

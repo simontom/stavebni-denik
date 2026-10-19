@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { User } from "lucide-react";
 import { browserStorage, clearDraftsExceptUser } from "../../lib/draftStore";
+import { Banner, Button, Field, TextInput } from "../../components/ui";
 
 export function LoginPage() {
   const [nickname, setNickname] = useState("");
@@ -51,59 +52,27 @@ export function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
+    <div className="flex min-h-screen items-center justify-center px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
       <div className="w-full max-w-md space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">Stavební deník</h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Přihlaste se ke svému účtu</p>
+          <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-ink">Stavební deník</h2>
+          <p className="mt-2 text-center text-sm text-ink-muted">Přihlaste se ke svému účtu</p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
-          <div className="-space-y-px rounded-md shadow-sm">
-            <div>
-              <label htmlFor="nickname" className="sr-only">
-                Přihlašovací jméno
-              </label>
-              <input
-                id="nickname"
-                name="nickname"
-                type="text"
-                required
-                className="relative block w-full rounded-t-md border-0 px-3 py-1.5 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
-                placeholder="Přihlašovací jméno"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Heslo
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                className="relative block w-full rounded-b-md border-0 px-3 py-1.5 text-gray-900 ring-1 ring-gray-300 ring-inset placeholder:text-gray-400 focus:z-10 focus:ring-2 focus:ring-indigo-600 focus:ring-inset sm:text-sm sm:leading-6"
-                placeholder="Heslo"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
+        {/* The labels are for screen readers here (the placeholders say the same to the eye); visible labels are backlog B7. */}
+        <form className="mt-8 space-y-4" onSubmit={handleLogin}>
+          <Field label="Přihlašovací jméno" labelHidden>
+            <TextInput name="nickname" type="text" required placeholder="Přihlašovací jméno" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+          </Field>
+          <Field label="Heslo" labelHidden>
+            <TextInput name="password" type="password" required placeholder="Heslo" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </Field>
 
-          {error && <div className="text-center text-sm text-red-500">{error}</div>}
+          {error && <Banner tone="danger">{error}</Banner>}
 
-          <div>
-            <button
-              type="submit"
-              className="group relative flex w-full justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600"
-            >
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3">
-                <User className="h-5 w-5 text-indigo-500 group-hover:text-indigo-400" aria-hidden="true" />
-              </span>
-              Přihlásit se
-            </button>
-          </div>
+          <Button type="submit" block>
+            <User className="h-5 w-5" aria-hidden="true" />
+            Přihlásit se
+          </Button>
         </form>
       </div>
     </div>

@@ -1,37 +1,30 @@
 import React from "react";
 import { CORE, SECTIONS, limitOf, type FieldSpec, type ProjectFieldValues } from "../lib/projectFields";
+import { Field, TextArea, TextInput } from "./ui";
 
-const inputClass = "w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500";
-
-const Field: React.FC<{ spec: FieldSpec; values: ProjectFieldValues; onChange: (patch: Partial<ProjectFieldValues>) => void }> = ({ spec, values, onChange }) => {
-  const id = `project-${spec.key}`;
+const ProjectField: React.FC<{ spec: FieldSpec; values: ProjectFieldValues; onChange: (patch: Partial<ProjectFieldValues>) => void }> = ({ spec, values, onChange }) => {
   const value = values[spec.key];
   const limit = limitOf(spec);
   return (
-    <div className={spec.type === "textarea" ? "md:col-span-2" : undefined}>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-gray-700">
-        {spec.label}
-      </label>
+    <Field label={spec.label} className={spec.type === "textarea" ? "md:col-span-2" : undefined}>
       {spec.type === "textarea" ? (
-        <textarea id={id} name={spec.key} value={value} onChange={(e) => onChange({ [spec.key]: e.target.value })} rows={3} placeholder={spec.placeholder} className={inputClass} />
+        <TextArea name={spec.key} value={value} onChange={(e) => onChange({ [spec.key]: e.target.value })} rows={3} placeholder={spec.placeholder} />
       ) : (
-        <input
-          id={id}
+        <TextInput
           name={spec.key}
           type={spec.type ?? "text"}
           required={spec.required}
           value={value}
           onChange={(e) => onChange({ [spec.key]: e.target.value })}
           placeholder={spec.placeholder}
-          className={inputClass}
         />
       )}
       {limit !== null && value.length > limit * 0.9 && (
-        <p className={`mt-1 text-xs ${value.length > limit ? "font-semibold text-red-700" : "text-gray-600"}`}>
+        <p className={`mt-1 text-xs ${value.length > limit ? "font-semibold text-danger-ink" : "text-ink-muted"}`}>
           {value.length} / {limit} znaků
         </p>
       )}
-    </div>
+    </Field>
   );
 };
 
@@ -47,16 +40,16 @@ export const ProjectFields: React.FC<{
   <>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {CORE.map((spec) => (
-        <Field key={spec.key} spec={spec} values={values} onChange={onChange} />
+        <ProjectField key={spec.key} spec={spec} values={values} onChange={onChange} />
       ))}
       {children}
     </div>
     {SECTIONS.map((section) => (
-      <div key={section.title} className="mt-4 border-t border-gray-200 pt-4">
-        <h2 className="text-md mb-3 font-semibold text-gray-800">{section.title}</h2>
+      <div key={section.title} className="mt-4 border-t border-line pt-4">
+        <h2 className="text-md mb-3 font-semibold text-ink">{section.title}</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {section.fields.map((spec) => (
-            <Field key={spec.key} spec={spec} values={values} onChange={onChange} />
+            <ProjectField key={spec.key} spec={spec} values={values} onChange={onChange} />
           ))}
         </div>
       </div>
