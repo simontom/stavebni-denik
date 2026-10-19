@@ -10,13 +10,15 @@ import { FieldContext } from "./fieldContext";
  *     </Field>
  *
  * [labelHidden] keeps the label for screen readers only, where the design has no room for it (it is still the control's name).
- * The control's `id` is made up; pass [id] when something else has to name it (a test, a link that points at the field).
+ * An error is announced when it appears: `role="alert"` (assertive), or with [errorRole] `"status"` (polite) for a mistake that may still
+ * mend itself while the person types, so the screen reader does not interrupt them. The control's `id` is made up; pass [id] when something else has to name it (a test, a link that points at the field).
  */
 export function Field({
   id: given,
   label,
   hint,
   error,
+  errorRole = "alert",
   labelHidden = false,
   className,
   children,
@@ -25,6 +27,7 @@ export function Field({
   label: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
+  errorRole?: "alert" | "status";
   labelHidden?: boolean;
   className?: string;
   children: ReactNode;
@@ -46,7 +49,7 @@ export function Field({
       )}
       <FieldContext.Provider value={{ id, describedBy, invalid: Boolean(error) }}>{children}</FieldContext.Provider>
       {error && (
-        <p id={errorId} role="alert" className="mt-1 text-sm font-medium text-danger-ink">
+        <p id={errorId} role={errorRole} className="mt-1 text-sm font-medium text-danger-ink">
           {error}
         </p>
       )}

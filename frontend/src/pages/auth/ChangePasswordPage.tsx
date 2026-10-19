@@ -12,16 +12,24 @@ export const ChangePasswordPage: React.FC = () => {
   const [newPassword, setNewPassword] = useState("");
   const [repeat, setRepeat] = useState("");
   const [error, setError] = useState("");
+  // The person has gone on from the repeat field (or tried to send the form): only then is a repeat that is still shorter than the new
+  // password called wrong. While they type it, it is not wrong yet.
+  const [repeatLeft, setRepeatLeft] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const rules = passwordRules(newPassword, currentUser()?.nickname);
   const rulesOk = rules.every((r) => r.ok);
   const matches = newPassword.length > 0 && newPassword === repeat;
   const canSubmit = !busy && currentPassword.length > 0 && rulesOk && matches;
+  // A mistake is said when the repeat is as long as the new password (it cannot be a start of it any more) or the person has left the field
+  const showMismatch = repeat.length > 0 && !matches && (repeatLeft || repeat.length >= newPassword.length);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    if (!canSubmit) {
+      setRepeatLeft(true);
+      return;
+    }
     setError("");
     setBusy(true);
     try {
@@ -62,8 +70,17 @@ export const ChangePasswordPage: React.FC = () => {
             ))}
           </ul>
         </Field>
-        <Field id="repeat-password" label="Nové heslo znovu" error={repeat.length > 0 && !matches ? "Hesla se neshodují." : undefined}>
-          <TextInput name="repeatPassword" type="password" autoComplete="new-password" required value={repeat} onChange={(e) => setRepeat(e.target.value)} />
+        <Field id="repeat-password" label="Nové heslo znovu" error={showMismatch ? "Hesla se neshodují." : undefined} errorRole={repeatLeft ? "alert" : "status"}>
+          <TextInput
+            name="repeatPassword"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={repeat}
+            onChange={(e) => setRepeat(e.target.value)}
+            onFocus={() => setRepeatLeft(false)}
+            onBlur={() => setRepeatLeft(true)}
+          />
         </Field>
         <Button type="submit" block disabled={!canSubmit}>
           Změnit heslo
