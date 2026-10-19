@@ -12,17 +12,20 @@ import io.ktor.http.*
 import io.ktor.http.cio.MultipartEvent
 import io.ktor.http.cio.parseMultipart
 import io.ktor.server.application.*
+import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.request.*
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readRemaining
+import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.withTimeout
 import kotlinx.io.readByteArray
-import java.io.IOException
 import java.util.UUID
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 import kotlin.time.toKotlinDuration
@@ -40,7 +43,8 @@ private const val MAX_TEXT_FIELD_BYTES = MAX_TEXT_FIELD_CHARS * 4
  */
 private const val MULTIPART_PART_LIMIT_BYTES = UPLOAD_BODY_LIMIT_BYTES
 
-private const val INVALID_UPLOAD = "Invalid upload: send one image of at most 5MB as multipart/form-data"
+/** What a client is told about any multipart body that is not one: never what it sent, never what the parser said. */
+private const val INVALID_UPLOAD = "Neplatný požadavek: pošlete jednu fotografii (nejvýše 5 MB) jako multipart/form-data"
 
 /**
  * What the body of an upload held: the one image, the entry it was authorised for, and the [permit] that counts its memory
@@ -50,6 +54,18 @@ internal class Upload(val bytes: ByteArray, val fileName: String, val mimeType: 
 
 /** The server holds all the upload bodies it may; this one has to wait. Answered `503` by the route. */
 internal class UploadBusyException : RuntimeException("all upload bodies in flight are taken")
+
+/**
+ * Anything the multipart parser throws is a malformed request, and is answered `400` with [INVALID_UPLOAD]: a missing or
+ * over-long boundary, a part header without a colon or without a value, a body that ends in the middle. What it must not turn
+ * into is a 500 with a stack trace, or a 409 that repeats the parser's message with the client's own text in it. Two things
+ * are not the parser's: a body that grew past the request limit (a 413) and a cancellation (the deadlines, a client that left).
+ */
+private fun malformed(cause: Throwable): Throwable =
+    if (cause is PayloadTooLargeException || cause is CancellationException || cause !is Exception) cause
+    else IllegalArgumentException(INVALID_UPLOAD)
+
+private inline fun <T> parsing(block: () -> T): T = try { block() } catch (e: Throwable) { throw malformed(e) }
 
 /**
  * Reads the multipart body of an upload as a **stream**, so that nothing is held in memory before the person is known to
@@ -65,7 +81,9 @@ internal class UploadBusyException : RuntimeException("all upload bodies in flig
  * for the file. A [kotlinx.coroutines.TimeoutCancellationException] is the route's to answer with `408`.
  *
  * The parser is Ktor's own (`parseMultipart`), run under a supervisor so that a broken body arrives here as an exception to
- * answer, and does not cancel the call.
+ * answer, and does not cancel the call. The supervisor is a child of the call that never completes by itself: **everything
+ * from its creation is inside the `try`**, so that it is cancelled however this function ends (a boundary the parser
+ * refuses throws before it has returned anything).
  */
 internal suspend fun readUpload(call: ApplicationCall, user: SessionUser, gate: UploadGate): Upload {
     val contentType = call.request.contentType()
@@ -78,33 +96,37 @@ internal suspend fun readUpload(call: ApplicationCall, user: SessionUser, gate: 
         (if (bodyPermit == null) UploadLimits.preFileTimeout else UploadLimits.bodyTimeout).toKotlinDuration() - started.elapsedNow()
     suspend fun <T> within(block: suspend () -> T): T = withTimeout(remaining().coerceAtLeast(0.milliseconds)) { block() }
 
-    // A job that has the call as its parent stays active until it is cancelled or completed: it is cancelled in `finally`.
-    val supervisor = SupervisorJob(call.coroutineContext[Job])
-    val events = CoroutineScope(call.coroutineContext + supervisor).parseMultipart(call.receiveChannel(), contentType.toString(), call.request.contentLength(), MULTIPART_PART_LIMIT_BYTES)
-    var fileBytes: ByteArray? = null
-    var fileName = "photo.jpg"
-    var mimeType = "image/jpeg"
-    var reportIdStr: String? = null
-    var projectIdStr: String? = null
-    var reportUuid: UUID? = null
-    var partCount = 0
-
+    var supervisor: CompletableJob? = null
+    var events: ReceiveChannel<MultipartEvent>? = null
     try {
+        supervisor = SupervisorJob(call.coroutineContext[Job])
+        val parser = parsing {
+            CoroutineScope(call.coroutineContext + supervisor).parseMultipart(call.receiveChannel(), contentType.toString(), call.request.contentLength(), MULTIPART_PART_LIMIT_BYTES)
+        }
+        events = parser
+        var fileBytes: ByteArray? = null
+        var fileName = "photo.jpg"
+        var mimeType = "image/jpeg"
+        var reportIdStr: String? = null
+        var projectIdStr: String? = null
+        var reportUuid: UUID? = null
+        var partCount = 0
+
         while (true) {
-            val received = within { events.receiveCatching() }
+            val received = within { parser.receiveCatching() }
             if (received.isClosed) {
-                received.exceptionOrNull()?.let { throw it }
+                received.exceptionOrNull()?.let { throw malformed(it) }
                 break
             }
             val event = received.getOrThrow()
             if (event !is MultipartEvent.MultipartPart) {
-                event.releaseSuspend()
+                parsing { event.releaseSuspend() }
                 continue
             }
             if (++partCount > MAX_PARTS) throw IllegalArgumentException("Too many parts in the upload")
 
-            val headers = within { event.headers.await() }
-            val disposition = headers["Content-Disposition"]?.toString()?.let { ContentDisposition.parse(it) }
+            val headers = within { parsing { event.headers.await() } }
+            val disposition = parsing { headers["Content-Disposition"]?.toString()?.let { ContentDisposition.parse(it) } }
             val name = disposition?.parameter("name")
             val filename = disposition?.parameter("filename")
             if (filename == null) {
@@ -121,30 +143,26 @@ internal suspend fun readUpload(call: ApplicationCall, user: SessionUser, gate: 
                 mimeType = headers["Content-Type"]?.toString() ?: "image/jpeg"
                 // Never hold more than the limit (+1 byte, to notice an excess) in memory. The read suspends instead of
                 // blocking a thread, and the time limit of the upload cancels it.
-                val bytes = within { event.body.readRemaining(PhotoService.MAX_UPLOAD_BYTES + 1L).readByteArray() }
+                val bytes = within { parsing { event.body.readRemaining(PhotoService.MAX_UPLOAD_BYTES + 1L).readByteArray() } }
                 if (bytes.size > PhotoService.MAX_UPLOAD_BYTES) throw IllegalArgumentException("File size exceeds 5MB limit")
                 fileBytes = bytes
             }
-            event.releaseSuspend()
+            parsing { event.releaseSuspend() }
         }
         val bytes = fileBytes ?: throw IllegalArgumentException("Missing photo file")
         return Upload(bytes, fileName, mimeType, reportUuid!!, bodyPermit!!)
-    } catch (e: IOException) {
-        // The multipart parser's own failures (a part over its limit, a broken body) are the client's fault.
-        bodyPermit?.close()
-        throw IllegalArgumentException(INVALID_UPLOAD)
     } catch (t: Throwable) {
         bodyPermit?.close()
         throw t
     } finally {
-        events.cancel() // a no-op when the body was read to its end; otherwise it stops the parser
-        supervisor.cancel()
+        events?.cancel() // a no-op when the body was read to its end; otherwise it stops the parser
+        supervisor?.cancel()
     }
 }
 
 /** A text field, at most [MAX_TEXT_FIELD_CHARS] characters. What follows in a longer one is never read into memory. */
 private suspend fun readText(body: ByteReadChannel, name: String?): String {
-    val bytes = body.readRemaining(MAX_TEXT_FIELD_BYTES + 1L).readByteArray()
+    val bytes = parsing { body.readRemaining(MAX_TEXT_FIELD_BYTES + 1L).readByteArray() }
     val text = if (bytes.size > MAX_TEXT_FIELD_BYTES) null else bytes.decodeToString()
     if (text == null || text.length > MAX_TEXT_FIELD_CHARS) throw IllegalArgumentException("Form field '$name' is too long")
     return text
