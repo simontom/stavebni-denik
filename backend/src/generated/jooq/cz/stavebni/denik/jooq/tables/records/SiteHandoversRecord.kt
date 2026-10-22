@@ -52,25 +52,17 @@ open class SiteHandoversRecord() : UpdatableRecordImpl<SiteHandoversRecord>(Site
         set(value): Unit = set(7, value)
         get(): UUID? = get(7) as UUID?
 
-    open var signedbyid: UUID?
+    open var createdat: OffsetDateTime?
         set(value): Unit = set(8, value)
-        get(): UUID? = get(8) as UUID?
+        get(): OffsetDateTime? = get(8) as OffsetDateTime?
 
-    open var signedat: OffsetDateTime?
+    open var updatedat: OffsetDateTime?
         set(value): Unit = set(9, value)
         get(): OffsetDateTime? = get(9) as OffsetDateTime?
 
-    open var createdat: OffsetDateTime?
+    open var deletedat: OffsetDateTime?
         set(value): Unit = set(10, value)
         get(): OffsetDateTime? = get(10) as OffsetDateTime?
-
-    open var updatedat: OffsetDateTime?
-        set(value): Unit = set(11, value)
-        get(): OffsetDateTime? = get(11) as OffsetDateTime?
-
-    open var deletedat: OffsetDateTime?
-        set(value): Unit = set(12, value)
-        get(): OffsetDateTime? = get(12) as OffsetDateTime?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -81,7 +73,7 @@ open class SiteHandoversRecord() : UpdatableRecordImpl<SiteHandoversRecord>(Site
     /**
      * Create a detached, initialised SiteHandoversRecord
      */
-    constructor(id: UUID? = null, projectid: UUID? = null, type: String? = null, date: OffsetDateTime? = null, participants: String? = null, meterstates: JSONB? = null, notes: String? = null, createdbyid: UUID? = null, signedbyid: UUID? = null, signedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, projectid: UUID? = null, type: String? = null, date: OffsetDateTime? = null, participants: String? = null, meterstates: JSONB? = null, notes: String? = null, createdbyid: UUID? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null): this() {
         this.id = id
         this.projectid = projectid
         this.type = type
@@ -90,8 +82,6 @@ open class SiteHandoversRecord() : UpdatableRecordImpl<SiteHandoversRecord>(Site
         this.meterstates = meterstates
         this.notes = notes
         this.createdbyid = createdbyid
-        this.signedbyid = signedbyid
-        this.signedat = signedat
         this.createdat = createdat
         this.updatedat = updatedat
         this.deletedat = deletedat

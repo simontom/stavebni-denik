@@ -4,23 +4,8 @@ import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOptio
 import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
+import { Handovers } from "../components/Handovers";
 import { Button, Card, Field, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
-
-interface Meter {
-  medium: string;
-  serialNumber: string;
-  state: string;
-}
-
-interface Handover {
-  id: string;
-  type: string;
-  date: string;
-  participants: string;
-  meterStates?: Meter[] | null;
-  notes?: string | null;
-  signedAt?: string | null;
-}
 
 interface AuthorizedPerson {
   id: string;
@@ -108,15 +93,6 @@ export const ProjectDetail: React.FC = () => {
   const [hasMoreReports, setHasMoreReports] = useState(false);
   const [newReportDate, setNewReportDate] = useState(today());
 
-  // Handovers
-  const [handovers, setHandovers] = useState<Handover[]>([]);
-  const [showHandoverModal, setShowHandoverModal] = useState(false);
-  const [handoverType, setHandoverType] = useState("Předání staveniště zhotoviteli");
-  const [handoverDate, setHandoverDate] = useState(today());
-  const [handoverParticipants, setHandoverParticipants] = useState("");
-  const [meters, setMeters] = useState<Meter[]>([]);
-  const [handoverNotes, setHandoverNotes] = useState("");
-
   // Authorized persons
   const [authorizedPersons, setAuthorizedPersons] = useState<AuthorizedPerson[]>([]);
   const [showPersonModal, setShowPersonModal] = useState(false);
@@ -154,16 +130,14 @@ export const ProjectDetail: React.FC = () => {
     Promise.all([
       api<ProjectData>(`/api/projects/${id}`),
       api<ReportItem[]>(`/api/projects/${id}/reports?limit=${REPORT_PAGE_SIZE}`),
-      api<Handover[]>(`/api/projects/${id}/handovers`),
       api<AuthorizedPerson[]>(`/api/projects/${id}/authorized-persons`),
       api<ProjectMember[]>(`/api/projects/${id}/members`),
     ])
-      .then(([p, r, h, ap, m]) => {
+      .then(([p, r, ap, m]) => {
         if (ignore) return;
         setProject(p);
         setReports(r);
         setHasMoreReports(r.length >= REPORT_PAGE_SIZE);
-        setHandovers(h);
         setAuthorizedPersons(ap);
         setMembers(m);
         setError("");
@@ -227,47 +201,6 @@ export const ProjectDetail: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (err) {
       fail(err, "Chyba při stahování PDF");
-    }
-  };
-
-  const openHandoverModal = () => {
-    setHandoverType("Předání staveniště zhotoviteli");
-    setHandoverDate(today());
-    setHandoverParticipants("");
-    setMeters([]);
-    setHandoverNotes("");
-    setShowHandoverModal(true);
-  };
-
-  const updateMeter = (idx: number, patch: Partial<Meter>) => setMeters((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
-
-  const handleSaveHandover = async () => {
-    try {
-      const created = await api<Handover>(`/api/projects/${id}/handovers`, {
-        method: "POST",
-        body: json({
-          projectId: id,
-          type: handoverType,
-          date: handoverDate,
-          participants: handoverParticipants,
-          meterStates: meters.filter((m) => m.medium || m.serialNumber || m.state),
-          notes: handoverNotes || null,
-        }),
-      });
-      setHandovers((prev) => [created, ...prev]);
-      setShowHandoverModal(false);
-    } catch (err) {
-      fail(err, "Předání se nepodařilo uložit");
-    }
-  };
-
-  const handleSignHandover = async (hId: string) => {
-    if (!window.confirm("Opravdu podepsat předání?")) return;
-    try {
-      const signed = await api<Handover>(`/api/handovers/${hId}/sign`, { method: "POST" });
-      setHandovers((prev) => prev.map((h) => (h.id === hId ? signed : h)));
-    } catch (err) {
-      fail(err, "Podpis se nezdařil");
     }
   };
 
@@ -682,142 +615,8 @@ export const ProjectDetail: React.FC = () => {
         </Card>
       )}
 
-      {/* Tab 3: Site Handovers (Předání staveniště) */}
-      {tab === "handovers" && (
-        <Card>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold text-ink">Předání a převzetí staveniště</h2>
-            <Button onClick={openHandoverModal}>Přidat předání</Button>
-          </div>
-
-          {showHandoverModal && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-lg space-y-4 rounded-lg bg-white p-6 shadow-xl">
-                <h3 className="text-lg font-bold">Protokol o předání staveniště</h3>
-                <div>
-                  <label htmlFor="handover-type" className="mb-1 block text-xs font-medium text-gray-700">
-                    Typ předání
-                  </label>
-                  <input id="handover-type" type="text" value={handoverType} onChange={(e) => setHandoverType(e.target.value)} className="w-full rounded border p-2 text-sm" />
-                </div>
-                <div>
-                  <label htmlFor="handover-date" className="mb-1 block text-xs font-medium text-gray-700">
-                    Datum předání
-                  </label>
-                  <input id="handover-date" type="date" value={handoverDate} onChange={(e) => setHandoverDate(e.target.value)} className="w-full rounded border p-2 text-sm" />
-                </div>
-                <div>
-                  <label htmlFor="handover-participants" className="mb-1 block text-xs font-medium text-gray-700">
-                    Účastníci předání
-                  </label>
-                  <input
-                    id="handover-participants"
-                    type="text"
-                    value={handoverParticipants}
-                    onChange={(e) => setHandoverParticipants(e.target.value)}
-                    className="w-full rounded border p-2 text-sm"
-                  />
-                </div>
-
-                <div className="border-t pt-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-700">Měřidla a odběrná místa</span>
-                    <button
-                      type="button"
-                      onClick={() => setMeters((prev) => [...prev, { medium: "", serialNumber: "", state: "" }])}
-                      className="rounded border bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
-                    >
-                      Přidat měřidlo
-                    </button>
-                  </div>
-                  {meters.map((m, idx) => (
-                    <div key={idx} className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <input
-                        placeholder="Médium (např. Voda, Elektřina VT)"
-                        value={m.medium}
-                        onChange={(e) => updateMeter(idx, { medium: e.target.value })}
-                        className="rounded border p-1 text-xs"
-                      />
-                      <input
-                        placeholder="Výrobní číslo"
-                        value={m.serialNumber}
-                        onChange={(e) => updateMeter(idx, { serialNumber: e.target.value })}
-                        className="rounded border p-1 text-xs"
-                      />
-                      <input
-                        placeholder="Stav (např. 12450 kWh)"
-                        value={m.state}
-                        onChange={(e) => updateMeter(idx, { state: e.target.value })}
-                        className="rounded border p-1 text-xs"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div>
-                  <label htmlFor="handover-notes" className="mb-1 block text-xs font-medium text-gray-700">
-                    Poznámky / Závěry
-                  </label>
-                  <textarea id="handover-notes" value={handoverNotes} onChange={(e) => setHandoverNotes(e.target.value)} className="w-full rounded border p-2 text-sm" rows={2} />
-                </div>
-
-                <div className="flex justify-end gap-2 border-t pt-2">
-                  <button type="button" onClick={() => setShowHandoverModal(false)} className="rounded border px-3 py-1.5 text-sm">
-                    Zrušit
-                  </button>
-                  <button type="button" onClick={() => void handleSaveHandover()} className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white">
-                    Uložit předání
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {handovers.length === 0 ? (
-            <p className="text-sm text-gray-500">Zatím nebylo zaznamenáno žádné předání staveniště.</p>
-          ) : (
-            <div className="space-y-4">
-              {handovers.map((h) => (
-                <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-bold text-gray-900">{h.type}</h4>
-                      <p className="text-sm text-gray-600">{h.participants}</p>
-                      <p className="text-xs text-gray-500 tabular-nums">{formatDate(h.date)}</p>
-                    </div>
-                    <div>
-                      {h.signedAt ? (
-                        <StatusBadge tone="success">Podepsáno dne {formatDate(h.signedAt)}</StatusBadge>
-                      ) : (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <StatusBadge tone="warning">Čeká na podpis</StatusBadge>
-                          <Button size="sm" onClick={() => void handleSignHandover(h.id)}>
-                            Podepsat předání
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {h.meterStates && h.meterStates.length > 0 && (
-                    <div className="mt-3 border-t border-gray-200 pt-3">
-                      <span className="text-xs font-semibold text-gray-500">Stavy měřidel:</span>
-                      <div className="mt-1 flex flex-wrap gap-4 text-xs">
-                        {h.meterStates.map((m, idx) => (
-                          <div key={idx} className="rounded border bg-white px-2 py-1">
-                            <span className="font-semibold">{m.medium}</span> ({m.serialNumber}): {m.state}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {h.notes && <p className="mt-2 text-xs text-gray-600">{h.notes}</p>}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
+      {/* Tab 3: Site Handovers (Předání staveniště): a component of its own, with its own data */}
+      {tab === "handovers" && id && <Handovers key={id} projectId={id} myRole={project.myRole} />}
 
       {/* Tab 4: Members & Authorized Persons (Členové) */}
       {tab === "members" && (

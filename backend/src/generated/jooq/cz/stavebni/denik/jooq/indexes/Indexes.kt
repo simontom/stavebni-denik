@@ -19,6 +19,7 @@ import cz.stavebni.denik.jooq.tables.Projects
 import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
 import cz.stavebni.denik.jooq.tables.Sessions
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
 import cz.stavebni.denik.jooq.tables.Visits
@@ -60,10 +61,10 @@ val REMARKS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("remarks_delete
 val REMARKS_REPORTID_IDX: Index = Internal.createIndex(DSL.name("remarks_reportId_idx"), Remarks.REMARKS, arrayOf(Remarks.REMARKS.REPORTID), false)
 val SESSIONS_EXPIRESAT_IDX: Index = Internal.createIndex(DSL.name("sessions_expiresAt_idx"), Sessions.SESSIONS, arrayOf(Sessions.SESSIONS.EXPIRESAT), false)
 val SESSIONS_USERID_IDX: Index = Internal.createIndex(DSL.name("sessions_userId_idx"), Sessions.SESSIONS, arrayOf(Sessions.SESSIONS.USERID), false)
+val SITE_HANDOVER_SIGNATURES_SIGNEDBYID_IDX: Index = Internal.createIndex(DSL.name("site_handover_signatures_signedById_idx"), SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.SIGNEDBYID), false)
 val SITE_HANDOVERS_CREATEDBYID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_createdById_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.CREATEDBYID), false)
 val SITE_HANDOVERS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("site_handovers_deletedAt_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.DELETEDAT), false)
 val SITE_HANDOVERS_PROJECTID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_projectId_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.PROJECTID), false)
-val SITE_HANDOVERS_SIGNEDBYID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_signedById_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.SIGNEDBYID), false)
 val USERS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("users_deletedAt_idx"), Users.USERS, arrayOf(Users.USERS.DELETEDAT), false)
 val USERS_NICKNAME_KEY: Index = Internal.createIndex(DSL.name("users_nickname_key"), Users.USERS, arrayOf(Users.USERS.NICKNAME), true)
 val VISITS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("visits_deletedAt_idx"), Visits.VISITS, arrayOf(Visits.VISITS.DELETEDAT), false)

@@ -20,6 +20,7 @@ import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
 import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
 import cz.stavebni.denik.jooq.tables.Visits
@@ -100,6 +101,11 @@ val REPORT_ACKNOWLEDGEMENTS: ReportAcknowledgements = ReportAcknowledgements.REP
  * The table <code>public.sessions</code>.
  */
 val SESSIONS: Sessions = Sessions.SESSIONS
+
+/**
+ * The table <code>public.site_handover_signatures</code>.
+ */
+val SITE_HANDOVER_SIGNATURES: SiteHandoverSignatures = SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES
 
 /**
  * The table <code>public.site_handovers</code>.

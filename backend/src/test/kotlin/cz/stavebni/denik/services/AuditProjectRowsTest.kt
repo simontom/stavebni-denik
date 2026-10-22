@@ -81,12 +81,12 @@ class AuditProjectRowsTest : BaseIntegrationTest() {
         AddendumService.create(boss, UUID.fromString(draft.id), CreateAddendumRequest("Oprava"))
         RemarkService.create(inspector, UUID.fromString(draft.id), CreateRemarkRequest(text = "Bez závad"))
 
-        fun handover(project: UUID) = SiteHandoverDto(projectId = project.toString(), type = "PROTOCOL", date = "2026-09-28", participants = "Novák")
-        val kept = SiteHandoverService.createHandover(boss, handover(pId))
-        SiteHandoverService.updateHandover(boss, UUID.fromString(kept.id), handover(pId).copy(type = "ZMĚNA"))
-        SiteHandoverService.signHandover(boss, UUID.fromString(kept.id))
-        val removed = SiteHandoverService.createHandover(boss, handover(pId))
-        SiteHandoverService.deleteHandover(boss, UUID.fromString(removed.id))
+        // A handover: made, changed, signed by both parties (each signature is a row of its own) and one that is deleted.
+        val kept = SiteHandoverService.createHandover(boss, pId, handoverInput(participants = "Novák"))
+        val changed = SiteHandoverService.updateHandover(boss, kept.uuid, kept.asInput(type = "ZMĚNA"))
+        signHandover(inspector, signHandover(boss, changed))
+        val removed = SiteHandoverService.createHandover(boss, pId, handoverInput(participants = "Novák"))
+        SiteHandoverService.deleteHandover(boss, removed.uuid)
 
         val person = AuthorizedPersonService.create(boss, pId, CreateAuthorizedPersonRequest(name = "Ing. Dozor", company = "TDS"))
         AuthorizedPersonService.revoke(boss, UUID.fromString(person.id))
@@ -95,7 +95,7 @@ class AuditProjectRowsTest : BaseIntegrationTest() {
         val q = ProjectService.createProject(boss, projectDto(boss, "Q"))
         val qId = UUID.fromString(q.id)
         DailyReportService.createReport(boss, qId, "2026-09-28")
-        SiteHandoverService.createHandover(boss, handover(qId))
+        SiteHandoverService.createHandover(boss, qId, handoverInput(participants = "Novák"))
         AuthorizedPersonService.create(boss, qId, CreateAuthorizedPersonRequest(name = "Ing. Jiný"))
 
         // Users belong to no project.

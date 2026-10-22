@@ -211,8 +211,24 @@ class RbacTest {
         assertEquals("YY---", row(Action.SiteHandoverCreate))
         assertEquals("Y----", row(Action.SiteHandoverUpdate))
         assertEquals("YY---", row(Action.SiteHandoverUpdate, authored = true))
-        assertEquals("YYYY-", row(Action.SiteHandoverSign))
+        assertEquals("Y-YY-", row(Action.SiteHandoverSign), "a worker signs no side of a handover protocol (backlog A3)")
         assertEquals("Y----", row(Action.ProjectUpdate))
         assertEquals("Y----", row(Action.ProjectMemberManage))
+    }
+
+    /** A handover protocol is signed by two parties: the side follows from the role in the project, and a worker has none. */
+    @Test
+    fun `a site handover is signed for the side that follows from the role in the project`() {
+        assertEquals(HandoverSide.CONTRACTOR, HandoverSide.of(Role.BOSS))
+        assertEquals(HandoverSide.CLIENT, HandoverSide.of(Role.INVESTOR))
+        assertEquals(HandoverSide.CLIENT, HandoverSide.of(Role.INSPECTOR))
+        assertNull(HandoverSide.of(Role.WORKER), "a worker is a party to neither side")
+        assertNull(HandoverSide.of(null), "nor is somebody who is not a member (an administrator included)")
+
+        // The permission is exactly "has a side": a global role or the administrator flag changes nothing.
+        val adminWorker = testUser(role = Role.BOSS, isAdmin = true)
+        for (role in listOf(Role.BOSS, Role.WORKER, Role.INSPECTOR, Role.INVESTOR, null)) {
+            assertEquals(HandoverSide.of(role) != null, can(adminWorker, Action.SiteHandoverSign, Resource(role = role)), "role $role")
+        }
     }
 }

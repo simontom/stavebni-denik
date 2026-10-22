@@ -10,6 +10,8 @@ import cz.stavebni.denik.services.CreateAuthorizedPersonRequest
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectMemberDto
 import cz.stavebni.denik.services.SiteHandoverDto
+import cz.stavebni.denik.services.SiteHandoverInput
+import cz.stavebni.denik.services.SiteHandoverState
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -97,14 +99,13 @@ class ProjectDetailRoutesTest : BaseIntegrationTest() {
         }.body<AuthorizedPersonDto>()
         assertNotNull(revoked.revokedAt)
 
-        // handovers: create with a plain date + sign
+        // handovers: create with a plain date + sign (one side: the manager's; the password and the version are part of the request)
         val handover = client.post("/api/projects/${project.id}/handovers") {
             header(HttpHeaders.Authorization, "Bearer $token")
             contentType(ContentType.Application.Json)
             setBody(
-                SiteHandoverDto(
-                    projectId = project.id, type = "Předání staveniště zhotoviteli", date = "2026-09-11",
-                    participants = "Novák, Svoboda",
+                SiteHandoverInput(
+                    type = "Předání staveniště zhotoviteli", date = "2026-09-11", participants = "Novák, Svoboda",
                     meterStates = listOf(MeterState("Elektřina VT", "EL-98765", "12450 kWh")),
                 )
             )
@@ -113,11 +114,17 @@ class ProjectDetailRoutesTest : BaseIntegrationTest() {
         val handoverDto = handover.body<SiteHandoverDto>()
         assertEquals("2026-09-11", handoverDto.date)
         assertEquals("12450 kWh", handoverDto.meterStates?.single()?.state)
+        assertEquals(SiteHandoverState.DRAFT, handoverDto.state)
 
-        val signed = client.post("/api/handovers/${handoverDto.id}/sign") {
+        val signedResponse = client.post("/api/handovers/${handoverDto.id}/sign") {
             header(HttpHeaders.Authorization, "Bearer $token")
-        }.body<SiteHandoverDto>()
-        assertNotNull(signed.signedAt)
+            contentType(ContentType.Application.Json)
+            setBody("""{"password":"Password123!","expectedUpdatedAt":"${handoverDto.updatedAt}"}""")
+        }
+        assertEquals(HttpStatusCode.OK, signedResponse.status)
+        val signed = signedResponse.body<SiteHandoverDto>()
+        assertEquals(SiteHandoverState.SIGNED_BY_CONTRACTOR, signed.state)
+        assertEquals(boss.id.toString(), signed.contractorSignature?.signedById)
 
         val list = client.get("/api/projects/${project.id}/handovers") {
             header(HttpHeaders.Authorization, "Bearer $token")
