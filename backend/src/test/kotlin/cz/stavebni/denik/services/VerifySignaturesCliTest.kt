@@ -134,6 +134,8 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         } finally {
             dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
         }
+        // An entry of that time has no audit row that says it was signed in format 3.
+        dsl.removeLockRowOf(report)
 
         val run = cli("verify-signatures")
 

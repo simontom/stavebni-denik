@@ -7,6 +7,7 @@ import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.domain.WeatherData
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
+import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.jooq.tables.references.USERS
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -246,8 +248,52 @@ object ReportSignature {
     }
 
     /**
-     * Checks every signed entry: its content against the recorded hash and its photo files against the hashes recorded at
-     * upload. This is what a backup restore, or a nightly check, runs to prove that nothing signed has changed.
+     * What the audit row that recorded the signature (`report.lock`) says of the entry, against the entry itself: the five things
+     * the row's `after` snapshot holds (the format, the signer's name and number, the SHA-256 of part A and the signature hash).
+     *
+     * A signature of format 3 is checked against its own row, so whoever owns the table can switch the triggers off, change the
+     * signer or part A and compute the hash again (the algorithm is public): the entry then verifies against itself. The audit
+     * row is what they did not change, and could not without breaking the chain from that row on (`audit-verify`, and an anchor
+     * recorded after the row, find that). So this is asked of every entry that is signed in format 3, **or whose audit row says
+     * it was** (an entry made to look older than it is): a mismatch, and a missing or unreadable row, is a failure. An older
+     * entry whose row never recorded a format has nothing to compare and keeps the behaviour it had.
+     *
+     * The answer names the entry, the row and the fields that differ, never what they hold.
+     */
+    private fun lockRowProblems(tx: DSLContext, id: UUID): List<String> {
+        val report = tx.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(id)).fetchOne() ?: return emptyList()
+        val format = report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() ?: 1
+        val row = tx.select(AUDIT_LOG.ID, AUDIT_LOG.PAYLOAD_TEXT).from(AUDIT_LOG)
+            .where(AUDIT_LOG.ACTION.eq("report.lock").and(AUDIT_LOG.ENTITY_TYPE.eq("report")).and(AUDIT_LOG.ENTITY_ID.eq(id.toString())))
+            .orderBy(AUDIT_LOG.ID.asc())
+            .limit(1)
+            .fetchOne()
+        // The row is read through its payload, the text the row's hash covers: the same text the chain is verified over.
+        val after: JsonObject? = row?.get(AUDIT_LOG.PAYLOAD_TEXT)?.let { text ->
+            runCatching { Json.parseToJsonElement(text).jsonObject["after"] as? JsonObject }.getOrNull()
+        }
+        fun recorded(key: String): String? = (after?.get(key) as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+        val recordedFormat = recorded("signatureFormat")?.toIntOrNull()
+        if (format < 3 && (recordedFormat ?: 1) < 3) return emptyList()
+        if (row == null) return listOf("entry $id: signed in format $format, but the audit row of its signature (report.lock) is missing")
+        if (after == null) return listOf("entry $id: signed in format $format, but its audit row (report.lock, id ${row.get(AUDIT_LOG.ID)}) cannot be read")
+        val snapshot = report.get(DAILY_REPORTS.PARTASNAPSHOT)
+        val differing = listOfNotNull(
+            "signatureFormat".takeIf { recordedFormat != format },
+            "signerName".takeIf { recorded("signerName") != report.get(DAILY_REPORTS.SIGNERNAME) },
+            "signerCkaitNumber".takeIf { recorded("signerCkaitNumber") != report.get(DAILY_REPORTS.SIGNERCKAITNUMBER) },
+            "partASha256".takeIf { recorded("partASha256") != snapshot?.let { PartASnapshot.sha256(it) } },
+            "signatureHash".takeIf { recorded("signatureHash") != report.get(DAILY_REPORTS.SIGNATUREHASH) },
+        )
+        if (differing.isEmpty()) return emptyList()
+        return listOf("entry $id: signed in format $format, and the audit row of its signature (report.lock, id ${row.get(AUDIT_LOG.ID)}) does not agree with it in: ${differing.joinToString(", ")}")
+    }
+
+    /**
+     * Checks every signed entry: its content against the recorded hash, its photo files against the hashes recorded at upload,
+     * and, for a signature of format 3, the entry against the audit row that recorded it (see [lockRowProblems]). This is what a
+     * backup restore, or a nightly check, runs to prove that nothing signed has changed. It proves no more than the chain does:
+     * run `audit-verify` with an anchor beside it, and read PROJECT.md for what neither can prove.
      */
     fun checkAll(tx: DSLContext): AllResult {
         val ids = tx.select(DAILY_REPORTS.ID).from(DAILY_REPORTS)
@@ -273,6 +319,7 @@ object ReportSignature {
                 problems += "entry $id: the content no longer matches the signature"
             }
             if (check.photoFilesMatch == false) problems += "entry $id: a photo file no longer matches its recorded hash"
+            problems += lockRowProblems(tx, id)
         }
         return AllResult(signed = ids.size, withoutHash = withoutHash, problems = problems)
     }

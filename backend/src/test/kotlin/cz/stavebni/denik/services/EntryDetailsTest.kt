@@ -180,6 +180,8 @@ class EntryDetailsTest : BaseIntegrationTest() {
             """update daily_reports set "signatureFormat" = 1, "signatureHash" = ?, "signerName" = null, "signerCkaitNumber" = null, "partASnapshot" = null where id = ?""",
             legacyHash, id,
         )
+        // ... and without the audit row that says it was signed in format 3, which an entry of that time never had.
+        dsl.removeLockRowOf(id)
 
         assertEquals(true, ReportSignature.check(dsl, id).contentMatches, "an old signature is checked against what it covered")
         assertTrue(ReportSignature.checkAll(dsl).ok)

@@ -131,6 +131,21 @@ internal fun DSLContext.withoutConstraint(name: String, table: String = "audit_l
 }
 
 /**
+ * Removes the audit row that recorded the signature of entry [reportId] (`report.lock`), the way somebody who owns the table could
+ * (the guards switched off for the statement). It makes an entry that a test turned into one "signed before format 3" look like
+ * one: a real older entry has no row that says it was signed in format 3, and `ReportSignature.checkAll` compares the two. The
+ * chain after the row no longer fits, which is not what such a test is about.
+ */
+internal fun DSLContext.removeLockRowOf(reportId: UUID) {
+    execute("""ALTER TABLE "audit_log" DISABLE TRIGGER USER""")
+    try {
+        execute("""delete from audit_log where action = 'report.lock' and entity_id = ?""", reportId.toString())
+    } finally {
+        execute("""ALTER TABLE "audit_log" ENABLE TRIGGER USER""")
+    }
+}
+
+/**
  * Makes every write of [event] (`INSERT`, `UPDATE`) on [table] fail while [body] runs, then removes the trigger again: a way to
  * make a step of a transaction fail after the steps before it were made. Tests share one database and run one after another.
  */

@@ -305,7 +305,7 @@ class SignatureFormat3Test : BaseIntegrationTest() {
         tamper("""update daily_reports set "signatureHash" = null where id = ?""", id)
 
         assertEquals(false, ReportSignature.check(dsl, id).contentMatches)
-        assertTrue(ReportSignature.checkAll(dsl).problems.single().contains("signature hash is missing"))
+        assertTrue(ReportSignature.checkAll(dsl).problems.any { it.contains("signature hash is missing") })
     }
 
     // --- the database ------------------------------------------------------------------------------
