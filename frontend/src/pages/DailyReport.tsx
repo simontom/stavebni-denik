@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
+import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
+import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
-import { Button } from "../components/ui";
+import { Button, Card, Modal, StatusBadge, useModal } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
-import { isFutureDate, isLateEntryDate } from "../lib/dates";
+import { formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
+import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { useReportDraft } from "../lib/useReportDraft";
 
@@ -39,19 +42,28 @@ interface Acknowledgement {
   at: string;
 }
 
-/** What GET /api/reports/{id}/signature answers. */
-interface SignatureCheck {
-  signed: boolean;
-  signedByName?: string | null;
+/** The entry as `GET /api/projects/{id}/reports/{day}` sends it: only what the page reads outside the form (the document, the head). */
+interface EntryView {
+  id: string;
+  date: string;
+  authorName?: string | null;
+  workDescription?: string | null;
+  workersByTrade?: unknown;
+  weatherText?: string | null;
+  details?: Record<string, string> | null;
+  isLateEntry?: boolean;
+  lateEntryReason?: string | null;
+  isSigned?: boolean;
+  sequenceNumber?: number | null;
+  signedAt?: string | null;
+  signerName?: string | null;
   signerCkaitNumber?: string | null;
-  /** The signer's name and number are the ones stored when the entry was signed (format 3), not those the account has now. */
   signerFrozen?: boolean;
-  /** What a format 3 signature needs and the entry lacks (`signerName`, `signerCkaitNumber`, `partASnapshot`). */
-  missingFields?: string[];
+  /** A signature of format 3 that lacks the name or the number of its signer (a row changed behind the application). */
+  signerIncomplete?: boolean;
   signatureHash?: string | null;
-  /** The content hashed again equals the recorded hash; null when there is nothing to compare with. */
-  contentMatches: boolean | null;
-  photoFilesMatch: boolean | null;
+  /** The server's answer to "may the person who asks change this entry?": the rule of the save, not a guess from the role. */
+  canEdit?: boolean;
 }
 
 export const DailyReport: React.FC = () => {
@@ -65,16 +77,19 @@ export const DailyReport: React.FC = () => {
   const [myRole, setMyRole] = useState<string | null | undefined>(undefined);
   const [roleFailed, setRoleFailed] = useState(false);
   const [roleTry, setRoleTry] = useState(0);
+  // The name of the project, for the head of the page; the same request as the role (empty until it has answered).
+  const [projectName, setProjectName] = useState("");
   const isInvestor = myRole === "INVESTOR" || myRole === "INSPECTOR";
   // Only the manager and the workers of the project write the daily entry (Rbac.kt, ReportCreate): for anybody else a save ends in 403.
   const canWrite = myRole === "BOSS" || myRole === "WORKER";
   useEffect(() => {
     if (!projectId) return;
     let ignore = false;
-    api<{ myRole?: string | null }>(`/api/projects/${projectId}`)
+    api<{ myRole?: string | null; name?: string }>(`/api/projects/${projectId}`)
       .then((p) => {
         if (ignore) return;
         setMyRole(p.myRole ?? null);
+        setProjectName(typeof p.name === "string" ? p.name : "");
         setRoleFailed(false);
       })
       .catch((err: unknown) => {
@@ -115,10 +130,14 @@ export const DailyReport: React.FC = () => {
   const [isSigned, setIsSigned] = useState<boolean>(false);
   // Signing asks for the password again; what a signature covers can be checked afterwards.
   const [entryId, setEntryId] = useState<string | null>(null);
-  const [signatureHash, setSignatureHash] = useState<string | null>(null);
+  // The entry as the server last showed it (the document, the head, the signature card read it); null for a day without an entry.
+  const [entry, setEntry] = useState<EntryView | null>(null);
   // The number of the entry in the diary, given when it is signed.
   const [sequenceNumber, setSequenceNumber] = useState<number | null>(null);
   const [showSign, setShowSign] = useState(false);
+  // After signing the entry is read again (the signer, the time and the number are known only to the server). When that fails
+  // the signature card says so and offers to try again, instead of saying "loading" for ever.
+  const [signatureReloadFailed, setSignatureReloadFailed] = useState(false);
   const [signPassword, setSignPassword] = useState("");
   const [signError, setSignError] = useState("");
   const [signing, setSigning] = useState(false);
@@ -154,7 +173,8 @@ export const DailyReport: React.FC = () => {
   const [savedKey, setSavedKey] = useState<string | null>(null);
   // The form as the server showed it when the day was opened: what a draft is compared with.
   const [loadedForm, setLoadedForm] = useState<FormValues | null>(null);
-  const dirty = savedKey !== null && formKey !== savedKey;
+  // A signed entry has no form any more, so nothing in it is unsaved, whatever the form held when it was signed.
+  const dirty = !isSigned && savedKey !== null && formKey !== savedKey;
   // One save at a time: a second tap while the first is on its way would send a second create (and get a false conflict).
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -174,6 +194,10 @@ export const DailyReport: React.FC = () => {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   const roleKnown = myRole !== undefined;
+  // Whether the person may change THIS entry. For an entry that exists the server says (`canEdit`: the rule of the save, so a worker
+  // is not offered a form for the manager's entry, whose save would end in 403); for a day nobody has written the role does
+  // (the manager and the workers may create it).
+  const mayEditEntry = canWrite && (entry === null || entry.canEdit === true);
   // The draft of this day kept on the device (backlog B2): offered when the day opens if it holds what the stored entry
   // does not, written while there are unsaved changes, gone when they are saved. Not for a signed entry or a role that cannot write.
   // The hook also tells the application about unsaved work (setUnsavedWork): after a lapsed session the page must keep what
@@ -182,7 +206,7 @@ export const DailyReport: React.FC = () => {
     scope: draftUserId && projectId && reportId ? { userId: draftUserId, projectId, day: reportId } : null,
     ready: loadState === "ready",
     loaded: loadedForm,
-    canWrite: roleKnown ? canWrite : null,
+    canWrite: roleKnown ? mayEditEntry : null,
     isSigned,
     dirty,
     values,
@@ -190,7 +214,7 @@ export const DailyReport: React.FC = () => {
   });
   // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
   // only by somebody who may write it, and not while a draft waits for the person to take it or throw it away.
-  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned && draft.offer === null;
+  const editable = loadState === "ready" && roleKnown && mayEditEntry && !isSigned && draft.offer === null;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -239,7 +263,7 @@ export const DailyReport: React.FC = () => {
           setLoadedForm(loaded);
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setEntryId(typeof data.id === "string" ? data.id : null);
-          setSignatureHash(typeof data.signatureHash === "string" ? data.signatureHash : null);
+          setEntry(data as EntryView);
           setSequenceNumber(typeof data.sequenceNumber === "number" ? data.sequenceNumber : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           setIsSigned(Boolean(data.isSigned || data.isLocked));
@@ -320,6 +344,8 @@ export const DailyReport: React.FC = () => {
         setSavedKey(submittedKey);
         setSavedAt(new Date());
         if (data) {
+          setEntry(data as EntryView);
+          setEntryId(typeof data.id === "string" ? data.id : null);
           setUpdatedAt(typeof data.updatedAt === "string" ? data.updatedAt : null);
           setIsLateEntry(Boolean(data.isLateEntry));
           if (typeof data.lateEntryReason === "string") setLateEntryReason(data.lateEntryReason);
@@ -395,6 +421,22 @@ export const DailyReport: React.FC = () => {
     setShowSign(true);
   };
 
+  /** Reads the signed entry again: the signer, the time, the number and the fingerprint are known to the server. False (and the card says so) when it fails. */
+  const reloadSignedEntry = async (): Promise<boolean> => {
+    setSignatureReloadFailed(false);
+    const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (!reloaded) {
+      setSignatureReloadFailed(true);
+      return false;
+    }
+    setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
+    setEntry(reloaded as EntryView);
+    setSequenceNumber(typeof reloaded.sequenceNumber === "number" ? reloaded.sequenceNumber : null);
+    return true;
+  };
+
   const handleConfirmSign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (signing) return;
@@ -412,15 +454,7 @@ export const DailyReport: React.FC = () => {
         setIsSigned(true);
         setConflict(false);
         setError("");
-        // The hash and the signer are known to the server now: take them from there.
-        const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
-        if (reloaded) {
-          setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
-          setSignatureHash(typeof reloaded.signatureHash === "string" ? reloaded.signatureHash : null);
-          setSequenceNumber(typeof reloaded.sequenceNumber === "number" ? reloaded.sequenceNumber : null);
-        }
+        await reloadSignedEntry();
       } else {
         const body = await res.json().catch(() => null);
         if (res.status === 409 && body?.code === "STALE_VERSION") {
@@ -476,41 +510,51 @@ export const DailyReport: React.FC = () => {
     }
   };
 
+  // What the page shows of the entry. A signed entry, and any entry seen by somebody who cannot write, is a document (the form
+  // stays for those who write an unsigned one: it prompts for what the decree asks). A day nobody wrote, seen by a reader, says so.
+  const settled = loadState === "ready" && roleKnown;
+  const showDocument = settled && entry !== null && (isSigned || !mayEditEntry);
+  const showNoEntry = settled && entry === null && !canWrite;
+  const entryState: "none" | "draft" | "signed" = isSigned ? "signed" : updatedAt !== null ? "draft" : "none";
+  // After signing, the server's view of the entry is fetched again (the signer, the time and the number are known only to it).
+  const signatureLoaded = entry?.isSigned === true;
+  // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
+  const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
+  const dayLabel = formatDayWithWeekday(entry?.date ?? reportId ?? "", "long");
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
-      {/* Header and status badges */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
-          <div>
-            <div className="flex items-center gap-2">
-              <Link to={`/projects/${projectId}?tab=reports`} className="-ml-2 inline-flex min-h-11 items-center px-2 text-sm text-primary-ink hover:underline">
-                ← Zpět na seznam záznamů
-              </Link>
-            </div>
-            <h1 className="text-2xl font-bold text-ink tabular-nums">Denní záznam stavby: {reportId}</h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {isControlDay && <span className="rounded bg-purple-100 px-2.5 py-1 text-xs font-semibold text-purple-800">Kontrolní den</span>}
-            {constructionObj && <span className="rounded bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">SO: {constructionObj}</span>}
-            {isLateEntry && <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Pozdní zápis</span>}
-            {isSigned && <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno</span>}
-            {sequenceNumber !== null && <span className="rounded bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800 tabular-nums">Záznam č. {sequenceNumber}</span>}
+      {/* The head: where this is (project, day), what it is (the number, the state) and what is noted on it */}
+      <Card className="mb-6">
+        <Link to={`/projects/${projectId}?tab=reports`} className="-ml-2 inline-flex min-h-11 items-center px-2 text-sm text-primary-ink hover:underline">
+          ← Zpět na seznam záznamů
+        </Link>
+        {projectName && <p className="mt-1 text-sm font-medium text-ink-muted">{projectName}</p>}
+        <h1 className="mt-1 text-2xl font-bold text-ink tabular-nums">Denní záznam stavby: {dayLabel}</h1>
+        {entry?.authorName && <p className="mt-1 text-sm text-ink-muted">Autor: {entry.authorName}</p>}
+        {loadState === "ready" && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <EntryStateBadge state={entryState} />
+            {!(isSigned && sequenceNumber === null) && (
+              <StatusBadge tone="neutral" className="tabular-nums">
+                {entryNumberLabel(sequenceNumber)}
+              </StatusBadge>
+            )}
+            {isLateEntry && <LateEntryBadge />}
+            {isControlDay && <ControlDayBadge />}
+            {constructionObj && (
+              <StatusBadge tone="neutral" outlined>
+                SO: {constructionObj}
+              </StatusBadge>
+            )}
             {acknowledgements.map((a) => (
-              <span key={a.userId} className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+              <StatusBadge key={a.userId} tone="neutral" outlined>
                 Seznámil(a) se: {a.name} ({a.role === "INVESTOR" ? "stavebník" : "dozor"})
-              </span>
+              </StatusBadge>
             ))}
           </div>
-        </div>
-
-        {/* Investor Acknowledgment Button: only a signed (locked) report can be acknowledged */}
-        {isInvestor && isSigned && !iAcknowledged && (
-          <div className="mt-4 flex justify-end border-t border-gray-200 pt-4">
-            <Button onClick={handleAcknowledge}>Potvrdit seznámení</Button>
-          </div>
         )}
-      </div>
+      </Card>
 
       {/* A draft kept on this device that the stored entry does not have: the form stays locked until the person decides */}
       {draft.offer && (
@@ -552,8 +596,8 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
 
-      {/* Main Report Form */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+      {/* The entry: a document for a signed one and for a reader, the form for whoever writes it */}
+      <Card className="mb-6">
         {!roleKnown && roleFailed && (
           <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
             Roli v projektu se nepodařilo zjistit, záznam proto zůstává zamčený.{" "}
@@ -567,303 +611,314 @@ export const DailyReport: React.FC = () => {
             Načítám záznam…
           </p>
         )}
-        <form onSubmit={handleCreateReport} hidden={loadState === "loading" || !roleKnown}>
-          <fieldset disabled={!editable} className="m-0 min-w-0 space-y-6 border-0 p-0">
-            {isFuture && (
-              <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
-                Záznam nelze založit pro budoucí datum.
-              </div>
+        {showDocument && entry && (
+          <>
+            <EntryDocument entry={entry} />
+            {!isSigned && (
+              <p className="mt-6 border-t border-line pt-4 text-sm text-ink-muted">
+                {canWrite ? "Záznam může upravit jen jeho autor nebo stavbyvedoucí." : "Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele."}
+              </p>
             )}
-            {needsLateReason && (
-              <div className="rounded border border-amber-300 bg-amber-50 p-3">
-                <label htmlFor="lateEntryReason" className="mb-1 block text-sm font-semibold text-amber-900">
-                  Pozdní zápis: uveďte důvod
-                </label>
-                <p className="mb-2 text-xs text-amber-900">
-                  Záznam je za den dřívější než předchozí pracovní den. Bude označen jako pozdní zápis a důvod zůstane součástí záznamu.
-                </p>
-                <textarea
-                  id="lateEntryReason"
-                  name="lateEntryReason"
-                  value={lateEntryReason}
-                  onChange={(e) => setLateEntryReason(e.target.value)}
-                  rows={2}
-                  required
-                  maxLength={1000}
-                  className="w-full rounded-md border border-amber-300 p-2"
-                />
-              </div>
-            )}
-            {isLateEntry && lateEntryReason && (
-              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                <span className="font-semibold">Důvod pozdního zápisu:</span> {lateEntryReason}
-              </div>
-            )}
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Popis prací</label>
-              <textarea
-                name="workDescription"
-                value={workDescription}
-                onChange={(e) => setWorkDescription(e.target.value)}
-                rows={4}
-                required
-                className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
-                placeholder="Popište provedené práce za dnešní den..."
-              />
-            </div>
-
-            {/* Workers by trade: one row per trade */}
-            <div>
-              <div className="mb-1 block text-sm font-medium text-gray-700">Pracovníci podle profesí</div>
-              <div className="space-y-2">
-                {workers.map((row, index) => (
-                  <div key={index} className="grid grid-cols-1 items-center gap-2 md:grid-cols-[1fr_9rem_auto]">
-                    <input
-                      name="workerTrade"
-                      type="text"
-                      aria-label={`Profese ${index + 1}`}
-                      value={row.trade}
-                      onChange={(e) => updateWorker(index, { trade: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 p-2"
-                      placeholder="např. Zedník"
-                    />
-                    <input
-                      name="workerCount"
-                      type="number"
-                      min={0}
-                      step={1}
-                      aria-label={`Počet pracovníků ${index + 1}`}
-                      value={row.count}
-                      onChange={(e) => updateWorker(index, { count: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 p-2"
-                      placeholder="počet"
-                    />
-                    {workers.length > 1 ? (
-                      <button type="button" onClick={() => removeWorker(index)} className="text-sm text-red-600 hover:text-red-800">
-                        Odebrat
-                      </button>
-                    ) : (
-                      <span />
-                    )}
-                    <input
-                      name="workerNames"
-                      type="text"
-                      aria-label={`Jména pracovníků ${index + 1}`}
-                      value={row.names}
-                      onChange={(e) => updateWorker(index, { names: e.target.value })}
-                      className="w-full rounded-md border border-gray-300 p-2 text-sm md:col-span-3"
-                      placeholder="Jména pracovníků, oddělená středníkem (volitelné)"
-                    />
-                  </div>
-                ))}
-              </div>
-              <button type="button" onClick={addWorker} className="mt-2 text-sm text-indigo-600 hover:underline">
-                + Přidat profesi
-              </button>
-            </div>
-
-            {/* Weather, entered by hand */}
-            <div>
-              <div className="mb-1 block text-sm font-medium text-gray-700">Počasí</div>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label htmlFor="weatherCondition" className="mb-1 block text-xs text-gray-600">
-                    Podmínky
-                  </label>
-                  <input
-                    id="weatherCondition"
-                    name="weatherCondition"
-                    type="text"
-                    list="weather-conditions"
-                    maxLength={200}
-                    value={weatherCondition}
-                    onChange={(e) => setWeatherCondition(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2"
-                    placeholder="např. zataženo"
-                  />
-                  <datalist id="weather-conditions">
-                    {WEATHER_CONDITIONS.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
-                </div>
-                <div>
-                  <label htmlFor="weatherMin" className="mb-1 block text-xs text-gray-600">
-                    Nejnižší teplota (°C)
-                  </label>
-                  <input
-                    id="weatherMin"
-                    name="weatherMin"
-                    type="number"
-                    step="0.5"
-                    min={-60}
-                    max={60}
-                    value={weatherMin}
-                    onChange={(e) => setWeatherMin(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="weatherMax" className="mb-1 block text-xs text-gray-600">
-                    Nejvyšší teplota (°C)
-                  </label>
-                  <input
-                    id="weatherMax"
-                    name="weatherMax"
-                    type="number"
-                    step="0.5"
-                    min={-60}
-                    max={60}
-                    value={weatherMax}
-                    onChange={(e) => setWeatherMax(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* The other fields the vyhláška asks a daily entry to say */}
-            <div>
-              <div className="mb-1 block text-sm font-medium text-gray-700">Další zápisy</div>
-              <div className="space-y-3">
-                {DETAIL_FIELDS.map((field) => (
-                  <div key={field.key}>
-                    <label htmlFor={`detail-${field.key}`} className="mb-1 block text-xs text-gray-600">
-                      {field.label}
-                    </label>
-                    <textarea
-                      id={`detail-${field.key}`}
-                      name={`detail-${field.key}`}
-                      value={details[field.key] ?? ""}
-                      onChange={(e) => updateDetail(field.key, e.target.value)}
-                      rows={2}
-                      className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                      placeholder={field.placeholder}
-                    />
-                    {(details[field.key] ?? "").length > MAX_DETAIL_CHARS * 0.9 && (
-                      <p className={`mt-1 text-xs ${(details[field.key] ?? "").length > MAX_DETAIL_CHARS ? "font-semibold text-red-700" : "text-gray-600"}`}>
-                        {(details[field.key] ?? "").length} / {MAX_DETAIL_CHARS} znaků
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Legislative fields: Control Day & Construction Object */}
-            <div className="grid grid-cols-1 gap-4 pt-2 md:grid-cols-2">
-              <div className="flex items-center gap-2">
-                <input
-                  name="isControlDay"
-                  id="isControlDay"
-                  type="checkbox"
-                  checked={isControlDay}
-                  onChange={(e) => setIsControlDay(e.target.checked)}
-                  className="h-4 w-4 rounded text-indigo-600"
-                />
-                <label htmlFor="isControlDay" className="text-sm font-medium text-gray-700">
-                  Dnes proběhla stavební kontrola
-                </label>
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Stavební objekt (SO)</label>
-                <input
-                  name="constructionObj"
-                  type="text"
-                  value={constructionObj}
-                  onChange={(e) => setConstructionObj(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 p-2"
-                  placeholder="např. SO-101"
-                />
-              </div>
-            </div>
-          </fieldset>
-
-          {isSigned ? (
-            <div className="mt-6 space-y-2 border-t border-gray-200 pt-4 text-sm text-gray-600">
-              <p>Záznam je podepsán a uzamčen. Opravy se vedou formou dodatků.</p>
-              {signatureHash && (
-                <p className="break-all">
-                  Otisk obsahu (SHA-256): <span className="font-mono text-xs">{signatureHash}</span>
-                </p>
-              )}
-              {entryId && (
-                <button
-                  type="button"
-                  onClick={() => void handleCheckSignature()}
-                  className="rounded border border-gray-300 px-3 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                >
-                  Ověřit podpis
-                </button>
-              )}
-              {signatureCheck && (
-                <div role="status" className={signatureCheck.contentMatches === false || signatureCheck.photoFilesMatch === false ? "text-red-700" : "text-green-700"}>
-                  {signatureCheck.signedByName
-                    ? `Podepsal ${signatureCheck.signedByName}${signatureCheck.signerCkaitNumber ? `, ČKAIT ${signatureCheck.signerCkaitNumber}` : ""}${
-                        signatureCheck.signerFrozen ? " (jméno a číslo uložené při podpisu)" : " (podle účtu, jak je dnes)"
-                      }. `
-                    : ""}
-                  {signatureCheck.contentMatches === null
-                    ? "Záznam byl podepsán dříve, než se otisk začal ukládat: není s čím porovnat."
-                    : signatureCheck.contentMatches
-                      ? "Obsah odpovídá podpisu."
-                      : "POZOR: obsah záznamu se po podpisu změnil."}{" "}
-                  {signatureCheck.missingFields && signatureCheck.missingFields.length > 0
-                    ? "POZOR: u podpisu chybí údaje, které se při podpisu ukládají, záznam nelze ověřit. "
-                    : ""}
-                  {signatureCheck.photoFilesMatch === false ? "POZOR: soubor fotografie se po podpisu změnil." : ""}
-                </div>
-              )}
-            </div>
-          ) : roleKnown && !canWrite ? (
-            <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
-          ) : (
-            <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-4">
-              {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
-              {!dirty && !saving && savedAt && (
-                <span role="status" className="text-xs text-green-700">
-                  Uloženo {savedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              )}
-              <Button type="submit" disabled={!editable || isFuture || saving}>
-                {saving ? "Ukládám…" : updatedAt === null ? "Uložit záznam" : "Uložit změny"}
-              </Button>
-            </div>
-          )}
-        </form>
-      </div>
-
-      {/* Section 2: Photo upload and gallery */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="mb-4 text-lg font-bold text-gray-900">Fotodokumentace</h2>
-
-        <div className="mb-6 flex flex-wrap items-center gap-3">
-          <input
-            id="photo-files"
-            type="file"
-            accept="image/*"
-            disabled={!canUploadPhoto}
-            onChange={handleFileChange}
-            className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
-          />
-          <Button disabled={!selectedFile || !canUploadPhoto} onClick={handleUploadPhoto}>
-            Nahrát fotky
-          </Button>
-          {updatedAt === null && <span className="text-xs text-amber-700">Fotky lze přidat po uložení záznamu.</span>}
-          {isSigned && <span className="text-xs text-gray-600">Záznam je uzamčen, fotky už nelze přidávat.</span>}
-        </div>
-
-        {photos.length > 0 && (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-            {photos.map((p, idx) => (
-              <div key={p.id} className="rounded border bg-gray-50 p-2 text-center">
-                <img src={p.url} alt={`Fotka ${idx + 1}`} className="mb-2 h-32 w-full rounded object-cover" />
-                <span className="block truncate text-xs text-gray-600">{p.name}</span>
-              </div>
-            ))}
+          </>
+        )}
+        {showNoEntry && (
+          <div className="space-y-2">
+            <p className="text-ink">Za tento den zatím není žádný záznam.</p>
+            <p className="text-sm text-ink-muted">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
           </div>
         )}
-      </div>
+        {!showDocument && !showNoEntry && (
+          <form onSubmit={handleCreateReport} hidden={loadState === "loading" || !roleKnown}>
+            <fieldset disabled={!editable} className="m-0 min-w-0 space-y-6 border-0 p-0">
+              {isFuture && (
+                <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
+                  Záznam nelze založit pro budoucí datum.
+                </div>
+              )}
+              {needsLateReason && (
+                <div className="rounded border border-amber-300 bg-amber-50 p-3">
+                  <label htmlFor="lateEntryReason" className="mb-1 block text-sm font-semibold text-amber-900">
+                    Pozdní zápis: uveďte důvod
+                  </label>
+                  <p className="mb-2 text-xs text-amber-900">
+                    Záznam je za den dřívější než předchozí pracovní den. Bude označen jako pozdní zápis a důvod zůstane součástí záznamu.
+                  </p>
+                  <textarea
+                    id="lateEntryReason"
+                    name="lateEntryReason"
+                    value={lateEntryReason}
+                    onChange={(e) => setLateEntryReason(e.target.value)}
+                    rows={2}
+                    required
+                    maxLength={1000}
+                    className="w-full rounded-md border border-amber-300 p-2"
+                  />
+                </div>
+              )}
+              {isLateEntry && lateEntryReason && (
+                <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                  <span className="font-semibold">Důvod pozdního zápisu:</span> {lateEntryReason}
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Popis prací</label>
+                <textarea
+                  name="workDescription"
+                  value={workDescription}
+                  onChange={(e) => setWorkDescription(e.target.value)}
+                  rows={4}
+                  required
+                  className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
+                  placeholder="Popište provedené práce za dnešní den..."
+                />
+              </div>
+
+              {/* Workers by trade: one row per trade */}
+              <div>
+                <div className="mb-1 block text-sm font-medium text-gray-700">Pracovníci podle profesí</div>
+                <div className="space-y-2">
+                  {workers.map((row, index) => (
+                    <div key={index} className="grid grid-cols-1 items-center gap-2 md:grid-cols-[1fr_9rem_auto]">
+                      <input
+                        name="workerTrade"
+                        type="text"
+                        aria-label={`Profese ${index + 1}`}
+                        value={row.trade}
+                        onChange={(e) => updateWorker(index, { trade: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 p-2"
+                        placeholder="např. Zedník"
+                      />
+                      <input
+                        name="workerCount"
+                        type="number"
+                        min={0}
+                        step={1}
+                        aria-label={`Počet pracovníků ${index + 1}`}
+                        value={row.count}
+                        onChange={(e) => updateWorker(index, { count: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 p-2"
+                        placeholder="počet"
+                      />
+                      {workers.length > 1 ? (
+                        <button type="button" onClick={() => removeWorker(index)} className="text-sm text-red-600 hover:text-red-800">
+                          Odebrat
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+                      <input
+                        name="workerNames"
+                        type="text"
+                        aria-label={`Jména pracovníků ${index + 1}`}
+                        value={row.names}
+                        onChange={(e) => updateWorker(index, { names: e.target.value })}
+                        className="w-full rounded-md border border-gray-300 p-2 text-sm md:col-span-3"
+                        placeholder="Jména pracovníků, oddělená středníkem (volitelné)"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={addWorker} className="mt-2 text-sm text-indigo-600 hover:underline">
+                  + Přidat profesi
+                </button>
+              </div>
+
+              {/* Weather, entered by hand */}
+              <div>
+                <div className="mb-1 block text-sm font-medium text-gray-700">Počasí</div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <div>
+                    <label htmlFor="weatherCondition" className="mb-1 block text-xs text-gray-600">
+                      Podmínky
+                    </label>
+                    <input
+                      id="weatherCondition"
+                      name="weatherCondition"
+                      type="text"
+                      list="weather-conditions"
+                      maxLength={200}
+                      value={weatherCondition}
+                      onChange={(e) => setWeatherCondition(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 p-2"
+                      placeholder="např. zataženo"
+                    />
+                    <datalist id="weather-conditions">
+                      {WEATHER_CONDITIONS.map((c) => (
+                        <option key={c} value={c} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label htmlFor="weatherMin" className="mb-1 block text-xs text-gray-600">
+                      Nejnižší teplota (°C)
+                    </label>
+                    <input
+                      id="weatherMin"
+                      name="weatherMin"
+                      type="number"
+                      step="0.5"
+                      min={-60}
+                      max={60}
+                      value={weatherMin}
+                      onChange={(e) => setWeatherMin(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="weatherMax" className="mb-1 block text-xs text-gray-600">
+                      Nejvyšší teplota (°C)
+                    </label>
+                    <input
+                      id="weatherMax"
+                      name="weatherMax"
+                      type="number"
+                      step="0.5"
+                      min={-60}
+                      max={60}
+                      value={weatherMax}
+                      onChange={(e) => setWeatherMax(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* The other fields the vyhláška asks a daily entry to say */}
+              <div>
+                <div className="mb-1 block text-sm font-medium text-gray-700">Další zápisy</div>
+                <div className="space-y-3">
+                  {DETAIL_FIELDS.map((field) => (
+                    <div key={field.key}>
+                      <label htmlFor={`detail-${field.key}`} className="mb-1 block text-xs text-gray-600">
+                        {field.label}
+                      </label>
+                      <textarea
+                        id={`detail-${field.key}`}
+                        name={`detail-${field.key}`}
+                        value={details[field.key] ?? ""}
+                        onChange={(e) => updateDetail(field.key, e.target.value)}
+                        rows={2}
+                        className="w-full rounded-md border border-gray-300 p-2 text-sm"
+                        placeholder={field.placeholder}
+                      />
+                      {(details[field.key] ?? "").length > MAX_DETAIL_CHARS * 0.9 && (
+                        <p className={`mt-1 text-xs ${(details[field.key] ?? "").length > MAX_DETAIL_CHARS ? "font-semibold text-red-700" : "text-gray-600"}`}>
+                          {(details[field.key] ?? "").length} / {MAX_DETAIL_CHARS} znaků
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Legislative fields: Control Day & Construction Object */}
+              <div className="grid grid-cols-1 gap-4 pt-2 md:grid-cols-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    name="isControlDay"
+                    id="isControlDay"
+                    type="checkbox"
+                    checked={isControlDay}
+                    onChange={(e) => setIsControlDay(e.target.checked)}
+                    className="h-4 w-4 rounded text-indigo-600"
+                  />
+                  <label htmlFor="isControlDay" className="text-sm font-medium text-gray-700">
+                    Dnes proběhla stavební kontrola
+                  </label>
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-700">Stavební objekt (SO)</label>
+                  <input
+                    name="constructionObj"
+                    type="text"
+                    value={constructionObj}
+                    onChange={(e) => setConstructionObj(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 p-2"
+                    placeholder="např. SO-101"
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            {roleKnown && !canWrite ? (
+              <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
+            ) : (
+              <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-4">
+                {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
+                {!dirty && !saving && savedAt && (
+                  <span role="status" className="text-xs text-green-700">
+                    Uloženo {savedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                )}
+                <Button type="submit" disabled={!editable || isFuture || saving}>
+                  {saving ? "Ukládám…" : updatedAt === null ? "Uložit záznam" : "Uložit změny"}
+                </Button>
+              </div>
+            )}
+          </form>
+        )}
+      </Card>
+
+      {/* Photos: what the entry holds; the way to add one only while it is being written */}
+      {!showNoEntry && (
+        <Card className="mb-6">
+          <h2 className="mb-4 text-lg font-bold text-ink">Fotodokumentace</h2>
+
+          {showPhotoControls && (
+            <div className="mb-6 flex flex-wrap items-center gap-3">
+              <input
+                id="photo-files"
+                type="file"
+                accept="image/*"
+                disabled={!canUploadPhoto}
+                onChange={handleFileChange}
+                className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+              <Button disabled={!selectedFile || !canUploadPhoto} onClick={handleUploadPhoto}>
+                Nahrát fotky
+              </Button>
+              {updatedAt === null && <span className="text-xs text-amber-700">Fotky lze přidat po uložení záznamu.</span>}
+            </div>
+          )}
+
+          {photos.length > 0 ? (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              {photos.map((p, idx) => (
+                <div key={p.id} className="rounded border bg-gray-50 p-2 text-center">
+                  <img src={p.url} alt={`Fotka ${idx + 1}`} className="mb-2 h-32 w-full rounded object-cover" />
+                  <span className="block truncate text-xs text-gray-600">{p.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            !showPhotoControls && <p className="text-ink-muted">Bez fotografií.</p>
+          )}
+        </Card>
+      )}
+
+      {/* The signature: who, when, the number and the fingerprint of what was signed, in one place */}
+      {isSigned && (
+        <div className="mb-6">
+          <SignatureCard
+            signerName={entry?.signerName}
+            signerCkaitNumber={entry?.signerCkaitNumber}
+            signerFrozen={entry?.signerFrozen}
+            signedAt={entry?.signedAt}
+            sequenceNumber={sequenceNumber}
+            signatureHash={entry?.signatureHash}
+            loading={!signatureLoaded && !signatureReloadFailed}
+            loadFailed={!signatureLoaded && signatureReloadFailed}
+            onRetry={() => void reloadSignedEntry()}
+            signerIncomplete={entry?.signerIncomplete}
+            canCheck={Boolean(entryId)}
+            check={signatureCheck}
+            onCheck={() => void handleCheckSignature()}
+          >
+            {/* Only a signed (locked) entry can be acknowledged, by the investor and the supervision */}
+            {isInvestor && !iAcknowledged && <Button onClick={handleAcknowledge}>Potvrdit seznámení</Button>}
+          </SignatureCard>
+        </div>
+      )}
 
       {/* Entries of other parties (supervision, the client, authorities): also on a signed entry */}
       {entryId && (
@@ -879,17 +934,18 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
 
+      {/* The dialog is the application's Modal: focus stays inside it and the form behind it is inert, so nothing can be typed there while it is open. */}
       {showSign && (
-        <div role="dialog" aria-modal="true" aria-labelledby="sign-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={(e) => void handleConfirmSign(e)} className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-            <h2 id="sign-title" className="text-lg font-bold text-gray-900">
-              Podepsat a uzamknout záznam
-            </h2>
-            <p className="text-sm text-gray-600">
-              Podepisujete uloženou verzi záznamu ze dne {reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.
-            </p>
+        <Modal
+          title="Podepsat a uzamknout záznam"
+          description={`Podepisujete uloženou verzi záznamu ze dne ${reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
+          onCancel={() => setShowSign(false)}
+          dismissible={!signing}
+          footer={<SignAnswers signing={signing} canSign={signPassword.length > 0} onCancel={() => setShowSign(false)} />}
+        >
+          <form id="sign-form" onSubmit={(e) => void handleConfirmSign(e)} className="space-y-3">
             <div>
-              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-gray-700">
+              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-ink">
                 Heslo
               </label>
               <input
@@ -899,56 +955,55 @@ export const DailyReport: React.FC = () => {
                 autoFocus
                 value={signPassword}
                 onChange={(e) => setSignPassword(e.target.value)}
-                className="w-full rounded border border-gray-300 p-2 text-sm"
+                className="w-full rounded border border-input p-2 text-sm"
               />
             </div>
             {signError && (
-              <div role="alert" className="text-sm text-red-600">
+              <div role="alert" className="text-sm text-danger-ink">
                 {signError}
               </div>
             )}
-            <div className="flex justify-end gap-2 border-t pt-3">
-              <button type="button" onClick={() => setShowSign(false)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                Zrušit
-              </button>
-              <button
-                type="submit"
-                disabled={signing || signPassword.length === 0}
-                className="rounded bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Podepsat
-              </button>
-            </div>
           </form>
-        </div>
+        </Modal>
       )}
 
-      {/* Section 3: Sign & Lock (the manager of this project signs) */}
-      {myRole === "BOSS" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
+      {/* Sign & lock (the manager of this project signs); a signed entry has its signature card above instead */}
+      {myRole === "BOSS" && !isSigned && (
+        <Card className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="font-semibold text-gray-900">Uzamčení a podpis denního záznamu</h3>
-            <p className="text-xs text-gray-500">Po podepsání a uzamčení již záznam nelze dále editovat.</p>
+            <h2 className="font-semibold text-ink">Uzamčení a podpis denního záznamu</h2>
+            <p className="text-xs text-ink-muted">Po podepsání a uzamčení již záznam nelze dále editovat.</p>
           </div>
-          <div>
-            {!isSigned && (
-              <div className="text-right">
-                <Button variant="danger" onClick={handleSignAndLock} disabled={dirty || updatedAt === null || draft.offer !== null}>
-                  Podepsat a uzamknout
-                </Button>
-                {draft.offer ? (
-                  <p className="mt-1 text-xs text-amber-700">Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.</p>
-                ) : (
-                  (dirty || updatedAt === null) && <p className="mt-1 text-xs text-amber-700">Nejdřív záznam uložte, podepíše se uložená verze.</p>
-                )}
-              </div>
+          <div className="text-right">
+            <Button variant="danger" onClick={handleSignAndLock} disabled={dirty || updatedAt === null || draft.offer !== null}>
+              Podepsat a uzamknout
+            </Button>
+            {draft.offer ? (
+              <p className="mt-1 text-xs text-amber-700">Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.</p>
+            ) : (
+              (dirty || updatedAt === null) && <p className="mt-1 text-xs text-amber-700">Nejdřív záznam uložte, podepíše se uložená verze.</p>
             )}
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );
 };
+
+/** The two answers of the sign dialog. They are inside the [Modal], so "Zrušit" can close it (and give the focus back) before the page reacts. */
+function SignAnswers({ signing, canSign, onCancel }: { signing: boolean; canSign: boolean; onCancel: () => void }) {
+  const modal = useModal();
+  return (
+    <>
+      <Button variant="secondary" disabled={signing} onClick={() => modal.close(onCancel, { restoreFocus: true })}>
+        Zrušit
+      </Button>
+      <Button type="submit" form="sign-form" variant="danger" disabled={signing || !canSign}>
+        Podepsat
+      </Button>
+    </>
+  );
+}
 
 /**
  * The route element of the entry page: [DailyReport] mounted once per project and day. When only the day in the URL changes

@@ -174,7 +174,8 @@ interface ParsedClass {
   name: string;
 }
 
-const FAMILIES = /^(bg|text|border|border-[xytblrse]|ring|outline|divide|placeholder)-([a-z0-9][a-z0-9-]*)(?:\/\d+)?$/;
+// `border-l-success` is the left border in `success`: the side comes before the plain `border`, or `l-success` would be read as one name.
+const FAMILIES = /^(bg|text|border-[xytblrse]|border|ring|outline|divide|placeholder)-([a-z0-9][a-z0-9-]*)(?:\/\d+)?$/;
 
 function parseClass(written: string): ParsedClass | null {
   const parts = written.replace(/^!/, "").split(":");
@@ -230,7 +231,7 @@ describe("the class names in the source", () => {
   });
 
   it("finds a typo (the check itself can fail)", () => {
-    for (const typo of ['className="bg-primry text-surface"', 'cn("text-ink-mutd")', "`border-inpt`", "'hover:bg-primary-hovr'"]) {
+    for (const typo of ['className="bg-primry text-surface"', 'cn("text-ink-mutd")', "`border-inpt`", "'hover:bg-primary-hovr'", '"border-l-sucess"']) {
       const found = classesIn(typo).filter((c) => !/[0-9[]/.test(c.name) && !ours.has(c.name) && !NOT_A_TOKEN[c.family.startsWith("border") ? "border" : c.family].test(c.name));
       expect(found.length, typo).toBe(1);
     }

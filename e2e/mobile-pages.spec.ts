@@ -22,6 +22,12 @@ function pragueDay(offsetDays: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** `2026-09-28` as the pages print it without the weekday: `28. 9. 2026`. */
+function czDay(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  return `${day}. ${month}. ${year}`;
+}
+
 /**
  * A word of exactly [length] letters: no space, no hyphen, nothing the browser may break a line at. Only such a word shows whether a
  * page lets a long word push it wider than the screen (a hyphen or a space is a place to break, and hides the problem).
@@ -283,6 +289,11 @@ test.describe("the pages on a phone", () => {
     await expectPhoneReady(page, "the project list");
     await expectReachable(page, page.getByRole("link", { name: "Přidat projekt" }), "the link that adds a project");
     await expectReachable(page, page.getByRole("link", { name: data.projectName }), "the link that opens the diary");
+    // The state of today's entry is on the card, as a link of its own that a thumb can hit (the project of the run has a draft for today).
+    const card = page.getByRole("listitem").filter({ hasText: data.projectName });
+    await expectReachable(page, card.getByRole("link", { name: "Dnes: rozpracováno" }), "the link to today's entry on the card");
+    // A card with no entry for today says so (the other two projects of the run)
+    await expect(page.getByText("Dnes: nezapsáno").first()).toBeVisible();
   });
 
   test("a project: overview and every tab", async ({ page }) => {
@@ -342,9 +353,26 @@ test.describe("the pages on a phone", () => {
   test("the entries tab with its rows, and the other tabs with their data", async ({ page }) => {
     await signIn(page);
     await page.goto(`/projects/${data.project}?tab=reports`);
-    await expect(page.getByRole("link", { name: new RegExp(`Zobrazit záznam`) }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("button", { name: `Stáhnout PDF záznamu z ${data.signedDay}` })).toBeVisible();
+    // One row per entry; its link says the day with the weekday and the number, and the row says who wrote it and in what state it is.
+    const signedRow = page.getByRole("listitem").filter({ hasText: czDay(data.signedDay) });
+    await expect(signedRow.getByRole("link", { name: /Záznam č\. \d/ })).toBeVisible({ timeout: 15_000 });
+    await expect(signedRow.getByText("Autor: E2E Admin")).toBeVisible();
+    await expect(signedRow.getByText("Podepsáno", { exact: true })).toBeVisible();
+    await expect(
+      page
+        .getByRole("listitem")
+        .filter({ hasText: czDay(data.lateDay) })
+        .getByText("Pozdní zápis", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("listitem")
+        .filter({ hasText: czDay(data.draftDay) })
+        .getByText("Rozpracováno", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: `Stáhnout PDF záznamu z ${czDay(data.signedDay)}` })).toBeVisible();
     await expectPhoneReady(page, "the list of entries");
+    await expectReachable(page, signedRow.getByRole("link", { name: /Záznam č\. \d/ }), "the link of a row");
     await expectReachable(page, page.getByRole("button", { name: "Nový pro dnešek" }), "the button of a new entry");
 
     await page.goto(`/projects/${data.project}?tab=handovers`);
@@ -369,13 +397,25 @@ test.describe("the pages on a phone", () => {
     ]) {
       await page.goto(`/projects/${data.project}/reports/${day}`);
       await expect(page.getByRole("heading", { name: /Denní záznam stavby/ })).toBeVisible({ timeout: 15_000 });
-      await expect(page.locator('textarea[name="workDescription"]')).toHaveValue(/Betonáž stropní desky/, { timeout: 15_000 });
+      if (day === data.signedDay) {
+        // A signed entry is a document: the text, not a field with it in.
+        await expect(page.getByText(/Betonáž stropní desky/)).toBeVisible({ timeout: 15_000 });
+        await expect(page.locator('textarea[name="workDescription"]')).toHaveCount(0);
+      } else {
+        await expect(page.locator('textarea[name="workDescription"]')).toHaveValue(/Betonáž stropní desky/, { timeout: 15_000 });
+      }
       // the construction object is in a badge: a word of 100 letters has to wrap in it
       await expect(page.getByText(data.constructionObject).first()).toBeVisible();
       await expectPhoneReady(page, what);
     }
-    // The signed one has the "Podepsáno" badge; the one in progress has the save button, which can be reached.
-    await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible();
+    // The signed one has the "Podepsáno" badge, and the card of the signature on the screen with the button that verifies it; the one in
+    // progress has the save button, which can be reached.
+    await page.goto(`/projects/${data.project}/reports/${data.signedDay}`);
+    await expect(page.getByText("Podepsáno", { exact: true })).toHaveCount(1, { timeout: 15_000 });
+    await expect(page.getByRole("region", { name: "Podpis záznamu" }).getByText(/ČKAIT 0000000/)).toBeVisible();
+    await expectReachable(page, page.getByRole("button", { name: "Ověřit podpis" }), "the button that verifies the signature");
+    // the people of the trades are in a table that becomes a list on a phone: a name of 100 letters does not widen the page
+    await expect(page.getByText(data.workerName).first()).toBeVisible();
     await page.goto(`/projects/${data.project}/reports/${data.draftDay}`);
     await expect(page.locator('textarea[name="workDescription"]')).toHaveValue(/Betonáž stropní desky/, { timeout: 15_000 });
     await expectReachable(page, page.getByRole("button", { name: /uložit změny/i }), "the save button of an entry");

@@ -76,7 +76,9 @@ test("the author's supervision, a member's scope and the start of work are enter
 
   // The text is kept with the signed entry.
   await page.reload();
-  await expect(page.locator('textarea[name="detail-workStateChanges"]')).toHaveValue("Práce zahájeny 28. 9., přerušeny 3. 10. pro déšť", { timeout: 15_000 });
+  await expect(page.getByText("Práce zahájeny 28. 9., přerušeny 3. 10. pro déšť")).toBeVisible({ timeout: 15_000 });
+  // ... and the signer is on the page without a click: the one stored when the entry was signed
+  await expect(page.getByRole("region", { name: "Podpis záznamu" }).getByText(/E2E Admin, ČKAIT 0000000/)).toBeVisible();
 
   // The check says the signer is the one that was stored when the entry was signed, not what the account says today.
   await page.getByRole("button", { name: /ověřit podpis/i }).click();

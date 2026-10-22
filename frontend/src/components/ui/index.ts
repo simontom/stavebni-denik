@@ -14,4 +14,4 @@ export { TabLink, TabNav } from "./TabNav";
 export { TextArea, type TextAreaProps } from "./TextArea";
 export { TextInput, type TextInputProps } from "./TextInput";
 export { cn } from "./cn";
-export { controlClasses } from "./uiClasses";
+export { badgeClassName, controlClasses } from "./uiClasses";

@@ -4,6 +4,7 @@ import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
+import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.USERS
@@ -17,6 +18,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import org.jooq.DSLContext
 import org.jooq.Record
+import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.util.UUID
 import cz.stavebni.denik.jooq.enums.Role as DbRole
@@ -59,7 +61,19 @@ data class ProjectDto(
     val updatedAt: String? = null,
     /** The role the requesting user holds in this project (BOSS, WORKER, INSPECTOR, INVESTOR); null for an administrator who is not a member. Set by the server, ignored in requests. */
     val myRole: String? = null,
+    /** The state of today's entry (the day in Prague); only the list of projects fills it in, a single project and a request leave it null. */
+    val todayEntry: TodayEntryDto? = null,
 )
+
+/** Whether a project has an entry for today, and in what state. */
+enum class TodayEntryState { NONE, DRAFT, SIGNED }
+
+/**
+ * Today's entry of one project. [date] is today in Prague as the server counts it (the page links to that day, so the link and the
+ * state always speak of the same day); [reportId] is the entry's id, null when there is none.
+ */
+@Serializable
+data class TodayEntryDto(val date: String, val state: TodayEntryState, val reportId: String? = null)
 
 /** The request that replaces the site manager (stavbyvedoucí) of a project. */
 @Serializable
@@ -74,7 +88,7 @@ data class SiteManagerChangeRequest(
 
 object ProjectService {
 
-    fun listProjects(tx: DSLContext, user: SessionUser): List<ProjectDto> {
+    fun listProjects(tx: DSLContext, user: SessionUser, today: LocalDate = Dates.today(DailyReportService.clock)): List<ProjectDto> {
         val base = tx.select(PROJECTS.asterisk()).from(PROJECTS)
         val records = if (user.isAdmin) {
             base.where(PROJECTS.DELETEDAT.isNull)
@@ -88,7 +102,31 @@ object ProjectService {
                 .fetch()
         }
         val roles = rolesOf(tx, user.id)
-        return records.map { toDto(it, roles[it.get(PROJECTS.ID)]) }
+        val todays = todayEntries(tx, records.map { it.get(PROJECTS.ID)!! }, today)
+        return records.map { toDto(it, roles[it.get(PROJECTS.ID)]).copy(todayEntry = todays.getValue(it.get(PROJECTS.ID)!!)) }
+    }
+
+    /**
+     * The state of the entry of [today] for each of the projects, in one query: none, a draft, or signed, with the entry's id. Only
+     * the entry of that one day counts (another day's is not "today's"), and a removed entry is none. [today] is the day in Prague;
+     * the answer names it, so the page links to the very day it speaks of.
+     */
+    private fun todayEntries(tx: DSLContext, projectIds: Collection<UUID>, today: LocalDate): Map<UUID, TodayEntryDto> {
+        val entries = if (projectIds.isEmpty()) emptyMap() else tx.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.ID, DAILY_REPORTS.SIGNEDAT)
+            .from(DAILY_REPORTS)
+            .where(DAILY_REPORTS.PROJECTID.`in`(projectIds))
+            .and(DAILY_REPORTS.DATE.eq(today))
+            .and(DAILY_REPORTS.DELETEDAT.isNull)
+            .fetch()
+            .associateBy { it.get(DAILY_REPORTS.PROJECTID)!! }
+        return projectIds.associateWith { projectId ->
+            val entry = entries[projectId]
+            when {
+                entry == null -> TodayEntryDto(today.toString(), TodayEntryState.NONE)
+                entry.get(DAILY_REPORTS.SIGNEDAT) != null -> TodayEntryDto(today.toString(), TodayEntryState.SIGNED, entry.get(DAILY_REPORTS.ID).toString())
+                else -> TodayEntryDto(today.toString(), TodayEntryState.DRAFT, entry.get(DAILY_REPORTS.ID).toString())
+            }
+        }
     }
 
     /** The role of [userId] in every project they are a member of. */

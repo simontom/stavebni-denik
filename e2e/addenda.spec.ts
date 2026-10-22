@@ -51,8 +51,9 @@ test("a signed entry is corrected by addenda, which can be added but never edite
   await signDialog.getByRole("button", { name: "Podepsat", exact: true }).click();
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
 
-  // Signed: the text is locked, and the addenda section appears.
-  await expect(description).toBeDisabled();
+  // Signed: the entry is a document (the text, not a field), and the addenda section appears.
+  await expect(description).toHaveCount(0);
+  await expect(page.getByText("Betonáž stropu, první polovina")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Dodatky" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByText(/zatím není žádný dodatek/i)).toBeVisible();
 
@@ -72,5 +73,6 @@ test("a signed entry is corrected by addenda, which can be added but never edite
   // After a reload it is still there, below the unchanged entry.
   await page.reload();
   await expect(page.getByRole("region", { name: "Dodatky" }).getByText("Oprava: betonáž proběhla ve 14 hodin, ne v 11.")).toBeVisible({ timeout: 15_000 });
-  await expect(description).toHaveValue("Betonáž stropu, první polovina");
+  await expect(page.getByText("Betonáž stropu, první polovina")).toBeVisible();
+  await expect(description).toHaveCount(0);
 });

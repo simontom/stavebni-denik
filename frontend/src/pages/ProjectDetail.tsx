@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
-import { pragueToday } from "../lib/dates";
+import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
+import { entryNumberLabel } from "../lib/entryDocument";
+import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { Handovers } from "../components/Handovers";
 import { Button, Card, Field, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
 
@@ -63,6 +65,12 @@ interface ReportItem {
   date: string;
   workDescription?: string;
   isSigned?: boolean;
+  /** Given when the entry is signed; null for a draft. */
+  sequenceNumber?: number | null;
+  isLateEntry?: boolean;
+  isControlDay?: boolean;
+  /** Who wrote the entry (the account's display name). */
+  authorName?: string | null;
 }
 
 const today = pragueToday;
@@ -302,6 +310,12 @@ export const ProjectDetail: React.FC = () => {
   if (loading) return <PageState kind="loading">Načítání detailu projektu...</PageState>;
   if (!project) return <PageState kind="error">{error || "Projekt nenalezen"}</PageState>;
 
+  // What the header says about the contract and the documentation: only what is filled in, so there is never a box with nothing in it.
+  const headerFacts = [
+    { label: "Číslo smlouvy", value: project.contractNumber?.trim() },
+    { label: "Dokumentace", value: project.designDocVersion?.trim() },
+  ].filter((fact): fact is { label: string; value: string } => Boolean(fact.value));
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
       {/* Project Header */}
@@ -316,21 +330,15 @@ export const ProjectDetail: React.FC = () => {
               </Link>
             )}
           </div>
-          {(project.contractNumber || project.designDocVersion) && (
-            <div className="flex flex-wrap gap-4 rounded-md border border-line bg-page p-3 text-sm">
-              {project.contractNumber && (
-                <div>
-                  <span className="block text-xs text-ink-muted">Číslo smlouvy:</span>
-                  <span className="font-semibold text-ink">{project.contractNumber}</span>
+          {headerFacts.length > 0 && (
+            <dl className="flex flex-wrap gap-4 rounded-md border border-line bg-page p-3 text-sm">
+              {headerFacts.map((fact) => (
+                <div key={fact.label}>
+                  <dt className="text-xs text-ink-muted">{fact.label}:</dt>
+                  <dd className="font-semibold text-ink">{fact.value}</dd>
                 </div>
-              )}
-              {project.designDocVersion && (
-                <div>
-                  <span className="block text-xs text-ink-muted">Dokumentace:</span>
-                  <span className="font-semibold text-ink">{project.designDocVersion}</span>
-                </div>
-              )}
-            </div>
+              ))}
+            </dl>
           )}
         </div>
 
@@ -556,32 +564,45 @@ export const ProjectDetail: React.FC = () => {
           {reports.length === 0 ? (
             <p className="text-sm text-ink-muted">Zatím nebyl vytvořen žádný denní záznam.</p>
           ) : (
-            <div className="divide-y divide-line">
-              {reports.map((r) => (
-                // On a phone the row is a short list: the day and what was done, and below them the two things to do with it.
-                <div key={r.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-4">
-                  <div>
-                    <span className="mr-3 font-semibold text-primary-ink tabular-nums">{r.date}</span>
-                    <span className="text-sm text-ink">{r.workDescription || "Denní záznam stavebních prací"}</span>
-                  </div>
-                  <div className="flex items-center gap-2 sm:shrink-0 sm:gap-4 sm:whitespace-nowrap">
+            <>
+              {/*
+                One row per entry, and the whole row is the link (the day and the number are the link's text, stretched over the row, so a
+                screen reader hears one name and a thumb needs no aim). The state, the author and the marks are on the row; the PDF is a
+                button above the link.
+              */}
+              <ul className="divide-y divide-line">
+                {reports.map((r) => (
+                  <li
+                    key={r.id}
+                    className="relative flex flex-col gap-1 py-3 focus-within:bg-neutral-soft hover:bg-neutral-soft sm:flex-row sm:items-start sm:justify-between sm:gap-4 sm:py-4"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <Link
+                        to={`/projects/${id}/reports/${r.date}`}
+                        className="inline-flex min-h-11 items-center font-semibold text-primary-ink tabular-nums after:absolute after:inset-0 after:content-[''] hover:underline sm:pointer-fine:min-h-0"
+                      >
+                        <time dateTime={r.date}>{formatDayWithWeekday(r.date)}</time>
+                        <span className="ml-2 font-normal text-ink-muted">· {entryNumberLabel(r.sequenceNumber)}</span>
+                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <EntryStateBadge state={r.isSigned ? "signed" : "draft"} />
+                        {r.isLateEntry && <LateEntryBadge />}
+                        {r.isControlDay && <ControlDayBadge />}
+                      </div>
+                      {r.authorName && <p className="text-sm text-ink-muted">Autor: {r.authorName}</p>}
+                      <p className="line-clamp-2 text-sm text-ink">{r.workDescription || "Denní záznam stavebních prací"}</p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => void handleDownloadPdf(r)}
-                      aria-label={`Stáhnout PDF záznamu z ${r.date}`}
-                      className="inline-flex min-h-11 items-center px-2 text-sm text-ink-muted underline hover:text-ink sm:px-0 sm:pointer-fine:min-h-0"
+                      aria-label={`Stáhnout PDF záznamu z ${formatDay(r.date)}`}
+                      className="relative z-10 inline-flex min-h-11 items-center self-start px-2 text-sm text-ink-muted underline hover:text-ink sm:px-0 sm:pointer-fine:min-h-0"
                     >
                       PDF
                     </button>
-                    <Link
-                      to={`/projects/${id}/reports/${r.date}`}
-                      className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-primary-ink hover:underline sm:px-0 sm:pointer-fine:min-h-0"
-                    >
-                      Zobrazit záznam →
-                    </Link>
-                  </div>
-                </div>
-              ))}
+                  </li>
+                ))}
+              </ul>
               {hasMoreReports && (
                 <div className="pt-4 text-center">
                   <Button variant="secondary" onClick={() => void handleLoadOlderReports()}>
@@ -589,7 +610,7 @@ export const ProjectDetail: React.FC = () => {
                   </Button>
                 </div>
               )}
-            </div>
+            </>
           )}
         </Card>
       )}
