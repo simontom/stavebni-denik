@@ -68,7 +68,9 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
             if (role == Role.WORKER && resource.authorId == user.id) return true
             false
         }
-        Action.SiteHandoverSign -> role != null
+        // A protocol is signed by two parties, one signature each (backlog A3): a manager for the contractor, an investor or the
+        // supervision for the client. A worker, and somebody who is not a member (an administrator included), is neither.
+        Action.SiteHandoverSign -> HandoverSide.of(role) != null
     }
 }
 

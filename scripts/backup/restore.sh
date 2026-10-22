@@ -107,7 +107,7 @@ if [ -n "${APP_JAR:-}" ]; then
   else
     cli audit-verify || fail "the audit chain does not verify"
   fi
-  cli verify-signatures || fail "a signed entry or a photo no longer matches its signature"
+  cli verify-signatures || fail "a signed entry, a signature of a handover protocol or a photo no longer matches what was signed"
 else
   log "APP_JAR not given: the audit chain and the signatures were not checked"
 fi

@@ -70,6 +70,54 @@ test("a session that ends while an entry is being written does not lose the text
   await expect(description).toHaveValue("Betonáž stropu, první polovina", { timeout: 15_000 });
 });
 
+test("a session that ends while a handover form (a modal dialog) is open can be signed in again, and the form keeps its text", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const projectUrl = await createProject(page);
+  const expired = page.getByRole("dialog", { name: /přihlášení vypršelo/i });
+  const form = page.getByRole("dialog", { name: /protokol o předání staveniště/i });
+
+  await page.goto(`${projectUrl}?tab=handovers`);
+  const add = page.getByRole("button", { name: "Přidat předání" });
+  await add.click();
+  await expect(form).toBeVisible();
+  await form.getByLabel("Účastníci předání").fill("Ing. Jan Novák, Petr Svoboda");
+  for (const n of [1, 2, 3]) {
+    await form.getByRole("button", { name: "Přidat měřidlo" }).click();
+    await form.getByLabel(`Médium měřidla ${n}`).fill(`Médium ${n}`);
+    await form.getByLabel(`Výrobní číslo měřidla ${n}`).fill(`SN-${n}`);
+    await form.getByLabel(`Stav měřidla ${n}`).fill(`${n}0 kWh`);
+  }
+  await form.getByLabel("Poznámky / Závěry").fill("Rozepsáno, než vypršelo přihlášení");
+
+  // The session ends. The save is refused, and the sign-in dialog opens ABOVE the form (both are modal dialogs: the later one is on top).
+  await page.context().clearCookies();
+  await form.getByRole("button", { name: "Uložit předání" }).click();
+  await expect(expired).toBeVisible({ timeout: 15_000 });
+  // The person can really use it (the click is refused by the browser when something is on top of the button), and it says that
+  // what was typed is thrown away when they leave.
+  await expect(expired.getByRole("button", { name: /odhlásit a zahodit změny/i })).toBeVisible();
+  await expired.getByLabel("Heslo").fill("Not-The-Password-1!");
+  await expired.getByRole("button", { name: /přihlásit se/i }).click();
+  await expect(expired.getByRole("alert")).toContainText(/neplatné heslo/i, { timeout: 15_000 });
+
+  await expired.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+  await expired.getByRole("button", { name: /přihlásit se/i }).click();
+  await expect(expired).toBeHidden({ timeout: 15_000 });
+
+  // The form is still there with everything that was typed, and saving it works.
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel("Účastníci předání")).toHaveValue("Ing. Jan Novák, Petr Svoboda");
+  await expect(form.getByLabel("Médium měřidla 3")).toHaveValue("Médium 3");
+  await expect(form.getByLabel("Stav měřidla 2")).toHaveValue("20 kWh");
+  await expect(form.getByLabel("Poznámky / Závěry")).toHaveValue("Rozepsáno, než vypršelo přihlášení");
+  await form.getByRole("button", { name: "Uložit předání" }).click();
+  await expect(form).toBeHidden({ timeout: 15_000 });
+  await expect(page.getByText("Ing. Jan Novák, Petr Svoboda")).toBeVisible();
+  await expect(page.getByText("Rozepsáno, než vypršelo přihlášení")).toBeVisible();
+  await expect(add).toBeFocused();
+});
+
 test("a page that cannot load because the session ended offers the sign-in and then loads", async ({ page }) => {
   await login(page);
   await expect(page).toHaveURL(/\/projects/);

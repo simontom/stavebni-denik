@@ -1,6 +1,9 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.ForbiddenException
+import cz.stavebni.denik.domain.HandoverSide
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
 import cz.stavebni.denik.services.AddMemberRequest
@@ -10,17 +13,57 @@ import cz.stavebni.denik.services.ProjectAccess
 import cz.stavebni.denik.services.ProjectDto
 import cz.stavebni.denik.services.ProjectMemberService
 import cz.stavebni.denik.services.ProjectService
-import cz.stavebni.denik.services.SiteHandoverDto
-import cz.stavebni.denik.services.SiteManagerChangeRequest
+import cz.stavebni.denik.services.SignHandoverRequest
+import cz.stavebni.denik.services.SigningGuard
+import cz.stavebni.denik.services.SiteHandoverInput
 import cz.stavebni.denik.services.SiteHandoverService
+import cz.stavebni.denik.services.SiteManagerChangeRequest
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import java.time.OffsetDateTime
+import java.time.format.DateTimeParseException
 
 private fun ApplicationCall.sessionUser(): SessionUser = principal<SessionUser>() ?: throw UnauthenticatedException()
+
+/**
+ * The body of a request to sign a handover protocol: the side (optional, it follows from the role), the signer's password
+ * (required: signing asks for it again, decision D8) and the version of the protocol the signer was looking at (required).
+ */
+@Serializable
+private data class SignHandoverPayload(val side: String? = null, val password: String? = null, val expectedUpdatedAt: String? = null)
+
+private class HandoverSignRequest(val side: HandoverSide?, val password: String?, val expectedUpdatedAt: OffsetDateTime)
+
+/** The body of a sign request, as it was sent. A body that is not valid JSON is a 400, like everywhere else; nothing else is judged here. */
+private suspend fun ApplicationCall.receiveHandoverSignPayload(): SignHandoverPayload {
+    val text = receiveText()
+    return if (text.isBlank()) SignHandoverPayload() else Json { ignoreUnknownKeys = true }.decodeFromString(SignHandoverPayload.serializer(), text)
+}
+
+/**
+ * What the body asks for, judged once the person is known to be allowed to sign: a side that is not [own] is refused (403), a side
+ * that does not exist and a missing or unreadable version are a 400. The version is required: a signature covers a version.
+ */
+private fun SignHandoverPayload.toRequest(own: HandoverSide): HandoverSignRequest {
+    val side = side?.takeIf { it.isNotBlank() }?.let { name ->
+        HandoverSide.entries.firstOrNull { it.name == name } ?: throw IllegalArgumentException("Neplatná strana podpisu (CONTRACTOR nebo CLIENT)")
+    }
+    if (side != null && side != own) throw ForbiddenException(Action.SiteHandoverSign)
+    val version = expectedUpdatedAt?.takeIf { it.isNotBlank() }
+        ?: throw IllegalArgumentException("Chybí verze protokolu (expectedUpdatedAt): načtěte protokol znovu a podepište jej z něj")
+    val expected = try {
+        OffsetDateTime.parse(version)
+    } catch (e: DateTimeParseException) {
+        throw IllegalArgumentException("Neplatná hodnota expectedUpdatedAt")
+    }
+    return HandoverSignRequest(side, password, expected)
+}
 
 fun Application.projectRoutes() {
     routing {
@@ -107,11 +150,8 @@ fun Application.projectRoutes() {
                         post {
                             val user = call.sessionUser()
                             val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
-                            val req = call.receive<SiteHandoverDto>()
-                            call.respond(
-                                HttpStatusCode.Created,
-                                SiteHandoverService.createHandover(user, req.copy(projectId = projectId.toString()))
-                            )
+                            val req = call.receive<SiteHandoverInput>()
+                            call.respond(HttpStatusCode.Created, SiteHandoverService.createHandover(user, projectId, req))
                         }
                     }
                 }
@@ -134,7 +174,7 @@ fun Application.projectRoutes() {
                 put {
                     val user = call.sessionUser()
                     val id = ProjectAccess.parseId(call.parameters["id"])
-                    val req = call.receive<SiteHandoverDto>()
+                    val req = call.receive<SiteHandoverInput>()
                     call.respond(SiteHandoverService.updateHandover(user, id, req))
                 }
                 delete {
@@ -143,10 +183,17 @@ fun Application.projectRoutes() {
                     SiteHandoverService.deleteHandover(user, id)
                     call.respond(HttpStatusCode.NoContent)
                 }
+                // One signature for each side. First whether this person may sign this protocol at all (so that somebody who cannot is
+                // told so, whatever the body says, and is not asked for a password), then what the body asks for, then the password, then
+                // the signature in one transaction with the audit row.
                 post("/sign") {
                     val user = call.sessionUser()
                     val id = ProjectAccess.parseId(call.parameters["id"])
-                    call.respond(SiteHandoverService.signHandover(user, id))
+                    val payload = call.receiveHandoverSignPayload()
+                    val own = SiteHandoverService.checkMaySign(user, id, null)
+                    val request = payload.toRequest(own)
+                    SigningGuard.confirmPassword(user, request.password)
+                    call.respond(SiteHandoverService.signHandover(user, id, SignHandoverRequest(request.side, request.expectedUpdatedAt)))
                 }
             }
         }

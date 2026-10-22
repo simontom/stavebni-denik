@@ -19,6 +19,7 @@ import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
 import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
 import cz.stavebni.denik.jooq.tables.Visits
@@ -120,6 +121,11 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
     val SESSIONS: Sessions get() = Sessions.SESSIONS
 
     /**
+     * The table <code>public.site_handover_signatures</code>.
+     */
+    val SITE_HANDOVER_SIGNATURES: SiteHandoverSignatures get() = SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES
+
+    /**
      * The table <code>public.site_handovers</code>.
      */
     val SITE_HANDOVERS: SiteHandovers get() = SiteHandovers.SITE_HANDOVERS
@@ -152,6 +158,7 @@ open class Public : SchemaImpl(DSL.name("public"), DefaultCatalog.DEFAULT_CATALO
         Remarks.REMARKS,
         ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS,
         Sessions.SESSIONS,
+        SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES,
         SiteHandovers.SITE_HANDOVERS,
         Users.USERS,
         Visits.VISITS

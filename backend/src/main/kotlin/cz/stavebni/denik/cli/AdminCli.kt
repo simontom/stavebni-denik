@@ -6,6 +6,7 @@ import cz.stavebni.denik.services.AdminBootstrapService
 import cz.stavebni.denik.services.AuditAnchor
 import cz.stavebni.denik.services.AuditService
 import cz.stavebni.denik.services.ReportSignature
+import cz.stavebni.denik.services.SiteHandoverService
 import ch.qos.logback.classic.Level
 import kotlinx.coroutines.runBlocking
 import org.slf4j.Logger
@@ -34,7 +35,8 @@ import kotlin.system.exitProcess
  * window of 15 minutes at most; they hold addresses and account names).
  *
  * `verify-signatures` hashes every signed entry again and every photo file under UPLOADS_DIR, and compares them with what
- * was recorded when the entry was signed and the photo uploaded. It reads only. It is what a restore from a backup runs to
+ * was recorded when the entry was signed and the photo uploaded; it does the same for every signature of a site handover
+ * protocol (the content and the signature hash). It reads only. It is what a restore from a backup runs to
  * prove that nothing signed has changed; exit 1 when something no longer matches.
  *
  * `migrate` brings the schema up to date with the OWNER role's credentials (DB_MIGRATE_USER / DB_MIGRATE_PASSWORD; JDBC_URL as
@@ -102,7 +104,7 @@ object AdminCli {
   set-ckait <nickname> <number>           set or replace the ČKAIT number of an account (an administrator cannot do it for themselves)
   audit-head                              print the newest audit-log row as <id>:<hash> (the anchor to record elsewhere)
   audit-verify [<id>:<hash>]              verify the audit-log hash chain; with an anchor, also that the log was not cut
-  verify-signatures                       hash every signed entry and photo file again and compare with what was recorded
+  verify-signatures                       hash every signed entry, handover protocol and photo file again and compare with what was recorded
   prune-access-records                    delete addresses and user agents older than twelve months (sign-in log, audit request context) and rate-limit attempts older than a day"""
 
     /** Whether [args] name a command with the right number of arguments. */
@@ -191,11 +193,16 @@ object AdminCli {
             "verify-signatures" -> {
                 if (args.size != 1) return usage()
                 val result = ReportSignature.checkAll(DatabaseFactory.dsl)
-                if (result.ok) {
-                    out("Signatures OK: ${result.signed} signed entries" + if (result.withoutHash > 0) " (${result.withoutHash} signed before hashes existed: nothing to compare)." else ".")
+                // The signatures of the site handover protocols (one for each side) are checked the same way.
+                val handovers = SiteHandoverService.checkAll(DatabaseFactory.dsl)
+                if (result.ok && handovers.ok) {
+                    out(
+                        "Signatures OK: ${result.signed} signed entries, ${handovers.signatures} handover signatures" +
+                            if (result.withoutHash > 0) " (${result.withoutHash} entries signed before hashes existed: nothing to compare)." else ".",
+                    )
                     0
                 } else {
-                    result.problems.forEach { err("Signature BROKEN: $it") }
+                    (result.problems + handovers.problems).forEach { err("Signature BROKEN: $it") }
                     1
                 }
             }

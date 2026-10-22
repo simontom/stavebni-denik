@@ -62,20 +62,25 @@ CREATE TRIGGER photos_locked_report
   BEFORE INSERT OR UPDATE OR DELETE ON "photos"
   FOR EACH ROW EXECUTE FUNCTION photos_block_locked_report();
 
--- A signed handover protocol cannot be changed or deleted.
+-- A handover protocol that a party has signed cannot be changed or deleted (backlog A3). A protocol is an act of two parties, each
+-- signs once (the table "site_handover_signatures", V1), and the content is frozen from the FIRST signature on, so that the second
+-- party signs what the first one signed. The signature itself is written once.
 CREATE OR REPLACE FUNCTION site_handovers_block_signed_change()
 RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-  IF TG_OP = 'DELETE' THEN
-    IF OLD."signedAt" IS NOT NULL THEN
-      RAISE EXCEPTION 'a signed handover protocol cannot be deleted (protocol %)', OLD."id" USING ERRCODE = 'check_violation';
+  IF NOT EXISTS (SELECT 1 FROM "site_handover_signatures" s WHERE s."handoverId" = OLD."id") THEN
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
     END IF;
-    RETURN OLD;
+    RETURN NEW;
   END IF;
 
-  IF OLD."signedAt" IS NOT NULL AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
-    RAISE EXCEPTION 'a signed handover protocol cannot be changed (protocol %)', OLD."id" USING ERRCODE = 'check_violation';
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION 'a handover protocol that a party has signed cannot be deleted (protocol %)', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  IF to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
+    RAISE EXCEPTION 'a handover protocol that a party has signed cannot be changed (protocol %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END;
@@ -85,3 +90,23 @@ DROP TRIGGER IF EXISTS site_handovers_signed_immutable ON "site_handovers";
 CREATE TRIGGER site_handovers_signed_immutable
   BEFORE UPDATE OR DELETE ON "site_handovers"
   FOR EACH ROW EXECUTE FUNCTION site_handovers_block_signed_change();
+
+-- A signature of a handover protocol is append-only, and only a protocol that has not been deleted can be signed.
+CREATE OR REPLACE FUNCTION site_handover_signatures_guard()
+RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP IN ('UPDATE', 'DELETE') THEN
+    RAISE EXCEPTION 'a signature of a handover protocol cannot be changed or deleted (signature %)', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM "site_handovers" h WHERE h."id" = NEW."handoverId" AND h."deletedAt" IS NULL) THEN
+    RAISE EXCEPTION 'only a handover protocol that has not been deleted can be signed (protocol %)', NEW."handoverId" USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS site_handover_signatures_guard ON "site_handover_signatures";
+CREATE TRIGGER site_handover_signatures_guard
+  BEFORE INSERT OR UPDATE OR DELETE ON "site_handover_signatures"
+  FOR EACH ROW EXECUTE FUNCTION site_handover_signatures_guard();

@@ -166,4 +166,83 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         assertFalse(AdminCli.hasValidShape(listOf("verify-signatures", "x")))
         assertTrue(AdminCli.readsOnly(listOf("verify-signatures")))
     }
+    // --- the signatures of site handover protocols ---------------------------------------------
+
+    /** A protocol that both parties signed, in a project of its own. */
+    private suspend fun completeHandover(): UUID {
+        val boss = createTestUser(role = Role.BOSS)
+        val investor = createTestUser(role = Role.INVESTOR)
+        val project = ProjectService.createProject(
+            boss,
+            ProjectDto(
+                id = "", name = "Handover verify", address = "A", cadastralArea = "C", parcelNumbers = "1",
+                builder = "B", contractor = "C", siteManagerId = boss.id.toString(),
+            )
+        )
+        val projectId = UUID.fromString(project.id)
+        addMember(projectId, investor)
+        val created = SiteHandoverService.createHandover(boss, projectId, handoverInput(notes = "Bez výhrad"))
+        return signHandover(investor, signHandover(boss, created)).uuid
+    }
+
+    private fun tamperHandover(table: String, sql: String, vararg bindings: Any) {
+        dsl.execute("""ALTER TABLE "$table" DISABLE TRIGGER USER""")
+        try {
+            dsl.execute(sql, *bindings)
+        } finally {
+            dsl.execute("""ALTER TABLE "$table" ENABLE TRIGGER USER""")
+        }
+    }
+
+    @Test
+    fun `the signatures of both parties of a protocol are counted and verify`() = runBlocking<Unit> {
+        completeHandover()
+
+        val run = cli("verify-signatures")
+
+        assertEquals(0, run.code, run.err.toString())
+        assertTrue(run.out.single().contains("0 signed entries"), run.out.toString())
+        assertTrue(run.out.single().contains("2 handover signatures"), run.out.toString())
+    }
+
+    @Test
+    fun `a protocol changed behind the application's back is reported with its protocol and side, and exits 1`() = runBlocking<Unit> {
+        val handover = completeHandover()
+        tamperHandover("site_handovers", """update site_handovers set notes = 'Zfalšováno' where id = ?""", handover)
+
+        val run = cli("verify-signatures")
+
+        assertEquals(1, run.code)
+        for (side in listOf("CONTRACTOR", "CLIENT")) {
+            assertTrue(run.err.any { it.contains(handover.toString()) && it.contains(side) && it.contains("content") }, "$side: ${run.err}")
+        }
+        assertFalse(run.err.any { it.contains("Zfalšováno") }, "what the protocol says is never printed")
+    }
+
+    @Test
+    fun `a signer changed behind the application's back is reported, and put back it verifies again`() = runBlocking<Unit> {
+        val handover = completeHandover()
+        tamperHandover("site_handover_signatures", """update site_handover_signatures set "signerName" = 'Karel Cizí' where "handoverId" = ? and side = 'CLIENT'""", handover)
+
+        val run = cli("verify-signatures")
+
+        assertEquals(1, run.code)
+        assertTrue(run.err.any { it.contains(handover.toString()) && it.contains("CLIENT") && it.contains("signature hash") }, run.err.toString())
+        assertFalse(run.err.any { it.contains("CONTRACTOR") }, "the other signature is fine: ${run.err}")
+
+        tamperHandover("site_handover_signatures", """update site_handover_signatures set "signerName" = 'Test User' where "handoverId" = ? and side = 'CLIENT'""", handover)
+        assertEquals(0, cli("verify-signatures").code)
+    }
+    @Test
+    fun `a protocol whose meters were replaced by something that is no list is reported by its id, not thrown`() = runBlocking<Unit> {
+        val handover = completeHandover()
+        tamperHandover("site_handovers", """update site_handovers set "meterStates" = cast(? as jsonb) where id = ?""", "\"zfalšováno\"", handover)
+
+        val run = cli("verify-signatures")
+
+        assertEquals(1, run.code, run.out.toString())
+        assertTrue(run.err.any { it.contains(handover.toString()) && it.contains("cannot be read") }, run.err.toString())
+        assertFalse(run.err.any { it.contains("zfalšováno") }, "what the row holds is never printed")
+        assertEquals(2, SiteHandoverService.checkAll(dsl).problems.size, "one for each signature, and the check went on to the end")
+    }
 }
