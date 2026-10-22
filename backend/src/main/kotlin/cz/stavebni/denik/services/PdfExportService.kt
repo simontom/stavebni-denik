@@ -192,10 +192,7 @@ object PdfExportService {
     /** One reader for what is stored as JSON text; built once. */
     private val lenientJson = Json { ignoreUnknownKeys = true }
 
-    private fun weatherOf(report: org.jooq.Record): String =
-        report.get(DAILY_REPORTS.WEATHER)?.data()
-            ?.let { raw -> runCatching { lenientJson.decodeFromString(WeatherData.serializer(), raw) }.getOrNull() }
-            ?.takeUnless { it.isEmpty() }?.describe() ?: "Neuvedeno"
+    private fun weatherOf(report: org.jooq.Record): String = WeatherData.fromStored(report.get(DAILY_REPORTS.WEATHER)?.data())?.describe() ?: "Neuvedeno"
 
     private fun workersOf(report: org.jooq.Record): List<WorkerPdf> =
         report.get(DAILY_REPORTS.WORKERSBYTRADE)?.data()

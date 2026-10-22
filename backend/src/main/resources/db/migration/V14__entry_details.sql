@@ -8,7 +8,10 @@
 --
 -- "signatureFormat" says which fields the signature of a signed entry covers (ReportSignature):
 --   1  the entry as it was before this migration (text, workers, weather, ... but not the fields above);
---   2  the entry including these fields.
+--   2  the entry including these fields;
+--   3  the entry including the start, interruption and resumption of work ("workStateChanges"), the weather as its text,
+--      and, frozen at the moment of signing, the signer's name and ČKAIT number ("signerName", "signerCkaitNumber") and
+--      the identification of the diary ("partASnapshot"), see V1 and ReportSignature.
 -- Entries signed before this migration keep format 1 so their signatures still verify; the column is filled by its default,
 -- which touches no row (a signed entry cannot be updated, V5).
 --
@@ -24,4 +27,19 @@ ALTER TABLE "daily_reports"
     ADD COLUMN "signatureFormat" SMALLINT NOT NULL DEFAULT 1;
 
 ALTER TABLE "daily_reports"
-    ADD CONSTRAINT "daily_reports_signature_format_check" CHECK ("signatureFormat" IN (1, 2));
+    ADD CONSTRAINT "daily_reports_signature_format_check" CHECK ("signatureFormat" IN (1, 2, 3));
+
+-- Format 3 is a signature that stored who signed and what part A said, and only such a signature is in format 3: an entry is
+-- in format 3 if and only if it is signed (locked) and carries a signer name, a ČKAIT number and a snapshot, so a signature
+-- that lacks one of them cannot be stored, and a format 1 or 2 entry has none of the three (they were never covered).
+-- The application sets all of it in the one statement that signs; V5 and V11 freeze every column afterwards.
+ALTER TABLE "daily_reports"
+    ADD CONSTRAINT "daily_reports_signature_format_3_check" CHECK (
+        CASE WHEN "signatureFormat" = 3
+             THEN "lockedAt" IS NOT NULL
+              AND btrim(coalesce("signerName", '')) <> ''
+              AND btrim(coalesce("signerCkaitNumber", '')) <> ''
+              AND btrim(coalesce("partASnapshot", '')) <> ''
+             ELSE "signerName" IS NULL AND "signerCkaitNumber" IS NULL AND "partASnapshot" IS NULL
+        END
+    );

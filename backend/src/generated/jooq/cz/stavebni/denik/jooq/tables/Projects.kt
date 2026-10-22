@@ -148,6 +148,16 @@ open class Projects(
     val DESIGNERNAME: TableField<ProjectsRecord, String?> = createField(DSL.name("designerName"), SQLDataType.CLOB, this, "")
 
     /**
+     * The column <code>public.projects.authorSupervisionName</code>.
+     */
+    val AUTHORSUPERVISIONNAME: TableField<ProjectsRecord, String?> = createField(DSL.name("authorSupervisionName"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.projects.authorSupervisionAuthorization</code>.
+     */
+    val AUTHORSUPERVISIONAUTHORIZATION: TableField<ProjectsRecord, String?> = createField(DSL.name("authorSupervisionAuthorization"), SQLDataType.CLOB, this, "")
+
+    /**
      * The column <code>public.projects.contractNumber</code>.
      */
     val CONTRACTNUMBER: TableField<ProjectsRecord, String?> = createField(DSL.name("contractNumber"), SQLDataType.CLOB, this, "")

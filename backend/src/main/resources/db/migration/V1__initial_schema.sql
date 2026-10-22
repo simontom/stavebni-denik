@@ -56,6 +56,10 @@ CREATE TABLE "projects" (
     "tdsName" TEXT,
     "bozpName" TEXT,
     "designerName" TEXT,
+    -- The author's supervision (autorský dozor of the designer, příloha 12 A e)): who it is and the number of their
+    -- authorisation. Free text like the other fields of the identification of the diary.
+    "authorSupervisionName" TEXT,
+    "authorSupervisionAuthorization" TEXT,
     "contractNumber" TEXT,
     "contractDate" TIMESTAMPTZ,
     "designDocVersion" TEXT,
@@ -111,6 +115,9 @@ CREATE TABLE "project_members" (
     "projectId" UUID NOT NULL,
     "userId" UUID NOT NULL,
     "role" "Role" NOT NULL DEFAULT 'BOSS',
+    -- The scope of the authorisation and responsibility of a person who ensures the technical management of the works
+    -- (příloha 12 A d)); free text, set by the manager of the project for a member whose role is BOSS or INSPECTOR.
+    "scope" TEXT,
     "addedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "addedById" UUID,
 
@@ -137,11 +144,19 @@ CREATE TABLE "daily_reports" (
     "testsAndChecks" TEXT,
     "safetyNotes" TEXT,
     "defects" TEXT,
+    -- Start, interruption and resumption of work, with dates and reasons (příloha 12 B.2 b)).
+    "workStateChanges" TEXT,
     "otherNotes" TEXT,
     "weather" JSONB,
     "signedAt" TIMESTAMPTZ,
     "signedById" UUID,
     "lockedAt" TIMESTAMPTZ,
+    -- Signature format 3: who signed and what the identification of the diary said, as they were in the statement that
+    -- locked the entry (ReportSignature). All three are TEXT, hashed exactly as stored (never jsonb: it rewrites what it
+    -- stores). V14 makes them present in format 3 and absent before it; V5 and V11 freeze them with the rest of the row.
+    "signerName" TEXT,
+    "signerCkaitNumber" TEXT,
+    "partASnapshot" TEXT,
     "acknowledgedAt" TIMESTAMPTZ,
     "acknowledgedById" UUID,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

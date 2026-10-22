@@ -87,7 +87,8 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         // What such an entry looks like: no hash, and the format of the time (1; hashes came with V8, formats with V14).
         dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
         try {
-            dsl.execute("""update daily_reports set "signatureHash" = null, "signatureFormat" = 1 where id = ?""", report)
+            // (V14: only a signature in format 3 stores the signer and part A.)
+            dsl.execute("""update daily_reports set "signatureHash" = null, "signatureFormat" = 1, "signerName" = null, "signerCkaitNumber" = null, "partASnapshot" = null where id = ?""", report)
         } finally {
             dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
         }

@@ -63,7 +63,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
     @Test
     fun `every field has its own column and order`() {
         assertEquals(
-            listOf("materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "otherNotes"),
+            listOf("materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "workStateChanges", "otherNotes"),
             EntryDetails.FIELDS.map { it.key },
         )
         assertEquals(EntryDetails.FIELDS.size, EntryDetails.FIELDS.map { it.column.name }.toSet().size)
@@ -149,7 +149,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         DailyReportService.signReport(boss, id)
 
         // ... and signing moves it to the current one, before the hash is made.
-        assertEquals(2.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
+        assertEquals(ReportSignature.CURRENT_FORMAT.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
         assertEquals(true, ReportSignature.check(dsl, id).contentMatches)
 
         // A field changed behind the application's back breaks it ...
@@ -171,11 +171,15 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val id = UUID.fromString(saved.id)
         DailyReportService.signReport(boss, id)
 
-        // Make it look like an entry from before V14: format 1 and the hash that format covers.
+        // Make it look like an entry from before V14: format 1 and the hash that format covers (and no signer or part A of its
+        // own: only a signature in format 3 stores them, which the constraint of V14 insists on).
         val signed = record(saved.id)
         signed.set(DAILY_REPORTS.SIGNATUREFORMAT, 1.toShort())
         val legacyHash = ReportSignature.hash(dsl, signed, signed.signedat!!, signed.signedbyid!!)
-        tamper("""update daily_reports set "signatureFormat" = 1, "signatureHash" = ? where id = ?""", legacyHash, id)
+        tamper(
+            """update daily_reports set "signatureFormat" = 1, "signatureHash" = ?, "signerName" = null, "signerCkaitNumber" = null, "partASnapshot" = null where id = ?""",
+            legacyHash, id,
+        )
 
         assertEquals(true, ReportSignature.check(dsl, id).contentMatches, "an old signature is checked against what it covered")
         assertTrue(ReportSignature.checkAll(dsl).ok)
@@ -195,7 +199,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val saved = save(boss, projectId)
 
         val refused = assertThrows<org.jooq.exception.DataAccessException> {
-            dsl.execute("""update daily_reports set "signatureFormat" = 3 where id = ?""", UUID.fromString(saved.id))
+            dsl.execute("""update daily_reports set "signatureFormat" = 4 where id = ?""", UUID.fromString(saved.id))
         }
         assertEquals("23514", refused.sqlState(), "check_violation")
         assertEquals(1.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT), "a new entry starts in format 1: signing sets the format")
@@ -232,7 +236,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val details = json["details"]!!.jsonArray.map { it.jsonObject["label"]!!.jsonPrimitive.content to it.jsonObject["text"]!!.jsonPrimitive.content }
         val filled = mapOf("materials" to "Cement", "dustMeasures" to "#panic(\"x\") Kropení")
         assertEquals(EntryDetails.FIELDS.map { it.label to (filled[it.key] ?: "") }, details)
-        assertEquals(8, details.size)
+        assertEquals(9, details.size)
         assertEquals("Cement", details.first().second)
         assertEquals(PdfExportService.template, typst, "main.typ given to typst is exactly the fixed template")
         assertFalse(typst.contains("panic"), "the text of a field never becomes part of the typst source")
@@ -257,7 +261,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
             assertEquals("23514", refused.sqlState(), statement)
         }
         assertEquals("Kropení", record(saved.id).get(DAILY_REPORTS.DUSTMEASURES))
-        assertEquals(2.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
+        assertEquals(ReportSignature.CURRENT_FORMAT.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
     }
 
     @Test

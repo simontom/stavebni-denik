@@ -114,19 +114,19 @@ internal fun DSLContext.auditPartOf(action: String, part: String): String? =
         .takeUnless { it is JsonNull }?.let { Json.encodeToString(JsonElement.serializer(), it) }
 
 /**
- * Runs [body] with the CHECK constraint [name] of `audit_log` taken off, then puts it back exactly as it was: the way to show
+ * Runs [body] with the CHECK constraint [name] of [table] (`audit_log` unless said otherwise) taken off, then puts it back exactly as it was: the way to show
  * what the verification does with a row that the database itself would have refused (an attacker who owns the table can drop
  * a constraint, like a trigger).
  */
-internal fun DSLContext.withoutConstraint(name: String, body: () -> Unit) {
+internal fun DSLContext.withoutConstraint(name: String, table: String = "audit_log", body: () -> Unit) {
     val definition = (fetchValue("select pg_get_constraintdef(oid) from pg_constraint where conname = ?", name) as String)
         .removeSuffix(" NOT VALID")
-    execute("ALTER TABLE \"audit_log\" DROP CONSTRAINT \"$name\"")
+    execute("ALTER TABLE \"$table\" DROP CONSTRAINT \"$name\"")
     try {
         body()
     } finally {
         // NOT VALID: the rows the test damaged are still there, and the constraint binds every row written from now on.
-        execute("ALTER TABLE \"audit_log\" ADD CONSTRAINT \"$name\" $definition NOT VALID")
+        execute("ALTER TABLE \"$table\" ADD CONSTRAINT \"$name\" $definition NOT VALID")
     }
 }
 
