@@ -54,6 +54,7 @@ test.describe("Legislative Compliance", () => {
     await form.locator('textarea[id="handover-notes"]').fill("Staveniště předáno bez výhrad.");
 
     await form.getByRole("button", { name: /Uložit předání/i }).click();
+    await expect(form).toBeHidden();
 
     // Verify record in list: a draft that neither party has signed
     await expect(page.getByText("Předání staveniště zhotoviteli")).toBeVisible();
@@ -68,6 +69,8 @@ test.describe("Legislative Compliance", () => {
     const edit = page.getByRole("dialog", { name: /Upravit protokol o předání staveniště/i });
     await edit.locator('textarea[id="handover-notes"]').fill("Staveniště předáno bez výhrad, klíče od vrat předány.");
     await edit.getByRole("button", { name: /Uložit předání/i }).click();
+    // (a typed text is also the text of its own textarea, so wait for the dialog to go before looking at the list)
+    await expect(edit).toBeHidden();
     await expect(page.getByText("klíče od vrat předány")).toBeVisible();
 
     // Somebody else changes the protocol after this page loaded it: signing the version on the screen is refused, and the page says so
