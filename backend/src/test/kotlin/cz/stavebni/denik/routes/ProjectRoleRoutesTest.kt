@@ -180,6 +180,28 @@ class ProjectRoleRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.OK, call(HttpMethod.Post, "/api/projects/$p/members", admin, addMemberBody(newcomer, "WORKER")).status)
     }
 
+    // ------------------------------------------------------------------ the scope of a member
+
+    @Test
+    fun `the manager gives a member a scope through the API, the member list returns it, and a worker cannot set one`() = testApplication {
+        application { module() }
+        val boss = createTestUser(nickname = "boss", role = Role.BOSS)
+        val supervisor = createTestUser(nickname = "dozor", displayName = "Ing. Dozor", role = Role.INSPECTOR)
+        val worker = createTestUser(nickname = "worker", role = Role.WORKER)
+        val p = project(boss, "P")
+        addMember(p, worker, Role.WORKER)
+
+        val added = call(HttpMethod.Post, "/api/projects/$p/members", boss, """{"userId":"${supervisor.id}","role":"INSPECTOR","scope":"Technický dozor stavebníka"}""")
+        assertEquals(HttpStatusCode.OK, added.status, added.bodyAsText())
+        val listed = Json.parseToJsonElement(call(HttpMethod.Get, "/api/projects/$p/members", worker).bodyAsText()).jsonArray
+            .associate { it.jsonObject["displayName"]!!.jsonPrimitive.content to it.jsonObject["scope"]?.jsonPrimitive?.contentOrNull }
+        assertEquals("Technický dozor stavebníka", listed["Ing. Dozor"])
+
+        assertEquals(HttpStatusCode.Forbidden, call(HttpMethod.Post, "/api/projects/$p/members", worker, """{"userId":"${supervisor.id}","role":"INSPECTOR","scope":"Zfalšováno"}""").status)
+        assertEquals(HttpStatusCode.BadRequest, call(HttpMethod.Post, "/api/projects/$p/members", boss, """{"userId":"${worker.id}","role":"WORKER","scope":"Nesmí mít"}""").status)
+        assertEquals(HttpStatusCode.BadRequest, call(HttpMethod.Post, "/api/projects/$p/members", boss, """{"userId":"${supervisor.id}","role":"INSPECTOR","scope":"${"x".repeat(501)}"}""").status)
+    }
+
     // ------------------------------------------------------------------ the project keeps its manager
 
     @Test

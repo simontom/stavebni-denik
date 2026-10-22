@@ -64,6 +64,58 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the author's supervision is entered with the project, changed with it, audited, and read back (příloha 12 A e)`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(
+            boss,
+            dto(boss).copy(authorSupervisionName = "  Ing. arch. Petr Dozor  ", authorSupervisionAuthorization = "ČKA 00 123"),
+        )
+        assertEquals("Ing. arch. Petr Dozor", created.authorSupervisionName, "trimmed")
+        assertEquals("ČKA 00 123", created.authorSupervisionAuthorization)
+        assertEquals("Ing. arch. Petr Dozor", stored(created.id).get(PROJECTS.AUTHORSUPERVISIONNAME))
+
+        val updated = ProjectService.updateProject(boss, UUID.fromString(created.id), created.copy(authorSupervisionName = "Ing. Eva Dozorová", authorSupervisionAuthorization = null))
+        assertEquals("Ing. Eva Dozorová", updated.authorSupervisionName)
+        assertNull(updated.authorSupervisionAuthorization, "an empty field is nothing")
+        assertNull(stored(created.id).get(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION))
+
+        assertTrue(auditOf("project.create").single().auditAfterText()!!.contains("Ing. arch. Petr Dozor"))
+        val row = auditOf("project.update").single()
+        assertTrue(row.auditBeforeText()!!.contains("\"authorSupervisionName\":\"Ing. arch. Petr Dozor\""), row.auditBeforeText())
+        assertTrue(row.auditAfterText()!!.contains("\"authorSupervisionName\":\"Ing. Eva Dozorová\""), row.auditAfterText())
+        assertTrue(AuditService.verifyChain(dsl).ok)
+    }
+
+    @Test
+    fun `the author's supervision has the limits of the other fields, and a save that changes nothing writes nothing`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss, dto(boss).copy(authorSupervisionName = "x".repeat(500), authorSupervisionAuthorization = "y".repeat(200)))
+        val id = UUID.fromString(created.id)
+
+        for (bad in listOf(
+            created.copy(authorSupervisionName = "x".repeat(501)),
+            created.copy(authorSupervisionAuthorization = "y".repeat(201)),
+            created.copy(authorSupervisionName = "Novák\u0000"),
+        )) {
+            assertThrows<IllegalArgumentException>(bad.toString()) { runBlocking { ProjectService.updateProject(boss, id, bad) } }
+        }
+        val same = ProjectService.updateProject(boss, id, created)
+        assertEquals(created.updatedAt, same.updatedAt, "nothing changed, so there is no new version")
+        assertEquals(0, auditOf("project.update").size)
+    }
+
+    @Test
+    fun `only the manager of the project changes the author's supervision`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss)
+        val id = UUID.fromString(created.id)
+        val worker = createTestUser(role = Role.WORKER).also { addMember(id, it, Role.WORKER) }
+
+        assertThrows<ForbiddenException> { runBlocking { ProjectService.updateProject(worker, id, created.copy(authorSupervisionName = "Cizí")) } }
+        assertNull(stored(created.id).get(PROJECTS.AUTHORSUPERVISIONNAME))
+    }
+
+    @Test
     fun `creating and changing a project leave audit rows that name the project and keep what it was`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val created = create(boss)
@@ -233,7 +285,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `the PDF says the identification is as of the day it is made, and when it changed after the entry was signed`() = runBlocking<Unit> {
+    fun `for a draft and an entry signed before format 3 the PDF says the identification is as of the day it is made, and when it changed after the entry was signed`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val created = create(boss)
         val projectId = UUID.fromString(created.id)
@@ -254,6 +306,13 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         assertFalse(draft.contains("nejsou součástí podpisu"), "a draft is not signed: $draft")
 
         DailyReportService.signReport(boss, report)
+        // Make it an entry signed before format 3 (test data only): it kept no copy of the identification.
+        dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
+        try {
+            dsl.execute("""update daily_reports set "signatureFormat" = 2, "signerName" = null, "signerCkaitNumber" = null, "partASnapshot" = null where id = ?""", report)
+        } finally {
+            dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
+        }
         val signed = note()
         assertTrue(signed.contains("nejsou součástí podpisu záznamu"), signed)
         assertFalse(signed.contains("Po podpisu"), "the project was not changed after signing: $signed")
@@ -262,5 +321,31 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         ProjectService.updateProject(boss, projectId, ProjectService.getProject(dsl, boss, projectId).copy(contractor = "Jiný stavitel s.r.o."))
         val changed = note()
         assertTrue(changed.contains("Po podpisu tohoto záznamu byly změněny dne "), changed)
+    }
+
+    @Test
+    fun `for an entry signed in format 3 the PDF says the identification is the one of the day of signing and part of the signature`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val created = create(boss)
+        val projectId = UUID.fromString(created.id)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+
+        // The manager changes the contractor after the entry was signed.
+        ProjectService.updateProject(boss, projectId, ProjectService.getProject(dsl, boss, projectId).copy(contractor = "Jiný stavitel s.r.o."))
+        var data = ""
+        PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->
+            data = File(dir, "data.json").readText()
+            pdfFile.writeBytes(MINIMAL_PDF)
+        }
+        PdfExportService.generateReportPdf(dsl, report)
+
+        val json = Json.parseToJsonElement(data).jsonObject
+        val note = json["projectInfoNote"]!!.jsonPrimitive.content
+        assertTrue(note.startsWith("Údaje o stavbě platné ke dni podpisu "), note)
+        assertTrue(note.contains("jsou součástí podpisu záznamu") && !note.contains("nejsou"), note)
+        assertFalse(note.contains("Po podpisu"), "part A cannot change after signing, so nothing is said about changes: $note")
+        val contractor = json["projectInfo"]!!.jsonArray.single { it.jsonObject["label"]!!.jsonPrimitive.content == "Zhotovitel" }.jsonObject["value"]!!.jsonPrimitive.content
+        assertEquals("Stavitel a.s.", contractor, "the contractor as signed, not the one of the change")
     }
 }
