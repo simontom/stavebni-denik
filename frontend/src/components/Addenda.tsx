@@ -58,9 +58,9 @@ export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: bool
 
   return (
     <section aria-labelledby="addenda-title" className="mt-6 space-y-3 border-t border-gray-200 pt-4">
-      <h3 id="addenda-title" className="font-semibold text-gray-900">
+      <h2 id="addenda-title" className="font-semibold text-gray-900">
         Dodatky
-      </h3>
+      </h2>
       {addenda.length === 0 ? (
         <p className="text-sm text-gray-500">K tomuto záznamu zatím není žádný dodatek.</p>
       ) : (

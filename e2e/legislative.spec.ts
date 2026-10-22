@@ -147,12 +147,13 @@ test.describe("Legislative Compliance", () => {
     await expect(page.getByText(/Seznámil\(a\) se: .*\(stavebník\)/)).toBeVisible();
     await expect(ackBtn).not.toBeVisible();
 
-    // An investor reads the daily entry but does not write it: an unsigned day is shown locked, without a save button.
+    // An investor reads the daily entry but does not write it: a day nobody wrote says so, with no form and no save button.
     const yesterday = new Date(`${new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date())}T00:00:00Z`);
     yesterday.setUTCDate(yesterday.getUTCDate() - 1);
     await page.goto(reportUrl.replace(/\/reports\/.*$/, `/reports/${yesterday.toISOString().slice(0, 10)}`));
     await expect(page.getByText(/můžete jen číst/i)).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('textarea[name="workDescription"]')).toBeDisabled();
+    await expect(page.getByText("Za tento den zatím není žádný záznam.")).toBeVisible();
+    await expect(page.locator('textarea[name="workDescription"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
   });
 });

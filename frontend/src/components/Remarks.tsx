@@ -78,9 +78,9 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
 
   return (
     <section aria-labelledby="remarks-title" className="space-y-3">
-      <h3 id="remarks-title" className="font-semibold text-gray-900">
+      <h2 id="remarks-title" className="font-semibold text-gray-900">
         Zápisy dalších osob
-      </h3>
+      </h2>
       {remarks.length === 0 ? (
         <p className="text-sm text-gray-500">K tomuto záznamu zatím nikdo další nezapsal.</p>
       ) : (

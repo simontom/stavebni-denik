@@ -299,7 +299,10 @@ test("a signed entry never keeps a draft", async ({ page }) => {
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(draftBanner(page)).toHaveCount(0);
   await expect.poll(() => draftKeys(page)).toEqual([]);
-  await expect(description(page)).toHaveValue("Podepsaný zápis");
+  // The signed entry is a document: the text that was signed, not the text of the draft that was planted.
+  await expect(description(page)).toHaveCount(0);
+  await expect(page.getByText("Podepsaný zápis")).toBeVisible();
+  await expect(page.getByText("koncept podepsaného dne")).toHaveCount(0);
 });
 
 test("somebody who may not write in the project never keeps a draft", async ({ browser, page, baseURL }) => {
