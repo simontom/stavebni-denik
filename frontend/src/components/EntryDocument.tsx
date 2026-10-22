@@ -151,6 +151,9 @@ export function SignatureCard({
   sequenceNumber,
   signatureHash,
   loading = false,
+  loadFailed = false,
+  onRetry,
+  signerIncomplete = false,
   canCheck,
   check,
   onCheck,
@@ -164,6 +167,11 @@ export function SignatureCard({
   signatureHash?: string | null;
   /** The entry has just been signed and what the server says of the signature has not arrived yet. */
   loading?: boolean;
+  /** Reading it again failed: the card says so and offers [onRetry]. */
+  loadFailed?: boolean;
+  onRetry?: () => void;
+  /** The signature lacks the name or the number of its signer: the card does not show half a signer as if it were whole. */
+  signerIncomplete?: boolean;
   canCheck: boolean;
   check: SignatureCheck | null;
   onCheck: () => void;
@@ -183,6 +191,13 @@ export function SignatureCard({
 
           {loading ? (
             <p className="mt-4 text-sm text-ink-muted">Načítám údaje o podpisu…</p>
+          ) : loadFailed ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-ink">Údaje o podpisu se nepodařilo načíst.</p>
+              <Button variant="secondary" size="sm" onClick={onRetry}>
+                Zkusit znovu
+              </Button>
+            </div>
           ) : (
             <dl className="mt-4 grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[max-content_1fr]">
               <dt className="font-medium text-ink-muted">Podepsal</dt>
@@ -205,6 +220,11 @@ export function SignatureCard({
                 </>
               )}
             </dl>
+          )}
+
+          {/* Not an alarm and not a status of its own (the verification below is the one status of the page): a plain notice. */}
+          {signerIncomplete && !loading && !loadFailed && (
+            <p className="mt-3 rounded-md bg-neutral-soft p-3 text-sm text-neutral-ink">Údaje o podepisujícím jsou neúplné; ověřte podpis.</p>
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">

@@ -163,4 +163,34 @@ describe("SignatureCard", () => {
     expect(screen.queryByRole("button", { name: "Ověřit podpis" })).toBeNull();
     expect(screen.getByRole("button", { name: "Potvrdit seznámení" })).toBeTruthy();
   });
+
+  it("says when what the server knows of the signature could not be loaded, and tries again on request, instead of loading for ever", () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(card({ loading: false, loadFailed: true, onRetry, signerName: null, signedAt: null }));
+
+    expect(screen.getByText("Údaje o podpisu se nepodařilo načíst.")).toBeTruthy();
+    expect(screen.queryByText("Načítám údaje o podpisu…")).toBeNull();
+    expect(screen.queryByText("Jméno podepisujícího se nepodařilo zjistit"), "no half-made signer next to the failure").toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Zkusit znovu" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+
+    // While it tries again, it says it is loading, and offers nothing to press.
+    rerender(card({ loading: true, loadFailed: false, onRetry, signerName: null, signedAt: null }));
+    expect(screen.getByText("Načítám údaje o podpisu…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Zkusit znovu" })).toBeNull();
+  });
+
+  it("says that the signer is incomplete when the signature lacks the name or the number, and says nothing of it otherwise", () => {
+    const { rerender } = render(card({ signerIncomplete: true, signerCkaitNumber: null }));
+
+    const notice = screen.getByText("Údaje o podepisujícím jsou neúplné; ověřte podpis.");
+    expect(notice.getAttribute("role"), "a notice, not a second status next to the verification").toBeNull();
+    expect(screen.getByText("Jan Stavbyvedoucí")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Ověřit podpis" })).toBeTruthy();
+
+    rerender(card({ signerIncomplete: false }));
+    expect(screen.queryByText(/neúplné/)).toBeNull();
+    rerender(card());
+    expect(screen.queryByText(/neúplné/)).toBeNull();
+  });
 });

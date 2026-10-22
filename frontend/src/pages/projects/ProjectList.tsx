@@ -59,6 +59,8 @@ export function ProjectList() {
   const [error, setError] = useState("");
   // Creating a project makes the creator its manager: it is for project managers (the global role), as the server decides.
   const mayCreate = currentUser()?.role === "BOSS";
+  // An administrator sees every project (not only those they are a member of), so for them an empty list means there are none.
+  const isAdmin = currentUser()?.isAdmin === true;
 
   useEffect(() => {
     apiFetch("/api/projects")
@@ -106,9 +108,11 @@ export function ProjectList() {
               ) : undefined
             }
           >
-            {mayCreate
-              ? "Zatím nemáte žádný projekt. Založte první a zapisujte do jeho deníku."
-              : "Zatím nejste členem žádného projektu. Projekt zakládá stavbyvedoucí; požádejte ho, aby vás do něj přidal."}
+            {isAdmin
+              ? `Zatím nejsou založeny žádné stavby.${mayCreate ? " Založte první a zapisujte do jejího deníku." : ""}`
+              : mayCreate
+                ? "Zatím nemáte žádný projekt. Založte první a zapisujte do jeho deníku."
+                : "Zatím nejste členem žádného projektu. Projekt zakládá stavbyvedoucí; požádejte ho, aby vás do něj přidal."}
           </PageState>
         </Card>
       ) : (

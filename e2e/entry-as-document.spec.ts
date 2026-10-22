@@ -509,17 +509,30 @@ test.describe("the list of projects", () => {
   test("with no project there is an empty state, with a way to add one for those who may", async ({ browser, baseURL }) => {
     const none = (route: { fulfill: (o: { json: unknown }) => Promise<void> }) => route.fulfill({ json: [] });
 
-    // A project manager may create a project: the empty state says so and offers it.
-    const boss = await browser.newContext({ baseURL });
+    // A project manager (who is not an administrator) may create a project: the empty state says so and offers it.
+    const manager = await personPage(browser, baseURL, "manager@stavebni-denik.cz", ADMIN_PASSWORD);
     try {
-      const page = await boss.newPage();
-      await signIn(page);
+      const page = manager.page;
       await page.route("**/api/projects", none);
       await page.goto("/projects");
       await expect(page.getByText(/Zatím nemáte žádný projekt/)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByRole("link", { name: "Přidat projekt" })).toHaveCount(1);
       await page.getByRole("link", { name: "Přidat projekt" }).click();
       await expect(page).toHaveURL(/\/projects\/new$/);
+    } finally {
+      await manager.context.close();
+    }
+
+    // An administrator sees every project, so an empty list means that none exists; one who is a manager too may create the first.
+    const boss = await browser.newContext({ baseURL });
+    try {
+      const page = await boss.newPage();
+      await signIn(page);
+      await page.route("**/api/projects", none);
+      await page.goto("/projects");
+      await expect(page.getByText(/Zatím nejsou založeny žádné stavby\. Založte první/)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(/Zatím nemáte žádný projekt/)).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Přidat projekt" })).toHaveCount(1);
     } finally {
       await boss.close();
     }
@@ -576,6 +589,250 @@ test.describe("the project header", () => {
     } finally {
       await bare.context.close();
       await full.context.close();
+    }
+  });
+});
+
+test.describe("signing in the page", () => {
+  const signDialog = (page: Page) => page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+  /**
+   * Whether the focus is on an element of the page behind the dialog. Inside the dialog it is not; and when it leaves the page for the
+   * browser's own controls (what Tab does at the end of a modal dialog) nothing of the page has it either (the `body`).
+   */
+  const focusIsOnThePageBehind = (page: Page) =>
+    page.evaluate(() => {
+      const active = document.activeElement;
+      return Boolean(active && active !== document.body && !active.closest('dialog, [role="dialog"]'));
+    });
+
+  test("the dialog holds the focus: nothing can be typed behind it, and a signed entry never asks about text that is not there", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    try {
+      await makeEntry(site, A_MONDAY, {}, false);
+      const page = site.page;
+      await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      const description = page.locator('textarea[name="workDescription"]');
+      await expect(description).toBeEditable({ timeout: 15_000 });
+      const written = await description.inputValue();
+
+      await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
+      const dialog = signDialog(page);
+      await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+
+      // Tab and Shift+Tab never reach the form behind the dialog.
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.press("Shift+Tab");
+        expect(await focusIsOnThePageBehind(page), `Shift+Tab, press ${i + 1}`).toBe(false);
+      }
+      for (let i = 0; i < 6; i++) {
+        await page.keyboard.press("Tab");
+        expect(await focusIsOnThePageBehind(page), `Tab, press ${i + 1}`).toBe(false);
+      }
+      // What is typed while the dialog is open lands nowhere in the form behind it.
+      await page.keyboard.type("psáno za dialogem");
+      await expect(description).toHaveValue(written);
+      await expect(page.getByText("Neuložené změny")).toHaveCount(0);
+
+      // Signing: the entry is a document, and the page has nothing unsaved (the browser would ask on closing the tab; the application on a link).
+      await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+      await dialog.getByRole("button", { name: "Podepsat", exact: true }).click();
+      await expect(podepsano(page)).toHaveCount(1, { timeout: 15_000 });
+      expect(
+        await page.evaluate(() => {
+          const event = new Event("beforeunload", { cancelable: true });
+          window.dispatchEvent(event);
+          return event.defaultPrevented;
+        }),
+        "the browser is not told to ask before the page is closed",
+      ).toBe(false);
+      await page.getByRole("link", { name: /zpět na seznam záznamů/i }).click();
+      await expect(page).toHaveURL(/tab=reports/);
+      await expect(page.getByRole("dialog", { name: /neuložené změny/i })).toHaveCount(0);
+    } finally {
+      await site.context.close();
+    }
+  });
+
+  test("Escape and Zrušit close the dialog and keep the form as it was", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    try {
+      await makeEntry(site, A_MONDAY, {}, false);
+      const page = site.page;
+      await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
+
+      await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
+      await expect(signDialog(page)).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(signDialog(page)).toHaveCount(0);
+
+      await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
+      await signDialog(page).getByRole("button", { name: "Zrušit" }).click();
+      await expect(signDialog(page)).toHaveCount(0);
+      await expect(podepsano(page)).toHaveCount(0);
+      await expect(page.locator('textarea[name="workDescription"]')).toBeEditable();
+    } finally {
+      await site.context.close();
+    }
+  });
+
+  test("when what the server says of the signature cannot be loaded, the card says so and can try again", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    try {
+      await makeEntry(site, A_MONDAY, {}, false);
+      const page = site.page;
+      let failing = false;
+      // The reads of the entry fail while [failing] (the signing itself is another URL and is not touched).
+      await page.route(`**/api/projects/${site.projectId}/reports/${A_MONDAY}`, (route) =>
+        failing && route.request().method() === "GET" ? route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"boom"}' }) : route.continue(),
+      );
+      await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
+
+      failing = true;
+      await page.getByRole("button", { name: /podepsat a uzamknout/i }).click();
+      await signDialog(page).getByLabel("Heslo").fill(ADMIN_PASSWORD);
+      await signDialog(page).getByRole("button", { name: "Podepsat", exact: true }).click();
+
+      // The entry is signed (the head says so, and the form is gone), but the card does not pretend to know more than it does.
+      await expect(podepsano(page)).toHaveCount(1, { timeout: 15_000 });
+      const card = page.getByRole("region", { name: "Podpis záznamu" });
+      await expect(card.getByText("Údaje o podpisu se nepodařilo načíst.")).toBeVisible();
+      await expect(card.getByText("Načítám údaje o podpisu…")).toHaveCount(0);
+      await expect(card.getByRole("button", { name: "Zkusit znovu" })).toBeVisible();
+      // A signed entry is not "bez čísla": the number is not known yet, which is something else.
+      await expect(page.getByText("bez čísla", { exact: true })).toHaveCount(0);
+      await expect(entryFields(page)).toHaveCount(0);
+
+      failing = false;
+      await card.getByRole("button", { name: "Zkusit znovu" }).click();
+      await expect(card.getByText(`${ADMIN_NAME}, ČKAIT 0000000`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText("Záznam č. 1", { exact: true })).toBeVisible();
+      await expect(card.getByText("Údaje o podpisu se nepodařilo načíst.")).toHaveCount(0);
+      await expect(podepsano(page)).toHaveCount(1);
+    } finally {
+      await site.context.close();
+    }
+  });
+});
+
+test.describe("who may change an entry is decided by the server", () => {
+  const REASON = "Záznam může upravit jen jeho autor nebo stavbyvedoucí.";
+
+  test("a worker gets the document, with the reason, for an entry of the manager, and the form for their own", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    const worker = await personPage(browser, baseURL, WORKER_NICKNAME, ADMIN_PASSWORD);
+    try {
+      // The manager's entry, and the worker's own.
+      await makeEntry(site, A_MONDAY, {}, false);
+      await post(worker.context.request, `/api/projects/${site.projectId}/reports/2026-09-29`, entryBody("2026-09-29", { workDescription: "Práce zedníků" }));
+      const page = worker.page;
+
+      await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(page.getByText("Betonáž stropní desky nad prvním podlažím.")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(REASON)).toBeVisible();
+      await expect(page.getByText(/můžete jen číst/i)).toHaveCount(0);
+      await expect(entryFields(page)).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
+      await expect(page.getByText("Rozpracováno", { exact: true })).toBeVisible();
+      // What a worker may do to the manager's entry is still allowed: add a photo.
+      await expect(page.locator('input[type="file"]')).toBeVisible();
+
+      // Their own: the form, and a save that goes through.
+      await page.goto(`/projects/${site.projectId}/reports/2026-09-29`);
+      const description = page.locator('textarea[name="workDescription"]');
+      await expect(description).toBeEditable({ timeout: 15_000 });
+      await expect(page.getByText(REASON)).toHaveCount(0);
+      await description.fill("Práce zedníků, doplněno");
+      const saved = page.waitForResponse((r) => r.request().method() === "POST" && r.url().includes("/reports/2026-09-29"));
+      await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
+      expect((await saved).ok()).toBeTruthy();
+
+      // A day nobody wrote: a worker may write it.
+      await page.goto(`/projects/${site.projectId}/reports/${pragueDay(0)}`);
+      await expect(page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
+    } finally {
+      await worker.context.close();
+      await site.context.close();
+    }
+  });
+
+  test("the manager keeps the form for the worker's entry, and the investor still reads only", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    const worker = await personPage(browser, baseURL, WORKER_NICKNAME, ADMIN_PASSWORD);
+    const investor = await personPage(browser, baseURL, INVESTOR_NICKNAME, INVESTOR_PASSWORD);
+    try {
+      await post(worker.context.request, `/api/projects/${site.projectId}/reports/${A_MONDAY}`, entryBody(A_MONDAY, { workDescription: "Práce zedníků" }));
+
+      await site.page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(site.page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
+      await expect(site.page.getByText(REASON)).toHaveCount(0);
+
+      await investor.page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(investor.page.getByText(/můžete jen číst/i)).toBeVisible({ timeout: 15_000 });
+      await expect(investor.page.getByText(REASON)).toHaveCount(0);
+    } finally {
+      await investor.context.close();
+      await worker.context.close();
+      await site.context.close();
+    }
+  });
+});
+
+test.describe("a signature that lacks its signer", () => {
+  test("the card says the data is incomplete, and a whole one says nothing of the kind", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const site = await newSite(browser, baseURL);
+    try {
+      await makeEntry(site, A_MONDAY, {}, true);
+      const page = site.page;
+      const card = page.getByRole("region", { name: "Podpis záznamu" });
+      const WARNING = "Údaje o podepisujícím jsou neúplné; ověřte podpis.";
+
+      await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
+      await expect(card.getByText(`${ADMIN_NAME}, ČKAIT 0000000`)).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByText(WARNING)).toHaveCount(0);
+
+      // What the server says of a row that lost the number of its signer (only a row changed behind the application is like that).
+      await page.route(`**/api/projects/${site.projectId}/reports/${A_MONDAY}`, async (route) => {
+        const response = await route.fetch();
+        const body = await response.json();
+        await route.fulfill({ response, json: { ...body, signerCkaitNumber: null, signerIncomplete: true } });
+      });
+      await page.reload();
+      await expect(card.getByText(WARNING)).toBeVisible({ timeout: 15_000 });
+      await expect(card.getByText(ADMIN_NAME)).toBeVisible();
+      await expect(card.getByRole("button", { name: "Ověřit podpis" })).toBeVisible();
+      await expect(podepsano(page)).toHaveCount(1);
+    } finally {
+      await site.context.close();
+    }
+  });
+});
+
+test.describe("the empty list of projects, for an administrator", () => {
+  test("an administrator who may not create a project sees every project, so an empty list means there are none", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({ baseURL });
+    try {
+      const page = await context.newPage();
+      await signIn(page);
+      // The account as the application keeps it on the device: an administrator whose own role is not BOSS (the server decides in the end).
+      await page.evaluate(() => {
+        const user = JSON.parse(localStorage.getItem("user") ?? "{}");
+        localStorage.setItem("user", JSON.stringify({ ...user, role: "WORKER", isAdmin: true }));
+      });
+      await page.route("**/api/projects", (route) => route.fulfill({ json: [] }));
+      await page.goto("/projects");
+      await expect(page.getByText("Zatím nejsou založeny žádné stavby.")).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(/Zatím nejste členem/)).toHaveCount(0);
+      await expect(page.getByRole("link", { name: "Přidat projekt" })).toHaveCount(0);
+    } finally {
+      await context.close();
     }
   });
 });

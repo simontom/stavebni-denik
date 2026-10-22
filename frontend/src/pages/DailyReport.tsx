@@ -4,7 +4,7 @@ import { Addenda } from "../components/Addenda";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
-import { Button, Card, StatusBadge } from "../components/ui";
+import { Button, Card, Modal, StatusBadge, useModal } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
@@ -59,7 +59,11 @@ interface EntryView {
   signerName?: string | null;
   signerCkaitNumber?: string | null;
   signerFrozen?: boolean;
+  /** A signature of format 3 that lacks the name or the number of its signer (a row changed behind the application). */
+  signerIncomplete?: boolean;
   signatureHash?: string | null;
+  /** The server's answer to "may the person who asks change this entry?": the rule of the save, not a guess from the role. */
+  canEdit?: boolean;
 }
 
 export const DailyReport: React.FC = () => {
@@ -131,6 +135,9 @@ export const DailyReport: React.FC = () => {
   // The number of the entry in the diary, given when it is signed.
   const [sequenceNumber, setSequenceNumber] = useState<number | null>(null);
   const [showSign, setShowSign] = useState(false);
+  // After signing the entry is read again (the signer, the time and the number are known only to the server). When that fails
+  // the signature card says so and offers to try again, instead of saying "loading" for ever.
+  const [signatureReloadFailed, setSignatureReloadFailed] = useState(false);
   const [signPassword, setSignPassword] = useState("");
   const [signError, setSignError] = useState("");
   const [signing, setSigning] = useState(false);
@@ -166,7 +173,8 @@ export const DailyReport: React.FC = () => {
   const [savedKey, setSavedKey] = useState<string | null>(null);
   // The form as the server showed it when the day was opened: what a draft is compared with.
   const [loadedForm, setLoadedForm] = useState<FormValues | null>(null);
-  const dirty = savedKey !== null && formKey !== savedKey;
+  // A signed entry has no form any more, so nothing in it is unsaved, whatever the form held when it was signed.
+  const dirty = !isSigned && savedKey !== null && formKey !== savedKey;
   // One save at a time: a second tap while the first is on its way would send a second create (and get a false conflict).
   const savingRef = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -186,6 +194,10 @@ export const DailyReport: React.FC = () => {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
   const roleKnown = myRole !== undefined;
+  // Whether the person may change THIS entry. For an entry that exists the server says (`canEdit`: the rule of the save, so a worker
+  // is not offered a form for the manager's entry, whose save would end in 403); for a day nobody has written the role does
+  // (the manager and the workers may create it).
+  const mayEditEntry = canWrite && (entry === null || entry.canEdit === true);
   // The draft of this day kept on the device (backlog B2): offered when the day opens if it holds what the stored entry
   // does not, written while there are unsaved changes, gone when they are saved. Not for a signed entry or a role that cannot write.
   // The hook also tells the application about unsaved work (setUnsavedWork): after a lapsed session the page must keep what
@@ -194,7 +206,7 @@ export const DailyReport: React.FC = () => {
     scope: draftUserId && projectId && reportId ? { userId: draftUserId, projectId, day: reportId } : null,
     ready: loadState === "ready",
     loaded: loadedForm,
-    canWrite: roleKnown ? canWrite : null,
+    canWrite: roleKnown ? mayEditEntry : null,
     isSigned,
     dirty,
     values,
@@ -202,7 +214,7 @@ export const DailyReport: React.FC = () => {
   });
   // The form can be edited only once the entry is loaded (text typed earlier would be overwritten by the loaded one),
   // only by somebody who may write it, and not while a draft waits for the person to take it or throw it away.
-  const editable = loadState === "ready" && roleKnown && canWrite && !isSigned && draft.offer === null;
+  const editable = loadState === "ready" && roleKnown && mayEditEntry && !isSigned && draft.offer === null;
   const needsLateReason = updatedAt === null && !!reportId && isLateEntryDate(reportId);
   const isFuture = !!reportId && isFutureDate(reportId);
   // A photo belongs to a saved, unsigned entry: the server attaches it to exactly the entry that is named.
@@ -409,6 +421,22 @@ export const DailyReport: React.FC = () => {
     setShowSign(true);
   };
 
+  /** Reads the signed entry again: the signer, the time, the number and the fingerprint are known to the server. False (and the card says so) when it fails. */
+  const reloadSignedEntry = async (): Promise<boolean> => {
+    setSignatureReloadFailed(false);
+    const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (!reloaded) {
+      setSignatureReloadFailed(true);
+      return false;
+    }
+    setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
+    setEntry(reloaded as EntryView);
+    setSequenceNumber(typeof reloaded.sequenceNumber === "number" ? reloaded.sequenceNumber : null);
+    return true;
+  };
+
   const handleConfirmSign = async (e: React.FormEvent) => {
     e.preventDefault();
     if (signing) return;
@@ -426,15 +454,7 @@ export const DailyReport: React.FC = () => {
         setIsSigned(true);
         setConflict(false);
         setError("");
-        // The hash and the signer are known to the server now: take them from there.
-        const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
-        if (reloaded) {
-          setEntryId(typeof reloaded.id === "string" ? reloaded.id : entryId);
-          setEntry(reloaded as EntryView);
-          setSequenceNumber(typeof reloaded.sequenceNumber === "number" ? reloaded.sequenceNumber : null);
-        }
+        await reloadSignedEntry();
       } else {
         const body = await res.json().catch(() => null);
         if (res.status === 409 && body?.code === "STALE_VERSION") {
@@ -493,11 +513,13 @@ export const DailyReport: React.FC = () => {
   // What the page shows of the entry. A signed entry, and any entry seen by somebody who cannot write, is a document (the form
   // stays for those who write an unsigned one: it prompts for what the decree asks). A day nobody wrote, seen by a reader, says so.
   const settled = loadState === "ready" && roleKnown;
-  const showDocument = settled && entry !== null && (isSigned || !canWrite);
+  const showDocument = settled && entry !== null && (isSigned || !mayEditEntry);
   const showNoEntry = settled && entry === null && !canWrite;
   const entryState: "none" | "draft" | "signed" = isSigned ? "signed" : updatedAt !== null ? "draft" : "none";
   // After signing, the server's view of the entry is fetched again (the signer, the time and the number are known only to it).
   const signatureLoaded = entry?.isSigned === true;
+  // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
+  const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
   const dayLabel = formatDayWithWeekday(entry?.date ?? reportId ?? "", "long");
 
   return (
@@ -513,9 +535,11 @@ export const DailyReport: React.FC = () => {
         {loadState === "ready" && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <EntryStateBadge state={entryState} />
-            <StatusBadge tone="neutral" className="tabular-nums">
-              {entryNumberLabel(sequenceNumber)}
-            </StatusBadge>
+            {!(isSigned && sequenceNumber === null) && (
+              <StatusBadge tone="neutral" className="tabular-nums">
+                {entryNumberLabel(sequenceNumber)}
+              </StatusBadge>
+            )}
             {isLateEntry && <LateEntryBadge />}
             {isControlDay && <ControlDayBadge />}
             {constructionObj && (
@@ -590,7 +614,11 @@ export const DailyReport: React.FC = () => {
         {showDocument && entry && (
           <>
             <EntryDocument entry={entry} />
-            {!isSigned && <p className="mt-6 border-t border-line pt-4 text-sm text-ink-muted">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>}
+            {!isSigned && (
+              <p className="mt-6 border-t border-line pt-4 text-sm text-ink-muted">
+                {canWrite ? "Záznam může upravit jen jeho autor nebo stavbyvedoucí." : "Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele."}
+              </p>
+            )}
           </>
         )}
         {showNoEntry && (
@@ -836,7 +864,7 @@ export const DailyReport: React.FC = () => {
         <Card className="mb-6">
           <h2 className="mb-4 text-lg font-bold text-ink">Fotodokumentace</h2>
 
-          {!showDocument && (
+          {showPhotoControls && (
             <div className="mb-6 flex flex-wrap items-center gap-3">
               <input
                 id="photo-files"
@@ -863,7 +891,7 @@ export const DailyReport: React.FC = () => {
               ))}
             </div>
           ) : (
-            showDocument && <p className="text-ink-muted">Bez fotografií.</p>
+            !showPhotoControls && <p className="text-ink-muted">Bez fotografií.</p>
           )}
         </Card>
       )}
@@ -878,7 +906,10 @@ export const DailyReport: React.FC = () => {
             signedAt={entry?.signedAt}
             sequenceNumber={sequenceNumber}
             signatureHash={entry?.signatureHash}
-            loading={!signatureLoaded}
+            loading={!signatureLoaded && !signatureReloadFailed}
+            loadFailed={!signatureLoaded && signatureReloadFailed}
+            onRetry={() => void reloadSignedEntry()}
+            signerIncomplete={entry?.signerIncomplete}
             canCheck={Boolean(entryId)}
             check={signatureCheck}
             onCheck={() => void handleCheckSignature()}
@@ -903,17 +934,18 @@ export const DailyReport: React.FC = () => {
         </div>
       )}
 
+      {/* The dialog is the application's Modal: focus stays inside it and the form behind it is inert, so nothing can be typed there while it is open. */}
       {showSign && (
-        <div role="dialog" aria-modal="true" aria-labelledby="sign-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form onSubmit={(e) => void handleConfirmSign(e)} className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-            <h2 id="sign-title" className="text-lg font-bold text-gray-900">
-              Podepsat a uzamknout záznam
-            </h2>
-            <p className="text-sm text-gray-600">
-              Podepisujete uloženou verzi záznamu ze dne {reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.
-            </p>
+        <Modal
+          title="Podepsat a uzamknout záznam"
+          description={`Podepisujete uloženou verzi záznamu ze dne ${reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
+          onCancel={() => setShowSign(false)}
+          dismissible={!signing}
+          footer={<SignAnswers signing={signing} canSign={signPassword.length > 0} onCancel={() => setShowSign(false)} />}
+        >
+          <form id="sign-form" onSubmit={(e) => void handleConfirmSign(e)} className="space-y-3">
             <div>
-              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-gray-700">
+              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-ink">
                 Heslo
               </label>
               <input
@@ -923,28 +955,16 @@ export const DailyReport: React.FC = () => {
                 autoFocus
                 value={signPassword}
                 onChange={(e) => setSignPassword(e.target.value)}
-                className="w-full rounded border border-gray-300 p-2 text-sm"
+                className="w-full rounded border border-input p-2 text-sm"
               />
             </div>
             {signError && (
-              <div role="alert" className="text-sm text-red-600">
+              <div role="alert" className="text-sm text-danger-ink">
                 {signError}
               </div>
             )}
-            <div className="flex justify-end gap-2 border-t pt-3">
-              <button type="button" onClick={() => setShowSign(false)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                Zrušit
-              </button>
-              <button
-                type="submit"
-                disabled={signing || signPassword.length === 0}
-                className="rounded bg-red-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                Podepsat
-              </button>
-            </div>
           </form>
-        </div>
+        </Modal>
       )}
 
       {/* Sign & lock (the manager of this project signs); a signed entry has its signature card above instead */}
@@ -969,6 +989,21 @@ export const DailyReport: React.FC = () => {
     </div>
   );
 };
+
+/** The two answers of the sign dialog. They are inside the [Modal], so "Zrušit" can close it (and give the focus back) before the page reacts. */
+function SignAnswers({ signing, canSign, onCancel }: { signing: boolean; canSign: boolean; onCancel: () => void }) {
+  const modal = useModal();
+  return (
+    <>
+      <Button variant="secondary" disabled={signing} onClick={() => modal.close(onCancel, { restoreFocus: true })}>
+        Zrušit
+      </Button>
+      <Button type="submit" form="sign-form" variant="danger" disabled={signing || !canSign}>
+        Podepsat
+      </Button>
+    </>
+  );
+}
 
 /**
  * The route element of the entry page: [DailyReport] mounted once per project and day. When only the day in the URL changes
