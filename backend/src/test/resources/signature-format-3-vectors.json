@@ -1,0 +1,285 @@
+{
+  "comment": "Golden vectors of signature format 3 of a daily entry. The expected values were computed by an independent implementation, scripts/signature/verify-signature-format-3.py (Python, standard library only, written from the specification in PROJECT.md). Read by SignatureFormat3VectorsTest (Kotlin) and by that script, so the documentation, the verifier and the code cannot drift apart. A change here is a change of the format: it breaks every signature already made in format 3.",
+  "weatherCases": [
+    {
+      "weather": {
+        "tempMin": 8.5,
+        "tempMax": 15.0,
+        "condition": "zataženo"
+      },
+      "text": "zataženo, 8,5 až 15 °C"
+    },
+    {
+      "weather": {
+        "tempMin": null,
+        "tempMax": 12.0,
+        "condition": null
+      },
+      "text": "max. 12 °C"
+    },
+    {
+      "weather": {
+        "tempMin": -3.0,
+        "tempMax": null,
+        "condition": " jasno "
+      },
+      "text": "jasno, min. -3 °C"
+    },
+    {
+      "weather": {
+        "tempMin": null,
+        "tempMax": null,
+        "condition": "  mlha "
+      },
+      "text": "mlha"
+    },
+    {
+      "weather": {
+        "tempMin": 0.0,
+        "tempMax": 0.5
+      },
+      "text": "0 až 0,5 °C"
+    },
+    {
+      "weather": {
+        "tempMin": -10.25,
+        "tempMax": 10.0
+      },
+      "text": "-10,25 až 10 °C"
+    },
+    {
+      "weather": {
+        "tempMin": 0.05,
+        "tempMax": 10.0
+      },
+      "text": "0,05 až 10 °C"
+    },
+    {
+      "weather": {
+        "tempMin": 20.0,
+        "tempMax": 20.0,
+        "condition": "slunečno"
+      },
+      "text": "slunečno, 20 až 20 °C"
+    },
+    {
+      "weather": {
+        "tempMin": -60.0,
+        "tempMax": 60.0
+      },
+      "text": "-60 až 60 °C"
+    },
+    {
+      "weather": {
+        "tempMin": null,
+        "tempMax": null,
+        "condition": "   "
+      },
+      "text": null
+    },
+    {
+      "weather": {},
+      "text": null
+    },
+    {
+      "weather": null,
+      "text": null
+    }
+  ],
+  "partA": {
+    "complete": {
+      "partA": {
+        "authorizedPersons": [
+          {
+            "authorization": "Autorský dozor projektanta",
+            "company": "Architekti s.r.o.",
+            "id": "70000000-0000-4000-8000-000000000001",
+            "name": "Ing. arch. Petr Černý"
+          },
+          {
+            "authorization": null,
+            "company": null,
+            "id": "70000000-0000-4000-8000-000000000002",
+            "name": "Eva Koordinátorka"
+          }
+        ],
+        "identification": {
+          "address": "Zelená 1, Brno",
+          "authorSupervisionAuthorization": "ČKA 00 123",
+          "authorSupervisionName": "Ing. arch. Petr Dozor",
+          "bozpName": "Eva BOZP",
+          "builder": "Stavebník a.s.",
+          "cadastralArea": "Brno-střed",
+          "contractDate": "2026-04-01",
+          "contractNumber": "SML-1",
+          "contractor": "Zhotovitel s.r.o.",
+          "designDocDate": "2026-02-02",
+          "designDocVersion": "v1.2",
+          "designerName": "Projekt s.r.o.",
+          "name": "Bytový dům \"Zelená\"",
+          "parcelNumbers": "12/3, 12/4",
+          "permitDate": "2026-03-15",
+          "permitNumber": "SZ/2026/123",
+          "subcontractors": "Elektro s.r.o.\nVoda a.s.",
+          "supportingDocuments": "Smlouva o dílo\nStavební povolení\\příloha 1",
+          "tdsName": "Ing. Karel TDS"
+        },
+        "members": [
+          {
+            "ckaitNumber": "0012345",
+            "name": "Jan Stavbyvedoucí",
+            "role": "BOSS",
+            "scope": "Celé dílo \"Bytový dům\", vedení stavby",
+            "userId": "11111111-1111-4111-8111-111111111111"
+          },
+          {
+            "ckaitNumber": null,
+            "name": "Ing. Karel Dozor",
+            "role": "INSPECTOR",
+            "scope": null,
+            "userId": "44444444-4444-4444-8444-444444444444"
+          }
+        ],
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "siteManager": {
+          "ckaitNumber": "0012345",
+          "name": "Jan Stavbyvedoucí",
+          "userId": "11111111-1111-4111-8111-111111111111"
+        }
+      },
+      "text": "{\"authorizedPersons\":[{\"authorization\":\"Autorský dozor projektanta\",\"company\":\"Architekti s.r.o.\",\"id\":\"70000000-0000-4000-8000-000000000001\",\"name\":\"Ing. arch. Petr Černý\"},{\"authorization\":null,\"company\":null,\"id\":\"70000000-0000-4000-8000-000000000002\",\"name\":\"Eva Koordinátorka\"}],\"identification\":{\"address\":\"Zelená 1, Brno\",\"authorSupervisionAuthorization\":\"ČKA 00 123\",\"authorSupervisionName\":\"Ing. arch. Petr Dozor\",\"bozpName\":\"Eva BOZP\",\"builder\":\"Stavebník a.s.\",\"cadastralArea\":\"Brno-střed\",\"contractDate\":\"2026-04-01\",\"contractNumber\":\"SML-1\",\"contractor\":\"Zhotovitel s.r.o.\",\"designDocDate\":\"2026-02-02\",\"designDocVersion\":\"v1.2\",\"designerName\":\"Projekt s.r.o.\",\"name\":\"Bytový dům \\\"Zelená\\\"\",\"parcelNumbers\":\"12/3, 12/4\",\"permitDate\":\"2026-03-15\",\"permitNumber\":\"SZ/2026/123\",\"subcontractors\":\"Elektro s.r.o.\\nVoda a.s.\",\"supportingDocuments\":\"Smlouva o dílo\\nStavební povolení\\\\příloha 1\",\"tdsName\":\"Ing. Karel TDS\"},\"members\":[{\"ckaitNumber\":\"0012345\",\"name\":\"Jan Stavbyvedoucí\",\"role\":\"BOSS\",\"scope\":\"Celé dílo \\\"Bytový dům\\\", vedení stavby\",\"userId\":\"11111111-1111-4111-8111-111111111111\"},{\"ckaitNumber\":null,\"name\":\"Ing. Karel Dozor\",\"role\":\"INSPECTOR\",\"scope\":null,\"userId\":\"44444444-4444-4444-8444-444444444444\"}],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"siteManager\":{\"ckaitNumber\":\"0012345\",\"name\":\"Jan Stavbyvedoucí\",\"userId\":\"11111111-1111-4111-8111-111111111111\"}}",
+      "sha256": "ef0902585a251862d90366ebb9076e80195d8af4b87e8d98cdfa241644cd8853"
+    },
+    "minimal": {
+      "partA": {
+        "authorizedPersons": [],
+        "identification": {
+          "name": "S",
+          "address": "A",
+          "cadastralArea": "C",
+          "parcelNumbers": "1",
+          "builder": "B",
+          "contractor": "Z",
+          "permitNumber": null,
+          "permitDate": null,
+          "designerName": null,
+          "authorSupervisionName": null,
+          "authorSupervisionAuthorization": null,
+          "tdsName": null,
+          "bozpName": null,
+          "contractNumber": null,
+          "contractDate": null,
+          "designDocVersion": null,
+          "designDocDate": null,
+          "subcontractors": null,
+          "supportingDocuments": null
+        },
+        "members": [],
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "siteManager": {
+          "ckaitNumber": "1",
+          "name": "A",
+          "userId": "11111111-1111-4111-8111-111111111111"
+        }
+      },
+      "text": "{\"authorizedPersons\":[],\"identification\":{\"address\":\"A\",\"authorSupervisionAuthorization\":null,\"authorSupervisionName\":null,\"bozpName\":null,\"builder\":\"B\",\"cadastralArea\":\"C\",\"contractDate\":null,\"contractNumber\":null,\"contractor\":\"Z\",\"designDocDate\":null,\"designDocVersion\":null,\"designerName\":null,\"name\":\"S\",\"parcelNumbers\":\"1\",\"permitDate\":null,\"permitNumber\":null,\"subcontractors\":null,\"supportingDocuments\":null,\"tdsName\":null},\"members\":[],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"siteManager\":{\"ckaitNumber\":\"1\",\"name\":\"A\",\"userId\":\"11111111-1111-4111-8111-111111111111\"}}",
+      "sha256": "59c1e892b7e2baaf20dcde2853cfd543a75c3d9f81845aec331228df45673c0a"
+    }
+  },
+  "entries": {
+    "full": {
+      "partA": "complete",
+      "entry": {
+        "id": "33333333-3333-4333-8333-333333333333",
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "date": "2026-09-28",
+        "sequenceNumber": 7,
+        "authorId": "99999999-9999-4999-8999-999999999999",
+        "workDescription": "Betonáž stropu\nDruhý řádek",
+        "workersByTrade": [
+          {
+            "count": 3,
+            "names": ["Ing. Jan Novák, Ph.D.", "Petr Svoboda"],
+            "trade": "Betonáři"
+          },
+          {
+            "count": 2,
+            "trade": "Zedníci"
+          }
+        ],
+        "isControlDay": true,
+        "constructionObj": "SO 01",
+        "weather": {
+          "tempMin": 8.5,
+          "tempMax": 15.0,
+          "condition": "zataženo"
+        },
+        "isLateEntry": true,
+        "lateEntryReason": "Deník byl na jiné stavbě",
+        "signedAt": "2026-09-28T10:15:30.123Z",
+        "signedById": "11111111-1111-4111-8111-111111111111",
+        "signerName": "Jan Stavbyvedoucí",
+        "signerCkaitNumber": "0012345",
+        "details": {
+          "materials": "Beton C25/30, 12 m3",
+          "machinery": "Autodomíchávač",
+          "testsAndChecks": "   ",
+          "safetyNotes": "Poučení provedeno",
+          "dustMeasures": "Kropení",
+          "accessibilityMeasures": "Obchozí trasa",
+          "defects": "Trhlina v omítce",
+          "workStateChanges": "Práce zahájeny 28. 9. 2026\nPřerušeny 3. 10. 2026 (déšť)",
+          "otherNotes": "Bez připomínek"
+        },
+        "photos": [
+          {
+            "id": "44444444-4444-4444-8444-444444444445",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "thumbSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "uploadedById": "11111111-1111-4111-8111-111111111111"
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "thumbSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "uploadedById": "99999999-9999-4999-8999-999999999999"
+          },
+          {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "thumbSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "uploadedById": "11111111-1111-4111-8111-111111111111",
+            "removed": true
+          }
+        ]
+      },
+      "contentText": "{\"authorId\":\"99999999-9999-4999-8999-999999999999\",\"constructionObj\":\"SO 01\",\"date\":\"2026-09-28\",\"details\":{\"accessibilityMeasures\":\"Obchozí trasa\",\"defects\":\"Trhlina v omítce\",\"dustMeasures\":\"Kropení\",\"machinery\":\"Autodomíchávač\",\"materials\":\"Beton C25/30, 12 m3\",\"otherNotes\":\"Bez připomínek\",\"safetyNotes\":\"Poučení provedeno\",\"testsAndChecks\":null,\"workStateChanges\":\"Práce zahájeny 28. 9. 2026\\nPřerušeny 3. 10. 2026 (déšť)\"},\"format\":3,\"id\":\"33333333-3333-4333-8333-333333333333\",\"isControlDay\":true,\"isLateEntry\":true,\"lateEntryReason\":\"Deník byl na jiné stavbě\",\"partASha256\":\"ef0902585a251862d90366ebb9076e80195d8af4b87e8d98cdfa241644cd8853\",\"photos\":[{\"id\":\"00000000-0000-4000-8000-000000000001\",\"sha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"thumbSha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"uploadedById\":\"99999999-9999-4999-8999-999999999999\"},{\"id\":\"44444444-4444-4444-8444-444444444445\",\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"thumbSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"uploadedById\":\"11111111-1111-4111-8111-111111111111\"}],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"sequenceNumber\":7,\"signedAt\":\"2026-09-28T10:15:30.123Z\",\"signedById\":\"11111111-1111-4111-8111-111111111111\",\"signerCkaitNumber\":\"0012345\",\"signerName\":\"Jan Stavbyvedoucí\",\"weather\":\"zataženo, 8,5 až 15 °C\",\"workDescription\":\"Betonáž stropu\\nDruhý řádek\",\"workersByTrade\":[{\"count\":3,\"names\":[\"Ing. Jan Novák, Ph.D.\",\"Petr Svoboda\"],\"trade\":\"Betonáři\"},{\"count\":2,\"trade\":\"Zedníci\"}]}",
+      "signatureHash": "766223f3b5aba15f61235a4a4bf730132bdbd00dd58d0bbc4c9111902e63172d"
+    },
+    "bare": {
+      "partA": "minimal",
+      "entry": {
+        "id": "66666666-6666-4666-8666-666666666666",
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "date": "2026-10-01",
+        "sequenceNumber": 1,
+        "authorId": "11111111-1111-4111-8111-111111111111",
+        "workDescription": "",
+        "workersByTrade": [],
+        "isControlDay": false,
+        "constructionObj": null,
+        "weather": null,
+        "isLateEntry": false,
+        "lateEntryReason": null,
+        "signedAt": "2026-10-01T06:00:00.000Z",
+        "signedById": "11111111-1111-4111-8111-111111111111",
+        "signerName": "A",
+        "signerCkaitNumber": "1",
+        "details": {},
+        "photos": []
+      },
+      "contentText": "{\"authorId\":\"11111111-1111-4111-8111-111111111111\",\"constructionObj\":null,\"date\":\"2026-10-01\",\"details\":{\"accessibilityMeasures\":null,\"defects\":null,\"dustMeasures\":null,\"machinery\":null,\"materials\":null,\"otherNotes\":null,\"safetyNotes\":null,\"testsAndChecks\":null,\"workStateChanges\":null},\"format\":3,\"id\":\"66666666-6666-4666-8666-666666666666\",\"isControlDay\":false,\"isLateEntry\":false,\"lateEntryReason\":null,\"partASha256\":\"59c1e892b7e2baaf20dcde2853cfd543a75c3d9f81845aec331228df45673c0a\",\"photos\":[],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"sequenceNumber\":1,\"signedAt\":\"2026-10-01T06:00:00.000Z\",\"signedById\":\"11111111-1111-4111-8111-111111111111\",\"signerCkaitNumber\":\"1\",\"signerName\":\"A\",\"weather\":null,\"workDescription\":\"\",\"workersByTrade\":[]}",
+      "signatureHash": "80687d8914dbed1ac9a553e8628f818c2bade2f8d049bc4e36e45d6f0a2af2d2"
+    }
+  }
+}

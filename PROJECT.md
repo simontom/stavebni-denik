@@ -198,12 +198,108 @@ What each project role may do (the matrix is pinned by `RbacTest`):
     - `identification`: the project's name, address, cadastral area, parcel numbers, builder, contractor, permit number and date, designer, **author's supervision** (`authorSupervisionName`, `authorSupervisionAuthorization`; příloha 12 A e)), TDS, BOZP coordinator, contract number and date, design documentation version and date, subcontractors and supporting documents (dates as `YYYY-MM-DD`);
     - `siteManager`: `userId`, `name`, `ckaitNumber`, as the account had them;
     - `members`: every member whose role in the project is **BOSS or INSPECTOR** (users not deleted), oldest membership first, each with `userId`, `name`, `role`, `ckaitNumber` and `scope` (the scope of the authorisation and responsibility, A d));
-    - `authorisedPersons`: **only the active ones** (not revoked at that moment), oldest first, with `id`, `name`, `company` and `authorization` (the function, A f));
+    - `authorizedPersons`: **only the active ones** (not revoked at that moment), oldest first, with `id`, `name`, `company` and `authorization` (the function, A f));
     - `projectId`.
 
     Its size is bounded: every text has the limit of the field it comes from, a project has at most 100 members who are BOSS or INSPECTOR and at most 100 active authorised persons (adding another is `409`), and a snapshot of more than 1 MiB is refused at signing with `409` and a message (it can only happen for data that did not come through the application). The workers, the weather and the other fields of the entry are not part of it.
 
   - **Signature format (`daily_reports.signatureFormat`, V14):** `1` for what was signed before the vyhláška detail fields existed, `2` for an entry signed with them (until format 3), and `3` for an entry signed with the signer and part A frozen; the server sets it at the moment of signing, before the hash is made, and checks an entry in the format it was signed in. Each format is frozen: `GoldenSignatureTest` pins the exact content and hash of formats 1 and 2, `SignatureFormat3VectorsTest` and `scripts/signature/verify-signature-format-3.py` those of format 3 (computed independently of the code); `FORMAT_2_DETAIL_KEYS` and `FORMAT_3_DETAIL_KEYS` are lists of keys that never change, and a test fails when `EntryDetails`, or a column of the project, of a membership, of an authorised person or of an entry, gets a field that no format covers. A field added later needs a **format 4**, never a change to an existing format, and **a key is never renamed**: it is part of what was signed. From format 2 on a missing hash is a failure, not "nothing to compare"; in format 3 a missing signer name, number or part A is a failure as well (the database refuses to store such an entry too: a check constraint of V14; and the signed-records triggers, V5 and V11, freeze every column afterwards).
+  - **The exact bytes of format 3**, for a verifier that is not this code (the whole-diary export, backlog C5, ships one). It needs only the values stored on the entry and its photos, and `partASnapshot` **as the text it is stored in**: the content is built from them as below, written as canonical JSON (sorted keys, no white space, `"` and `\` and control characters escaped, every other character as it is, UTF-8) and hashed. `signatureHash` is the SHA-256 of that text, `partASha256` the SHA-256 of the stored `partASnapshot`; the signing time is `YYYY-MM-DDTHH:MM:SS.mmmZ` in UTC. The reference verifier is `scripts/signature/verify-signature-format-3.py` (`python3 verify-signature-format-3.py vectors <file>` recomputes the golden vectors in `backend/src/test/resources/signature-format-3-vectors.json`, which `SignatureFormat3VectorsTest` reads too; `entry <file>` prints the hash of an entry); a test runs it, and another checks that the block below is the one in the script, so this text cannot drift from the code:
+
+    <!-- signature-format-3-spec:begin -->
+
+    ```python
+    import hashlib
+    from decimal import Decimal
+
+    # The fields of the vyhláška that format 3 covers, by key. Never changes: a tenth field is a format 4.
+    DETAIL_KEYS = [
+        "materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures",
+        "accessibilityMeasures", "defects", "workStateChanges", "otherNotes",
+    ]
+
+
+    def canonical(value):
+        """Sorted keys, no white space, characters other than control characters as they are."""
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+    def sha256_hex(text):
+        """SHA-256 of the UTF-8 bytes of a text, as 64 lower-case hex characters."""
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+    def degrees(number):
+        """A temperature as people write it: no trailing zeros, a decimal comma ("8,5", "15", "-3", "0")."""
+        value = Decimal(repr(float(number)))
+        if value == 0:
+            return "0"
+        return format(value.normalize(), "f").replace(".", ",")
+
+
+    def weather_text(weather):
+        """The weather as the text that is signed, or None when nothing is stated (the text of WeatherData.describe())."""
+        if not weather:
+            return None
+        parts = []
+        condition = (weather.get("condition") or "").strip()
+        if condition:
+            parts.append(condition)
+        low, high = weather.get("tempMin"), weather.get("tempMax")
+        if low is not None and high is not None:
+            parts.append("%s až %s °C" % (degrees(low), degrees(high)))
+        elif low is not None:
+            parts.append("min. %s °C" % degrees(low))
+        elif high is not None:
+            parts.append("max. %s °C" % degrees(high))
+        return ", ".join(parts) or None
+
+
+    def blank_to_none(text):
+        """A field that is empty or only blanks says nothing: null. Any other text is signed exactly as it is stored."""
+        return text if text is not None and text.strip() != "" else None
+
+
+    def content(entry, part_a_text):
+        """The content that is hashed: `entry` holds the values stored on the entry and its photos, `part_a_text` is the text
+        stored in `partASnapshot`, exactly as it is stored (it is never built again)."""
+        photos = [
+            {"id": p["id"], "sha256": p["sha256"], "thumbSha256": p["thumbSha256"], "uploadedById": p["uploadedById"]}
+            for p in entry["photos"]
+            if not p.get("removed")
+        ]
+        details = entry.get("details") or {}
+        return {
+            "format": 3,
+            "id": entry["id"],
+            "projectId": entry["projectId"],
+            "date": entry["date"],
+            "sequenceNumber": entry["sequenceNumber"],
+            "authorId": entry["authorId"],
+            "workDescription": entry["workDescription"] or "",
+            "workersByTrade": entry["workersByTrade"],
+            "isControlDay": entry["isControlDay"],
+            "constructionObj": entry["constructionObj"],
+            "weather": weather_text(entry["weather"]),
+            "isLateEntry": entry["isLateEntry"],
+            "lateEntryReason": entry["lateEntryReason"],
+            "signedAt": entry["signedAt"],
+            "signedById": entry["signedById"],
+            "signerName": entry["signerName"],
+            "signerCkaitNumber": entry["signerCkaitNumber"],
+            "partASha256": sha256_hex(part_a_text),
+            "details": {key: blank_to_none(details.get(key)) for key in DETAIL_KEYS},
+            "photos": sorted(photos, key=lambda p: p["id"]),
+        }
+
+
+    def signature_hash(entry, part_a_text):
+        """The signature: the SHA-256 of the canonical text of the content."""
+        return sha256_hex(canonical(content(entry, part_a_text)))
+    ```
+
+    <!-- signature-format-3-spec:end -->
+
   - **Verification (`GET /reports/{id}/signature`, members and administrators):** Hashes the entry again and answers who signed (for format 3 with the **stored** name and ČKAIT number, `signerFrozen: true`; for formats 1 and 2 with the account's current ones), whether `contentMatches`, and whether the photo files on disk still hash to what was recorded (`photoFilesMatch`): a change made to a row or a file **behind the application's back**, which the audit log alone would only show if the whole chain were rewritten as well, is found. The entry page offers "Ověřit podpis"; the PDF has a signature block with the signer, the time (Prague time), the hash and the hash of the audit row that recorded the signature (the `report.lock` row, whose `after` snapshot also holds the format, the signer's name and number and the SHA-256 of the part A snapshot). Entries signed before the hash existed (test data only) have none and say so.
   - This is a **content hash bound to a password re-entry, not a qualified electronic signature**: that is a separate decision (needs the lawyer's sign-off, see the Release gate).
 - **Addenda (`GET/POST /reports/{id}/addenda`):**
