@@ -221,8 +221,8 @@ class SignatureFormat3VectorsTest : BaseIntegrationTest() {
 
     @Test
     fun `the vectors are of the shape the verifier and the documentation describe`() {
-        assertEquals(setOf("full", "bare"), vectors.getValue("entries").jsonObject.keys)
-        assertEquals(setOf("complete", "minimal"), vectors.getValue("partA").jsonObject.keys)
+        assertEquals(setOf("full", "bare", "unusual"), vectors.getValue("entries").jsonObject.keys)
+        assertEquals(setOf("complete", "minimal", "unusual"), vectors.getValue("partA").jsonObject.keys)
         for (case in vectors.getValue("entries").jsonObject.values) {
             val content = Json.parseToJsonElement(case.jsonObject.str("contentText")!!).jsonObject
             assertEquals(3, content.getValue("format").jsonPrimitive.int)

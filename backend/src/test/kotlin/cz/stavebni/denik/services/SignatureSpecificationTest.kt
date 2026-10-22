@@ -63,6 +63,58 @@ class SignatureSpecificationTest {
         assertEquals(inTheScript, inTheDocument, "PROJECT.md quotes the specification block of scripts/signature/verify-signature-format-3.py verbatim")
     }
 
+    /** Runs what the block of PROJECT.md says on the vectors, with nothing of the script around it: the block has to stand on its own. */
+    private val driver = """
+        import json, sys
+        namespace = {}
+        with open(sys.argv[1], encoding="utf-8") as f:
+            exec(compile(f.read(), sys.argv[1], "exec"), namespace)
+        with open(sys.argv[2], encoding="utf-8") as f:
+            vectors = json.load(f)
+        problems = []
+        for case in vectors["weatherCases"]:
+            if namespace["weather_text"](case["weather"]) != case["text"]:
+                problems.append("weather")
+        for name, case in vectors["partA"].items():
+            text = namespace["canonical"](case["partA"])
+            if text != case["text"] or namespace["sha256_hex"](text) != case["sha256"]:
+                problems.append("part A " + name)
+        for name, case in vectors["entries"].items():
+            part_a = vectors["partA"][case["partA"]]["text"]
+            if namespace["signature_hash"](case["entry"], part_a) != case["signatureHash"]:
+                problems.append("entry " + name)
+        print("OK" if not problems else "FAILED " + ", ".join(problems))
+        sys.exit(1 if problems else 0)
+    """.trimIndent()
+
+    @Test
+    fun `the block that PROJECT-md quotes is complete, so extracted as it stands and run it reproduces the golden vectors`() {
+        val python = pythonCommand()
+        if (python == null) {
+            if (System.getenv("REQUIRE_PYTHON") == "1") fail<Unit>("REQUIRE_PYTHON=1, but no Python was found")
+            assumeTrue(false, "no Python on this machine")
+            return
+        }
+        val lines = File(root, "PROJECT.md").readText().replace("\r\n", "\n").lines()
+        val from = lines.indexOfFirst { it.contains("<!-- signature-format-3-spec:begin -->") }
+        val to = lines.indexOfFirst { it.contains("<!-- signature-format-3-spec:end -->") }
+        assertTrue(from >= 0 && to > from)
+        val block = lines.subList(from + 1, to).joinToString("\n").trimIndent().removePrefix("```python").removeSuffix("```").trim() + "\n"
+        val dir = java.nio.file.Files.createTempDirectory("signature-spec-").toFile()
+        try {
+            val spec = File(dir, "spec.py").apply { writeText(block, Charsets.UTF_8) }
+            val run = File(dir, "run.py").apply { writeText(driver, Charsets.UTF_8) }
+            // Isolated mode (-I): nothing of the environment, the user's site or the working directory is imported.
+            val process = ProcessBuilder(python + "-I" + run.absolutePath + spec.absolutePath + vectors.absolutePath).redirectErrorStream(true).start()
+            val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+            assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the block did not finish")
+            assertEquals(0, process.exitValue(), output)
+            assertEquals("OK", output.trim())
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
     @Test
     fun `the specification names the same keys as the code`() {
         val specification = script.readText()

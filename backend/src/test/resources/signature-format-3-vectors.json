@@ -84,6 +84,50 @@
     {
       "weather": null,
       "text": null
+    },
+    {
+      "weather": {
+        "tempMin": 1.0,
+        "condition": "\u0085jasno\u0085"
+      },
+      "text": "\u0085jasno\u0085, min. 1 °C"
+    },
+    {
+      "weather": {
+        "condition": "\u00a0mlha\u3000"
+      },
+      "text": "mlha"
+    },
+    {
+      "weather": {
+        "condition": "\u0085"
+      },
+      "text": "\u0085"
+    },
+    {
+      "weather": {
+        "condition": "\u00a0\u3000"
+      },
+      "text": null
+    },
+    {
+      "weather": {
+        "condition": "\u2007x\u202f",
+        "tempMax": 2.5
+      },
+      "text": "x, max. 2,5 °C"
+    },
+    {
+      "weather": {
+        "condition": "\u200bx\ufeff"
+      },
+      "text": "\u200bx\ufeff"
+    },
+    {
+      "weather": {
+        "condition": "řádek \\ \"v uvozovkách\" 😀"
+      },
+      "text": "řádek \\ \"v uvozovkách\" 😀"
     }
   ],
   "partA": {
@@ -184,6 +228,56 @@
       },
       "text": "{\"authorizedPersons\":[],\"identification\":{\"address\":\"A\",\"authorSupervisionAuthorization\":null,\"authorSupervisionName\":null,\"bozpName\":null,\"builder\":\"B\",\"cadastralArea\":\"C\",\"contractDate\":null,\"contractNumber\":null,\"contractor\":\"Z\",\"designDocDate\":null,\"designDocVersion\":null,\"designerName\":null,\"name\":\"S\",\"parcelNumbers\":\"1\",\"permitDate\":null,\"permitNumber\":null,\"subcontractors\":null,\"supportingDocuments\":null,\"tdsName\":null},\"members\":[],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"siteManager\":{\"ckaitNumber\":\"1\",\"name\":\"A\",\"userId\":\"11111111-1111-4111-8111-111111111111\"}}",
       "sha256": "59c1e892b7e2baaf20dcde2853cfd543a75c3d9f81845aec331228df45673c0a"
+    },
+    "unusual": {
+      "partA": {
+        "authorizedPersons": [
+          {
+            "authorization": "Funkce\u0085s NEL",
+            "company": "Firma 😀",
+            "id": "70000000-0000-4000-8000-000000000003",
+            "name": "Ing.\u00a0Černý"
+          }
+        ],
+        "identification": {
+          "address": "C:\\cesta\\Brno",
+          "authorSupervisionAuthorization": null,
+          "authorSupervisionName": null,
+          "bozpName": null,
+          "builder": "Stavebník",
+          "cadastralArea": "Brno",
+          "contractDate": null,
+          "contractNumber": null,
+          "contractor": "Zhotovitel",
+          "designDocDate": null,
+          "designDocVersion": null,
+          "designerName": null,
+          "name": "Dům \"U\u0085Zelené\u00a0žáby\" 😀",
+          "parcelNumbers": "1",
+          "permitDate": null,
+          "permitNumber": null,
+          "subcontractors": "a\u0001b\u001fc\u0007d\be\ff\u000bg",
+          "supportingDocuments": "řádek 1\r\nřádek 2\tTab",
+          "tdsName": null
+        },
+        "members": [
+          {
+            "ckaitNumber": "0012345",
+            "name": "Jan Stavbyvedoucí",
+            "role": "BOSS",
+            "scope": "Rozsah\u0085s NEL 😀",
+            "userId": "11111111-1111-4111-8111-111111111111"
+          }
+        ],
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "siteManager": {
+          "ckaitNumber": "0012345",
+          "name": "Jan Stavbyvedoucí",
+          "userId": "11111111-1111-4111-8111-111111111111"
+        }
+      },
+      "text": "{\"authorizedPersons\":[{\"authorization\":\"Funkce\u0085s NEL\",\"company\":\"Firma 😀\",\"id\":\"70000000-0000-4000-8000-000000000003\",\"name\":\"Ing.\u00a0Černý\"}],\"identification\":{\"address\":\"C:\\\\cesta\\\\Brno\",\"authorSupervisionAuthorization\":null,\"authorSupervisionName\":null,\"bozpName\":null,\"builder\":\"Stavebník\",\"cadastralArea\":\"Brno\",\"contractDate\":null,\"contractNumber\":null,\"contractor\":\"Zhotovitel\",\"designDocDate\":null,\"designDocVersion\":null,\"designerName\":null,\"name\":\"Dům \\\"U\u0085Zelené\u00a0žáby\\\" 😀\",\"parcelNumbers\":\"1\",\"permitDate\":null,\"permitNumber\":null,\"subcontractors\":\"a\\u0001b\\u001fc\\u0007d\\be\\ff\\u000bg\",\"supportingDocuments\":\"řádek 1\\r\\nřádek 2\\tTab\",\"tdsName\":null},\"members\":[{\"ckaitNumber\":\"0012345\",\"name\":\"Jan Stavbyvedoucí\",\"role\":\"BOSS\",\"scope\":\"Rozsah\u0085s NEL 😀\",\"userId\":\"11111111-1111-4111-8111-111111111111\"}],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"siteManager\":{\"ckaitNumber\":\"0012345\",\"name\":\"Jan Stavbyvedoucí\",\"userId\":\"11111111-1111-4111-8111-111111111111\"}}",
+      "sha256": "e1292ccf19d9b0522998d9719d41bd7392bd5b78a2b12d5b9d4c7fdc64907317"
     }
   },
   "entries": {
@@ -280,6 +374,50 @@
       },
       "contentText": "{\"authorId\":\"11111111-1111-4111-8111-111111111111\",\"constructionObj\":null,\"date\":\"2026-10-01\",\"details\":{\"accessibilityMeasures\":null,\"defects\":null,\"dustMeasures\":null,\"machinery\":null,\"materials\":null,\"otherNotes\":null,\"safetyNotes\":null,\"testsAndChecks\":null,\"workStateChanges\":null},\"format\":3,\"id\":\"66666666-6666-4666-8666-666666666666\",\"isControlDay\":false,\"isLateEntry\":false,\"lateEntryReason\":null,\"partASha256\":\"59c1e892b7e2baaf20dcde2853cfd543a75c3d9f81845aec331228df45673c0a\",\"photos\":[],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"sequenceNumber\":1,\"signedAt\":\"2026-10-01T06:00:00.000Z\",\"signedById\":\"11111111-1111-4111-8111-111111111111\",\"signerCkaitNumber\":\"1\",\"signerName\":\"A\",\"weather\":null,\"workDescription\":\"\",\"workersByTrade\":[]}",
       "signatureHash": "80687d8914dbed1ac9a553e8628f818c2bade2f8d049bc4e36e45d6f0a2af2d2"
+    },
+    "unusual": {
+      "partA": "unusual",
+      "entry": {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "projectId": "22222222-2222-4222-8222-222222222222",
+        "date": "2026-10-02",
+        "sequenceNumber": 3,
+        "authorId": "11111111-1111-4111-8111-111111111111",
+        "workDescription": "Betonáž \\ \"x\" 😀\r\nDruhý řádek\tTab",
+        "workersByTrade": [
+          {
+            "count": 1,
+            "names": ["Ing.\u00a0Novák 😀"],
+            "trade": "Zedníci"
+          }
+        ],
+        "isControlDay": false,
+        "constructionObj": "\u0085",
+        "weather": {
+          "tempMin": 1.0,
+          "condition": "\u0085jasno\u0085"
+        },
+        "isLateEntry": true,
+        "lateEntryReason": "\u00a0důvod\u00a0",
+        "signedAt": "2026-10-02T06:00:00.000Z",
+        "signedById": "11111111-1111-4111-8111-111111111111",
+        "signerName": "Ing. Jan\u00a0Novák ml.",
+        "signerCkaitNumber": "0012345",
+        "details": {
+          "materials": "\u0085",
+          "machinery": "\u00a0",
+          "testsAndChecks": "\u3000\u3000",
+          "safetyNotes": "\u3000Beton C25/30\u3000",
+          "dustMeasures": "cesta C:\\Stavba\\ \"v uvozovkách\"",
+          "accessibilityMeasures": "Přístup 😀 pro vozíky",
+          "defects": "a\u0001b\u001fc\u0007d\be\ff\u000bg",
+          "workStateChanges": "\u0085x\u0085",
+          "otherNotes": "řádek 1\r\nřádek 2\tTab"
+        },
+        "photos": []
+      },
+      "contentText": "{\"authorId\":\"11111111-1111-4111-8111-111111111111\",\"constructionObj\":\"\u0085\",\"date\":\"2026-10-02\",\"details\":{\"accessibilityMeasures\":\"Přístup 😀 pro vozíky\",\"defects\":\"a\\u0001b\\u001fc\\u0007d\\be\\ff\\u000bg\",\"dustMeasures\":\"cesta C:\\\\Stavba\\\\ \\\"v uvozovkách\\\"\",\"machinery\":null,\"materials\":\"\u0085\",\"otherNotes\":\"řádek 1\\r\\nřádek 2\\tTab\",\"safetyNotes\":\"\u3000Beton C25/30\u3000\",\"testsAndChecks\":null,\"workStateChanges\":\"\u0085x\u0085\"},\"format\":3,\"id\":\"77777777-7777-4777-8777-777777777777\",\"isControlDay\":false,\"isLateEntry\":true,\"lateEntryReason\":\"\u00a0důvod\u00a0\",\"partASha256\":\"e1292ccf19d9b0522998d9719d41bd7392bd5b78a2b12d5b9d4c7fdc64907317\",\"photos\":[],\"projectId\":\"22222222-2222-4222-8222-222222222222\",\"sequenceNumber\":3,\"signedAt\":\"2026-10-02T06:00:00.000Z\",\"signedById\":\"11111111-1111-4111-8111-111111111111\",\"signerCkaitNumber\":\"0012345\",\"signerName\":\"Ing. Jan\u00a0Novák ml.\",\"weather\":\"\u0085jasno\u0085, min. 1 °C\",\"workDescription\":\"Betonáž \\\\ \\\"x\\\" 😀\\r\\nDruhý řádek\\tTab\",\"workersByTrade\":[{\"count\":1,\"names\":[\"Ing.\u00a0Novák 😀\"],\"trade\":\"Zedníci\"}]}",
+      "signatureHash": "8616b627e6f8f7673b87e9fdd2a2a08f7829f1a2006edc0736943c0056c14630"
     }
   }
 }

@@ -212,6 +212,7 @@ What each project role may do (the matrix is pinned by `RbacTest`):
 
     ```python
     import hashlib
+    import json
     from decimal import Decimal
 
     # The fields of the vyhláška that format 3 covers, by key. Never changes: a tenth field is a format 4.
@@ -221,8 +222,28 @@ What each project role may do (the matrix is pinned by `RbacTest`):
     ]
 
 
+    # What "white space" and "blank" mean in this specification is the application's (Kotlin's Char.isWhitespace(), which is Java's
+    # Character.isWhitespace(c) || Character.isSpaceChar(c)), and NOT Python's str.strip() or str.isspace(): these 28 characters and no
+    # others. Python also counts U+0085 (NEL) as white space; here it is an ordinary character, like U+180E, U+200B and U+FEFF.
+    WHITESPACE = (
+        "\u0009\u000a\u000b\u000c\u000d\u001c\u001d\u001e\u001f\u0020\u00a0\u1680"
+        "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+    )
+
+
+    def trim(text):
+        """The text without the white space at both ends."""
+        return text.strip(WHITESPACE)
+
+
+    def is_blank(text):
+        """A text that is empty or only white space."""
+        return trim(text) == ""
+
+
     def canonical(value):
-        """Sorted keys, no white space, characters other than control characters as they are."""
+        """Sorted keys, no white space, the characters a JSON string must escape (quotation mark, backslash, U+0000 to U+001F) escaped
+        as json.dumps does, every other character as it is."""
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
@@ -244,7 +265,7 @@ What each project role may do (the matrix is pinned by `RbacTest`):
         if not weather:
             return None
         parts = []
-        condition = (weather.get("condition") or "").strip()
+        condition = trim(weather.get("condition") or "")
         if condition:
             parts.append(condition)
         low, high = weather.get("tempMin"), weather.get("tempMax")
@@ -258,8 +279,8 @@ What each project role may do (the matrix is pinned by `RbacTest`):
 
 
     def blank_to_none(text):
-        """A field that is empty or only blanks says nothing: null. Any other text is signed exactly as it is stored."""
-        return text if text is not None and text.strip() != "" else None
+        """A field that is empty or only white space says nothing: null. Any other text is signed exactly as it is stored."""
+        return text if text is not None and not is_blank(text) else None
 
 
     def content(entry, part_a_text):
