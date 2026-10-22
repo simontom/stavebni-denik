@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
-import { Button, Card, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
+import { Button, Card, Field, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
 
 interface Meter {
   medium: string;
@@ -36,7 +36,14 @@ interface ProjectMember {
   nickname: string;
   displayName: string;
   role: string;
+  /** The scope of the person's authorisation and responsibility (příloha 12 A d)); only a manager and the supervision have one. */
+  scope?: string | null;
 }
+
+/** The roles whose members are named in part A of the diary with a scope (BOSS and INSPECTOR), as the server has it. */
+const ROLES_WITH_SCOPE = ["BOSS", "INSPECTOR"];
+/** The longest scope the server accepts (ProjectMemberService.MAX_SCOPE_CHARS). */
+const MAX_SCOPE_CHARS = 500;
 
 interface ProjectData {
   id: string;
@@ -54,6 +61,8 @@ interface ProjectData {
   permitNumber?: string | null;
   permitDate?: string | null;
   designerName?: string | null;
+  authorSupervisionName?: string | null;
+  authorSupervisionAuthorization?: string | null;
   tdsName?: string | null;
   bozpName?: string | null;
   subcontractors?: string | null;
@@ -114,6 +123,8 @@ export const ProjectDetail: React.FC = () => {
   const canManage = project?.myRole === "BOSS" || Boolean(currentUser()?.isAdmin);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("INVESTOR");
+  // The scope of the authorisation and responsibility of the person being added or changed (for a manager and the supervision).
+  const [memberScope, setMemberScope] = useState("");
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
@@ -287,13 +298,19 @@ export const ProjectDetail: React.FC = () => {
       setError("Vyberte uživatele");
       return;
     }
+    const hasScope = ROLES_WITH_SCOPE.includes(selectedRole);
+    if (hasScope && memberScope.length > MAX_SCOPE_CHARS) {
+      setError(`Rozsah oprávnění a odpovědnosti může mít nejvýše ${MAX_SCOPE_CHARS} znaků (teď ${memberScope.length})`);
+      return;
+    }
     try {
-      setMembers(
-        await api<ProjectMember[]>(`/api/projects/${id}/members`, {
-          method: "POST",
-          body: json({ userId: selectedUserId, role: selectedRole }),
-        }),
-      );
+      // The scope is always sent for a role that has one, so that emptying the field clears it; for another role it is left out.
+      const updated = await api<ProjectMember[]>(`/api/projects/${id}/members`, {
+        method: "POST",
+        body: json(hasScope ? { userId: selectedUserId, role: selectedRole, scope: memberScope.trim() } : { userId: selectedUserId, role: selectedRole }),
+      });
+      setMembers(updated);
+      setMemberScope(updated.find((m) => m.userId === selectedUserId)?.scope ?? "");
       setError("");
     } catch (err) {
       fail(err, "Člena se nepodařilo přidat");
@@ -527,6 +544,14 @@ export const ProjectDetail: React.FC = () => {
               <div>
                 <span className="text-gray-500">Projektant:</span>
                 <p className="font-medium text-gray-900">{project.designerName}</p>
+              </div>
+            )}
+            {(project.authorSupervisionName || project.authorSupervisionAuthorization) && (
+              <div>
+                <span className="text-gray-500">Autorský dozor:</span>
+                <p className="font-medium text-gray-900">
+                  {[project.authorSupervisionName, project.authorSupervisionAuthorization && `autorizace ${project.authorSupervisionAuthorization}`].filter(Boolean).join(", ")}
+                </p>
               </div>
             )}
             {project.tdsName && (
@@ -871,8 +896,16 @@ export const ProjectDetail: React.FC = () => {
                         aria-selected={selectedUserId === u.id}
                         onClick={() => {
                           setSelectedUserId(u.id);
-                          // The person's own role is the default; the role in this project can be set to another.
-                          if (ROLE_LABELS[u.role]) setSelectedRole(u.role);
+                          // A person who is a member already is shown as they are (to change their role or scope); otherwise their
+                          // own role is the default, and the role in this project can be set to another.
+                          const member = members.find((m) => m.userId === u.id);
+                          if (member) {
+                            setSelectedRole(member.role);
+                            setMemberScope(member.scope ?? "");
+                          } else {
+                            if (ROLE_LABELS[u.role]) setSelectedRole(u.role);
+                            setMemberScope("");
+                          }
                           setShowUserDropdown(false);
                         }}
                         className="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-100"
@@ -916,6 +949,22 @@ export const ProjectDetail: React.FC = () => {
                 )}
               </div>
 
+              {ROLES_WITH_SCOPE.includes(selectedRole) && (
+                <Field label="Rozsah oprávnění a odpovědnosti" className="basis-full">
+                  <TextInput
+                    name="scope"
+                    value={memberScope}
+                    onChange={(e) => setMemberScope(e.target.value)}
+                    placeholder="Co osoba na stavbě zajišťuje a za co odpovídá (např. vedení stavby, objekty SO 02 a SO 03)"
+                  />
+                  {memberScope.length > MAX_SCOPE_CHARS * 0.9 && (
+                    <p className={`mt-1 text-xs ${memberScope.length > MAX_SCOPE_CHARS ? "font-semibold text-danger-ink" : "text-ink-muted"}`}>
+                      {memberScope.length} / {MAX_SCOPE_CHARS} znaků
+                    </p>
+                  )}
+                </Field>
+              )}
+
               <Button disabled={managerNeedsCkait} onClick={() => void handleAddMember()}>
                 Přidat
               </Button>
@@ -933,6 +982,7 @@ export const ProjectDetail: React.FC = () => {
                   <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Uživatel</th>
                   <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Jméno</th>
                   <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Role</th>
+                  <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Rozsah oprávnění a odpovědnosti</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -949,6 +999,9 @@ export const ProjectDetail: React.FC = () => {
                           Hlavní stavbyvedoucí
                         </StatusBadge>
                       )}
+                    </td>
+                    <td data-label="Rozsah" className="py-2 text-sm text-ink">
+                      {m.scope || (ROLES_WITH_SCOPE.includes(m.role) ? <span className="text-ink-muted">neuveden</span> : null)}
                     </td>
                   </tr>
                 ))}

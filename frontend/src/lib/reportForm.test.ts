@@ -17,6 +17,39 @@ const filled = (): FormValues => ({
   details: { ...emptyDetails(), materials: "Beton C25/30", defects: "Trhlina v omítce" },
 });
 
+describe("the detail fields, which are the server's (EntryDetails.kt) in its order", () => {
+  it("are the nine fields of the vyhláška, the start and interruption of work among them (příloha 12 B.2 b)", () => {
+    expect(DETAIL_FIELDS.map((d) => d.key)).toEqual([
+      "materials",
+      "machinery",
+      "testsAndChecks",
+      "safetyNotes",
+      "dustMeasures",
+      "accessibilityMeasures",
+      "defects",
+      "workStateChanges",
+      "otherNotes",
+    ]);
+    expect(DETAIL_FIELDS.find((d) => d.key === "workStateChanges")?.label).toBe("Zahájení, přerušení a obnovení prací (data a důvody)");
+  });
+
+  it("keep a draft that was typed before the start-and-interruption field existed, with that field empty", () => {
+    const stored = JSON.parse(JSON.stringify(filled())) as { details: Record<string, string> };
+    delete stored.details.workStateChanges;
+    const parsed = parseFormValues(stored)!;
+    expect(parsed.details.workStateChanges).toBe("");
+    expect(parsed.details.materials).toBe("Beton C25/30");
+  });
+
+  it("carry the start and interruption of work through the entry, the key and the tidying like every other field", () => {
+    const entry = { details: { workStateChanges: "  Zahájeno 28. 9. 2026, přerušeno pro déšť  " } };
+    const form = formFromEntry(entry);
+    expect(form.details.workStateChanges).toBe("  Zahájeno 28. 9. 2026, přerušeno pro déšť  ");
+    expect(normalizeForm(form).details.workStateChanges).toBe("Zahájeno 28. 9. 2026, přerušeno pro déšť");
+    expect(keyOf({ ...emptyForm(), details: { ...emptyDetails(), workStateChanges: "x" } })).not.toBe(keyOf(emptyForm()));
+  });
+});
+
 describe("keyOf, which tells whether the form has unsaved changes", () => {
   it("is the same for the same content however the properties are ordered", () => {
     const a = filled();
