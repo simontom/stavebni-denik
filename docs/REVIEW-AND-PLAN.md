@@ -104,7 +104,7 @@ The code is `main` at `d04cbf9`. The owner reviewed the plans, the backlog, the 
 - **W4: the PDF leaves out signed content.** The control-day flag and the construction object are covered by the signature (`ReportSignature.kt:107-108`) but not printed (`PdfExportService.kt:84-124`); a draft PDF says that it is one only in its title and status row, with no watermark. **Fixed by B8.**
 - **W5: lists say little.** The entry list shows no number, state or late flag, although the API sends them (the author's name is not in the DTO); the project list shows nothing about today's entry, and nothing at all when it is empty; dates are ISO everywhere; an empty grey box shows in the project header (`ProjectDetail.tsx:369-382`).
 - **W6: contrast and controls.** Input borders `gray-300` (about 1.5:1), white on `emerald-600` (about 3.6:1), `red-500` error text; a bare `border` in Tailwind 4 is `currentColor`, so modal inputs are almost black; labels not tied to their fields (`DailyReport.tsx:580, 746`); custom dropdowns that do not work from the keyboard (`ProjectDetail.tsx:880-944`, `NewProject.tsx:80-100`); 14 px inputs, on which iOS zooms; placeholders instead of labels on the login form. _Contrast, the default border colour, 16 px fields and 44 px buttons and fields are fixed by B3 for a finger (a coarse pointer, at any width, upright or sideways; a mouse on a wide screen keeps 36 to 40 px), also on the entry page through a rule in `index.css`; the labels of the entry form and the custom dropdowns are for B4 to B7._
-- **W7: two E2E assertions can never fail** (`legislative.spec.ts:136-137`).
+- **W7: two E2E assertions can never fail** (`legislative.spec.ts:192-193`).
 
 ### The backlog
 
