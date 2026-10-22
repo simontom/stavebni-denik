@@ -44,6 +44,10 @@ interface SignatureCheck {
   signed: boolean;
   signedByName?: string | null;
   signerCkaitNumber?: string | null;
+  /** The signer's name and number are the ones stored when the entry was signed (format 3), not those the account has now. */
+  signerFrozen?: boolean;
+  /** What a format 3 signature needs and the entry lacks (`signerName`, `signerCkaitNumber`, `partASnapshot`). */
+  missingFields?: string[];
   signatureHash?: string | null;
   /** The content hashed again equals the recorded hash; null when there is nothing to compare with. */
   contentMatches: boolean | null;
@@ -795,13 +799,18 @@ export const DailyReport: React.FC = () => {
               {signatureCheck && (
                 <div role="status" className={signatureCheck.contentMatches === false || signatureCheck.photoFilesMatch === false ? "text-red-700" : "text-green-700"}>
                   {signatureCheck.signedByName
-                    ? `Podepsal ${signatureCheck.signedByName}${signatureCheck.signerCkaitNumber ? `, ČKAIT ${signatureCheck.signerCkaitNumber}` : ""}. `
+                    ? `Podepsal ${signatureCheck.signedByName}${signatureCheck.signerCkaitNumber ? `, ČKAIT ${signatureCheck.signerCkaitNumber}` : ""}${
+                        signatureCheck.signerFrozen ? " (jméno a číslo uložené při podpisu)" : " (podle účtu, jak je dnes)"
+                      }. `
                     : ""}
                   {signatureCheck.contentMatches === null
                     ? "Záznam byl podepsán dříve, než se otisk začal ukládat: není s čím porovnat."
                     : signatureCheck.contentMatches
                       ? "Obsah odpovídá podpisu."
                       : "POZOR: obsah záznamu se po podpisu změnil."}{" "}
+                  {signatureCheck.missingFields && signatureCheck.missingFields.length > 0
+                    ? "POZOR: u podpisu chybí údaje, které se při podpisu ukládají, záznam nelze ověřit. "
+                    : ""}
                   {signatureCheck.photoFilesMatch === false ? "POZOR: soubor fotografie se po podpisu změnil." : ""}
                 </div>
               )}

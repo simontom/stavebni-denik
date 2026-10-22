@@ -24,6 +24,11 @@ export const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[
   { key: "dustMeasures", label: "Opatření proti prašnosti", placeholder: "Např. kropení, zakrytí, čištění komunikací" },
   { key: "accessibilityMeasures", label: "Opatření pro zajištění přístupnosti", placeholder: "Např. zachování přístupu k okolním objektům" },
   { key: "defects", label: "Závady a jejich odstranění", placeholder: "Zjištěné závady a způsob jejich odstranění" },
+  {
+    key: "workStateChanges",
+    label: "Zahájení, přerušení a obnovení prací (data a důvody)",
+    placeholder: "Zahájení prací, jejich přerušení (třeba pro počasí nebo technologickou přestávku) a obnovení, s daty a důvody",
+  },
   { key: "otherNotes", label: "Ostatní zápisy", placeholder: "Další skutečnosti rozhodné pro stavbu" },
 ];
 

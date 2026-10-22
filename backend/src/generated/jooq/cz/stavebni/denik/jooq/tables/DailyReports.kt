@@ -190,6 +190,11 @@ open class DailyReports(
     val DEFECTS: TableField<DailyReportsRecord, String?> = createField(DSL.name("defects"), SQLDataType.CLOB, this, "")
 
     /**
+     * The column <code>public.daily_reports.workStateChanges</code>.
+     */
+    val WORKSTATECHANGES: TableField<DailyReportsRecord, String?> = createField(DSL.name("workStateChanges"), SQLDataType.CLOB, this, "")
+
+    /**
      * The column <code>public.daily_reports.otherNotes</code>.
      */
     val OTHERNOTES: TableField<DailyReportsRecord, String?> = createField(DSL.name("otherNotes"), SQLDataType.CLOB, this, "")
@@ -213,6 +218,21 @@ open class DailyReports(
      * The column <code>public.daily_reports.lockedAt</code>.
      */
     val LOCKEDAT: TableField<DailyReportsRecord, OffsetDateTime?> = createField(DSL.name("lockedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
+
+    /**
+     * The column <code>public.daily_reports.signerName</code>.
+     */
+    val SIGNERNAME: TableField<DailyReportsRecord, String?> = createField(DSL.name("signerName"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.daily_reports.signerCkaitNumber</code>.
+     */
+    val SIGNERCKAITNUMBER: TableField<DailyReportsRecord, String?> = createField(DSL.name("signerCkaitNumber"), SQLDataType.CLOB, this, "")
+
+    /**
+     * The column <code>public.daily_reports.partASnapshot</code>.
+     */
+    val PARTASNAPSHOT: TableField<DailyReportsRecord, String?> = createField(DSL.name("partASnapshot"), SQLDataType.CLOB, this, "")
 
     /**
      * The column <code>public.daily_reports.createdAt</code>.
@@ -424,7 +444,8 @@ open class DailyReports(
         get(): UsersPath = reportAcknowledgements().users()
     override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
         Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true),
-        Internal.createCheck(this, DSL.name("daily_reports_signature_format_check"), "((\"signatureFormat\" = ANY (ARRAY[1, 2])))", true),
+        Internal.createCheck(this, DSL.name("daily_reports_signature_format_3_check"), "(\nCASE\n    WHEN (\"signatureFormat\" = 3) THEN ((\"lockedAt\" IS NOT NULL) AND (btrim(COALESCE(\"signerName\", ''::text)) <> ''::text) AND (btrim(COALESCE(\"signerCkaitNumber\", ''::text)) <> ''::text) AND (btrim(COALESCE(\"partASnapshot\", ''::text)) <> ''::text))\n    ELSE ((\"signerName\" IS NULL) AND (\"signerCkaitNumber\" IS NULL) AND (\"partASnapshot\" IS NULL))\nEND)", true),
+        Internal.createCheck(this, DSL.name("daily_reports_signature_format_check"), "((\"signatureFormat\" = ANY (ARRAY[1, 2, 3])))", true),
         Internal.createCheck(this, DSL.name("daily_reports_signed_has_number"), "(((\"lockedAt\" IS NULL) OR (\"sequenceNumber\" IS NOT NULL)))", true)
     )
     override fun `as`(alias: String): DailyReports = DailyReports(DSL.name(alias), this)

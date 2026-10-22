@@ -67,65 +67,73 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
         set(value): Unit = set(11, value)
         get(): String? = get(11) as String?
 
-    open var contractnumber: String?
+    open var authorsupervisionname: String?
         set(value): Unit = set(12, value)
         get(): String? = get(12) as String?
 
-    open var contractdate: OffsetDateTime?
+    open var authorsupervisionauthorization: String?
         set(value): Unit = set(13, value)
-        get(): OffsetDateTime? = get(13) as OffsetDateTime?
+        get(): String? = get(13) as String?
 
-    open var designdocversion: String?
+    open var contractnumber: String?
         set(value): Unit = set(14, value)
         get(): String? = get(14) as String?
 
-    open var designdocdate: OffsetDateTime?
+    open var contractdate: OffsetDateTime?
         set(value): Unit = set(15, value)
         get(): OffsetDateTime? = get(15) as OffsetDateTime?
 
-    open var gpslat: Double?
+    open var designdocversion: String?
         set(value): Unit = set(16, value)
-        get(): Double? = get(16) as Double?
+        get(): String? = get(16) as String?
+
+    open var designdocdate: OffsetDateTime?
+        set(value): Unit = set(17, value)
+        get(): OffsetDateTime? = get(17) as OffsetDateTime?
+
+    open var gpslat: Double?
+        set(value): Unit = set(18, value)
+        get(): Double? = get(18) as Double?
 
     open var gpslon: Double?
-        set(value): Unit = set(17, value)
-        get(): Double? = get(17) as Double?
+        set(value): Unit = set(19, value)
+        get(): Double? = get(19) as Double?
 
     open var startedat: OffsetDateTime?
-        set(value): Unit = set(18, value)
-        get(): OffsetDateTime? = get(18) as OffsetDateTime?
-
-    open var endedat: OffsetDateTime?
-        set(value): Unit = set(19, value)
-        get(): OffsetDateTime? = get(19) as OffsetDateTime?
-
-    open var createdat: OffsetDateTime?
         set(value): Unit = set(20, value)
         get(): OffsetDateTime? = get(20) as OffsetDateTime?
 
-    open var updatedat: OffsetDateTime?
+    open var endedat: OffsetDateTime?
         set(value): Unit = set(21, value)
         get(): OffsetDateTime? = get(21) as OffsetDateTime?
 
-    open var createdbyid: UUID?
+    open var createdat: OffsetDateTime?
         set(value): Unit = set(22, value)
-        get(): UUID? = get(22) as UUID?
+        get(): OffsetDateTime? = get(22) as OffsetDateTime?
 
-    open var deletedat: OffsetDateTime?
+    open var updatedat: OffsetDateTime?
         set(value): Unit = set(23, value)
         get(): OffsetDateTime? = get(23) as OffsetDateTime?
 
-    open var permitdate: OffsetDateTime?
+    open var createdbyid: UUID?
         set(value): Unit = set(24, value)
-        get(): OffsetDateTime? = get(24) as OffsetDateTime?
+        get(): UUID? = get(24) as UUID?
+
+    open var deletedat: OffsetDateTime?
+        set(value): Unit = set(25, value)
+        get(): OffsetDateTime? = get(25) as OffsetDateTime?
+
+    open var permitdate: OffsetDateTime?
+        set(value): Unit = set(26, value)
+        get(): OffsetDateTime? = get(26) as OffsetDateTime?
 
     open var subcontractors: String?
-        set(value): Unit = set(25, value)
-        get(): String? = get(25) as String?
+        set(value): Unit = set(27, value)
+        get(): String? = get(27) as String?
 
     open var supportingdocuments: String?
-        set(value): Unit = set(26, value)
-        get(): String? = get(26) as String?
+        set(value): Unit = set(28, value)
+        get(): String? = get(28) as String?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -136,7 +144,7 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
     /**
      * Create a detached, initialised ProjectsRecord
      */
-    constructor(id: UUID? = null, name: String? = null, address: String? = null, cadastralarea: String? = null, parcelnumbers: String? = null, permitnumber: String? = null, builder: String? = null, contractor: String? = null, sitemanagerid: UUID? = null, tdsname: String? = null, bozpname: String? = null, designername: String? = null, contractnumber: String? = null, contractdate: OffsetDateTime? = null, designdocversion: String? = null, designdocdate: OffsetDateTime? = null, gpslat: Double? = null, gpslon: Double? = null, startedat: OffsetDateTime? = null, endedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, permitdate: OffsetDateTime? = null, subcontractors: String? = null, supportingdocuments: String? = null): this() {
+    constructor(id: UUID? = null, name: String? = null, address: String? = null, cadastralarea: String? = null, parcelnumbers: String? = null, permitnumber: String? = null, builder: String? = null, contractor: String? = null, sitemanagerid: UUID? = null, tdsname: String? = null, bozpname: String? = null, designername: String? = null, authorsupervisionname: String? = null, authorsupervisionauthorization: String? = null, contractnumber: String? = null, contractdate: OffsetDateTime? = null, designdocversion: String? = null, designdocdate: OffsetDateTime? = null, gpslat: Double? = null, gpslon: Double? = null, startedat: OffsetDateTime? = null, endedat: OffsetDateTime? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, permitdate: OffsetDateTime? = null, subcontractors: String? = null, supportingdocuments: String? = null): this() {
         this.id = id
         this.name = name
         this.address = address
@@ -149,6 +157,8 @@ open class ProjectsRecord() : UpdatableRecordImpl<ProjectsRecord>(Projects.PROJE
         this.tdsname = tdsname
         this.bozpname = bozpname
         this.designername = designername
+        this.authorsupervisionname = authorsupervisionname
+        this.authorsupervisionauthorization = authorsupervisionauthorization
         this.contractnumber = contractnumber
         this.contractdate = contractdate
         this.designdocversion = designdocversion

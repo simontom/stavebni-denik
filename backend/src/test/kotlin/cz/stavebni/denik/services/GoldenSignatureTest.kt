@@ -2,6 +2,7 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.WeatherData
 import org.flywaydb.core.Flyway
 import org.jooq.SQLDialect
 import org.jooq.impl.DSL
@@ -64,17 +65,38 @@ class GoldenSignatureTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `format 2 covers a frozen list of fields, whatever the list of fields becomes`() {
+    fun `formats 2 and 3 cover frozen lists of fields, whatever the list of fields becomes`() {
         assertEquals(
             listOf("materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "otherNotes"),
             ReportSignature.FORMAT_2_DETAIL_KEYS,
             "format 2 is frozen: its fields can never change",
         )
         assertEquals(
-            ReportSignature.FORMAT_2_DETAIL_KEYS, EntryDetails.FIELDS.map { it.key },
-            "A field was added to (or removed from) EntryDetails. Format 2 must not follow it: a new field needs a format 3 that " +
-                "covers it (ReportSignature.CURRENT_FORMAT, content()), otherwise it is not signed, or every existing signature breaks.",
+            listOf(
+                "materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects",
+                "workStateChanges", "otherNotes",
+            ),
+            ReportSignature.FORMAT_3_DETAIL_KEYS,
+            "format 3 is frozen: its fields can never change",
         )
+        assertEquals(
+            ReportSignature.FORMAT_3_DETAIL_KEYS.toSet(), EntryDetails.FIELDS.map { it.key }.toSet(),
+            "A field was added to (or removed from) EntryDetails. The format of the signatures made today (3) must not follow it: " +
+                "a new field needs a format 4 that covers it (ReportSignature.CURRENT_FORMAT, content()), otherwise it is not signed, " +
+                "or every existing signature breaks.",
+        )
+        assertEquals(EntryDetails.FIELDS.size, EntryDetails.FIELDS.map { it.key }.toSet().size)
+    }
+
+    @Test
+    fun `the weather is signed as this text, so these words are frozen with format 3`() {
+        // The signature of format 3 covers WeatherData.describe(): another wording is a format 4 (the vectors of
+        // signature-format-3-vectors.json pin it as well, against an independent implementation).
+        assertEquals("zataženo, 8,5 až 15 °C", WeatherData(tempMin = 8.5, tempMax = 15.0, condition = "zataženo").describe())
+        assertEquals("min. -3 °C", WeatherData(tempMin = -3.0).describe())
+        assertEquals("max. 12 °C", WeatherData(tempMax = 12.0).describe())
+        assertEquals("mlha", WeatherData(condition = " mlha ").describe())
+        assertEquals("0 až 100 °C", WeatherData(tempMin = 0.0, tempMax = 100.0).describe())
     }
 
     @Test

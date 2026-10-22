@@ -36,6 +36,10 @@ data class ProjectDto(
     val tdsName: String? = null,
     val bozpName: String? = null,
     val designerName: String? = null,
+    /** The author's supervision (autorský dozor of the designer, příloha 12 A e)): who it is. */
+    val authorSupervisionName: String? = null,
+    /** The number of the author's supervision's authorisation (ČKA, ČKAIT). */
+    val authorSupervisionAuthorization: String? = null,
     val contractNumber: String? = null,
     /** YYYY-MM-DD */
     val contractDate: String? = null,
@@ -109,7 +113,8 @@ object ProjectService {
         val name: String, val address: String, val cadastralArea: String, val parcelNumbers: String,
         val builder: String, val contractor: String,
         val permitNumber: String?, val permitDate: OffsetDateTime?, val tdsName: String?, val bozpName: String?,
-        val designerName: String?, val contractNumber: String?, val contractDate: OffsetDateTime?,
+        val designerName: String?, val authorSupervisionName: String?, val authorSupervisionAuthorization: String?,
+        val contractNumber: String?, val contractDate: OffsetDateTime?,
         val designDocVersion: String?, val designDocDate: OffsetDateTime?,
         val subcontractors: String?, val supportingDocuments: String?,
     )
@@ -137,6 +142,8 @@ object ProjectService {
             tdsName = optional(data.tdsName, "Technický dozor stavebníka", MAX_NAME_CHARS),
             bozpName = optional(data.bozpName, "Koordinátor BOZP", MAX_NAME_CHARS),
             designerName = optional(data.designerName, "Projektant", MAX_LONG_CHARS),
+            authorSupervisionName = optional(data.authorSupervisionName, "Autorský dozor", MAX_LONG_CHARS),
+            authorSupervisionAuthorization = optional(data.authorSupervisionAuthorization, "Autorizace autorského dozoru", MAX_NAME_CHARS),
             contractNumber = optional(data.contractNumber, "Číslo smlouvy", MAX_NAME_CHARS),
             contractDate = Dates.parseOrNull(data.contractDate),
             designDocVersion = optional(data.designDocVersion, "Verze projektové dokumentace", MAX_NAME_CHARS),
@@ -155,6 +162,7 @@ object ProjectService {
             r.get(PROJECTS.PARCELNUMBERS) == f.parcelNumbers && r.get(PROJECTS.BUILDER) == f.builder && r.get(PROJECTS.CONTRACTOR) == f.contractor &&
             r.get(PROJECTS.PERMITNUMBER) == f.permitNumber && r.get(PROJECTS.PERMITDATE).sameInstant(f.permitDate) &&
             r.get(PROJECTS.TDSNAME) == f.tdsName && r.get(PROJECTS.BOZPNAME) == f.bozpName && r.get(PROJECTS.DESIGNERNAME) == f.designerName &&
+            r.get(PROJECTS.AUTHORSUPERVISIONNAME) == f.authorSupervisionName && r.get(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION) == f.authorSupervisionAuthorization &&
             r.get(PROJECTS.CONTRACTNUMBER) == f.contractNumber && r.get(PROJECTS.CONTRACTDATE).sameInstant(f.contractDate) &&
             r.get(PROJECTS.DESIGNDOCVERSION) == f.designDocVersion && r.get(PROJECTS.DESIGNDOCDATE).sameInstant(f.designDocDate) &&
             r.get(PROJECTS.SUBCONTRACTORS) == f.subcontractors && r.get(PROJECTS.SUPPORTINGDOCUMENTS) == f.supportingDocuments
@@ -255,6 +263,7 @@ object ProjectService {
         val id: String, val name: String, val address: String, val cadastralArea: String, val parcelNumbers: String,
         val builder: String, val contractor: String, val siteManagerId: String,
         val permitNumber: String?, val permitDate: String?, val tdsName: String?, val bozpName: String?, val designerName: String?,
+        val authorSupervisionName: String?, val authorSupervisionAuthorization: String?,
         val contractNumber: String?, val contractDate: String?, val designDocVersion: String?, val designDocDate: String?,
         val subcontractors: String?, val supportingDocuments: String?,
     )
@@ -268,6 +277,7 @@ object ProjectService {
             siteManagerId = r.get(PROJECTS.SITEMANAGERID).toString(),
             permitNumber = r.get(PROJECTS.PERMITNUMBER), permitDate = Dates.format(r.get(PROJECTS.PERMITDATE)),
             tdsName = r.get(PROJECTS.TDSNAME), bozpName = r.get(PROJECTS.BOZPNAME), designerName = r.get(PROJECTS.DESIGNERNAME),
+            authorSupervisionName = r.get(PROJECTS.AUTHORSUPERVISIONNAME), authorSupervisionAuthorization = r.get(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION),
             contractNumber = r.get(PROJECTS.CONTRACTNUMBER), contractDate = Dates.format(r.get(PROJECTS.CONTRACTDATE)),
             designDocVersion = r.get(PROJECTS.DESIGNDOCVERSION), designDocDate = Dates.format(r.get(PROJECTS.DESIGNDOCDATE)),
             subcontractors = r.get(PROJECTS.SUBCONTRACTORS), supportingDocuments = r.get(PROJECTS.SUPPORTINGDOCUMENTS),
@@ -301,6 +311,8 @@ object ProjectService {
                 .set(PROJECTS.TDSNAME, fields.tdsName)
                 .set(PROJECTS.BOZPNAME, fields.bozpName)
                 .set(PROJECTS.DESIGNERNAME, fields.designerName)
+                .set(PROJECTS.AUTHORSUPERVISIONNAME, fields.authorSupervisionName)
+                .set(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION, fields.authorSupervisionAuthorization)
                 .set(PROJECTS.CONTRACTNUMBER, fields.contractNumber)
                 .set(PROJECTS.CONTRACTDATE, fields.contractDate)
                 .set(PROJECTS.DESIGNDOCVERSION, fields.designDocVersion)
@@ -411,6 +423,8 @@ object ProjectService {
                 .set(PROJECTS.TDSNAME, fields.tdsName)
                 .set(PROJECTS.BOZPNAME, fields.bozpName)
                 .set(PROJECTS.DESIGNERNAME, fields.designerName)
+                .set(PROJECTS.AUTHORSUPERVISIONNAME, fields.authorSupervisionName)
+                .set(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION, fields.authorSupervisionAuthorization)
                 .set(PROJECTS.CONTRACTNUMBER, fields.contractNumber)
                 .set(PROJECTS.CONTRACTDATE, fields.contractDate)
                 .set(PROJECTS.DESIGNDOCVERSION, fields.designDocVersion)
@@ -444,6 +458,8 @@ object ProjectService {
         tdsName = r.get(PROJECTS.TDSNAME),
         bozpName = r.get(PROJECTS.BOZPNAME),
         designerName = r.get(PROJECTS.DESIGNERNAME),
+        authorSupervisionName = r.get(PROJECTS.AUTHORSUPERVISIONNAME),
+        authorSupervisionAuthorization = r.get(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION),
         contractNumber = r.get(PROJECTS.CONTRACTNUMBER),
         contractDate = Dates.format(r.get(PROJECTS.CONTRACTDATE)),
         designDocVersion = r.get(PROJECTS.DESIGNDOCVERSION),

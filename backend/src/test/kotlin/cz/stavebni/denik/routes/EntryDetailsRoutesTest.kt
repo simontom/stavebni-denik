@@ -40,6 +40,26 @@ class EntryDetailsRoutesTest : BaseIntegrationTest() {
         }
 
     @Test
+    fun `the start, interruption and resumption of work is saved through the API, limited like the other fields, and read back`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS)
+        val token = generateJwtToken(boss)
+        val projectId = project(boss)
+
+        val saved = save(token, projectId, """{"workDescription":"Betonáž","details":{"workStateChanges":"Zahájeno 28. 9. 2026, přerušeno pro déšť"}}""")
+        assertEquals(HttpStatusCode.OK, saved.status, saved.bodyAsText())
+        val read = client.get("/api/projects/$projectId/reports/2026-09-28") { header(HttpHeaders.Authorization, "Bearer $token") }
+        assertEquals(
+            "Zahájeno 28. 9. 2026, přerušeno pro déšť",
+            Json.parseToJsonElement(read.bodyAsText()).jsonObject["details"]!!.jsonObject["workStateChanges"]!!.jsonPrimitive.content,
+        )
+
+        val tooLong = save(token, projectId, """{"details":{"workStateChanges":"${"x".repeat(5001)}"}}""")
+        assertEquals(HttpStatusCode.BadRequest, tooLong.status)
+        assertTrue(tooLong.bodyAsText().contains("Zahájení, přerušení a obnovení prací"), "the message names the field by its label: ${tooLong.bodyAsText()}")
+    }
+
+    @Test
     fun `fields are saved through the API and read back`() = testApplication {
         application { module() }
         val boss = createTestUser(role = Role.BOSS)

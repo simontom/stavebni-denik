@@ -5,7 +5,9 @@ import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.TooManyRequestsException
 import cz.stavebni.denik.domain.UnauthenticatedException
+import cz.stavebni.denik.domain.WeatherData
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
+import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.jooq.tables.references.USERS
@@ -15,6 +17,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -32,6 +35,10 @@ data class SignatureCheckDto(
     val signedById: String? = null,
     val signedByName: String? = null,
     val signerCkaitNumber: String? = null,
+    /** The name and the number above are the ones stored when the entry was signed (format 3), not those the account has now. */
+    val signerFrozen: Boolean = false,
+    /** Format 3 only: what the signature needs and the row lacks (`signerName`, `signerCkaitNumber`, `partASnapshot`); empty when nothing is missing. */
+    val missingFields: List<String> = emptyList(),
     /** SHA-256 recorded when the entry was signed; null for an entry that is not signed (or was signed before hashes existed). */
     val signatureHash: String? = null,
     /** Which fields the signature covers (see [ReportSignature.CURRENT_FORMAT]); null for an entry that is not signed. */
@@ -48,8 +55,10 @@ data class SignatureCheckDto(
  * signed, recorded in the same statement that locks it.
  *
  * What it covers: the text fields, the workers list, the weather, the late-entry flag and reason, who signed and when,
- * and the hashes of the photos (the hash of each stored file, recorded at upload). It is built from stored rows only,
- * never from the request, so signing and checking later hash exactly the same thing.
+ * and the hashes of the photos (the hash of each stored file, recorded at upload). Format 3 also covers who signed (the
+ * name and the ČKAIT number stored with the entry, not read from the account) and the identification of the diary as it
+ * stood when the entry was signed (the SHA-256 of the text stored in `partASnapshot`), and covers the weather as its text. It
+ * is built from stored rows only, never from the request, so signing and checking later hash exactly the same thing.
  *
  * What it adds to the audit log: the audit log shows *that* the entry was signed and how it looked in text; this hash is
  * checked against the entry as it is *now*, so a change made to the row (or to a photo file) behind the application's back
@@ -58,12 +67,13 @@ data class SignatureCheckDto(
  */
 object ReportSignature {
 
-    /** Bump when the covered content changes: old signatures keep verifying under the version they were made with. */
     /**
-     * The format new signatures are made in. 1 is the entry without the fields of [EntryDetails]; 2 covers them too. An
-     * entry says which one it was signed in (`signatureFormat`), so what was signed before a field existed still verifies.
+     * The format new signatures are made in. 1 is the entry without the fields of [EntryDetails]; 2 covers them too; 3 also
+     * covers the signer's stored name and number, part A as it stood ([PartASnapshot]), the start and interruption of work and
+     * the weather as its text. An entry says which one it was signed in (`signatureFormat`), so what was signed before a field
+     * existed still verifies. Bump it only for a new frozen format; never change an existing one.
      */
-    const val CURRENT_FORMAT = 2
+    const val CURRENT_FORMAT = 3
 
     /**
      * The fields of [EntryDetails] that format 2 covers, **frozen**. Format 2 must mean the same thing forever: a signature
@@ -73,6 +83,41 @@ object ReportSignature {
      */
     internal val FORMAT_2_DETAIL_KEYS: List<String> =
         listOf("materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "otherNotes")
+
+    /**
+     * The fields of [EntryDetails] that format 3 covers, **frozen**: the eight of format 2 and `workStateChanges` (the start,
+     * interruption and resumption of work, příloha 12 B.2 b)). The keys are the API's; never rename or remove one. A tenth field
+     * is a format 4.
+     */
+    internal val FORMAT_3_DETAIL_KEYS: List<String> =
+        listOf(
+            "materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects",
+            "workStateChanges", "otherNotes",
+        )
+
+    private fun detailKeysOf(format: Int): List<String> = if (format >= 3) FORMAT_3_DETAIL_KEYS else FORMAT_2_DETAIL_KEYS
+
+    /**
+     * The columns of `daily_reports` that format 3 covers besides the fields of [EntryDetails], **frozen**: each is a key of the
+     * content, spelled as the column is. The photos (their own table), `format`, `details` and `partASha256` are keys too. A
+     * test fails when a column is added to the table and is neither here nor listed as not covered.
+     */
+    internal val FORMAT_3_COLUMNS: List<org.jooq.TableField<DailyReportsRecord, *>> = listOf(
+        DAILY_REPORTS.ID, DAILY_REPORTS.PROJECTID, DAILY_REPORTS.DATE, DAILY_REPORTS.SEQUENCENUMBER, DAILY_REPORTS.AUTHORID,
+        DAILY_REPORTS.WORKDESCRIPTION, DAILY_REPORTS.WORKERSBYTRADE, DAILY_REPORTS.ISCONTROLDAY, DAILY_REPORTS.CONSTRUCTIONOBJ,
+        DAILY_REPORTS.WEATHER, DAILY_REPORTS.ISLATEENTRY, DAILY_REPORTS.LATEENTRYREASON, DAILY_REPORTS.SIGNEDAT, DAILY_REPORTS.SIGNEDBYID,
+        DAILY_REPORTS.SIGNERNAME, DAILY_REPORTS.SIGNERCKAITNUMBER,
+    )
+
+    /** What format 3 needs of the row and a row may lack: the name of the column and its value, `null` when it is missing or blank. */
+    private fun storedOfFormat3(report: DailyReportsRecord): List<Pair<String, String?>> = listOf(
+        "signerName" to report.get(DAILY_REPORTS.SIGNERNAME)?.takeIf { it.isNotBlank() },
+        "signerCkaitNumber" to report.get(DAILY_REPORTS.SIGNERCKAITNUMBER)?.takeIf { it.isNotBlank() },
+        "partASnapshot" to report.get(DAILY_REPORTS.PARTASNAPSHOT)?.takeIf { it.isNotBlank() },
+    )
+
+    /** The weather as the text that is signed in format 3 (`WeatherData.describe()`), `null` when nothing is stated. */
+    private fun weatherText(report: DailyReportsRecord): String? = WeatherData.fromStored(report.weather?.data())?.describe()
 
     private fun sha256(text: String): String =
         MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
@@ -106,7 +151,7 @@ object ReportSignature {
             put("workersByTrade", parseOrString(report.workersbytrade?.data()))
             put("isControlDay", report.iscontrolday ?: false)
             put("constructionObj", report.constructionobj)
-            put("weather", parseOrString(report.weather?.data()))
+            put("weather", if (format >= 3) JsonPrimitive(weatherText(report)) else parseOrString(report.weather?.data()))
             put("isLateEntry", report.islateentry ?: false)
             put("lateEntryReason", report.lateentryreason)
             put("signedAt", AuditHash.formatTs(signedAt))
@@ -117,12 +162,20 @@ object ReportSignature {
                 put(
                     "details",
                     buildJsonObject {
-                        FORMAT_2_DETAIL_KEYS.forEach { key ->
-                            val field = checkNotNull(fields[key]) { "the field '$key' is covered by signature format 2 and cannot be removed" }
+                        detailKeysOf(format).forEach { key ->
+                            val field = checkNotNull(fields[key]) { "the field '$key' is covered by signature format $format and cannot be removed" }
                             put(key, report.get(field.column)?.takeIf { it.isNotBlank() })
                         }
                     },
                 )
+            }
+            if (format >= 3) {
+                // What the signature needs is stored with the entry: a row that lacks it cannot be hashed (check() says so first).
+                val stored = storedOfFormat3(report).associate { (name, value) -> name to checkNotNull(value) { "signature format 3 needs $name, and the entry has none" } }
+                put("signerName", stored.getValue("signerName"))
+                put("signerCkaitNumber", stored.getValue("signerCkaitNumber"))
+                // The text exactly as it is stored, never built again: what is hashed is what is kept.
+                put("partASha256", PartASnapshot.sha256(stored.getValue("partASnapshot")))
             }
         }
     }
@@ -141,9 +194,12 @@ object ReportSignature {
         if (report.lockedat == null || signedAt == null || signerId == null) {
             return SignatureCheckDto(reportId = reportId.toString(), signed = false, checkedAt = now)
         }
-        val signer = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(signerId)).fetchOne()
         val recorded = report.get(DAILY_REPORTS.SIGNATUREHASH)
         val format = report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() ?: 1
+        // From format 3 on who signed is stored with the signature; before, it is read from the account as it is now.
+        val frozen = format >= 3
+        val missing = if (frozen) storedOfFormat3(report).filter { it.second == null }.map { it.first } else emptyList()
+        val signer = if (frozen) null else tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(signerId)).fetchOne()
 
         val photoRows = tx.select(PHOTOS.PATHORIGINAL, PHOTOS.PATHTHUMB, PHOTOS.SHA256, PHOTOS.THUMBSHA256)
             .from(PHOTOS)
@@ -160,13 +216,21 @@ object ReportSignature {
             signed = true,
             signedAt = signedAt.toString(),
             signedById = signerId.toString(),
-            signedByName = signer?.get(USERS.DISPLAYNAME),
-            signerCkaitNumber = signer?.get(USERS.CKAITNUMBER),
+            signedByName = if (frozen) report.get(DAILY_REPORTS.SIGNERNAME) else signer?.get(USERS.DISPLAYNAME),
+            signerCkaitNumber = if (frozen) report.get(DAILY_REPORTS.SIGNERCKAITNUMBER) else signer?.get(USERS.CKAITNUMBER),
+            signerFrozen = frozen,
+            missingFields = missing,
             signatureHash = recorded,
             signatureFormat = format,
             // Format 1 includes entries signed before hashes existed, which have nothing to compare. From format 2 on every
-            // signature has a hash, so a missing one means it was removed: that is a mismatch, not "nothing to compare".
-            contentMatches = if (recorded == null) (if (format >= 2) false else null) else recorded == hash(tx, report, signedAt, signerId),
+            // signature has a hash, so a missing one means it was removed: that is a mismatch, not "nothing to compare". The
+            // same holds for what format 3 stores with the entry: without it the content cannot even be built, and that is a
+            // failure of the signature.
+            contentMatches = when {
+                recorded == null -> if (format >= 2) false else null
+                missing.isNotEmpty() -> false
+                else -> recorded == hash(tx, report, signedAt, signerId)
+            },
             photoFilesMatch = filesMatch,
             checkedAt = now,
         )
@@ -184,8 +248,52 @@ object ReportSignature {
     }
 
     /**
-     * Checks every signed entry: its content against the recorded hash and its photo files against the hashes recorded at
-     * upload. This is what a backup restore, or a nightly check, runs to prove that nothing signed has changed.
+     * What the audit row that recorded the signature (`report.lock`) says of the entry, against the entry itself: the five things
+     * the row's `after` snapshot holds (the format, the signer's name and number, the SHA-256 of part A and the signature hash).
+     *
+     * A signature of format 3 is checked against its own row, so whoever owns the table can switch the triggers off, change the
+     * signer or part A and compute the hash again (the algorithm is public): the entry then verifies against itself. The audit
+     * row is what they did not change, and could not without breaking the chain from that row on (`audit-verify`, and an anchor
+     * recorded after the row, find that). So this is asked of every entry that is signed in format 3, **or whose audit row says
+     * it was** (an entry made to look older than it is): a mismatch, and a missing or unreadable row, is a failure. An older
+     * entry whose row never recorded a format has nothing to compare and keeps the behaviour it had.
+     *
+     * The answer names the entry, the row and the fields that differ, never what they hold.
+     */
+    private fun lockRowProblems(tx: DSLContext, id: UUID): List<String> {
+        val report = tx.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(id)).fetchOne() ?: return emptyList()
+        val format = report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() ?: 1
+        val row = tx.select(AUDIT_LOG.ID, AUDIT_LOG.PAYLOAD_TEXT).from(AUDIT_LOG)
+            .where(AUDIT_LOG.ACTION.eq("report.lock").and(AUDIT_LOG.ENTITY_TYPE.eq("report")).and(AUDIT_LOG.ENTITY_ID.eq(id.toString())))
+            .orderBy(AUDIT_LOG.ID.asc())
+            .limit(1)
+            .fetchOne()
+        // The row is read through its payload, the text the row's hash covers: the same text the chain is verified over.
+        val after: JsonObject? = row?.get(AUDIT_LOG.PAYLOAD_TEXT)?.let { text ->
+            runCatching { Json.parseToJsonElement(text).jsonObject["after"] as? JsonObject }.getOrNull()
+        }
+        fun recorded(key: String): String? = (after?.get(key) as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
+        val recordedFormat = recorded("signatureFormat")?.toIntOrNull()
+        if (format < 3 && (recordedFormat ?: 1) < 3) return emptyList()
+        if (row == null) return listOf("entry $id: signed in format $format, but the audit row of its signature (report.lock) is missing")
+        if (after == null) return listOf("entry $id: signed in format $format, but its audit row (report.lock, id ${row.get(AUDIT_LOG.ID)}) cannot be read")
+        val snapshot = report.get(DAILY_REPORTS.PARTASNAPSHOT)
+        val differing = listOfNotNull(
+            "signatureFormat".takeIf { recordedFormat != format },
+            "signerName".takeIf { recorded("signerName") != report.get(DAILY_REPORTS.SIGNERNAME) },
+            "signerCkaitNumber".takeIf { recorded("signerCkaitNumber") != report.get(DAILY_REPORTS.SIGNERCKAITNUMBER) },
+            "partASha256".takeIf { recorded("partASha256") != snapshot?.let { PartASnapshot.sha256(it) } },
+            "signatureHash".takeIf { recorded("signatureHash") != report.get(DAILY_REPORTS.SIGNATUREHASH) },
+        )
+        if (differing.isEmpty()) return emptyList()
+        return listOf("entry $id: signed in format $format, and the audit row of its signature (report.lock, id ${row.get(AUDIT_LOG.ID)}) does not agree with it in: ${differing.joinToString(", ")}")
+    }
+
+    /**
+     * Checks every signed entry: its content against the recorded hash, its photo files against the hashes recorded at upload,
+     * and, for a signature of format 3, the entry against the audit row that recorded it (see [lockRowProblems]). This is what a
+     * backup restore, or a nightly check, runs to prove that nothing signed has changed. It proves no more than the chain does:
+     * run `audit-verify` with an anchor beside it, and read PROJECT.md for what neither can prove.
      */
     fun checkAll(tx: DSLContext): AllResult {
         val ids = tx.select(DAILY_REPORTS.ID).from(DAILY_REPORTS)
@@ -205,10 +313,13 @@ object ReportSignature {
             if (check.signatureHash == null && (check.signatureFormat ?: 1) < 2) withoutHash++
             if (check.signatureHash == null && (check.signatureFormat ?: 1) >= 2) {
                 problems += "entry $id: signed in format ${check.signatureFormat} but its signature hash is missing"
+            } else if (check.missingFields.isNotEmpty()) {
+                problems += "entry $id: signed in format ${check.signatureFormat} but what the signature stores is missing: ${check.missingFields.joinToString(", ")}"
             } else if (check.contentMatches == false) {
                 problems += "entry $id: the content no longer matches the signature"
             }
             if (check.photoFilesMatch == false) problems += "entry $id: a photo file no longer matches its recorded hash"
+            problems += lockRowProblems(tx, id)
         }
         return AllResult(signed = ids.size, withoutHash = withoutHash, problems = problems)
     }

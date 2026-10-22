@@ -28,7 +28,13 @@ data class WeatherData(
         return WeatherData(tempMin, tempMax, text).takeUnless { it.isEmpty() }
     }
 
-    /** Readable Czech text, for the PDF and the audit snapshot (which keeps no decimals): "zataženo, 8,5 až 15 °C". */
+    /**
+     * Readable Czech text, for the PDF and the audit snapshot (which keeps no decimals): "zataženo, 8,5 až 15 °C".
+     *
+     * **Frozen: signature format 3 covers this text** (the weather is signed as what people read, never as the digits it is
+     * stored in), so a signature made today verifies only while the same data gives the same words. `GoldenSignatureTest`
+     * pins the output; another wording is a format 4.
+     */
     fun describe(): String {
         val parts = mutableListOf<String>()
         condition?.trim()?.takeIf { it.isNotEmpty() }?.let { parts += it }
@@ -43,6 +49,16 @@ data class WeatherData(
     private fun degrees(value: Double): String = java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString().replace('.', ',')
 
     companion object {
+        private val lenientJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+        /**
+         * The weather as it is stored on an entry (`daily_reports.weather`, JSON): null for no weather, for the legacy placeholder
+         * `{}`, for a value nothing is stated in and for text that is not a weather. One reader for the form, the audit snapshot,
+         * the PDF and the signature, so they all say the same of the same row.
+         */
+        fun fromStored(raw: String?): WeatherData? =
+            raw?.let { runCatching { lenientJson.decodeFromString(serializer(), it) }.getOrNull() }?.takeUnless { it.isEmpty() }
+
         const val MAX_CONDITION_CHARS = 200
         const val MIN_TEMP = -60.0
         const val MAX_TEMP = 60.0

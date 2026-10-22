@@ -97,6 +97,11 @@ open class ProjectMembers(
     val ROLE: TableField<ProjectMembersRecord, Role?> = createField(DSL.name("role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(Role::class.java), this, "")
 
     /**
+     * The column <code>public.project_members.scope</code>.
+     */
+    val SCOPE: TableField<ProjectMembersRecord, String?> = createField(DSL.name("scope"), SQLDataType.CLOB, this, "")
+
+    /**
      * The column <code>public.project_members.addedAt</code>.
      */
     val ADDEDAT: TableField<ProjectMembersRecord, OffsetDateTime?> = createField(DSL.name("addedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("CURRENT_TIMESTAMP"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "")

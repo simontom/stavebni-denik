@@ -32,13 +32,17 @@ open class ProjectMembersRecord() : UpdatableRecordImpl<ProjectMembersRecord>(Pr
         set(value): Unit = set(2, value)
         get(): Role? = get(2) as Role?
 
-    open var addedat: OffsetDateTime?
+    open var scope: String?
         set(value): Unit = set(3, value)
-        get(): OffsetDateTime? = get(3) as OffsetDateTime?
+        get(): String? = get(3) as String?
+
+    open var addedat: OffsetDateTime?
+        set(value): Unit = set(4, value)
+        get(): OffsetDateTime? = get(4) as OffsetDateTime?
 
     open var addedbyid: UUID?
-        set(value): Unit = set(4, value)
-        get(): UUID? = get(4) as UUID?
+        set(value): Unit = set(5, value)
+        get(): UUID? = get(5) as UUID?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -49,10 +53,11 @@ open class ProjectMembersRecord() : UpdatableRecordImpl<ProjectMembersRecord>(Pr
     /**
      * Create a detached, initialised ProjectMembersRecord
      */
-    constructor(projectid: UUID? = null, userid: UUID? = null, role: Role? = null, addedat: OffsetDateTime? = null, addedbyid: UUID? = null): this() {
+    constructor(projectid: UUID? = null, userid: UUID? = null, role: Role? = null, scope: String? = null, addedat: OffsetDateTime? = null, addedbyid: UUID? = null): this() {
         this.projectid = projectid
         this.userid = userid
         this.role = role
+        this.scope = scope
         this.addedat = addedat
         this.addedbyid = addedbyid
         resetTouchedOnNotNull()

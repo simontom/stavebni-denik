@@ -21,6 +21,7 @@ import io.ktor.server.testing.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.*
@@ -219,6 +220,24 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         assertEquals("Jan Stavbyvedoucí", after["signedByName"]!!.jsonPrimitive.content)
         assertEquals("0012345", after["signerCkaitNumber"]!!.jsonPrimitive.content)
         assertTrue(after["contentMatches"]!!.jsonPrimitive.boolean, "the content hashed again is what was signed")
+    }
+
+    @Test
+    fun `the check answers who signed as it was recorded when the entry was signed, whatever the account says now`() = testApplication {
+        application { module() }
+        val boss = createTestUser(role = Role.BOSS, nickname = "signer", displayName = "Jan Stavbyvedoucí")
+        val report = DailyReportService.createReport(boss, project(boss), "2026-09-28", workDescription = "Betonáž stropu")
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+
+        // The account is renamed and loses its number.
+        dsl.execute("""update users set "displayName" = 'Úplně Jiné Jméno', "ckaitNumber" = null where id = ?""", boss.id)
+
+        val after = check(boss, report.id)
+        assertEquals("Jan Stavbyvedoucí", after["signedByName"]!!.jsonPrimitive.content)
+        assertEquals("0012345", after["signerCkaitNumber"]!!.jsonPrimitive.content)
+        assertEquals(3, after["signatureFormat"]!!.jsonPrimitive.int)
+        assertTrue(after["signerFrozen"]!!.jsonPrimitive.boolean, "the client is told that these are the values stored at signing")
+        assertTrue(after["contentMatches"]!!.jsonPrimitive.boolean)
     }
 
     @Test

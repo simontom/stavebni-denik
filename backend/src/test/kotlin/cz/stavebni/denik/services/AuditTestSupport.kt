@@ -114,19 +114,34 @@ internal fun DSLContext.auditPartOf(action: String, part: String): String? =
         .takeUnless { it is JsonNull }?.let { Json.encodeToString(JsonElement.serializer(), it) }
 
 /**
- * Runs [body] with the CHECK constraint [name] of `audit_log` taken off, then puts it back exactly as it was: the way to show
+ * Runs [body] with the CHECK constraint [name] of [table] (`audit_log` unless said otherwise) taken off, then puts it back exactly as it was: the way to show
  * what the verification does with a row that the database itself would have refused (an attacker who owns the table can drop
  * a constraint, like a trigger).
  */
-internal fun DSLContext.withoutConstraint(name: String, body: () -> Unit) {
+internal fun DSLContext.withoutConstraint(name: String, table: String = "audit_log", body: () -> Unit) {
     val definition = (fetchValue("select pg_get_constraintdef(oid) from pg_constraint where conname = ?", name) as String)
         .removeSuffix(" NOT VALID")
-    execute("ALTER TABLE \"audit_log\" DROP CONSTRAINT \"$name\"")
+    execute("ALTER TABLE \"$table\" DROP CONSTRAINT \"$name\"")
     try {
         body()
     } finally {
         // NOT VALID: the rows the test damaged are still there, and the constraint binds every row written from now on.
-        execute("ALTER TABLE \"audit_log\" ADD CONSTRAINT \"$name\" $definition NOT VALID")
+        execute("ALTER TABLE \"$table\" ADD CONSTRAINT \"$name\" $definition NOT VALID")
+    }
+}
+
+/**
+ * Removes the audit row that recorded the signature of entry [reportId] (`report.lock`), the way somebody who owns the table could
+ * (the guards switched off for the statement). It makes an entry that a test turned into one "signed before format 3" look like
+ * one: a real older entry has no row that says it was signed in format 3, and `ReportSignature.checkAll` compares the two. The
+ * chain after the row no longer fits, which is not what such a test is about.
+ */
+internal fun DSLContext.removeLockRowOf(reportId: UUID) {
+    execute("""ALTER TABLE "audit_log" DISABLE TRIGGER USER""")
+    try {
+        execute("""delete from audit_log where action = 'report.lock' and entity_id = ?""", reportId.toString())
+    } finally {
+        execute("""ALTER TABLE "audit_log" ENABLE TRIGGER USER""")
     }
 }
 

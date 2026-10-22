@@ -12,6 +12,8 @@ export interface ProjectFieldValues {
   permitNumber: string;
   permitDate: string;
   designerName: string;
+  authorSupervisionName: string;
+  authorSupervisionAuthorization: string;
   tdsName: string;
   bozpName: string;
   contractNumber: string;
@@ -38,7 +40,7 @@ export const LONGEST_LONG = 500;
 export const LONGEST_LIST = 5000;
 
 /** The fields the server allows 500 characters for (ProjectService.MAX_LONG_CHARS); every other single-line field is 200. */
-const LONG_FIELDS: Key[] = ["address", "parcelNumbers", "builder", "contractor", "designerName"];
+const LONG_FIELDS: Key[] = ["address", "parcelNumbers", "builder", "contractor", "designerName", "authorSupervisionName"];
 
 /** The longest text the server accepts for a field, or null for a date. The form shows it and checks it: it never cuts what is typed. */
 export const limitOf = (spec: FieldSpec): number | null =>
@@ -61,6 +63,8 @@ export const SECTIONS: { title: string; fields: FieldSpec[] }[] = [
       { key: "permitNumber", label: "Číslo povolení", placeholder: "např. SZ/2026/123" },
       { key: "permitDate", label: "Datum povolení", type: "date" },
       { key: "designerName", label: "Projektant", placeholder: "Jméno nebo firma" },
+      { key: "authorSupervisionName", label: "Autorský dozor projektanta", placeholder: "Jméno nebo firma, je-li autorský dozor zřízen" },
+      { key: "authorSupervisionAuthorization", label: "Číslo autorizace autorského dozoru", placeholder: "např. ČKA 00 123" },
       { key: "tdsName", label: "Technický dozor stavebníka", placeholder: "Jméno" },
       { key: "bozpName", label: "Koordinátor BOZP", placeholder: "Jméno" },
     ],
@@ -103,6 +107,8 @@ export const emptyProjectFields = (): ProjectFieldValues => ({
   permitNumber: "",
   permitDate: "",
   designerName: "",
+  authorSupervisionName: "",
+  authorSupervisionAuthorization: "",
   tdsName: "",
   bozpName: "",
   contractNumber: "",
@@ -128,6 +134,8 @@ export const projectFieldsOf = (project: Record<string, unknown>): ProjectFieldV
   permitNumber: textOf(project.permitNumber),
   permitDate: dayOf(project.permitDate),
   designerName: textOf(project.designerName),
+  authorSupervisionName: textOf(project.authorSupervisionName),
+  authorSupervisionAuthorization: textOf(project.authorSupervisionAuthorization),
   tdsName: textOf(project.tdsName),
   bozpName: textOf(project.bozpName),
   contractNumber: textOf(project.contractNumber),
@@ -149,6 +157,8 @@ export const projectPayload = (values: ProjectFieldValues) => ({
   permitNumber: values.permitNumber.trim() || null,
   permitDate: values.permitDate || null,
   designerName: values.designerName.trim() || null,
+  authorSupervisionName: values.authorSupervisionName.trim() || null,
+  authorSupervisionAuthorization: values.authorSupervisionAuthorization.trim() || null,
   tdsName: values.tdsName.trim() || null,
   bozpName: values.bozpName.trim() || null,
   contractNumber: values.contractNumber.trim() || null,

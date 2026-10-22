@@ -69,6 +69,48 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         assertTrue(run.err.any { it.contains(report.toString()) && it.contains("content") }, run.err.toString())
     }
 
+    private fun tamper(sql: String, vararg bindings: Any) {
+        dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
+        try {
+            dsl.execute(sql, *bindings)
+        } finally {
+            dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
+        }
+    }
+
+    @Test
+    fun `a signer or a part A changed behind the application's back is reported and exits 1, entry by entry`() = runBlocking<Unit> {
+        val (first, _) = signedEntryWithPhoto()
+        assertEquals(0, cli("verify-signatures").code, "the entry is signed in format 3 and verifies")
+
+        tamper("""update daily_reports set "signerName" = 'Karel Cizí' where id = ?""", first)
+        var run = cli("verify-signatures")
+        assertEquals(1, run.code)
+        assertTrue(run.err.any { it.contains(first.toString()) && it.contains("content") }, run.err.toString())
+
+        tamper("""update daily_reports set "signerName" = 'Test User' where id = ?""", first)
+        assertEquals(0, cli("verify-signatures").code, "put back, it verifies again")
+        tamper("""update daily_reports set "partASnapshot" = replace("partASnapshot", 'Verify', 'Verifx') where id = ?""", first)
+        run = cli("verify-signatures")
+        assertEquals(1, run.code)
+        assertTrue(run.err.any { it.contains(first.toString()) && it.contains("content") }, run.err.toString())
+    }
+
+    @Test
+    fun `a signature of format 3 that lost its part A is a failure that says what is missing`() = runBlocking<Unit> {
+        val (report, _) = signedEntryWithPhoto()
+        // The database refuses such a row; whoever owns the table can drop the constraint, like a trigger.
+        dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
+            tamper("""update daily_reports set "partASnapshot" = null where id = ?""", report)
+        }
+
+        val run = cli("verify-signatures")
+
+        assertEquals(1, run.code)
+        assertTrue(run.err.any { it.contains(report.toString()) && it.contains("partASnapshot") && it.contains("format 3") }, run.err.toString())
+        assertEquals(listOf("partASnapshot"), ReportSignature.check(dsl, report).missingFields)
+    }
+
     @Test
     fun `a photo file replaced on the volume is reported and exits 1`() = runBlocking<Unit> {
         val (report, photoId) = signedEntryWithPhoto()
@@ -87,10 +129,13 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         // What such an entry looks like: no hash, and the format of the time (1; hashes came with V8, formats with V14).
         dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
         try {
-            dsl.execute("""update daily_reports set "signatureHash" = null, "signatureFormat" = 1 where id = ?""", report)
+            // (V14: only a signature in format 3 stores the signer and part A.)
+            dsl.execute("""update daily_reports set "signatureHash" = null, "signatureFormat" = 1, "signerName" = null, "signerCkaitNumber" = null, "partASnapshot" = null where id = ?""", report)
         } finally {
             dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
         }
+        // An entry of that time has no audit row that says it was signed in format 3.
+        dsl.removeLockRowOf(report)
 
         val run = cli("verify-signatures")
 

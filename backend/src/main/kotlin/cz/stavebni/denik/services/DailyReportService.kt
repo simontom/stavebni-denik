@@ -99,6 +99,13 @@ internal data class ReportSnapshot(
     val weather: String? = null,
     /** SHA-256 of the content at signing (see [ReportSignature]). */
     val signatureHash: String? = null,
+    /** What a signed entry's signature covers (see [ReportSignature.CURRENT_FORMAT]); only for a signed entry. */
+    val signatureFormat: Int? = null,
+    /** Format 3: the name and the ČKAIT number of the signer as they were when the entry was signed (so the chain holds them too). */
+    val signerName: String? = null,
+    val signerCkaitNumber: String? = null,
+    /** Format 3: the SHA-256 of the identification of the diary stored with the signature (see [PartASnapshot]). */
+    val partASha256: String? = null,
     /** The fields of [EntryDetails] that have a text, by key. */
     val details: Map<String, String> = emptyMap(),
 )
@@ -400,8 +407,12 @@ object DailyReportService {
                 throw StaleVersionException("Záznam se od načtení změnil. Načtěte jej znovu a zkontrolujte, co podepisujete.")
             }
 
-            // A signer of a diary has a ČKAIT number (decision D2). Checked here, in the transaction, on the stored value.
-            requireQualifiedSigner(tx, user)
+            // A signer of a diary has a ČKAIT number (decision D2). Checked here, in the transaction, on the stored value, which
+            // is also what is stored with the signature (format 3): who signed, as the account says it at this moment.
+            val signer = requireQualifiedSigner(tx, user)
+            // The identification of the diary as it stands at this moment. Nothing can change it while the audit lock is held:
+            // every change of the project, its members, its authorised persons and the users goes through the same lock.
+            val partA = PartASnapshot.build(tx, report.projectid!!)
 
             val before = report.toSnapshot()
 
@@ -413,8 +424,12 @@ object DailyReportService {
                 .where(DAILY_REPORTS.PROJECTID.eq(report.projectid!!))
                 .fetchOne(0, Int::class.javaObjectType) ?: 0) + 1
             report.set(DAILY_REPORTS.SEQUENCENUMBER, number)
-            // The signature covers the fields of the current format; the entry says which one it was signed in.
+            // The signature covers the fields of the current format; the entry says which one it was signed in. The signer and part
+            // A are part of that format: they are on the entry before the hash is made and written by the one statement below.
             report.set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
+            report.set(DAILY_REPORTS.SIGNERNAME, signer.name)
+            report.set(DAILY_REPORTS.SIGNERCKAITNUMBER, signer.ckaitNumber)
+            report.set(DAILY_REPORTS.PARTASNAPSHOT, partA)
 
             // Milliseconds: what the hash covers is exactly what is stored and read back.
             val now = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
@@ -422,6 +437,9 @@ object DailyReportService {
             val signed = tx.update(DAILY_REPORTS)
                 .set(DAILY_REPORTS.SEQUENCENUMBER, number)
                 .set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
+                .set(DAILY_REPORTS.SIGNERNAME, signer.name)
+                .set(DAILY_REPORTS.SIGNERCKAITNUMBER, signer.ckaitNumber)
+                .set(DAILY_REPORTS.PARTASNAPSHOT, partA)
                 .set(DAILY_REPORTS.LOCKEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDBYID, user.id)
@@ -459,11 +477,19 @@ object DailyReportService {
         requireQualifiedSigner(tx, user)
     }
 
-    private fun requireQualifiedSigner(tx: DSLContext, user: SessionUser) {
-        val ckait = tx.select(USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(user.id)).fetchOne(USERS.CKAITNUMBER)
-        if (ckait.isNullOrBlank()) {
+    /** Who signs, as the account says it: the name and the ČKAIT number that are stored with the signature (format 3). */
+    private class Signer(val name: String, val ckaitNumber: String)
+
+    private fun requireQualifiedSigner(tx: DSLContext, user: SessionUser): Signer {
+        val account = tx.select(USERS.DISPLAYNAME, USERS.CKAITNUMBER).from(USERS).where(USERS.ID.eq(user.id)).fetchOne()
+        val ckait = account?.get(USERS.CKAITNUMBER)?.trim()
+        if (ckait.isNullOrEmpty()) {
             throw SignerNotQualifiedException("K podpisu záznamu je nutné číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
         }
+        // A name is required of every account, so this is a safety net: a signature that names nobody is no signature.
+        val name = account.get(USERS.DISPLAYNAME)?.trim()
+        if (name.isNullOrEmpty()) throw ConflictException("Váš účet nemá vyplněné jméno. Požádejte administrátora, aby je doplnil, a podepište znovu.")
+        return Signer(name, ckait)
     }
 
     /**
@@ -531,10 +557,7 @@ object DailyReportService {
     private val weatherJson = Json { ignoreUnknownKeys = true }
 
     /** The weather stored on the row; the legacy placeholder `{}` and unreadable values count as "not stated". */
-    private fun weatherOf(record: DailyReportsRecord): WeatherData? =
-        record.weather?.data()?.let { raw ->
-            runCatching { weatherJson.decodeFromString(WeatherData.serializer(), raw) }.getOrNull()
-        }?.takeUnless { it.isEmpty() }
+    private fun weatherOf(record: DailyReportsRecord): WeatherData? = WeatherData.fromStored(record.weather?.data())
 
     private fun toDto(record: DailyReportsRecord, photos: List<PhotoDto>, acknowledgements: List<AcknowledgementDto> = emptyList()) = DailyReportDto(
         id = record.id.toString(),
@@ -579,6 +602,10 @@ object DailyReportService {
             details = EntryDetails.filledOf(this),
             weather = weatherOf(this)?.describe(),
             signatureHash = get(DAILY_REPORTS.SIGNATUREHASH),
+            signatureFormat = if (lockedat != null) get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() else null,
+            signerName = get(DAILY_REPORTS.SIGNERNAME),
+            signerCkaitNumber = get(DAILY_REPORTS.SIGNERCKAITNUMBER),
+            partASha256 = get(DAILY_REPORTS.PARTASNAPSHOT)?.let { PartASnapshot.sha256(it) },
         )
     )
 }
