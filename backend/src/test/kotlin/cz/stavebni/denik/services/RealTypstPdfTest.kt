@@ -459,6 +459,149 @@ class RealTypstPdfTest : BaseIntegrationTest() {
         assertFalse(text.contains("root:x"), "nothing was read from the machine")
     }
 
+    // --- signature format 3: part A as it stood, and the signer as stored ---------------------------------------
+
+    private suspend fun projectWithPersons(boss: SessionUser): UUID {
+        val projectId = projectOf(boss, "Bytový dům Zelená") {
+            it.copy(
+                contractor = "Zhotovitel s.r.o.", authorSupervisionName = "Ing. arch. Petr Dozor", authorSupervisionAuthorization = "ČKA 00 123",
+                subcontractors = "Elektro s.r.o.", supportingDocuments = "Smlouva o dílo č. SML-1",
+            )
+        }
+        val supervisor = createTestUser(nickname = "dozor", displayName = "Ing. Karel Dozor", role = Role.INSPECTOR, ckaitNumber = "0077777")
+        val deputy = createTestUser(nickname = "deputy", displayName = "Marie Zástupce", role = Role.BOSS, ckaitNumber = "0099999")
+        ProjectMemberService.addMember(boss, projectId, AddMemberRequest(supervisor.id.toString(), "INSPECTOR", "Technický dozor stavebníka, celé dílo"))
+        ProjectMemberService.addMember(boss, projectId, AddMemberRequest(deputy.id.toString(), "BOSS", "Zástupce stavbyvedoucího, objekty SO 02 a SO 03"))
+        AuthorizedPersonService.create(boss, projectId, CreateAuthorizedPersonRequest("Eva Koordinátorka", "BOZP s.r.o.", "Koordinátor BOZP na staveništi"))
+        return projectId
+    }
+
+    @Test
+    fun `a signed entry prints part A as it stood on the day of signing, with its persons, their scope and the author's supervision`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Jan Stavbyvedoucí")
+        val projectId = projectWithPersons(boss)
+        // The entry is written by a worker and signed by the manager: it is the signer who is frozen, not the author (backlog B9).
+        val worker = createTestUser(nickname = "worker", displayName = "Pavel Dělník", role = Role.WORKER)
+        addMember(projectId, worker, Role.WORKER)
+        val report = UUID.fromString(DailyReportService.createReport(worker, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+        val snapshot = dsl.fetchValue("""select "partASnapshot" from daily_reports where id = ?""", report) as String
+
+        // Afterwards the project is changed, a person is revoked and the signer is renamed.
+        val current = ProjectService.getProject(dsl, boss, projectId)
+        ProjectService.updateProject(boss, projectId, current.copy(name = "Přejmenovaná stavba", contractor = "Jiný zhotovitel", authorSupervisionName = "Někdo jiný"))
+        dsl.execute("""update authorized_persons set "revokedAt" = now()""")
+        dsl.execute("""update users set "displayName" = 'Změněné Jméno' where id = ?""", boss.id)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        for (printed in listOf(
+            "Bytový dům Zelená", "Zhotovitel s.r.o.", "Autorský dozor", "Ing. arch. Petr Dozor, autorizace ČKA 00 123",
+            "Osoby zajišťující odborné vedení provádění stavby", "Číslo ČKAIT", "Rozsah oprávnění a odpovědnosti",
+            "Marie Zástupce", "0099999", "Zástupce stavbyvedoucího, objekty SO 02 a SO 03", "Ing. Jan Stavbyvedoucí (stavbyvedoucí)",
+            "Dozor (technický dozor stavebníka, autorský dozor)", "Ing. Karel Dozor", "Technický dozor stavebníka, celé dílo",
+            "Pověřené osoby", "Eva Koordinátorka", "BOZP s.r.o.", "Koordinátor BOZP na staveništi",
+            "Údaje o stavbě platné ke dni podpisu", "jsou součástí podpisu záznamu", "Otisk údajů o stavbě (SHA-256)",
+        )) {
+            assertTrue(squeezed(text).contains(squeezed(printed)), "'$printed' is printed: $text")
+        }
+        assertTrue(squeezed(text).contains(PartASnapshot.sha256(snapshot)), "the hash of the stored part A is in the signature block: $text")
+        for (notPrinted in listOf("Přejmenovaná stavba", "Jiný zhotovitel", "Někdo jiný", "Změněné Jméno")) {
+            assertFalse(text.contains(notPrinted), "'$notPrinted' came after the signature and is not part of it: $text")
+        }
+        // Part A comes before part B, as it did, with the persons in it.
+        val partA = text.indexOf("Část A")
+        val partB = text.indexOf("Část B")
+        for (inA in listOf("Osoby zajišťující odborné vedení", "Pověřené osoby", "Dozor (technický")) {
+            assertTrue(text.indexOf(inA) in partA until partB, "'$inA' belongs to part A: $text")
+        }
+        // The signer is the stored one, and so is the site manager of part A.
+        assertTrue(Regex("""Podepsal:[^\n]*Ing\. Jan Stavbyvedoucí, ČKAIT 0012345""").containsMatchIn(text), text)
+        assertTrue(Regex("""Autor záznamu:[^\n]*Pavel Dělník""").containsMatchIn(text), text)
+    }
+
+    @Test
+    fun `a draft prints part A as it stands now, with the persons and the note it always had`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Jan Stavbyvedoucí")
+        val projectId = projectWithPersons(boss)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(text.contains("Údaje o stavbě platné ke dni "), text)
+        assertFalse(text.contains("podpisu záznamu"), "a draft has no signature to be part of or outside of: $text")
+        assertTrue(text.contains("Technický dozor stavebníka, celé dílo"), text)
+        assertTrue(text.contains("Koordinátor BOZP na staveništi"), text)
+        assertFalse(text.contains("Otisk údajů o stavbě"), "a draft has no signature block: $text")
+    }
+
+    @Test
+    fun `the persons of part A that hold hostile text are printed as text`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "#panic(\"X\") *Jan*")
+        val projectId = projectOf(boss)
+        val other = createTestUser(nickname = "dozor", displayName = "#read(\"/etc/passwd\")", role = Role.INSPECTOR)
+        ProjectMemberService.addMember(boss, projectId, AddMemberRequest(other.id.toString(), "INSPECTOR", "= nadpis \$ x \$ #include \"main.typ\""))
+        AuthorizedPersonService.create(boss, projectId, CreateAuthorizedPersonRequest("#panic(\"P\")", "*firma*", "#panic(\"F\")"))
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        for (printed in listOf("#panic(\"X\") *Jan*", "#read(\"/etc/passwd\")", "= nadpis \$ x \$ #include \"main.typ\"", "#panic(\"P\")", "*firma*", "#panic(\"F\")")) {
+            assertTrue(squeezed(text).contains(squeezed(printed)), "'$printed' is printed as it was typed: $text")
+        }
+        assertFalse(text.contains("root:x"), "nothing was read from the machine")
+    }
+
+    @Test
+    fun `a format 3 entry that lost its part A says so, and prints no present data as if it were the signed one`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectWithPersons(boss)
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+        dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
+            dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
+            try {
+                dsl.execute("""update daily_reports set "partASnapshot" = null where id = ?""", report)
+            } finally {
+                dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
+            }
+        }
+
+        val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(Regex("""nejsou[\s\S]{0,20}uloženy[\s\S]{0,30}nelze ověřit""").containsMatchIn(text), text)
+        assertTrue(Regex("""Otisk údajů o stavbě[\s\S]{0,120}nelze ověřit""").containsMatchIn(text), text)
+        assertFalse(text.contains("Ing. Karel Dozor"), "today's persons are not printed in its place: $text")
+        assertFalse(text.contains("Zhotovitel s.r.o."), text)
+    }
+
+    @Test
+    fun `a project with the most persons it may have is printed within the time limit`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = projectOf(boss)
+        val scope = "Rozsah oprávnění a odpovědnosti osoby číslo %d. ".repeat(10).take(500)
+        for (n in 1 until PartASnapshot.MAX_PERSONS) {
+            val id = UUID.randomUUID()
+            dsl.execute(
+                """insert into users (id, nickname, "displayName", "passwordHash", role, "isActive", "mustChangePwd") values (?, ?, ?, 'x', 'INSPECTOR', true, false)""",
+                id, "bulk$n", "Člen číslo $n",
+            )
+            dsl.execute("""insert into project_members ("projectId", "userId", role, scope) values (?, ?, 'INSPECTOR', ?)""", projectId, id, scope.replace("%d", n.toString()))
+        }
+        repeat(PartASnapshot.MAX_PERSONS) { n ->
+            dsl.execute("""insert into authorized_persons ("projectId", name, company, "authorization") values (?, ?, 'Firma', ?)""", projectId, "Osoba $n", scope)
+        }
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+
+        val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
+
+        assertTrue(pages.size > 3, "two hundred persons take several pages: ${pages.size}")
+        val last = pages.indexOfFirst { it.contains("Konec denního záznamu č. 1") }
+        assertTrue(last >= 0 && Regex("(?m)^Podpis$").containsMatchIn(pages[last]), "the signature and the end of the entry are on one page")
+    }
+
     // --- the layout, with data made by hand (no database) -----------------------------------------------------
 
     private fun dataOf(workDescription: String, isSigned: Boolean = true, projectName: String = "Bytový dům Zelená") = ReportPdfData(
@@ -485,6 +628,19 @@ class RealTypstPdfTest : BaseIntegrationTest() {
             val pages = pagesOf(render(dataOf(lines(count))))
             val heading = pages.indexOfFirst { Regex("(?m)^Podpis$").containsMatchIn(it) }
             val hash = pages.indexOfFirst { squeezed(it).contains("7".repeat(64)) }
+            val end = pages.indexOfFirst { it.contains("Konec denního záznamu č. 7") }
+            if (heading < 0 || heading != hash || heading != end) splitAt += count
+        }
+        assertEquals(emptyList<Int>(), splitAt, "entries of these numbers of lines have a signature that is split between two pages")
+    }
+
+    @Test
+    fun `the signature block of format 3, with its row for part A, is never split between two pages either`() {
+        var splitAt = emptyList<Int>()
+        for (count in 20..130 step 2) {
+            val pages = pagesOf(render(dataOf(lines(count)).copy(signatureFormat = 3, partASha256 = "8".repeat(64))))
+            val heading = pages.indexOfFirst { Regex("(?m)^Podpis$").containsMatchIn(it) }
+            val hash = pages.indexOfFirst { squeezed(it).contains("8".repeat(64)) }
             val end = pages.indexOfFirst { it.contains("Konec denního záznamu č. 7") }
             if (heading < 0 || heading != hash || heading != end) splitAt += count
         }

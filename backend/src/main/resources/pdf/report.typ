@@ -6,7 +6,8 @@
 //
 // What the document says, in order (the data model is `ReportPdfData` in ReportPdfData.kt, section by section):
 //   title and status
-//   part A  the identification of the diary: the project, the firms, the documents (příloha 12, part A)
+//   part A  the identification of the diary: the project, the firms, the persons with a role, the documents (příloha 12, part A);
+//           for an entry signed in format 3 as it stood on the day of signing (part of the signature), otherwise as it stands today
 //   part B  the entry of the day: every field that the signature covers, with "bez záznamu" where it says nothing
 //   the signature, and the end of the entry ("Konec denního záznamu č. N")
 //   what was added after the signature: acknowledgements, addenda, entries of other parties (not part of the signature)
@@ -115,6 +116,46 @@
   ..if d.supportingDocuments != "" { (([Podklady stavby], plain(d.supportingDocuments)),) } else { () },
 ))
 
+// The persons of part A (příloha 12 A d), e), f)): who ensures the technical management of the works and for what, the
+// supervision, and the persons who may make entries. A table that has no row is not printed.
+#let people(rows) = table(
+  columns: (1fr, auto, 1.4fr),
+  stroke: rule,
+  inset: (x: 6pt, y: 5pt),
+  fill: (x, y) => if y == 0 { luma(243) },
+  table.header([*Jméno*], [*Číslo ČKAIT*], [*Rozsah oprávnění a odpovědnosti*]),
+  ..rows.map(m => (
+    [#plain(m.name)#if m.siteManager [ (stavbyvedoucí)]],
+    if m.ckait != "" { plain(m.ckait) } else [—],
+    or-none(m.scope),
+  )).flatten(),
+)
+
+#if d.managers.len() > 0 [
+  === Osoby zajišťující odborné vedení provádění stavby
+
+  #people(d.managers)
+]
+
+#if d.supervisors.len() > 0 [
+  === Dozor (technický dozor stavebníka, autorský dozor)
+
+  #people(d.supervisors)
+]
+
+#if d.authorizedPersons.len() > 0 [
+  === Pověřené osoby (osoby oprávněné zapisovat do deníku, § 166 odst. 2)
+
+  #table(
+    columns: (1fr, 1fr, 1.4fr),
+    stroke: rule,
+    inset: (x: 6pt, y: 5pt),
+    fill: (x, y) => if y == 0 { luma(243) },
+    table.header([*Jméno*], [*Organizace*], [*Funkce, rozsah pověření*]),
+    ..d.authorizedPersons.map(p => (plain(p.name), or-none(p.company), or-none(p.function))).flatten(),
+  )
+]
+
 #if d.projectInfoNote != "" [
   #v(0.3em)
   #text(size: 9pt, style: "italic", fill: grey)[#plain(d.projectInfoNote)]
@@ -199,11 +240,15 @@
       // Only an entry of the first signature format can be old enough to have no hash (and, in test data, no audit row); a
       // missing hash or row in a later format is a failure of the check, and is said so, not explained away.
       ([Otisk obsahu (SHA-256)], if d.signatureHash != "" { hash(d.signatureHash) } else if d.signatureFormat == 1 [neuložen (záznam byl podepsán před zavedením otisků)] else [otisk podpisu chybí: záznam nelze ověřit]),
+      // From format 3 on the identification of the diary as it stood is stored with the signature, and its hash is part of what is signed.
+      ..if d.signatureFormat != none and d.signatureFormat >= 3 {
+        (([Otisk údajů o stavbě (SHA-256)], if d.partASha256 != "" { hash(d.partASha256) } else [údaje o stavbě platné ke dni podpisu nejsou uloženy: záznam nelze ověřit]),)
+      } else { () },
       // The audit row that recorded the signature: its `after` holds the hash above, so it ties this entry to the chain.
       ([Podpis v auditním řetězci (SHA-256 řádku)], if d.auditRowHash != "" { hash(d.auditRowHash) } else if d.signatureFormat == 1 [nenalezen (záznam byl podepsán před zavedením auditního deníku)] else [záznam o podpisu v auditním řetězci chybí: záznam nelze ověřit]),
     ))
     #v(0.3em)
-    #text(size: 8.5pt, style: "italic", fill: grey)[Otisk obsahu lze ověřit v aplikaci (Ověřit podpis). Řádek auditního řetězce, který podpis zapsal, obsahuje týž otisk, a váže tak vytištěný záznam k řetězci.]
+    #text(size: 8.5pt, style: "italic", fill: grey)[Otisk obsahu lze ověřit v aplikaci (Ověřit podpis). Řádek auditního řetězce, který podpis zapsal, obsahuje týž otisk, a váže tak vytištěný záznam k řetězci.#if d.signatureFormat != none and d.signatureFormat >= 3 [ Jméno a číslo ČKAIT podepisujícího a údaje o stavbě (část A) se uložily při podpisu a podpis je pokrývá.]]
   ] else [
     #rect(width: 100%, stroke: rule, inset: 8pt)[
       Záznam není podepsán. Dokud není podepsán, může se měnit; číslo mu bude přiděleno při podpisu.

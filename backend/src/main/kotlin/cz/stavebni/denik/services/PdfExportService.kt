@@ -22,7 +22,6 @@ import java.nio.file.Files
 import java.time.Duration
 import java.time.LocalDate
 import java.time.OffsetDateTime
-import java.time.ZoneOffset
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
@@ -151,29 +150,43 @@ object PdfExportService {
     private const val SIGNER_NAME_LIMIT = 120
     private const val SIGNER_CKAIT_LIMIT = 40
 
-    /** A calendar day that is stored as a timestamp at UTC midnight (the date of a permit or a contract), in Czech form. */
-    private fun storedDay(value: OffsetDateTime?): String? =
-        value?.let { CzechFormat.date(it.withOffsetSameInstant(ZoneOffset.UTC).toLocalDate()) }
+    /** A calendar day of part A (`YYYY-MM-DD`: the date of a permit or a contract) in Czech form. */
+    private fun partADay(value: String?): String? = value?.let { runCatching { CzechFormat.date(LocalDate.parse(it)) }.getOrDefault(it) }
 
-    /** Part A: the identification of the diary as labelled rows; a row without a value is left out. A number and its date share a row. */
-    private fun projectInfoOf(tx: DSLContext, project: org.jooq.Record): List<LabeledPdf> {
-        fun text(value: String?) = value?.trim().orEmpty()
-        fun numbered(number: String?, date: OffsetDateTime?): String =
-            listOfNotNull(text(number).ifEmpty { null }, storedDay(date)?.let { "ze dne $it" }).joinToString(" ")
+    /**
+     * Part A: the identification of the diary as labelled rows; a row without a value is left out. A number and its date share a
+     * row. [partA] is the snapshot stored with the signature (format 3) or part A as it stands now: the rows are the same.
+     */
+    private fun projectInfoOf(partA: PartA): List<LabeledPdf> {
+        val identification = partA.identification
+        fun text(key: String) = identification[key]?.trim().orEmpty()
+        fun numbered(number: String, date: String): String =
+            listOfNotNull(number.ifEmpty { null }, partADay(date.ifEmpty { null })?.let { "ze dne $it" }).joinToString(" ")
+        fun person(name: String, ckait: String?): String = listOfNotNull(name.ifEmpty { null }, ckait?.let { "ČKAIT $it" }).joinToString(", ")
+        // The author's supervision (příloha 12 A e)): who it is, and the number of their authorisation.
+        val supervision = listOfNotNull(text("authorSupervisionName").ifEmpty { null }, text("authorSupervisionAuthorization").ifEmpty { null }?.let { "autorizace $it" }).joinToString(", ")
         return listOf(
-            "Katastrální území" to text(project.get(PROJECTS.CADASTRALAREA)),
-            "Parcelní čísla" to text(project.get(PROJECTS.PARCELNUMBERS)),
-            "Stavebník" to text(project.get(PROJECTS.BUILDER)),
-            "Zhotovitel" to text(project.get(PROJECTS.CONTRACTOR)),
-            "Stavbyvedoucí" to personOf(tx, project.get(PROJECTS.SITEMANAGERID), withCkait = true),
-            "Projektant" to text(project.get(PROJECTS.DESIGNERNAME)),
-            "Povolení" to numbered(project.get(PROJECTS.PERMITNUMBER), project.get(PROJECTS.PERMITDATE)),
-            "Technický dozor stavebníka" to text(project.get(PROJECTS.TDSNAME)),
-            "Koordinátor BOZP" to text(project.get(PROJECTS.BOZPNAME)),
-            "Smlouva" to numbered(project.get(PROJECTS.CONTRACTNUMBER), project.get(PROJECTS.CONTRACTDATE)),
-            "Projektová dokumentace" to numbered(project.get(PROJECTS.DESIGNDOCVERSION), project.get(PROJECTS.DESIGNDOCDATE)),
+            "Katastrální území" to text("cadastralArea"),
+            "Parcelní čísla" to text("parcelNumbers"),
+            "Stavebník" to text("builder"),
+            "Zhotovitel" to text("contractor"),
+            "Stavbyvedoucí" to person(partA.siteManager.name, partA.siteManager.ckaitNumber),
+            "Projektant" to text("designerName"),
+            "Autorský dozor" to supervision,
+            "Povolení" to numbered(text("permitNumber"), text("permitDate")),
+            "Technický dozor stavebníka" to text("tdsName"),
+            "Koordinátor BOZP" to text("bozpName"),
+            "Smlouva" to numbered(text("contractNumber"), text("contractDate")),
+            "Projektová dokumentace" to numbered(text("designDocVersion"), text("designDocDate")),
         ).filter { it.second.isNotEmpty() }.map { LabeledPdf(it.first, it.second) }
     }
+
+    /** The persons of part A with the given role (BOSS: who ensures the technical management, INSPECTOR: the supervision), as the table prints them. */
+    private fun personsOf(partA: PartA, role: String): List<PartAPersonPdf> =
+        partA.members.filter { it.role == role }.map { PartAPersonPdf(it.name, it.ckaitNumber.orEmpty(), it.scope.orEmpty(), it.userId == partA.siteManager.userId) }
+
+    private fun authorizedPersonsOf(partA: PartA): List<AuthorizedPersonPdf> =
+        partA.authorizedPersons.map { AuthorizedPersonPdf(it.name, it.company.orEmpty(), it.authorization.orEmpty()) }
 
     /**
      * The identification is read from the project NOW: a signed entry does not carry a copy of it and the signature does not
@@ -187,6 +200,28 @@ object PdfExportService {
         if (lockedAt != null && projectChangedAt != null && projectChangedAt.isAfter(lockedAt)) {
             append(" Po podpisu tohoto záznamu byly změněny dne ${CzechFormat.date(CzechFormat.pragueDate(projectChangedAt))}.")
         }
+    }
+
+    /**
+     * Signed in format 3 the identification is the one that was stored with the signature, which is part of what is signed: it is
+     * the day of signing (Prague day, decision D10), and nothing later changes it, so there is nothing to say about later changes.
+     */
+    internal fun projectInfoNoteFrozen(signedAt: OffsetDateTime): String =
+        "Údaje o stavbě platné ke dni podpisu ${CzechFormat.date(CzechFormat.pragueDate(signedAt))} (stav v okamžiku podpisu záznamu); jsou součástí podpisu záznamu."
+
+    /** A signature of format 3 whose stored part A is missing or unreadable cannot be verified, and the document says so instead of printing today's data in its place. */
+    internal const val PART_A_MISSING_NOTE =
+        "Údaje o stavbě platné ke dni podpisu nejsou u záznamu uloženy: záznam nelze ověřit. Název stavby a adresa jsou z dnešního stavu stavby."
+
+    /** Printed in place of the signer of a signature of format 3 that lost the signer's name or number. */
+    internal const val SIGNER_MISSING = "jméno nebo číslo ČKAIT podepisujícího není uloženo: záznam nelze ověřit"
+
+    /** The signer as the signature stored them (format 3), cut like [personOf] cuts an account: the signature block has a known height. */
+    private fun storedSignerOf(report: DailyReportsRecord): String {
+        val name = report.get(DAILY_REPORTS.SIGNERNAME)?.trim().orEmpty()
+        val ckait = report.get(DAILY_REPORTS.SIGNERCKAITNUMBER)?.trim().orEmpty()
+        if (name.isEmpty() || ckait.isEmpty()) return SIGNER_MISSING
+        return "${shortened(name, SIGNER_NAME_LIMIT)}, ČKAIT ${shortened(ckait, SIGNER_CKAIT_LIMIT)}"
     }
 
     /** One reader for what is stored as JSON text; built once. */
@@ -269,19 +304,43 @@ object PdfExportService {
         val day = checkNotNull(report.get(DAILY_REPORTS.DATE)) { "the date of an entry is NOT NULL" }
         val lockedAt = report.get(DAILY_REPORTS.LOCKEDAT)
         val signedAt = report.get(DAILY_REPORTS.SIGNEDAT)
+        val signatureFormat = if (lockedAt != null) report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() else null
+
+        // Part A. A signature of format 3 stored it with the entry (the identification as it was on the day of signing), and that
+        // is what is printed; a draft and an older entry have none, and the project as it stands now is printed, as it always was.
+        // A format 3 entry whose snapshot is gone is not given today's data in its place: it is a failure of the signature.
+        val frozen = signatureFormat != null && signatureFormat >= 3
+        val storedPartA = if (frozen) report.get(DAILY_REPORTS.PARTASNAPSHOT)?.takeIf { it.isNotBlank() } else null
+        val partA: PartA? = when {
+            !frozen -> PartASnapshot.read(tx, report.get(DAILY_REPORTS.PROJECTID)!!)
+            storedPartA == null -> null
+            else -> runCatching { PartASnapshot.parse(storedPartA) }
+                .onFailure { log.warn("The part A snapshot of report {} is not readable: {}", reportId, it.javaClass.simpleName) }
+                .getOrNull()
+        }
+        val partAMissing = frozen && partA == null
         return ReportPdfData(
             // the page
-            projectName = project.get(PROJECTS.NAME) ?: "",
-            address = project.get(PROJECTS.ADDRESS) ?: "",
+            projectName = partA?.identification?.get("name") ?: project.get(PROJECTS.NAME) ?: "",
+            address = partA?.identification?.get("address") ?: project.get(PROJECTS.ADDRESS) ?: "",
             date = CzechFormat.date(day),
             weekday = CzechFormat.weekday(day),
             sequenceNumber = report.get(DAILY_REPORTS.SEQUENCENUMBER),
             isSigned = lockedAt != null,
             // part A
-            projectInfo = projectInfoOf(tx, project),
-            projectInfoNote = projectInfoNote(Dates.today(), lockedAt, project.get(PROJECTS.UPDATEDAT)),
-            subcontractors = project.get(PROJECTS.SUBCONTRACTORS)?.trim().orEmpty(),
-            supportingDocuments = project.get(PROJECTS.SUPPORTINGDOCUMENTS)?.trim().orEmpty(),
+            projectInfo = partA?.let { projectInfoOf(it) }.orEmpty(),
+            projectInfoNote = when {
+                partAMissing -> PART_A_MISSING_NOTE
+                frozen -> projectInfoNoteFrozen(checkNotNull(signedAt) { "a signed entry has the time it was signed" })
+                else -> projectInfoNote(Dates.today(), lockedAt, project.get(PROJECTS.UPDATEDAT))
+            },
+            subcontractors = partA?.identification?.get("subcontractors")?.trim().orEmpty(),
+            supportingDocuments = partA?.identification?.get("supportingDocuments")?.trim().orEmpty(),
+            managers = partA?.let { personsOf(it, "BOSS") }.orEmpty(),
+            supervisors = partA?.let { personsOf(it, "INSPECTOR") }.orEmpty(),
+            authorizedPersons = partA?.let { authorizedPersonsOf(it) }.orEmpty(),
+            partASha256 = if (storedPartA != null && partA != null) PartASnapshot.sha256(storedPartA) else "",
+            partAMissing = partAMissing,
             // part B
             author = personOf(tx, report.get(DAILY_REPORTS.AUTHORID)),
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
@@ -295,8 +354,10 @@ object PdfExportService {
             photos = photosOf(tx, reportId),
             // the signature
             entryId = reportId.toString(),
-            signedBy = personOf(tx, report.get(DAILY_REPORTS.SIGNEDBYID), withCkait = true, nameLimit = SIGNER_NAME_LIMIT, ckaitLimit = SIGNER_CKAIT_LIMIT),
-            signatureFormat = if (lockedAt != null) report.get(DAILY_REPORTS.SIGNATUREFORMAT)?.toInt() else null,
+            // From format 3 on the signer is what the signature stored; before, the account as it is now (the entry did not keep it).
+            signedBy = if (frozen) storedSignerOf(report)
+            else personOf(tx, report.get(DAILY_REPORTS.SIGNEDBYID), withCkait = true, nameLimit = SIGNER_NAME_LIMIT, ckaitLimit = SIGNER_CKAIT_LIMIT),
+            signatureFormat = signatureFormat,
             signedAt = signedAt?.let { CzechFormat.dateTime(it) } ?: "",
             signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
             auditRowHash = if (lockedAt != null) lockRowHashOf(tx, reportId) else "",

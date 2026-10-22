@@ -5,8 +5,9 @@ import kotlinx.serialization.Serializable
 /**
  * What the fixed template (`pdf/report.typ`) shows. Everything user-controlled travels in here as data, never in the
  * template. The fields are in the order the document shows them, one section after the other; a section is built by one
- * function of [PdfExportService], so a later change touches one section (the authorised persons of backlog B9 join part A,
- * the identification as of the day of signing of C2 changes where part A comes from).
+ * function of [PdfExportService], so a later change touches one section. Part A comes from [PartASnapshot]: for an entry
+ * signed in format 3 from the snapshot stored with it (the identification as it stood on the day of signing), otherwise from
+ * the project as it stands when the PDF is made.
  *
  * Every text that people read is already formatted here: dates as `28. 9. 2026`, times in Prague time with the zone
  * (see CzechFormat). The template only lays out.
@@ -26,19 +27,30 @@ internal data class ReportPdfData(
 
     // ---- part A: the identification of the diary (příloha 12, part A) -----------------------------------------------
     /**
-     * The identification as entered about the project NOW: the entry PDF is made on request and prints the project as it
-     * stands when it is made. Only what has a value.
+     * The identification, only what has a value. Signed in format 3 it is the identification as it stood on the day of signing
+     * (part of the signature); a draft and an older entry print the project as it stands when the PDF is made.
      */
     val projectInfo: List<LabeledPdf> = emptyList(),
     /**
-     * Says that the identification above is the project's as of the day the PDF is made and is not part of the signature,
-     * and, for a signed entry, when the project was last changed if that was after signing.
+     * Says which of the two the identification is: as of the day of signing and part of the signature, or as of the day the
+     * PDF is made and (for a signed entry) not part of the signature, with when the project was last changed if that was after
+     * signing. For an entry whose stored snapshot is missing: that it cannot be verified.
      */
     val projectInfoNote: String = "",
     /** The firms of the subcontractors, one per line; empty when none were entered. */
     val subcontractors: String = "",
     /** The documents the diary refers to, one per line; empty when none were entered. */
     val supportingDocuments: String = "",
+    /** The managers (role BOSS) of the project, with the scope of their authorisation and responsibility (příloha 12 A d)). */
+    val managers: List<PartAPersonPdf> = emptyList(),
+    /** The members of the supervision (role INSPECTOR), with their scope (A e)). */
+    val supervisors: List<PartAPersonPdf> = emptyList(),
+    /** The persons who may make entries, with their function (A f)). */
+    val authorizedPersons: List<AuthorizedPersonPdf> = emptyList(),
+    /** SHA-256 of the part A snapshot stored with the signature (format 3); empty otherwise. */
+    val partASha256: String = "",
+    /** The entry was signed in format 3 and its snapshot is missing or unreadable: the signature cannot be verified. */
+    val partAMissing: Boolean = false,
 
     // ---- part B: the entry of the day -------------------------------------------------------------------------------
     // Everything the signature covers is here, so the printed entry says everything that was signed.
@@ -92,6 +104,13 @@ internal data class ReportPdfData(
 
 @Serializable
 internal data class LabeledPdf(val label: String, val value: String)
+
+/** A person named in part A: the ČKAIT number is empty when there is none, the scope when none was stated. */
+@Serializable
+internal data class PartAPersonPdf(val name: String, val ckait: String, val scope: String, val siteManager: Boolean)
+
+@Serializable
+internal data class AuthorizedPersonPdf(val name: String, val company: String, val function: String)
 
 @Serializable
 internal data class WorkerPdf(val trade: String, val count: Int, val names: String)
