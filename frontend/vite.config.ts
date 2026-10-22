@@ -11,7 +11,7 @@ export default defineConfig({
   },
   // Unit tests (pure modules in src/lib, no DOM): `pnpm test`. The browser behaviour is covered by the Playwright suite in e2e/.
   test: {
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
   },
   server: {
     port: 5173,

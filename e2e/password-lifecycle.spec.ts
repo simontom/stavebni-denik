@@ -51,6 +51,9 @@ test("temporary password: forced change, own password afterwards, administrator 
   await expect(submit).toBeDisabled();
   await userPage.locator("#new-password").fill(OWN_PASSWORD);
   await userPage.locator("#repeat-password").fill("E2e-Jine-Heslo-1!");
+  // A repeat that is shorter than the new password is not called wrong while it is typed (it may be the start of it): the person has to
+  // leave the field first (e2e/ui-foundations.spec.ts has the timing).
+  await userPage.locator("#repeat-password").blur();
   await expect(userPage.getByText(/hesla se neshodují/i)).toBeVisible();
   await expect(submit).toBeDisabled();
   await userPage.locator("#repeat-password").fill(OWN_PASSWORD);

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { Banner, Button } from "../components/ui";
 
 interface AuditEntry {
   id: number;
@@ -46,37 +47,33 @@ export const AuditLogViewer: React.FC = () => {
   }, []);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
-      <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Audit log</h1>
-          <p className="mt-1 text-sm text-gray-500">Neměnný záznam všech změn v systému (posledních 200 událostí).</p>
+          <h1 className="text-2xl font-bold text-ink">Audit log</h1>
+          <p className="mt-1 text-sm text-ink-muted">Neměnný záznam všech změn v systému (posledních 200 událostí).</p>
         </div>
-        <button
-          type="button"
-          onClick={() => void handleVerify()}
-          disabled={verifying}
-          className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
-        >
+        <Button variant="secondary" onClick={() => void handleVerify()} disabled={verifying}>
           {verifying ? "Ověřuji…" : "Ověřit integritu"}
-        </button>
+        </Button>
       </div>
 
       {verify &&
         (verify.ok ? (
-          <div className="mb-4 rounded bg-green-100 p-3 text-sm text-green-800">
+          <Banner tone="success" className="mb-4">
             Řetězec hashů je neporušený ({verify.totalRows} záznamů).
-          </div>
+          </Banner>
         ) : (
-          <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-800">
+          <Banner tone="danger" className="mb-4">
             Řetězec je porušen u záznamu #{verify.brokenAtId}: {verify.reason}
-          </div>
+          </Banner>
         ))}
 
       {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
 
+      {/* A list of events on a phone (table-cards, index.css); the table of the desktop scrolls inside its box if it must. */}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
-        <table className="min-w-full divide-y divide-gray-200 text-sm">
+        <table className="min-w-full divide-y divide-gray-200 text-sm max-sm:table-cards">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Čas</th>
@@ -103,14 +100,18 @@ export const AuditLogViewer: React.FC = () => {
             )}
             {logs.map((log) => (
               <tr key={log.id}>
-                <td className="px-4 py-2 whitespace-nowrap text-gray-700">{new Date(log.ts).toLocaleString("cs-CZ")}</td>
-                <td className="px-4 py-2 text-gray-700">{log.actorNickname ?? log.actorId ?? "systém"}</td>
-                <td className="px-4 py-2 font-medium text-gray-900">{log.action}</td>
-                <td className="px-4 py-2 text-gray-600">
+                <td className="px-4 py-2 whitespace-nowrap text-gray-700 tabular-nums">{new Date(log.ts).toLocaleString("cs-CZ")}</td>
+                <td data-label="Uživatel" className="px-4 py-2 text-gray-700">
+                  {log.actorNickname ?? log.actorId ?? "systém"}
+                </td>
+                <td data-label="Akce" className="px-4 py-2 font-medium text-gray-900">
+                  {log.action}
+                </td>
+                <td data-label="Entita" className="px-4 py-2 text-gray-600">
                   {log.entityType}
                   {log.entityId ? `: ${log.entityId}` : ""}
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-gray-400" title={log.rowHash}>
+                <td data-label="Hash" className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
                   {log.rowHash.slice(0, 12)}…
                 </td>
               </tr>

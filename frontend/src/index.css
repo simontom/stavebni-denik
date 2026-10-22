@@ -1,1 +1,194 @@
-@import 'tailwindcss';
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every colour is a hex literal on purpose: src/lib/colorTokens.test.ts reads this file and fails when a text
+ * pair drops under 4.5:1 or a field or button boundary under 3:1 (WCAG 2.2 AA, 1.4.3 and 1.4.11), so a change of a token
+ * cannot quietly break the contrast of the whole application.
+ *
+ * Tailwind builds the utilities from the names: `--color-ink-muted` is `text-ink-muted`, `--color-danger-soft` is `bg-danger-soft`.
+ * Components (components/ui/) use only these names. A tone has up to four parts:
+ *   <tone>        a solid background that carries white text (a button, an accent line)
+ *   <tone>-hover  the same, pressed or hovered
+ *   <tone>-soft   a tinted background (a banner, a badge)
+ *   <tone>-ink    text on `<tone>-soft` and on the white surface
+ */
+@theme {
+  /* The page, the cards on it, and the text on both */
+  --color-page: #f9fafb; /* gray-50 */
+  --color-surface: #ffffff;
+  --color-ink: #111827; /* gray-900: 17.7:1 on the surface */
+  --color-ink-muted: #4b5563; /* gray-600: 7.6:1 on the surface, 7.2:1 on the page; for hints and secondary text */
+
+  /* Lines. `line` is decoration (the edge of a card, a divider, the default border colour) and has no contrast duty;
+     `input` draws the boundary of a field or a button, which a person has to be able to see: at least 3:1. */
+  --color-line: #e5e7eb; /* gray-200 */
+  --color-input: #6b7280; /* gray-500: 4.8:1 on the surface */
+  --color-focus: #4f46e5; /* the focus ring */
+
+  --color-primary: #4f46e5; /* indigo-600: white on it is 6.3:1 */
+  --color-primary-hover: #4338ca; /* indigo-700 */
+  --color-primary-soft: #eef2ff; /* indigo-50 */
+  --color-primary-ink: #4338ca; /* indigo-700: 7.9:1 on the surface; links */
+
+  --color-danger: #b91c1c; /* red-700: white on it is 6.5:1 (red-500 error text was 3.8:1) */
+  --color-danger-hover: #991b1b; /* red-800 */
+  --color-danger-soft: #fee2e2; /* red-100 */
+  --color-danger-ink: #991b1b; /* red-800: 6.8:1 on red-100 */
+
+  --color-success: #15803d; /* green-700: white on it is 5.0:1 (white on emerald-600 was 3.8:1) */
+  --color-success-hover: #166534; /* green-800 */
+  --color-success-soft: #dcfce7; /* green-100 */
+  --color-success-ink: #166534; /* green-800: 6.5:1 on green-100 */
+
+  --color-warning: #b45309; /* amber-700: the accent line of a warning */
+  --color-warning-soft: #fef3c7; /* amber-100 */
+  --color-warning-ink: #78350f; /* amber-900: 8.2:1 on amber-100 */
+
+  --color-info: #1d4ed8; /* blue-700: the accent line of a notice */
+  --color-info-soft: #dbeafe; /* blue-100 */
+  --color-info-ink: #1e40af; /* blue-800: 7.2:1 on blue-100 */
+
+  --color-neutral-soft: #f3f4f6; /* gray-100 */
+  --color-neutral-ink: #1f2937; /* gray-800: 13.3:1 on gray-100 */
+
+  /*
+   * Transitional. The pages that are not yet on the shared components (backlog B4 to B7 convert them) still spell
+   * `border-gray-300` for the edge of a field or a button, which is 1.5:1 on white. Until the last of them is converted this
+   * name points at the accessible border colour (also `ring-gray-300` and `divide-gray-300`). Delete the line, and the
+   * guard for it in colorTokens.test.ts, with the last page that uses the name.
+   */
+  --color-gray-300: #6b7280;
+}
+
+@layer base {
+  /* No dark mode: the colours above are tuned for dark text on a light page (readable in sunlight on a site), and a browser's
+     forced dark mode (Chrome on Android, Samsung Internet) would invert them. `only` keeps it from doing that. The same
+     is said in a <meta name="color-scheme"> in index.html, which acts before the stylesheet has loaded. */
+  :root {
+    color-scheme: only light;
+  }
+
+  body {
+    background-color: var(--color-page);
+    color: var(--color-ink);
+    /* A long word without a place to break (a file name, a construction object typed without spaces) wraps instead of pushing
+       the page wider than the screen. `anywhere`, unlike `break-word`, also counts in the minimum width of flex items. */
+    overflow-wrap: anywhere;
+  }
+
+  /* Tailwind 4's border without a colour is `currentColor`: a bare `border` turned into a black line. */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-line);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  /* While a modal dialog is open the page behind does not scroll (components/ui/scrollLock.ts); the gutter stays, so nothing shifts. */
+  html.modal-open {
+    overflow: hidden;
+    scrollbar-gutter: stable;
+  }
+
+  /* Dates and numbers keep their width, so columns of them line up and a counter does not jitter. */
+  input[type="number"],
+  input[type="date"],
+  time {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/*
+ * Touch safety nets. Not in a layer, so they win over the utility classes of the pages that are not converted yet.
+ *
+ * A finger is a coarse pointer, and it is one at any width: a phone held sideways is 780 px wide and has no more precise a
+ * thumb than the same phone held upright. So the rules follow the pointer, and (for a window of a desktop browser dragged narrow)
+ * also the width: under 640 px (Tailwind's "sm") everything counts as a phone.
+ */
+@media (max-width: 39.999rem), (pointer: coarse) {
+  /* iOS zooms the page into a field whose text is smaller than 16 px when it gets the focus, and does not zoom out again. */
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="hidden"], [type="submit"], [type="button"]),
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+@media (pointer: coarse) {
+  /* A thumb needs 44 px: every button and every one-line field, also in the forms that are not converted yet. */
+  button,
+  select,
+  input:not([type="checkbox"], [type="radio"], [type="file"], [type="range"], [type="hidden"]) {
+    min-height: 2.75rem;
+  }
+  /* A tick box is 16 px by default: a quarter of the size a thumb needs, but its label is the rest of the target. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
+/*
+ * A table that is a list: "max-sm:table-cards" below 640 px, "max-xl:table-cards" for a table too wide for anything under 1280 px.
+ * Every row is a block with its cells one under the other, a cell with a data-label starts with that caption, the header row
+ * stays for screen readers only, and a button or a link in a cell is as large as a thumb needs. Above the breakpoint nothing
+ * changes: it is the same table. The markup is the table's own, so a page needs one class and the captions.
+ * (Known limit: Safari with VoiceOver may stop announcing a table whose cells are display: block as a table.)
+ */
+@utility table-cards {
+  display: block;
+  & > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  & > tbody {
+    display: block;
+  }
+  & > tbody > tr {
+    display: block;
+    padding: 0.75rem 1rem;
+  }
+  & > tbody > tr > td,
+  & > tbody > tr > th {
+    display: block;
+    padding: 0.125rem 0;
+    white-space: normal;
+    text-align: left;
+  }
+  & > tbody > tr > td[colspan] {
+    padding: 0.75rem 0;
+  }
+  & > tbody > tr > td[data-label]::before {
+    content: attr(data-label) ": ";
+    font-size: 0.75rem;
+    color: var(--color-ink-muted);
+  }
+  & > tbody > tr > td:has(> button, > a) {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 0.5rem;
+    margin-top: 0.5rem;
+  }
+  & > tbody > tr > td > button,
+  & > tbody > tr > td > a {
+    min-height: 2.75rem;
+    margin-left: 0;
+    padding-inline: 0.5rem;
+  }
+  /* The first one's text lines up with the text above it, its padding hangs out into the margin. */
+  & > tbody > tr > td > :is(button, a):first-child {
+    margin-left: -0.5rem;
+  }
+}

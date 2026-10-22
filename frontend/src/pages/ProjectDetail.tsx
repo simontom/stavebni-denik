@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { pragueToday } from "../lib/dates";
+import { Button, Card, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
 
 interface Meter {
   medium: string;
@@ -348,64 +349,65 @@ export const ProjectDetail: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="p-8 text-center text-gray-500">Načítání detailu projektu...</div>;
-  if (!project) return <div className="p-8 text-center text-red-600">{error || "Projekt nenalezen"}</div>;
-
-  const tabClass = (name: string) =>
-    `border-b-2 px-1 pb-4 text-sm font-medium ${tab === name ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700"}`;
+  if (loading) return <PageState kind="loading">Načítání detailu projektu...</PageState>;
+  if (!project) return <PageState kind="error">{error || "Projekt nenalezen"}</PageState>;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8">
+    <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
       {/* Project Header */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col items-start justify-between md:flex-row md:items-center">
+      <Card className="mb-6">
+        <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{project.name}</h1>
-            <p className="mt-1 text-gray-600">{project.address}</p>
+            <h1 className="text-2xl font-bold text-ink sm:text-3xl">{project.name}</h1>
+            <p className="mt-1 text-ink-muted">{project.address}</p>
             {project.myRole === "BOSS" && (
-              <Link to={`/projects/${id}/edit`} className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:underline">
+              <Link to={`/projects/${id}/edit`} className="mt-1 -ml-2 inline-flex min-h-11 items-center px-2 text-sm font-medium text-primary-ink hover:underline">
                 Upravit údaje o stavbě
               </Link>
             )}
           </div>
-          <div className="mt-4 flex gap-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm md:mt-0">
-            {project.contractNumber && (
-              <div>
-                <span className="block text-xs text-gray-500">Číslo smlouvy:</span>
-                <span className="font-semibold text-gray-900">{project.contractNumber}</span>
-              </div>
-            )}
-            {project.designDocVersion && (
-              <div>
-                <span className="block text-xs text-gray-500">Dokumentace:</span>
-                <span className="font-semibold text-gray-900">{project.designDocVersion}</span>
-              </div>
-            )}
-          </div>
+          {(project.contractNumber || project.designDocVersion) && (
+            <div className="flex flex-wrap gap-4 rounded-md border border-line bg-page p-3 text-sm">
+              {project.contractNumber && (
+                <div>
+                  <span className="block text-xs text-ink-muted">Číslo smlouvy:</span>
+                  <span className="font-semibold text-ink">{project.contractNumber}</span>
+                </div>
+              )}
+              {project.designDocVersion && (
+                <div>
+                  <span className="block text-xs text-ink-muted">Dokumentace:</span>
+                  <span className="font-semibold text-ink">{project.designDocVersion}</span>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Tab Navigation */}
-        <div className="mt-6 flex space-x-8 border-b border-gray-200">
-          <Link to={`/projects/${id}`} className={tabClass("overview")}>
-            Přehled
-          </Link>
-          <Link to={`/projects/${id}?tab=reports`} className={tabClass("reports")}>
-            Záznamy
-          </Link>
-          <Link to={`/projects/${id}?tab=handovers`} className={tabClass("handovers")}>
-            Předání staveniště
-          </Link>
-          <Link to={`/projects/${id}?tab=members`} className={tabClass("members")}>
-            Členové
-          </Link>
+        <div className="mt-6">
+          <TabNav label="Části projektu">
+            <TabLink to={`/projects/${id}`} active={tab === "overview"}>
+              Přehled
+            </TabLink>
+            <TabLink to={`/projects/${id}?tab=reports`} active={tab === "reports"}>
+              Záznamy
+            </TabLink>
+            <TabLink to={`/projects/${id}?tab=handovers`} active={tab === "handovers"}>
+              Předání staveniště
+            </TabLink>
+            <TabLink to={`/projects/${id}?tab=members`} active={tab === "members"}>
+              Členové
+            </TabLink>
+          </TabNav>
         </div>
-      </div>
+      </Card>
 
       {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
 
       {/* Tab 1: Overview */}
       {tab === "overview" && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <Card>
           <h2 className="mb-4 text-xl font-semibold">Informace o stavbě</h2>
           <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-2">
             <div className="md:col-span-2">
@@ -564,76 +566,59 @@ export const ProjectDetail: React.FC = () => {
               </div>
             )}
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Tab 2: Reports (Záznamy) */}
       {tab === "reports" && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <Card>
           <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
             <div>
-              <h2 className="text-xl font-semibold text-gray-900">Denní záznamy</h2>
-              <p className="text-sm text-gray-500">Přehled a správa denních záznamů stavby.</p>
+              <h2 className="text-xl font-semibold text-ink">Denní záznamy</h2>
+              <p className="text-sm text-ink-muted">Přehled a správa denních záznamů stavby.</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => navigate(`/projects/${id}/reports/${today()}`)}
-                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-              >
-                Nový pro dnešek
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDownloadPdf()}
-                className="rounded-md border border-gray-300 bg-gray-100 px-4 py-2 text-sm font-semibold text-gray-800 shadow-sm hover:bg-gray-200"
-              >
+              <Button onClick={() => navigate(`/projects/${id}/reports/${today()}`)}>Nový pro dnešek</Button>
+              <Button variant="secondary" onClick={() => void handleDownloadPdf()}>
                 Stáhnout PDF
-              </button>
+              </Button>
             </div>
           </div>
 
-          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-md border border-gray-200 bg-gray-50 p-4">
-            <label htmlFor="new-report-date" className="text-sm font-medium text-gray-700">
+          <div className="mb-6 flex flex-wrap items-center gap-3 rounded-md border border-line bg-page p-4">
+            <label htmlFor="new-report-date" className="text-sm font-medium text-ink">
               Otevřít konkrétní datum:
             </label>
-            <input
-              id="new-report-date"
-              type="date"
-              max={today()}
-              value={newReportDate}
-              onChange={(e) => setNewReportDate(e.target.value)}
-              className="rounded border border-gray-300 px-3 py-1.5 text-sm"
-            />
-            <button
-              type="button"
-              onClick={() => navigate(`/projects/${id}/reports/${newReportDate}`)}
-              className="rounded bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900"
-            >
+            <TextInput id="new-report-date" type="date" max={today()} value={newReportDate} onChange={(e) => setNewReportDate(e.target.value)} className="w-auto" />
+            <Button variant="secondary" onClick={() => navigate(`/projects/${id}/reports/${newReportDate}`)}>
               Otevřít den
-            </button>
+            </Button>
           </div>
 
           {reports.length === 0 ? (
-            <p className="text-sm text-gray-500">Zatím nebyl vytvořen žádný denní záznam.</p>
+            <p className="text-sm text-ink-muted">Zatím nebyl vytvořen žádný denní záznam.</p>
           ) : (
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-line">
               {reports.map((r) => (
-                <div key={r.id} className="flex items-center justify-between py-4">
+                // On a phone the row is a short list: the day and what was done, and below them the two things to do with it.
+                <div key={r.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-4">
                   <div>
-                    <span className="mr-3 font-semibold text-indigo-600">{r.date}</span>
-                    <span className="text-sm text-gray-700">{r.workDescription || "Denní záznam stavebních prací"}</span>
+                    <span className="mr-3 font-semibold text-primary-ink tabular-nums">{r.date}</span>
+                    <span className="text-sm text-ink">{r.workDescription || "Denní záznam stavebních prací"}</span>
                   </div>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-2 sm:shrink-0 sm:gap-4 sm:whitespace-nowrap">
                     <button
                       type="button"
                       onClick={() => void handleDownloadPdf(r)}
                       aria-label={`Stáhnout PDF záznamu z ${r.date}`}
-                      className="text-sm text-gray-600 underline hover:text-gray-900"
+                      className="inline-flex min-h-11 items-center px-2 text-sm text-ink-muted underline hover:text-ink sm:px-0 sm:pointer-fine:min-h-0"
                     >
                       PDF
                     </button>
-                    <Link to={`/projects/${id}/reports/${r.date}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-900">
+                    <Link
+                      to={`/projects/${id}/reports/${r.date}`}
+                      className="inline-flex min-h-11 items-center px-2 text-sm font-medium text-primary-ink hover:underline sm:px-0 sm:pointer-fine:min-h-0"
+                    >
                       Zobrazit záznam →
                     </Link>
                   </div>
@@ -641,28 +626,22 @@ export const ProjectDetail: React.FC = () => {
               ))}
               {hasMoreReports && (
                 <div className="pt-4 text-center">
-                  <button
-                    type="button"
-                    onClick={() => void handleLoadOlderReports()}
-                    className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-                  >
+                  <Button variant="secondary" onClick={() => void handleLoadOlderReports()}>
                     Načíst starší záznamy
-                  </button>
+                  </Button>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Tab 3: Site Handovers (Předání staveniště) */}
       {tab === "handovers" && (
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-gray-900">Předání a převzetí staveniště</h2>
-            <button type="button" onClick={openHandoverModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-              Přidat předání
-            </button>
+        <Card>
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl font-semibold text-ink">Předání a převzetí staveniště</h2>
+            <Button onClick={openHandoverModal}>Přidat předání</Button>
           </div>
 
           {showHandoverModal && (
@@ -706,7 +685,7 @@ export const ProjectDetail: React.FC = () => {
                     </button>
                   </div>
                   {meters.map((m, idx) => (
-                    <div key={idx} className="mb-2 grid grid-cols-3 gap-2">
+                    <div key={idx} className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
                       <input
                         placeholder="Médium (např. Voda, Elektřina VT)"
                         value={m.medium}
@@ -754,25 +733,21 @@ export const ProjectDetail: React.FC = () => {
             <div className="space-y-4">
               {handovers.map((h) => (
                 <div key={h.id} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex items-start justify-between">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <h4 className="font-bold text-gray-900">{h.type}</h4>
                       <p className="text-sm text-gray-600">{h.participants}</p>
-                      <p className="text-xs text-gray-500">{formatDate(h.date)}</p>
+                      <p className="text-xs text-gray-500 tabular-nums">{formatDate(h.date)}</p>
                     </div>
                     <div>
                       {h.signedAt ? (
-                        <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno dne {formatDate(h.signedAt)}</span>
+                        <StatusBadge tone="success">Podepsáno dne {formatDate(h.signedAt)}</StatusBadge>
                       ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="rounded bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800">Čeká na podpis</span>
-                          <button
-                            type="button"
-                            onClick={() => void handleSignHandover(h.id)}
-                            className="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700"
-                          >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <StatusBadge tone="warning">Čeká na podpis</StatusBadge>
+                          <Button size="sm" onClick={() => void handleSignHandover(h.id)}>
                             Podepsat předání
-                          </button>
+                          </Button>
                         </div>
                       )}
                     </div>
@@ -795,21 +770,17 @@ export const ProjectDetail: React.FC = () => {
               ))}
             </div>
           )}
-        </div>
+        </Card>
       )}
 
       {/* Tab 4: Members & Authorized Persons (Členové) */}
       {tab === "members" && (
-        <div className="space-y-8">
+        <div className="space-y-6 sm:space-y-8">
           {/* Authorized Persons Section */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-gray-900">Seznam pověřených osob</h2>
-              {canManage && (
-                <button type="button" onClick={openPersonModal} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-                  Přidat osobu
-                </button>
-              )}
+          <Card>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold text-ink">Seznam pověřených osob</h2>
+              {canManage && <Button onClick={openPersonModal}>Přidat osobu</Button>}
             </div>
 
             {showPersonModal && (
@@ -849,36 +820,32 @@ export const ProjectDetail: React.FC = () => {
             {authorizedPersons.length === 0 ? (
               <p className="text-sm text-gray-500">Zatím nejsou evidovány žádné pověřené osoby.</p>
             ) : (
-              <div className="divide-y divide-gray-200">
+              <div className="divide-y divide-line">
                 {authorizedPersons.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between py-3">
+                  <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
                     <div>
-                      <span className="font-semibold text-gray-900">{p.name}</span>
-                      {p.company && <span className="ml-2 text-sm text-gray-500">({p.company})</span>}
-                      {p.authorization && <p className="mt-0.5 text-xs text-gray-600">{p.authorization}</p>}
+                      <span className="font-semibold text-ink">{p.name}</span>
+                      {p.company && <span className="ml-2 text-sm text-ink-muted">({p.company})</span>}
+                      {p.authorization && <p className="mt-0.5 text-xs text-ink-muted">{p.authorization}</p>}
                     </div>
                     <div>
                       {p.revokedAt ? (
-                        <span className="text-sm font-semibold text-red-600">Zrušeno</span>
+                        <span className="text-sm font-semibold text-danger-ink">Zrušeno</span>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => void handleRevokePerson(p.id)}
-                          className="rounded border border-red-200 px-2 py-1 text-xs text-red-600 hover:text-red-800"
-                        >
+                        <Button variant="danger-quiet" size="sm" onClick={() => void handleRevokePerson(p.id)}>
                           Zrušit {p.name}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </div>
+          </Card>
 
           {/* Project Members Section */}
-          <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-            <h2 className="mb-4 text-xl font-semibold text-gray-900">Členové projektu</h2>
+          <Card>
+            <h2 className="mb-4 text-xl font-semibold text-ink">Členové projektu</h2>
 
             {!canManage && <p className="mb-4 text-sm text-gray-500">Členy projektu spravuje stavbyvedoucí projektu.</p>}
             <div className={canManage ? "mb-6 flex flex-wrap items-center gap-4" : "hidden"}>
@@ -949,14 +916,9 @@ export const ProjectDetail: React.FC = () => {
                 )}
               </div>
 
-              <button
-                type="button"
-                disabled={managerNeedsCkait}
-                onClick={() => void handleAddMember()}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button disabled={managerNeedsCkait} onClick={() => void handleAddMember()}>
                 Přidat
-              </button>
+              </Button>
               {managerNeedsCkait && (
                 <p role="status" className="basis-full text-sm text-amber-800">
                   {selectedUser?.displayName} nemá číslo ČKAIT, a proto nemůže být vedoucím projektu (podepisuje záznamy). Číslo doplní administrátor v seznamu uživatelů.
@@ -964,30 +926,35 @@ export const ProjectDetail: React.FC = () => {
               )}
             </div>
 
-            <table className="min-w-full divide-y divide-gray-200">
+            {/* A list on a phone (table-cards, index.css): the nickname, the name and the role one under the other. */}
+            <table className="min-w-full divide-y divide-line max-sm:table-cards">
               <thead>
                 <tr>
-                  <th className="py-2 text-left text-xs font-medium text-gray-500 uppercase">Uživatel</th>
-                  <th className="py-2 text-left text-xs font-medium text-gray-500 uppercase">Jméno</th>
-                  <th className="py-2 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
+                  <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Uživatel</th>
+                  <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Jméno</th>
+                  <th className="py-2 text-left text-xs font-medium text-ink-muted uppercase">Role</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-line">
                 {members.map((m) => (
                   <tr key={m.userId}>
-                    <td className="py-2 text-sm font-medium text-gray-900">{m.nickname}</td>
-                    <td className="py-2 text-sm text-gray-700">{m.displayName}</td>
-                    <td className="py-2 text-sm text-gray-600">
+                    <td className="py-2 text-sm font-medium text-ink">{m.nickname}</td>
+                    <td data-label="Jméno" className="py-2 text-sm text-ink">
+                      {m.displayName}
+                    </td>
+                    <td data-label="Role" className="py-2 text-sm text-ink-muted">
                       {ROLE_LABELS[m.role] ?? m.role}
                       {m.userId === project.siteManagerId && (
-                        <span className="ml-2 rounded bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">Hlavní stavbyvedoucí</span>
+                        <StatusBadge tone="primary" className="ml-2">
+                          Hlavní stavbyvedoucí
+                        </StatusBadge>
                       )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </Card>
         </div>
       )}
     </div>

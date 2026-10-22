@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { Remarks } from "../components/Remarks";
+import { Button } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { isFutureDate, isLateEntryDate } from "../lib/dates";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
@@ -472,17 +473,17 @@ export const DailyReport: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-8">
+    <div className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
       {/* Header and status badges */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
           <div>
             <div className="flex items-center gap-2">
-              <Link to={`/projects/${projectId}?tab=reports`} className="text-sm text-indigo-600 hover:underline">
+              <Link to={`/projects/${projectId}?tab=reports`} className="-ml-2 inline-flex min-h-11 items-center px-2 text-sm text-primary-ink hover:underline">
                 ← Zpět na seznam záznamů
               </Link>
             </div>
-            <h1 className="mt-2 text-2xl font-bold text-gray-900">Denní záznam stavby: {reportId}</h1>
+            <h1 className="text-2xl font-bold text-ink tabular-nums">Denní záznam stavby: {reportId}</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -490,7 +491,7 @@ export const DailyReport: React.FC = () => {
             {constructionObj && <span className="rounded bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-800">SO: {constructionObj}</span>}
             {isLateEntry && <span className="rounded bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">Pozdní zápis</span>}
             {isSigned && <span className="rounded bg-green-100 px-2.5 py-1 text-xs font-semibold text-green-800">Podepsáno</span>}
-            {sequenceNumber !== null && <span className="rounded bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800">Záznam č. {sequenceNumber}</span>}
+            {sequenceNumber !== null && <span className="rounded bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-800 tabular-nums">Záznam č. {sequenceNumber}</span>}
             {acknowledgements.map((a) => (
               <span key={a.userId} className="rounded bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                 Seznámil(a) se: {a.name} ({a.role === "INVESTOR" ? "stavebník" : "dozor"})
@@ -502,9 +503,7 @@ export const DailyReport: React.FC = () => {
         {/* Investor Acknowledgment Button: only a signed (locked) report can be acknowledged */}
         {isInvestor && isSigned && !iAcknowledged && (
           <div className="mt-4 flex justify-end border-t border-gray-200 pt-4">
-            <button type="button" onClick={handleAcknowledge} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
-              Potvrdit seznámení
-            </button>
+            <Button onClick={handleAcknowledge}>Potvrdit seznámení</Button>
           </div>
         )}
       </div>
@@ -524,13 +523,11 @@ export const DailyReport: React.FC = () => {
               Záznam byl od té doby změněn (někým jiným nebo na jiném zařízení). Když koncept obnovíte a uložíte, přepíšete novější verzi.
             </p>
           )}
-          <div className="mt-3 flex gap-2">
-            <button type="button" onClick={handleRestoreDraft} className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">
-              Obnovit
-            </button>
-            <button type="button" onClick={draft.discard} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50">
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={handleRestoreDraft}>Obnovit</Button>
+            <Button variant="secondary" onClick={draft.discard}>
               Zahodit
-            </button>
+            </Button>
           </div>
         </section>
       )}
@@ -552,7 +549,7 @@ export const DailyReport: React.FC = () => {
       )}
 
       {/* Main Report Form */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         {!roleKnown && roleFailed && (
           <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
             Roli v projektu se nepodařilo zjistit, záznam proto zůstává zamčený.{" "}
@@ -812,27 +809,23 @@ export const DailyReport: React.FC = () => {
           ) : roleKnown && !canWrite ? (
             <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
           ) : (
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-gray-200 pt-4">
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-4">
               {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
               {!dirty && !saving && savedAt && (
                 <span role="status" className="text-xs text-green-700">
                   Uloženo {savedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
                 </span>
               )}
-              <button
-                type="submit"
-                disabled={!editable || isFuture || saving}
-                className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
+              <Button type="submit" disabled={!editable || isFuture || saving}>
                 {saving ? "Ukládám…" : updatedAt === null ? "Uložit záznam" : "Uložit změny"}
-              </button>
+              </Button>
             </div>
           )}
         </form>
       </div>
 
       {/* Section 2: Photo upload and gallery */}
-      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+      <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <h2 className="mb-4 text-lg font-bold text-gray-900">Fotodokumentace</h2>
 
         <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -844,14 +837,9 @@ export const DailyReport: React.FC = () => {
             onChange={handleFileChange}
             className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
           />
-          <button
-            type="button"
-            disabled={!selectedFile || !canUploadPhoto}
-            onClick={handleUploadPhoto}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
-          >
+          <Button disabled={!selectedFile || !canUploadPhoto} onClick={handleUploadPhoto}>
             Nahrát fotky
-          </button>
+          </Button>
           {updatedAt === null && <span className="text-xs text-amber-700">Fotky lze přidat po uložení záznamu.</span>}
           {isSigned && <span className="text-xs text-gray-600">Záznam je uzamčen, fotky už nelze přidávat.</span>}
         </div>
@@ -870,14 +858,14 @@ export const DailyReport: React.FC = () => {
 
       {/* Entries of other parties (supervision, the client, authorities): also on a signed entry */}
       {entryId && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm empty:hidden">
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm empty:hidden sm:p-6">
           <Remarks entryId={entryId} role={myRole ?? null} />
         </div>
       )}
 
       {/* Addenda: how a signed entry is corrected or completed */}
       {isSigned && entryId && (
-        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <Addenda entryId={entryId} canWrite={myRole === "BOSS" || myRole === "WORKER"} />
         </div>
       )}
@@ -928,7 +916,7 @@ export const DailyReport: React.FC = () => {
 
       {/* Section 3: Sign & Lock (the manager of this project signs) */}
       {myRole === "BOSS" && (
-        <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <div>
             <h3 className="font-semibold text-gray-900">Uzamčení a podpis denního záznamu</h3>
             <p className="text-xs text-gray-500">Po podepsání a uzamčení již záznam nelze dále editovat.</p>
@@ -936,14 +924,9 @@ export const DailyReport: React.FC = () => {
           <div>
             {!isSigned && (
               <div className="text-right">
-                <button
-                  type="button"
-                  onClick={handleSignAndLock}
-                  disabled={dirty || updatedAt === null || draft.offer !== null}
-                  className="rounded bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button variant="danger" onClick={handleSignAndLock} disabled={dirty || updatedAt === null || draft.offer !== null}>
                   Podepsat a uzamknout
-                </button>
+                </Button>
                 {draft.offer ? (
                   <p className="mt-1 text-xs text-amber-700">Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.</p>
                 ) : (
