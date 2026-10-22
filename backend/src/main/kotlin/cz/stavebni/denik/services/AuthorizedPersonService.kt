@@ -75,6 +75,10 @@ object AuthorizedPersonService {
         return AuditService.auditedWrite(actor, "authorizedPerson") { tx ->
             val actorRole = ProjectAccess.requireAccess(tx, actor, projectId)
             assertCan(actor, Action.ProjectMemberManage, Resource(role = actorRole))
+            // Part A of the diary names the active persons and is stored with every signature: their number is bounded.
+            if (tx.fetchCount(AUTHORIZED_PERSONS, AUTHORIZED_PERSONS.PROJECTID.eq(projectId).and(AUTHORIZED_PERSONS.REVOKEDAT.isNull)) >= PartASnapshot.MAX_PERSONS) {
+                throw ConflictException("Projekt může mít nejvýše ${PartASnapshot.MAX_PERSONS} aktivních pověřených osob. Odvolejte ty, které už nejsou potřeba.")
+            }
             val record = tx.insertInto(AUTHORIZED_PERSONS)
                 .set(AUTHORIZED_PERSONS.PROJECTID, projectId)
                 .set(AUTHORIZED_PERSONS.NAME, name)
