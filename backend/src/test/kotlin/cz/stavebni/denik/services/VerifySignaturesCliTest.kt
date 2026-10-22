@@ -233,4 +233,16 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         tamperHandover("site_handover_signatures", """update site_handover_signatures set "signerName" = 'Test User' where "handoverId" = ? and side = 'CLIENT'""", handover)
         assertEquals(0, cli("verify-signatures").code)
     }
+    @Test
+    fun `a protocol whose meters were replaced by something that is no list is reported by its id, not thrown`() = runBlocking<Unit> {
+        val handover = completeHandover()
+        tamperHandover("site_handovers", """update site_handovers set "meterStates" = cast(? as jsonb) where id = ?""", "\"zfalšováno\"", handover)
+
+        val run = cli("verify-signatures")
+
+        assertEquals(1, run.code, run.out.toString())
+        assertTrue(run.err.any { it.contains(handover.toString()) && it.contains("cannot be read") }, run.err.toString())
+        assertFalse(run.err.any { it.contains("zfalšováno") }, "what the row holds is never printed")
+        assertEquals(2, SiteHandoverService.checkAll(dsl).problems.size, "one for each signature, and the check went on to the end")
+    }
 }

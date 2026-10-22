@@ -24,6 +24,7 @@ import cz.stavebni.denik.services.AuditService.Audited
 import cz.stavebni.denik.util.Dates
 import cz.stavebni.denik.util.Text
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -32,6 +33,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import org.jooq.DSLContext
 import org.jooq.JSONB
 import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -77,7 +79,7 @@ data class SiteHandoverDto(
 @Serializable
 data class SiteHandoverInput(
     val type: String,
-    /** YYYY-MM-DD (a full ISO date-time is accepted on input) */
+    /** YYYY-MM-DD, the calendar day of the handover. A time part is dropped, never converted (as for the day of an entry): `2026-09-11T00:30:00+02:00` is the 11th. */
     val date: String,
     val participants: String,
     val meterStates: List<MeterState>? = null,
@@ -261,7 +263,8 @@ object SiteHandoverService {
     private fun validated(input: SiteHandoverInput): Content {
         val type = Text.checked(input.type.trim(), "Typ předání", MAX_TYPE_CHARS)
         require(type.isNotEmpty()) { "Typ předání je povinný" }
-        val date = Dates.parse(input.date)
+        // A calendar day, stored at midnight UTC: the same reading as the day of an entry (a time part is dropped, not converted).
+        val date = Dates.parseLocalDate(input.date).atStartOfDay().atOffset(ZoneOffset.UTC)
         val participants = Text.checked(input.participants.trim(), "Účastníci předání", MAX_PARTICIPANTS_CHARS)
         val notes = input.notes?.trim()?.takeIf { it.isNotEmpty() }?.let { Text.checked(it, "Poznámky", MAX_NOTES_CHARS) }
         val given = input.meterStates.orEmpty()
@@ -454,7 +457,11 @@ object SiteHandoverService {
 
             // Milliseconds: what the hash covers is exactly what is stored and read back.
             val now = OffsetDateTime.now().truncatedTo(ChronoUnit.MILLIS)
-            val contentHash = HandoverHash.contentHash(contentOf(existing))
+            val contentHash = try {
+                HandoverHash.contentHash(contentOf(existing))
+            } catch (e: SerializationException) {
+                throw ConflictException("Obsah protokolu nelze přečíst, proto jej nelze podepsat. Obraťte se na správce.")
+            }
             val signatureHash = HandoverHash.signatureHash(
                 HandoverHash.signature(signer.side, contentHash, now, user.id.toString(), signer.name, signer.role, signer.ckaitNumber),
             )
@@ -502,7 +509,12 @@ object SiteHandoverService {
     internal fun problemOf(handover: SiteHandoversRecord, signature: SiteHandoverSignaturesRecord): String? {
         val where = "protocol ${handover.id}, signature of the ${signature.side}"
         val side = HandoverSide.entries.firstOrNull { it.name == signature.side } ?: return "$where: the side is not one of the two"
-        val contentHash = HandoverHash.contentHash(contentOf(handover))
+        // A row made to hold something that is not a protocol (the meters are not a list) is reported, and the check goes on.
+        val contentHash = try {
+            HandoverHash.contentHash(contentOf(handover))
+        } catch (e: SerializationException) {
+            return "$where: the content cannot be read"
+        }
         if (signature.contenthash != contentHash) return "$where: the content no longer matches what was signed"
         val expected = HandoverHash.signatureHash(
             HandoverHash.signature(

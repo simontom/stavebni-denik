@@ -446,6 +446,29 @@ class SiteHandoverServiceTest : BaseIntegrationTest() {
         assertEquals("Poznámka", changed.notes)
     }
 
+    @Test
+    fun `the day of a protocol is the calendar day that was named, a time part is dropped and never converted`() = runBlocking<Unit> {
+        val s = site()
+
+        // 00:30 in Prague is the evening of the 10th in UTC: the protocol is of the 11th, as the person wrote it.
+        val early = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(date = "2026-09-11T00:30:00+02:00"))
+        assertEquals("2026-09-11", early.date)
+        // 23:30 in New York is the next day in UTC: it is still the 30th.
+        val late = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(date = "2026-09-30T23:30:00-05:00"))
+        assertEquals("2026-09-30", late.date)
+        assertEquals("2026-09-30", SiteHandoverService.getHandover(dsl, s.boss, late.uuid)!!.date)
+
+        // What is hashed is that day, and a change made with a time part keeps the day too.
+        val changed = SiteHandoverService.updateHandover(s.boss, early.uuid, early.asInput(date = "2026-09-12T00:05:00+02:00"))
+        assertEquals("2026-09-12", changed.date)
+        val signed = signHandover(s.boss, changed)
+        val expected = HandoverHash.contentHash(HandoverHash.content(early.id!!, s.projectId.toString(), "PROTOCOL", "2026-09-12", "Novák", null, null))
+        assertEquals(expected, signed.contractorSignature!!.contentHash)
+
+        // A day that is not one is still refused.
+        assertThrows<IllegalArgumentException> { runBlocking { SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(date = "2026-09-31")) } }
+    }
+
     // --- reading ---------------------------------------------------------------------------------
 
     @Test

@@ -11,8 +11,13 @@ import org.jooq.exception.DataAccessException
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.sql.Connection
+import java.sql.DriverManager
+import java.sql.SQLException
 import java.time.OffsetDateTime
 import java.util.UUID
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * What the DATABASE refuses about a handover protocol and its signatures (V1: the table and its checks, V5: the triggers),
@@ -215,5 +220,60 @@ class SiteHandoverSignaturesDbTest : BaseIntegrationTest() {
 
         assertThrows<DataAccessException> { dsl.deleteFrom(USERS).where(USERS.ID.eq(s.investor.id)).execute() }
         assertEquals(1, dsl.fetchCount(SITE_HANDOVER_SIGNATURES))
+    }
+    // --- without the application's lock ---------------------------------------------------------
+
+    private fun insertSignatureSql(connection: Connection, handoverId: UUID, side: String, user: SessionUser, role: String) {
+        connection.prepareStatement(
+            """insert into "site_handover_signatures" ("handoverId", "side", "signedById", "signerName", "signerRole", "signerCkaitNumber", "signedAt", "contentHash", "signatureHash")
+               values (?, ?, ?, 'Jméno', cast(? as "Role"), ?, now(), repeat('a', 64), repeat('b', 64))""",
+        ).use { statement ->
+            statement.setObject(1, handoverId)
+            statement.setString(2, side)
+            statement.setObject(3, user.id)
+            statement.setString(4, role)
+            statement.setString(5, if (role == "BOSS") "0012345" else null)
+            statement.executeUpdate()
+        }
+    }
+
+    /**
+     * Every write of the application goes through one advisory lock, so a test that uses the services cannot show what the DATABASE
+     * does when two writers meet. This one uses two plain connections that take no lock of the application's: the second signature
+     * of the same side has to wait for the first one's transaction and is then refused by the unique key.
+     */
+    @Test
+    fun `two writers that take no lock of the application still give one signature for each side`() = runBlocking<Unit> {
+        val s = site()
+        val id = insertHandover(s)
+        val otherManager = createTestUser(role = Role.BOSS)
+        addMember(s.projectId, otherManager)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { first ->
+                DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password).use { second ->
+                    first.autoCommit = false
+                    insertSignatureSql(first, id, "CONTRACTOR", s.boss, "BOSS")
+
+                    val racing = executor.submit<Result<Unit>> { runCatching { insertSignatureSql(second, id, "CONTRACTOR", otherManager, "BOSS") } }
+                    // It is waiting for the first transaction (a unique key is decided by whoever commits first): not done, not failed.
+                    val deadline = System.nanoTime() + 10_000_000_000L
+                    while (dsl.fetchValue("select count(*) from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()", Int::class.java) == 0) {
+                        check(System.nanoTime() < deadline) { "the second writer did not wait for the first" }
+                        Thread.sleep(20)
+                    }
+                    assertFalse(racing.isDone, "the second signature waits for the first transaction")
+
+                    first.commit()
+                    val outcome = racing.get(10, TimeUnit.SECONDS)
+                    val failure = outcome.exceptionOrNull() as? SQLException
+                    assertNotNull(failure, "the second signature of the same side is refused")
+                    assertEquals("23505", failure!!.sqlState, "by the unique key: ${failure.message}")
+                }
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(s.boss.id, dsl.selectFrom(SITE_HANDOVER_SIGNATURES).fetchOne()!!.signedbyid, "the one that was committed first")
     }
 }

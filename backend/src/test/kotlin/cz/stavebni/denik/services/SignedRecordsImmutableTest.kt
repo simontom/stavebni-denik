@@ -120,7 +120,12 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         assertEquals("před podpisem", dsl.selectFrom(SITE_HANDOVERS).fetchOne()!!.notes)
     }
 
-    // --- races ----------------------------------------------------------------------------------
+    // --- requests that arrive together ----------------------------------------------------------
+    //
+    // Every write of the application takes ONE advisory lock first (AuditService.auditedWrite), so the requests below are served one
+    // after the other whatever the threads do. What they show are the DECISIONS of the application when requests arrive together
+    // (who is told what), not how the database behaves when two writers meet: SiteHandoverSignaturesDbTest does that with two
+    // plain connections that take no lock of the application's.
 
     @Test
     fun `a photo that is still being processed when the report is signed is refused, not added`() = runBlocking<Unit> {
@@ -154,7 +159,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `two requests signing the same side of a handover give one signature and one conflict`() = runBlocking<Unit> {
+    fun `two requests that arrive together to sign the same side of a handover give one signature and one conflict`() = runBlocking<Unit> {
         val s = site()
         val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
         val second = createTestUser(role = Role.BOSS)
@@ -173,7 +178,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `the two parties signing at the same moment both get their signature`() = runBlocking<Unit> {
+    fun `the two parties whose requests arrive together both get their signature`() = runBlocking<Unit> {
         val s = site()
         val investor = createTestUser(role = Role.INVESTOR)
         addMember(s.projectId, investor)
@@ -191,11 +196,11 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `a handover change that races with the signature cannot land after it`() = runBlocking<Unit> {
+    fun `a change and a signature that arrive together are not both accepted, and a change never follows a signature`() = runBlocking<Unit> {
         val s = site()
         val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
 
-        // Both were prepared from the same version: whichever runs first moves or freezes it, and the other is refused.
+        // Both were prepared from the same version: whichever is served first moves or freezes it, and the other is refused.
         val results = coroutineScope {
             val update = async(Dispatchers.IO) { runCatching { SiteHandoverService.updateHandover(s.boss, handover.uuid, handover.asInput(type = "LATE CHANGE")) } }
             val sign = async(Dispatchers.IO) { runCatching { signHandover(s.boss, handover) } }
@@ -220,7 +225,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     // --- the audit trail ------------------------------------------------------------------------
 
     @Test
-    fun `handover create, update, both signatures and delete are audited with the entity id, before and after, and no password`() = runBlocking<Unit> {
+    fun `handover create, update, both signatures and delete are audited with the entity id, before and after`() = runBlocking<Unit> {
         val s = site()
         val investor = createTestUser(role = Role.INVESTOR, displayName = "Marie Stavebníková")
         addMember(s.projectId, investor)
@@ -257,9 +262,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         assertEquals(removed.id, delete.get(AUDIT_LOG.ENTITY_ID))
         assertNotEquals("null", Json.parseToJsonElement(delete.auditAfterText()!!).jsonObject["deletedAt"].toString())
 
-        for (row in dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.like("siteHandover.%")).fetch()) {
-            assertFalse(row.auditAfterText().orEmpty().contains("assword"), "no password in ${row.get(AUDIT_LOG.ACTION)}")
-        }
+        // (That no password is in any row is checked where the password exists: SiteHandoverRoutesTest signs with a known one.)
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 }
