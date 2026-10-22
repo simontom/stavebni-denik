@@ -20,6 +20,7 @@ import cz.stavebni.denik.jooq.keys.REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEME
 import cz.stavebni.denik.jooq.keys.SESSIONS__SESSIONS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY
+import cz.stavebni.denik.jooq.keys.SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.USERS_PKEY
 import cz.stavebni.denik.jooq.keys.VISITS__VISITS_AUTHORID_FKEY
 import cz.stavebni.denik.jooq.tables.Addenda.AddendaPath
@@ -31,6 +32,7 @@ import cz.stavebni.denik.jooq.tables.Projects.ProjectsPath
 import cz.stavebni.denik.jooq.tables.Remarks.RemarksPath
 import cz.stavebni.denik.jooq.tables.ReportAcknowledgements.ReportAcknowledgementsPath
 import cz.stavebni.denik.jooq.tables.Sessions.SessionsPath
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures.SiteHandoverSignaturesPath
 import cz.stavebni.denik.jooq.tables.SiteHandovers.SiteHandoversPath
 import cz.stavebni.denik.jooq.tables.Visits.VisitsPath
 import cz.stavebni.denik.jooq.tables.records.UsersRecord
@@ -374,6 +376,22 @@ open class Users(
     val sessions: SessionsPath
         get(): SessionsPath = sessions()
 
+    private lateinit var _siteHandoverSignatures: SiteHandoverSignaturesPath
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.site_handover_signatures</code> table
+     */
+    fun siteHandoverSignatures(): SiteHandoverSignaturesPath {
+        if (!this::_siteHandoverSignatures.isInitialized)
+            _siteHandoverSignatures = SiteHandoverSignaturesPath(this, null, SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_SIGNEDBYID_FKEY.inverseKey)
+
+        return _siteHandoverSignatures;
+    }
+
+    val siteHandoverSignatures: SiteHandoverSignaturesPath
+        get(): SiteHandoverSignaturesPath = siteHandoverSignatures()
+
     private lateinit var _siteHandoversCreatedbyidFkey: SiteHandoversPath
 
     /**
@@ -430,6 +448,13 @@ open class Users(
      */
     val dailyReports: DailyReportsPath
         get(): DailyReportsPath = reportAcknowledgements().dailyReports()
+
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.site_handovers</code> table
+     */
+    val siteHandovers: SiteHandoversPath
+        get(): SiteHandoversPath = siteHandoverSignatures().siteHandovers()
     override fun `as`(alias: String): Users = Users(DSL.name(alias), this)
     override fun `as`(alias: Name): Users = Users(alias, this)
     override fun `as`(alias: Table<*>): Users = Users(alias.qualifiedName, this)

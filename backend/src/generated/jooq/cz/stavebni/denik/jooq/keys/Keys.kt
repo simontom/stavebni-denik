@@ -20,6 +20,7 @@ import cz.stavebni.denik.jooq.tables.RateLimitAttempts
 import cz.stavebni.denik.jooq.tables.Remarks
 import cz.stavebni.denik.jooq.tables.ReportAcknowledgements
 import cz.stavebni.denik.jooq.tables.Sessions
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures
 import cz.stavebni.denik.jooq.tables.SiteHandovers
 import cz.stavebni.denik.jooq.tables.Users
 import cz.stavebni.denik.jooq.tables.Visits
@@ -38,6 +39,7 @@ import cz.stavebni.denik.jooq.tables.records.RateLimitAttemptsRecord
 import cz.stavebni.denik.jooq.tables.records.RemarksRecord
 import cz.stavebni.denik.jooq.tables.records.ReportAcknowledgementsRecord
 import cz.stavebni.denik.jooq.tables.records.SessionsRecord
+import cz.stavebni.denik.jooq.tables.records.SiteHandoverSignaturesRecord
 import cz.stavebni.denik.jooq.tables.records.SiteHandoversRecord
 import cz.stavebni.denik.jooq.tables.records.UsersRecord
 import cz.stavebni.denik.jooq.tables.records.VisitsRecord
@@ -70,6 +72,9 @@ val REMARKS_PKEY: UniqueKey<RemarksRecord> = Internal.createUniqueKey(Remarks.RE
 val REPORT_ACKNOWLEDGEMENTS_PKEY: UniqueKey<ReportAcknowledgementsRecord> = Internal.createUniqueKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_pkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.ID), true)
 val REPORT_ACKNOWLEDGEMENTS_REPORT_USER_KEY: UniqueKey<ReportAcknowledgementsRecord> = Internal.createUniqueKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_report_user_key"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.REPORTID, ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.USERID), true)
 val SESSIONS_PKEY: UniqueKey<SessionsRecord> = Internal.createUniqueKey(Sessions.SESSIONS, DSL.name("sessions_pkey"), arrayOf(Sessions.SESSIONS.ID), true)
+val SITE_HANDOVER_SIGNATURES_HANDOVER_SIDE_KEY: UniqueKey<SiteHandoverSignaturesRecord> = Internal.createUniqueKey(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, DSL.name("site_handover_signatures_handover_side_key"), arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.HANDOVERID, SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.SIDE), true)
+val SITE_HANDOVER_SIGNATURES_HANDOVER_SIGNER_KEY: UniqueKey<SiteHandoverSignaturesRecord> = Internal.createUniqueKey(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, DSL.name("site_handover_signatures_handover_signer_key"), arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.HANDOVERID, SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.SIGNEDBYID), true)
+val SITE_HANDOVER_SIGNATURES_PKEY: UniqueKey<SiteHandoverSignaturesRecord> = Internal.createUniqueKey(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, DSL.name("site_handover_signatures_pkey"), arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.ID), true)
 val SITE_HANDOVERS_PKEY: UniqueKey<SiteHandoversRecord> = Internal.createUniqueKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_pkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.ID), true)
 val USERS_PKEY: UniqueKey<UsersRecord> = Internal.createUniqueKey(Users.USERS, DSL.name("users_pkey"), arrayOf(Users.USERS.ID), true)
 val VISITS_PKEY: UniqueKey<VisitsRecord> = Internal.createUniqueKey(Visits.VISITS, DSL.name("visits_pkey"), arrayOf(Visits.VISITS.ID), true)
@@ -96,6 +101,8 @@ val REMARKS__REMARKS_REPORTID_FKEY: ForeignKey<RemarksRecord, DailyReportsRecord
 val REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_REPORTID_FKEY: ForeignKey<ReportAcknowledgementsRecord, DailyReportsRecord> = Internal.createForeignKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_reportId_fkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.REPORTID), cz.stavebni.denik.jooq.keys.DAILY_REPORTS_PKEY, arrayOf(DailyReports.DAILY_REPORTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.NO_ACTION)
 val REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY: ForeignKey<ReportAcknowledgementsRecord, UsersRecord> = Internal.createForeignKey(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS, DSL.name("report_acknowledgements_userId_fkey"), arrayOf(ReportAcknowledgements.REPORT_ACKNOWLEDGEMENTS.USERID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.NO_ACTION)
 val SESSIONS__SESSIONS_USERID_FKEY: ForeignKey<SessionsRecord, UsersRecord> = Internal.createForeignKey(Sessions.SESSIONS, DSL.name("sessions_userId_fkey"), arrayOf(Sessions.SESSIONS.USERID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.CASCADE, ForeignKeyRule.CASCADE)
+val SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_HANDOVERID_FKEY: ForeignKey<SiteHandoverSignaturesRecord, SiteHandoversRecord> = Internal.createForeignKey(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, DSL.name("site_handover_signatures_handoverId_fkey"), arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.HANDOVERID), cz.stavebni.denik.jooq.keys.SITE_HANDOVERS_PKEY, arrayOf(SiteHandovers.SITE_HANDOVERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
+val SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_SIGNEDBYID_FKEY: ForeignKey<SiteHandoverSignaturesRecord, UsersRecord> = Internal.createForeignKey(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES, DSL.name("site_handover_signatures_signedById_fkey"), arrayOf(SiteHandoverSignatures.SITE_HANDOVER_SIGNATURES.SIGNEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY: ForeignKey<SiteHandoversRecord, UsersRecord> = Internal.createForeignKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_createdById_fkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.CREATEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.SET_NULL, ForeignKeyRule.CASCADE)
 val SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY: ForeignKey<SiteHandoversRecord, ProjectsRecord> = Internal.createForeignKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_projectId_fkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.PROJECTID), cz.stavebni.denik.jooq.keys.PROJECTS_PKEY, arrayOf(Projects.PROJECTS.ID), true, ForeignKeyRule.RESTRICT, ForeignKeyRule.CASCADE)
 val SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY: ForeignKey<SiteHandoversRecord, UsersRecord> = Internal.createForeignKey(SiteHandovers.SITE_HANDOVERS, DSL.name("site_handovers_signedById_fkey"), arrayOf(SiteHandovers.SITE_HANDOVERS.SIGNEDBYID), cz.stavebni.denik.jooq.keys.USERS_PKEY, arrayOf(Users.USERS.ID), true, ForeignKeyRule.SET_NULL, ForeignKeyRule.CASCADE)

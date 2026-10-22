@@ -13,7 +13,9 @@ import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS_PKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY
+import cz.stavebni.denik.jooq.keys.SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_HANDOVERID_FKEY
 import cz.stavebni.denik.jooq.tables.Projects.ProjectsPath
+import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures.SiteHandoverSignaturesPath
 import cz.stavebni.denik.jooq.tables.Users.UsersPath
 import cz.stavebni.denik.jooq.tables.records.SiteHandoversRecord
 
@@ -205,6 +207,29 @@ open class SiteHandovers(
      */
     fun siteHandoversSignedbyidFkey(): UsersPath = siteHandoversSignedbyidFkey
     val siteHandoversSignedbyidFkey: UsersPath by lazy { UsersPath(this, SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY, null) }
+
+    private lateinit var _siteHandoverSignatures: SiteHandoverSignaturesPath
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.site_handover_signatures</code> table
+     */
+    fun siteHandoverSignatures(): SiteHandoverSignaturesPath {
+        if (!this::_siteHandoverSignatures.isInitialized)
+            _siteHandoverSignatures = SiteHandoverSignaturesPath(this, null, SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_HANDOVERID_FKEY.inverseKey)
+
+        return _siteHandoverSignatures;
+    }
+
+    val siteHandoverSignatures: SiteHandoverSignaturesPath
+        get(): SiteHandoverSignaturesPath = siteHandoverSignatures()
+
+    /**
+     * Get the implicit many-to-many join path to the <code>public.users</code>
+     * table
+     */
+    val users: UsersPath
+        get(): UsersPath = siteHandoverSignatures().users()
     override fun `as`(alias: String): SiteHandovers = SiteHandovers(DSL.name(alias), this)
     override fun `as`(alias: Name): SiteHandovers = SiteHandovers(alias, this)
     override fun `as`(alias: Table<*>): SiteHandovers = SiteHandovers(alias.qualifiedName, this)

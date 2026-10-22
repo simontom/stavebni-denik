@@ -96,6 +96,41 @@ CREATE TABLE "site_handovers" (
 );
 
 -- CreateTable
+-- One signature of a site handover protocol (backlog A3). A protocol is an act of two parties, so it is signed once by each side
+-- and is complete when both rows exist; nothing stores that state. A row is written once and never changed (V5), and from the first
+-- one on the protocol itself cannot change either, so both parties sign the same content, whose SHA-256 is "contentHash".
+-- The columns say who signed (frozen: the name and the ČKAIT number as the account had them), in which role of the project, and when;
+-- "signatureHash" is the SHA-256 that binds all that to the content (HandoverHash, format 1).
+CREATE TABLE "site_handover_signatures" (
+    "id" UUID NOT NULL DEFAULT uuidv7(),
+    "handoverId" UUID NOT NULL,
+    "side" TEXT NOT NULL,
+    "signedById" UUID NOT NULL,
+    "signerName" TEXT NOT NULL,
+    "signerRole" "Role" NOT NULL,
+    "signerCkaitNumber" TEXT,
+    "signedAt" TIMESTAMPTZ NOT NULL,
+    "contentHash" TEXT NOT NULL,
+    "signatureHash" TEXT NOT NULL,
+
+    CONSTRAINT "site_handover_signatures_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "site_handover_signatures_side_check" CHECK ("side" IN ('CONTRACTOR', 'CLIENT')),
+    -- The contractor is a manager of the project with a ČKAIT number (decision D2, stored with the signature); the client is an
+    -- investor or the technical supervision and has none stored. The database cannot know that the person really held that role.
+    CONSTRAINT "site_handover_signatures_party_check" CHECK (
+        CASE "side"
+            WHEN 'CONTRACTOR' THEN "signerRole" = 'BOSS' AND btrim(coalesce("signerCkaitNumber", '')) <> ''
+            ELSE "signerRole" IN ('INVESTOR', 'INSPECTOR') AND "signerCkaitNumber" IS NULL
+        END
+    ),
+    CONSTRAINT "site_handover_signatures_signer_check" CHECK (btrim("signerName") <> ''),
+    CONSTRAINT "site_handover_signatures_hash_check" CHECK ("contentHash" ~ '^[0-9a-f]{64}$' AND "signatureHash" ~ '^[0-9a-f]{64}$'),
+    -- One signature for each side, and one person cannot sign both sides.
+    CONSTRAINT "site_handover_signatures_handover_side_key" UNIQUE ("handoverId", "side"),
+    CONSTRAINT "site_handover_signatures_handover_signer_key" UNIQUE ("handoverId", "signedById")
+);
+
+-- CreateTable
 CREATE TABLE "authorized_persons" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "projectId" UUID NOT NULL,
@@ -335,6 +370,9 @@ CREATE INDEX "site_handovers_signedById_idx" ON "site_handovers"("signedById");
 CREATE INDEX "site_handovers_deletedAt_idx" ON "site_handovers"("deletedAt");
 
 -- CreateIndex
+CREATE INDEX "site_handover_signatures_signedById_idx" ON "site_handover_signatures"("signedById");
+
+-- CreateIndex
 CREATE INDEX "authorized_persons_projectId_idx" ON "authorized_persons"("projectId");
 
 -- CreateIndex
@@ -424,6 +462,13 @@ ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_createdById_fkey" FO
 
 -- AddForeignKey
 ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+-- A signature is evidence: neither the protocol nor the person who signed can be removed from under it.
+ALTER TABLE "site_handover_signatures" ADD CONSTRAINT "site_handover_signatures_handoverId_fkey" FOREIGN KEY ("handoverId") REFERENCES "site_handovers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "site_handover_signatures" ADD CONSTRAINT "site_handover_signatures_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "authorized_persons" ADD CONSTRAINT "authorized_persons_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
