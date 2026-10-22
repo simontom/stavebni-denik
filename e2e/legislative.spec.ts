@@ -39,9 +39,16 @@ test.describe("Legislative Compliance", () => {
     const projectUrl = page.url().split("?")[0];
     const projectId = projectUrl.split("/projects/")[1];
     await page.getByRole("link", { name: /Předání staveniště/i }).click();
-    await page.getByRole("button", { name: /Přidat předání/i }).click();
+    const addButton = page.getByRole("button", { name: /Přidat předání/i });
+    await addButton.click();
 
     const form = page.getByRole("dialog", { name: /Protokol o předání staveniště/i });
+    // Escape closes the dialog, and the focus is back on the button that opened it
+    await expect(form).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(form).toBeHidden();
+    await expect(addButton).toBeFocused();
+    await addButton.click();
     await form.locator('input[id="handover-type"]').fill("Předání staveniště zhotoviteli");
     await form.locator('input[id="handover-date"]').fill("2026-09-11");
     await form.locator('input[id="handover-participants"]').fill("Ing. Jan Novák (objednatel), Petr Svoboda (zhotovitel)");
@@ -55,6 +62,7 @@ test.describe("Legislative Compliance", () => {
 
     await form.getByRole("button", { name: /Uložit předání/i }).click();
     await expect(form).toBeHidden();
+    await expect(addButton).toBeFocused();
 
     // Verify record in list: a draft that neither party has signed
     await expect(page.getByText("Předání staveniště zhotoviteli")).toBeVisible();
@@ -65,12 +73,19 @@ test.describe("Legislative Compliance", () => {
     await expect(page.getByText("Čeká na podpis", { exact: true })).toHaveCount(2);
 
     // Until a party has signed the protocol can be changed (the change carries the version it was loaded in)
-    await page.getByRole("button", { name: "Upravit", exact: true }).click();
+    const editButton = page.getByRole("button", { name: "Upravit", exact: true });
+    await editButton.click();
     const edit = page.getByRole("dialog", { name: /Upravit protokol o předání staveniště/i });
+    await expect(edit).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(edit).toBeHidden();
+    await expect(editButton).toBeFocused();
+    await editButton.click();
     await edit.locator('textarea[id="handover-notes"]').fill("Staveniště předáno bez výhrad, klíče od vrat předány.");
     await edit.getByRole("button", { name: /Uložit předání/i }).click();
     // (a typed text is also the text of its own textarea, so wait for the dialog to go before looking at the list)
     await expect(edit).toBeHidden();
+    await expect(editButton).toBeFocused();
     await expect(page.getByText("klíče od vrat předány")).toBeVisible();
 
     // Somebody else changes the protocol after this page loaded it: signing the version on the screen is refused, and the page says so
@@ -90,9 +105,18 @@ test.describe("Legislative Compliance", () => {
     await page.getByRole("button", { name: "Načíst aktuální stav" }).click();
     await expect(page.getByText("Změněno jinou osobou.")).toBeVisible();
 
-    // The manager signs for the contractor: a wrong password is told in the dialog, which stays open; the right one signs
-    await page.getByRole("button", { name: "Podepsat za zhotovitele" }).click();
+    // The manager signs for the contractor. Escape leaves the focus on the button that was used, and nothing typed is kept: the
+    // password field is empty when the dialog is opened again.
+    const signButton = page.getByRole("button", { name: "Podepsat za zhotovitele" });
+    await signButton.click();
     const sign = page.getByRole("dialog", { name: /Podepsat předání za zhotovitele/i });
+    await sign.getByLabel("Heslo").fill("Neodeslane-Heslo-1!");
+    await page.keyboard.press("Escape");
+    await expect(sign).toBeHidden();
+    await expect(signButton).toBeFocused();
+    await signButton.click();
+    await expect(sign.getByLabel("Heslo")).toHaveValue("");
+    // A wrong password is told in the dialog, which stays open; the right one signs
     await sign.getByLabel("Heslo").fill("Spatne-Heslo-123!");
     await sign.getByRole("button", { name: "Podepsat", exact: true }).click();
     await expect(sign.getByText("Heslo není správné")).toBeVisible();
@@ -100,6 +124,8 @@ test.describe("Legislative Compliance", () => {
     await sign.getByRole("button", { name: "Podepsat", exact: true }).click();
 
     await expect(page.getByText("Podepsal zhotovitel, čeká na stavebníka")).toBeVisible();
+    // The button that was used is gone (its side is signed), so the focus is on the protocol that changed
+    await expect(page.locator(`#handover-${stored.id}`)).toBeFocused();
     await expect(page.getByText(/Podepsal\(a\) E2E Admin \(Stavbyvedoucí, ČKAIT 0000000\)/)).toBeVisible();
     await expect(page.getByText(/Otisk obsahu \(SHA-256\): [0-9a-f]{64}/)).toBeVisible();
     // From the first signature the protocol is a document: nothing to change, and the contractor's side cannot be signed again

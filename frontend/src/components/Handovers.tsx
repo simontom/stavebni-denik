@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { api, ApiError, currentUser, json, ROLE_LABELS } from "../lib/api";
+import React, { useEffect, useRef, useState } from "react";
+import { api, ApiError, currentUser, json, ROLE_LABELS, setUnsavedWork } from "../lib/api";
 import { pragueToday } from "../lib/dates";
 import {
   HANDOVER_LIMITS,
@@ -10,6 +10,7 @@ import {
   signableSide,
   stateLabel,
   type Handover,
+  type HandoverFormValues,
   type HandoverSide,
   type HandoverSignature,
   type Meter,
@@ -68,6 +69,15 @@ export function Handovers({ projectId, myRole }: { projectId: string; myRole?: s
     setNotice(null);
     setReloads((n) => n + 1);
   };
+
+  // After a signature the button that was used is gone (its side is signed), so the focus goes to the protocol that changed.
+  const focusAfter = useRef<string | null>(null);
+  useEffect(() => {
+    const id = focusAfter.current;
+    if (!id) return;
+    focusAfter.current = null;
+    document.getElementById(`handover-${id}`)?.focus();
+  });
 
   const replace = (changed: Handover) => setHandovers((list) => (list ? list.map((h) => (h.id === changed.id ? changed : h)) : list));
 
@@ -129,10 +139,6 @@ export function Handovers({ projectId, myRole }: { projectId: string; myRole?: s
             setNotice(null);
             setHandovers((list) => (form.editing ? (list ?? []).map((h) => (h.id === saved.id ? saved : h)) : [saved, ...(list ?? [])]));
           }}
-          onStale={(message) => {
-            setForm(null);
-            setNotice({ tone: "warning", text: message, reload: true });
-          }}
         />
       )}
 
@@ -143,6 +149,7 @@ export function Handovers({ projectId, myRole }: { projectId: string; myRole?: s
           onCancel={() => setSigning(null)}
           onSigned={(signed) => {
             setSigning(null);
+            focusAfter.current = signed.id;
             replace(signed);
             setNotice({ tone: "success", text: `Protokol „${signed.type}“ jste podepsal(a) za ${signing.side === "CONTRACTOR" ? "zhotovitele" : "stavebníka"}.` });
           }}
@@ -217,9 +224,16 @@ function HandoverCard({
   const state = stateLabel(handover.state);
   const contentHash = handover.contractorSignature?.contentHash ?? handover.clientSignature?.contentHash;
   return (
-    <li className="rounded-lg border border-line bg-page p-4">
+    <li
+      id={`handover-${handover.id}`}
+      tabIndex={-1}
+      aria-labelledby={`handover-${handover.id}-title`}
+      className="rounded-lg border border-line bg-page p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h3 className="font-bold text-ink">{handover.type}</h3>
+        <h3 id={`handover-${handover.id}-title`} className="font-bold text-ink">
+          {handover.type}
+        </h3>
         <StatusBadge tone={state.tone}>{state.text}</StatusBadge>
       </div>
       <div className="mt-2">
@@ -269,26 +283,25 @@ function DialogButtons({ busy, canSubmit = true, submit, onCancel }: { busy: boo
   );
 }
 
-function HandoverFormDialog({
-  projectId,
-  editing,
-  onCancel,
-  onSaved,
-  onStale,
-}: {
-  projectId: string;
-  editing: Handover | null;
-  onCancel: () => void;
-  onSaved: (saved: Handover) => void;
-  onStale: (message: string) => void;
-}) {
+function HandoverFormDialog({ projectId, editing, onCancel, onSaved }: { projectId: string; editing: Handover | null; onCancel: () => void; onSaved: (saved: Handover) => void }) {
   const [saving, setSaving] = useState(false);
   return (
     <Modal title={editing ? "Upravit protokol o předání staveniště" : "Protokol o předání staveniště"} size="lg" onCancel={onCancel} dismissible={!saving}>
-      <HandoverForm projectId={projectId} editing={editing} saving={saving} setSaving={setSaving} onCancel={onCancel} onSaved={onSaved} onStale={onStale} />
+      <HandoverForm projectId={projectId} editing={editing} saving={saving} setSaving={setSaving} onCancel={onCancel} onSaved={onSaved} />
     </Modal>
   );
 }
+
+const DEFAULT_TYPE = "Předání staveniště zhotoviteli";
+
+/** What the form holds for a protocol that is stored, or for a new one. */
+const valuesOf = (h: Handover | null): HandoverFormValues => ({
+  type: h?.type ?? DEFAULT_TYPE,
+  date: h?.date ?? pragueToday(),
+  participants: h?.participants ?? "",
+  meters: h?.meterStates ?? [],
+  notes: h?.notes ?? "",
+});
 
 function HandoverForm({
   projectId,
@@ -297,7 +310,6 @@ function HandoverForm({
   setSaving,
   onCancel,
   onSaved,
-  onStale,
 }: {
   projectId: string;
   editing: Handover | null;
@@ -305,58 +317,104 @@ function HandoverForm({
   setSaving: (saving: boolean) => void;
   onCancel: () => void;
   onSaved: (saved: Handover) => void;
-  onStale: (message: string) => void;
 }) {
   const modal = useModal();
-  const [type, setType] = useState(editing?.type ?? "Předání staveniště zhotoviteli");
-  const [date, setDate] = useState(editing?.date ?? pragueToday());
-  const [participants, setParticipants] = useState(editing?.participants ?? "");
-  const [meters, setMeters] = useState<Meter[]>(editing?.meterStates ?? []);
-  const [notes, setNotes] = useState(editing?.notes ?? "");
+  const [baseline] = useState(() => valuesOf(editing));
+  const [values, setValues] = useState<HandoverFormValues>(baseline);
+  // The version the text on the screen is based on: the one the protocol had when it was opened, or the one loaded after a conflict.
+  const [version, setVersion] = useState(editing?.updatedAt ?? null);
   const [problem, setProblem] = useState("");
+  // The save was refused because the protocol changed meanwhile (or was signed): what was typed stays, and the person decides.
+  const [conflict, setConflict] = useState<string | null>(null);
+  // What the person had typed when they chose to load the other version: kept in view until the dialog is closed.
+  const [mine, setMine] = useState<HandoverFormValues | null>(null);
+  // The protocol was signed meanwhile: it cannot be saved over any more.
+  const [locked, setLocked] = useState(false);
+  const [loadingCurrent, setLoadingCurrent] = useState(false);
 
-  const updateMeter = (idx: number, patch: Partial<Meter>) => setMeters((prev) => prev.map((m, i) => (i === idx ? { ...m, ...patch } : m)));
+  const set = (patch: Partial<HandoverFormValues>) => setValues((current) => ({ ...current, ...patch }));
+  const updateMeter = (idx: number, patch: Partial<Meter>) => set({ meters: values.meters.map((m, i) => (i === idx ? { ...m, ...patch } : m)) });
+
+  // Typed and not yet saved: a page that holds work says so, so that a lapsed session or a click on a link does not take it by surprise.
+  // (The session dialog is a modal dialog of its own that stacks on top of this one, so the person can sign in again and carry on.)
+  const dirty = JSON.stringify(values) !== JSON.stringify(baseline);
+  useEffect(() => {
+    setUnsavedWork(dirty);
+    return () => setUnsavedWork(false);
+  }, [dirty]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (saving) return;
-    const wrong = handoverProblem({ type, date, participants, notes, meters });
+    if (saving || locked) return;
+    const wrong = handoverProblem(values);
     if (wrong) return setProblem(wrong);
     setSaving(true);
     setProblem("");
     const body = {
-      type: type.trim(),
-      date,
-      participants: participants.trim(),
-      meterStates: meters.filter((m) => m.medium.trim() || m.serialNumber.trim() || m.state.trim()),
-      notes: notes.trim() || null,
+      type: values.type.trim(),
+      date: values.date,
+      participants: values.participants.trim(),
+      meterStates: values.meters.filter((m) => m.medium.trim() || m.serialNumber.trim() || m.state.trim()),
+      notes: values.notes.trim() || null,
     };
     try {
       const saved = editing
-        ? await api<Handover>(`/api/handovers/${editing.id}`, { method: "PUT", body: json({ ...body, expectedUpdatedAt: editing.updatedAt }) })
+        ? await api<Handover>(`/api/handovers/${editing.id}`, { method: "PUT", body: json({ ...body, expectedUpdatedAt: version }) })
         : await api<Handover>(`/api/projects/${projectId}/handovers`, { method: "POST", body: json(body) });
-      modal.close(() => onSaved(saved));
+      modal.close(() => onSaved(saved), { restoreFocus: true });
     } catch (err) {
-      if (err instanceof ApiError && (err.code === "STALE_VERSION" || err.status === 409)) {
-        // The protocol was changed, or signed, by somebody else meanwhile: nothing of what was typed is saved over it.
-        modal.close(() => onStale(err.message));
+      if (editing && err instanceof ApiError && err.status === 409) {
+        // Somebody changed the protocol, or a party signed it: nothing of what was typed is thrown away or saved over it.
+        setConflict(err.message);
+        setLocked(err.code !== "STALE_VERSION");
       } else {
         setProblem(err instanceof Error ? err.message : "Předání se nepodařilo uložit");
-        setSaving(false);
       }
+      setSaving(false);
     }
+  };
+
+  /** The person's choice: the form takes the stored protocol, and what they typed goes to a copy that stays in view. */
+  const loadCurrent = async () => {
+    if (!editing || loadingCurrent) return;
+    setLoadingCurrent(true);
+    setProblem("");
+    try {
+      const current = await api<Handover>(`/api/handovers/${editing.id}`);
+      const signed = current.state !== "DRAFT";
+      setMine(values);
+      setValues(valuesOf(current));
+      setVersion(current.updatedAt);
+      setLocked(signed);
+      setConflict(
+        signed
+          ? "Protokol mezitím podepsala jedna ze stran, nelze jej už měnit ani uložit. Vaše úpravy zůstávají níže, můžete si je zkopírovat."
+          : "Načetli jsme aktuální verzi protokolu. Vaše úpravy zůstávají níže: můžete si z nich zkopírovat, co chcete zachovat, nebo je vrátit do formuláře a uložit (přepíšete tím změny druhé osoby).",
+      );
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : "Aktuální verzi se nepodařilo načíst");
+    } finally {
+      setLoadingCurrent(false);
+    }
+  };
+
+  const returnMine = () => {
+    if (!mine) return;
+    setValues(mine);
+    setMine(null);
+    setConflict(null);
   };
 
   return (
     <form onSubmit={(e) => void submit(e)} className="space-y-4" noValidate>
       <Field id="handover-type" label="Typ předání" hint={limitHint(HANDOVER_LIMITS.type)}>
-        <TextInput type="text" value={type} onChange={(e) => setType(e.target.value)} />
+        <TextInput type="text" value={values.type} onChange={(e) => set({ type: e.target.value })} />
       </Field>
       <Field id="handover-date" label="Datum předání">
-        <TextInput type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        <TextInput type="date" value={values.date} onChange={(e) => set({ date: e.target.value })} />
       </Field>
       <Field id="handover-participants" label="Účastníci předání" hint={limitHint(HANDOVER_LIMITS.participants)}>
-        <TextInput type="text" value={participants} onChange={(e) => setParticipants(e.target.value)} />
+        <TextInput type="text" value={values.participants} onChange={(e) => set({ participants: e.target.value })} />
       </Field>
 
       <div className="border-t border-line pt-3">
@@ -365,13 +423,13 @@ function HandoverForm({
           <Button
             variant="secondary"
             size="sm"
-            disabled={meters.length >= HANDOVER_LIMITS.meters}
-            onClick={() => setMeters((prev) => [...prev, { medium: "", serialNumber: "", state: "" }])}
+            disabled={values.meters.length >= HANDOVER_LIMITS.meters}
+            onClick={() => set({ meters: [...values.meters, { medium: "", serialNumber: "", state: "" }] })}
           >
             Přidat měřidlo
           </Button>
         </div>
-        {meters.map((m, idx) => (
+        {values.meters.map((m, idx) => (
           <div key={idx} className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
             <TextInput
               aria-label={`Médium měřidla ${idx + 1}`}
@@ -386,7 +444,7 @@ function HandoverForm({
               onChange={(e) => updateMeter(idx, { serialNumber: e.target.value })}
             />
             <TextInput aria-label={`Stav měřidla ${idx + 1}`} placeholder="Stav (např. 12450 kWh)" value={m.state} onChange={(e) => updateMeter(idx, { state: e.target.value })} />
-            <Button variant="quiet" size="sm" onClick={() => setMeters((prev) => prev.filter((_, i) => i !== idx))}>
+            <Button variant="quiet" size="sm" onClick={() => set({ meters: values.meters.filter((_, i) => i !== idx) })}>
               Odebrat měřidlo {idx + 1}
             </Button>
           </div>
@@ -394,12 +452,52 @@ function HandoverForm({
       </div>
 
       <Field id="handover-notes" label="Poznámky / Závěry" hint={limitHint(HANDOVER_LIMITS.notes)}>
-        <TextArea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <TextArea rows={3} value={values.notes} onChange={(e) => set({ notes: e.target.value })} />
       </Field>
 
       {editing && <p className="text-sm text-ink-muted">Protokol lze měnit, dokud ho nepodepíše jedna ze stran. Po prvním podpisu je uzamčen.</p>}
+      {conflict && (
+        <Banner tone="warning" role="alert">
+          <p>{conflict}</p>
+          {!mine && (
+            <>
+              <p className="mt-1 text-xs">Co jste napsali, zůstává ve formuláři, dokud nenačtete aktuální verzi; pak ho najdete pod formulářem.</p>
+              <Button variant="secondary" size="sm" className="mt-2" disabled={loadingCurrent} onClick={() => void loadCurrent()}>
+                Načíst aktuální verzi
+              </Button>
+            </>
+          )}
+        </Banner>
+      )}
+      {mine && (
+        <section aria-labelledby="handover-mine-title" className="space-y-1 rounded-md border border-line bg-page p-3 text-sm">
+          <h3 id="handover-mine-title" className="font-semibold text-ink">
+            Vaše úpravy, které se neuložily
+          </h3>
+          <p>
+            <span className="text-ink-muted">Typ:</span> {mine.type}
+          </p>
+          <p>
+            <span className="text-ink-muted">Datum:</span> {mine.date}
+          </p>
+          <p>
+            <span className="text-ink-muted">Účastníci:</span> {mine.participants}
+          </p>
+          {mine.meters.map((m, idx) => (
+            <p key={idx}>
+              <span className="text-ink-muted">Měřidlo {idx + 1}:</span> {m.medium} ({m.serialNumber}): {m.state}
+            </p>
+          ))}
+          {mine.notes && <p className="whitespace-pre-wrap">{mine.notes}</p>}
+          {!locked && (
+            <Button variant="secondary" size="sm" className="mt-2" onClick={returnMine}>
+              Vrátit moje úpravy do formuláře
+            </Button>
+          )}
+        </section>
+      )}
       {problem && <Banner tone="danger">{problem}</Banner>}
-      <DialogButtons busy={saving} submit="Uložit předání" onCancel={onCancel} />
+      <DialogButtons busy={saving} canSubmit={!locked} submit="Uložit předání" onCancel={onCancel} />
     </form>
   );
 }

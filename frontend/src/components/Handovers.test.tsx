@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { hasUnsavedWork } from "../lib/api";
 import type { Handover, HandoverSignature } from "../lib/handovers";
 import { Handovers } from "./Handovers";
 
@@ -285,17 +286,107 @@ describe("making and changing a protocol", () => {
     expect(calls.find((c) => c.method === "PUT")!.body).toMatchObject({ notes: "Opraveno", expectedUpdatedAt: draft.updatedAt });
   });
 
-  it("says that the protocol was signed meanwhile when a change is refused with 409, and the typed text is not sent again", async () => {
-    serve((method, path) => (method === "PUT" ? answer(409, { error: "Protokol už podepsala jedna ze stran, nelze jej měnit" }) : list(draft)(method, path)));
+  /** The form of the protocol "draft", opened with [notes] typed in. */
+  async function openForm(reply: (method: string, path: string, body: unknown) => Response, notes: string) {
+    const calls = serve(reply);
     render(<Handovers projectId="p1" myRole="BOSS" />);
     fireEvent.click(await screen.findByRole("button", { name: "Upravit" }));
     const dialog = await screen.findByRole("dialog", { name: "Upravit protokol o předání staveniště" });
+    fireEvent.change(within(dialog).getByLabelText("Poznámky / Závěry"), { target: { value: notes } });
+    return { calls, dialog };
+  }
 
-    fireEvent.change(within(dialog).getByLabelText("Poznámky / Závěry"), { target: { value: "Opraveno" } });
+  const notesOf = (dialog: HTMLElement) => (within(dialog).getByLabelText("Poznámky / Závěry") as HTMLTextAreaElement).value;
+
+  it("keeps the form open with what was typed when the protocol changed meanwhile, and loads the other version only when asked", async () => {
+    const other: Handover = { ...draft, notes: "Změněno jinou osobou", updatedAt: "2026-09-11T09:00:00.5Z" };
+    const puts: { expectedUpdatedAt?: string }[] = [];
+    const { calls, dialog } = await openForm((method, path, body) => {
+      if (method === "PUT") {
+        puts.push(body as { expectedUpdatedAt?: string });
+        return puts.length === 1
+          ? answer(409, { error: "Protokol mezitím změnil někdo jiný. Načtěte jej znovu, aby se jeho změny neztratily.", code: "STALE_VERSION" })
+          : answer(200, { ...other, notes: "Moje poznámka", updatedAt: "2026-09-11T10:00:00Z" });
+      }
+      return path === "/api/handovers/h1" ? answer(200, other) : list(draft)(method, path);
+    }, "Moje poznámka");
+
     fireEvent.click(within(dialog).getByRole("button", { name: "Uložit předání" }));
 
-    await screen.findByText(/Protokol už podepsala jedna ze stran/);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(screen.getByRole("button", { name: "Načíst aktuální stav" })).toBeTruthy();
+    // The dialog is still there, with the text, and says what happened; nothing was loaded over it.
+    expect(await within(dialog).findByText(/mezitím změnil někdo jiný/)).toBeTruthy();
+    expect(screen.queryByRole("dialog", { name: "Upravit protokol o předání staveniště" }), "the form stays open").toBeTruthy();
+    expect(notesOf(dialog)).toBe("Moje poznámka");
+    expect(
+      calls.some((c) => c.method === "GET" && c.path === "/api/handovers/h1"),
+      "the other version is not loaded without the person's choice",
+    ).toBe(false);
+    expect(hasUnsavedWork(), "what was typed is unsaved work").toBe(true);
+
+    // The person chooses: the form shows the stored protocol, and what they typed is kept in view.
+    fireEvent.click(within(dialog).getByRole("button", { name: "Načíst aktuální verzi" }));
+    await waitFor(() => expect(notesOf(dialog)).toBe("Změněno jinou osobou"));
+    const copy = within(dialog).getByRole("region", { name: "Vaše úpravy, které se neuložily" });
+    expect(within(copy).getByText("Moje poznámka")).toBeTruthy();
+
+    // They take their text back on purpose, and the save names the version they have now seen.
+    fireEvent.click(within(copy).getByRole("button", { name: "Vrátit moje úpravy do formuláře" }));
+    expect(notesOf(dialog)).toBe("Moje poznámka");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Uložit předání" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(puts.map((p) => p.expectedUpdatedAt)).toEqual([draft.updatedAt, other.updatedAt]);
+    expect(await screen.findByText("Moje poznámka")).toBeTruthy();
+    expect(hasUnsavedWork()).toBe(false);
+  });
+
+  it("says that the protocol was signed meanwhile when a change is refused with 409, and the typed text stays to be copied", async () => {
+    const signed: Handover = { ...draft, state: "SIGNED_BY_CONTRACTOR", contractorSignature: signature("CONTRACTOR") };
+    const { dialog } = await openForm((method, path) => {
+      if (method === "PUT") return answer(409, { error: "Protokol už podepsala jedna ze stran, nelze jej měnit" });
+      return path === "/api/handovers/h1" ? answer(200, signed) : list(draft)(method, path);
+    }, "Moje poznámka");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Uložit předání" }));
+
+    expect(await within(dialog).findByText(/Protokol už podepsala jedna ze stran/)).toBeTruthy();
+    expect(notesOf(dialog)).toBe("Moje poznámka");
+    expect((within(dialog).getByRole("button", { name: "Uložit předání" }) as HTMLButtonElement).disabled, "it cannot be saved over a signature").toBe(true);
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Načíst aktuální verzi" }));
+    const copy = await within(dialog).findByRole("region", { name: "Vaše úpravy, které se neuložily" });
+    expect(within(copy).getByText("Moje poznámka")).toBeTruthy();
+    expect(within(copy).queryByRole("button", { name: "Vrátit moje úpravy do formuláře" }), "a signed protocol takes no text back").toBeNull();
+    expect(within(dialog).getByText(/nelze jej už měnit/)).toBeTruthy();
+  });
+
+  it("is unsaved work while the form holds typed text, and not any more once it is closed or saved", async () => {
+    serve(list(draft));
+    render(<Handovers projectId="p1" myRole="WORKER" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Přidat předání" }));
+    const dialog = await screen.findByRole("dialog", { name: "Protokol o předání staveniště" });
+    expect(hasUnsavedWork(), "an untouched form holds nothing").toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "Novák" } });
+    expect(hasUnsavedWork()).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "" } });
+    expect(hasUnsavedWork(), "typed back to what it was").toBe(false);
+
+    fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "Novák" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Zrušit" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(hasUnsavedWork(), "closed").toBe(false);
+  });
+
+  it("puts the focus on the protocol that was signed, as the button that was used is gone", async () => {
+    serve((method, path) => (method === "POST" ? answer(200, byContractor) : list(draft)(method, path)));
+    render(<Handovers projectId="p1" myRole="BOSS" />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Podepsat za/ }));
+    const dialog = await screen.findByRole("dialog", { name: /^Podepsat předání za/ });
+    fireEvent.change(within(dialog).getByLabelText("Heslo"), { target: { value: "Password123!" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Podepsat" }));
+
+    await screen.findByText("Podepsal zhotovitel, čeká na stavebníka");
+    await waitFor(() => expect(document.activeElement?.id).toBe("handover-h1"));
+    expect(document.activeElement?.getAttribute("aria-labelledby")).toBe("handover-h1-title");
   });
 });
