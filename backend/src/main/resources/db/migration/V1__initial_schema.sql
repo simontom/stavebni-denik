@@ -86,9 +86,8 @@ CREATE TABLE "site_handovers" (
     "meterStates" JSONB,
     "notes" TEXT,
     "createdById" UUID,
-    "signedById" UUID,
-    "signedAt" TIMESTAMPTZ,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- The version of the content (compared when the protocol is changed or signed); a signature does not change it.
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMPTZ,
 
@@ -364,9 +363,6 @@ CREATE INDEX "site_handovers_projectId_idx" ON "site_handovers"("projectId");
 CREATE INDEX "site_handovers_createdById_idx" ON "site_handovers"("createdById");
 
 -- CreateIndex
-CREATE INDEX "site_handovers_signedById_idx" ON "site_handovers"("signedById");
-
--- CreateIndex
 CREATE INDEX "site_handovers_deletedAt_idx" ON "site_handovers"("deletedAt");
 
 -- CreateIndex
@@ -459,9 +455,6 @@ ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_projectId_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "site_handovers" ADD CONSTRAINT "site_handovers_signedById_fkey" FOREIGN KEY ("signedById") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 -- A signature is evidence: neither the protocol nor the person who signed can be removed from under it.

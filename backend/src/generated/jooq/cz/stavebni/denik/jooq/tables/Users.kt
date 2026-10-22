@@ -19,7 +19,6 @@ import cz.stavebni.denik.jooq.keys.REMARKS__REMARKS_AUTHORID_FKEY
 import cz.stavebni.denik.jooq.keys.REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.SESSIONS__SESSIONS_USERID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY
-import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.USERS_PKEY
 import cz.stavebni.denik.jooq.keys.VISITS__VISITS_AUTHORID_FKEY
@@ -392,39 +391,21 @@ open class Users(
     val siteHandoverSignatures: SiteHandoverSignaturesPath
         get(): SiteHandoverSignaturesPath = siteHandoverSignatures()
 
-    private lateinit var _siteHandoversCreatedbyidFkey: SiteHandoversPath
+    private lateinit var _siteHandovers: SiteHandoversPath
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.site_handovers</code> table, via the
-     * <code>site_handovers_createdById_fkey</code> key
+     * <code>public.site_handovers</code> table
      */
-    fun siteHandoversCreatedbyidFkey(): SiteHandoversPath {
-        if (!this::_siteHandoversCreatedbyidFkey.isInitialized)
-            _siteHandoversCreatedbyidFkey = SiteHandoversPath(this, null, SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY.inverseKey)
+    fun siteHandovers(): SiteHandoversPath {
+        if (!this::_siteHandovers.isInitialized)
+            _siteHandovers = SiteHandoversPath(this, null, SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY.inverseKey)
 
-        return _siteHandoversCreatedbyidFkey;
+        return _siteHandovers;
     }
 
-    val siteHandoversCreatedbyidFkey: SiteHandoversPath
-        get(): SiteHandoversPath = siteHandoversCreatedbyidFkey()
-
-    private lateinit var _siteHandoversSignedbyidFkey: SiteHandoversPath
-
-    /**
-     * Get the implicit to-many join path to the
-     * <code>public.site_handovers</code> table, via the
-     * <code>site_handovers_signedById_fkey</code> key
-     */
-    fun siteHandoversSignedbyidFkey(): SiteHandoversPath {
-        if (!this::_siteHandoversSignedbyidFkey.isInitialized)
-            _siteHandoversSignedbyidFkey = SiteHandoversPath(this, null, SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY.inverseKey)
-
-        return _siteHandoversSignedbyidFkey;
-    }
-
-    val siteHandoversSignedbyidFkey: SiteHandoversPath
-        get(): SiteHandoversPath = siteHandoversSignedbyidFkey()
+    val siteHandovers: SiteHandoversPath
+        get(): SiteHandoversPath = siteHandovers()
 
     private lateinit var _visits: VisitsPath
 
@@ -448,13 +429,6 @@ open class Users(
      */
     val dailyReports: DailyReportsPath
         get(): DailyReportsPath = reportAcknowledgements().dailyReports()
-
-    /**
-     * Get the implicit many-to-many join path to the
-     * <code>public.site_handovers</code> table
-     */
-    val siteHandovers: SiteHandoversPath
-        get(): SiteHandoversPath = siteHandoverSignatures().siteHandovers()
     override fun `as`(alias: String): Users = Users(DSL.name(alias), this)
     override fun `as`(alias: Name): Users = Users(alias, this)
     override fun `as`(alias: Table<*>): Users = Users(alias.qualifiedName, this)

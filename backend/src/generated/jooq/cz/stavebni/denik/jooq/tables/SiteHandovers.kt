@@ -8,11 +8,9 @@ import cz.stavebni.denik.jooq.Public
 import cz.stavebni.denik.jooq.indexes.SITE_HANDOVERS_CREATEDBYID_IDX
 import cz.stavebni.denik.jooq.indexes.SITE_HANDOVERS_DELETEDAT_IDX
 import cz.stavebni.denik.jooq.indexes.SITE_HANDOVERS_PROJECTID_IDX
-import cz.stavebni.denik.jooq.indexes.SITE_HANDOVERS_SIGNEDBYID_IDX
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS_PKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY
-import cz.stavebni.denik.jooq.keys.SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY
 import cz.stavebni.denik.jooq.keys.SITE_HANDOVER_SIGNATURES__SITE_HANDOVER_SIGNATURES_HANDOVERID_FKEY
 import cz.stavebni.denik.jooq.tables.Projects.ProjectsPath
 import cz.stavebni.denik.jooq.tables.SiteHandoverSignatures.SiteHandoverSignaturesPath
@@ -128,16 +126,6 @@ open class SiteHandovers(
     val CREATEDBYID: TableField<SiteHandoversRecord, UUID?> = createField(DSL.name("createdById"), SQLDataType.UUID, this, "")
 
     /**
-     * The column <code>public.site_handovers.signedById</code>.
-     */
-    val SIGNEDBYID: TableField<SiteHandoversRecord, UUID?> = createField(DSL.name("signedById"), SQLDataType.UUID, this, "")
-
-    /**
-     * The column <code>public.site_handovers.signedAt</code>.
-     */
-    val SIGNEDAT: TableField<SiteHandoversRecord, OffsetDateTime?> = createField(DSL.name("signedAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6), this, "")
-
-    /**
      * The column <code>public.site_handovers.createdAt</code>.
      */
     val CREATEDAT: TableField<SiteHandoversRecord, OffsetDateTime?> = createField(DSL.name("createdAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("CURRENT_TIMESTAMP"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "")
@@ -184,29 +172,21 @@ open class SiteHandovers(
         override fun `as`(alias: Table<*>): SiteHandoversPath = SiteHandoversPath(alias.qualifiedName, this)
     }
     override fun getSchema(): Schema? = if (aliased()) null else Public.PUBLIC
-    override fun getIndexes(): List<Index> = listOf(SITE_HANDOVERS_CREATEDBYID_IDX, SITE_HANDOVERS_DELETEDAT_IDX, SITE_HANDOVERS_PROJECTID_IDX, SITE_HANDOVERS_SIGNEDBYID_IDX)
+    override fun getIndexes(): List<Index> = listOf(SITE_HANDOVERS_CREATEDBYID_IDX, SITE_HANDOVERS_DELETEDAT_IDX, SITE_HANDOVERS_PROJECTID_IDX)
     override fun getPrimaryKey(): UniqueKey<SiteHandoversRecord> = SITE_HANDOVERS_PKEY
-    override fun getReferences(): List<ForeignKey<SiteHandoversRecord, *>> = listOf(SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY, SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY, SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY)
+    override fun getReferences(): List<ForeignKey<SiteHandoversRecord, *>> = listOf(SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY, SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY)
 
     /**
-     * Get the implicit join path to the <code>public.users</code> table, via
-     * the <code>site_handovers_createdById_fkey</code> key.
+     * Get the implicit join path to the <code>public.users</code> table.
      */
-    fun siteHandoversCreatedbyidFkey(): UsersPath = siteHandoversCreatedbyidFkey
-    val siteHandoversCreatedbyidFkey: UsersPath by lazy { UsersPath(this, SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY, null) }
+    fun users(): UsersPath = users
+    val users: UsersPath by lazy { UsersPath(this, SITE_HANDOVERS__SITE_HANDOVERS_CREATEDBYID_FKEY, null) }
 
     /**
      * Get the implicit join path to the <code>public.projects</code> table.
      */
     fun projects(): ProjectsPath = projects
     val projects: ProjectsPath by lazy { ProjectsPath(this, SITE_HANDOVERS__SITE_HANDOVERS_PROJECTID_FKEY, null) }
-
-    /**
-     * Get the implicit join path to the <code>public.users</code> table, via
-     * the <code>site_handovers_signedById_fkey</code> key.
-     */
-    fun siteHandoversSignedbyidFkey(): UsersPath = siteHandoversSignedbyidFkey
-    val siteHandoversSignedbyidFkey: UsersPath by lazy { UsersPath(this, SITE_HANDOVERS__SITE_HANDOVERS_SIGNEDBYID_FKEY, null) }
 
     private lateinit var _siteHandoverSignatures: SiteHandoverSignaturesPath
 
@@ -223,13 +203,6 @@ open class SiteHandovers(
 
     val siteHandoverSignatures: SiteHandoverSignaturesPath
         get(): SiteHandoverSignaturesPath = siteHandoverSignatures()
-
-    /**
-     * Get the implicit many-to-many join path to the <code>public.users</code>
-     * table
-     */
-    val users: UsersPath
-        get(): UsersPath = siteHandoverSignatures().users()
     override fun `as`(alias: String): SiteHandovers = SiteHandovers(DSL.name(alias), this)
     override fun `as`(alias: Name): SiteHandovers = SiteHandovers(alias, this)
     override fun `as`(alias: Table<*>): SiteHandovers = SiteHandovers(alias.qualifiedName, this)

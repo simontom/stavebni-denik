@@ -10,6 +10,7 @@ import cz.stavebni.denik.jooq.tables.references.AUTHORIZED_PERSONS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.SITE_HANDOVERS
+import cz.stavebni.denik.jooq.tables.references.SITE_HANDOVER_SIGNATURES
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -52,8 +53,7 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
         return out.toByteArray()
     }
 
-    private fun handoverDto(projectId: UUID) =
-        SiteHandoverDto(projectId = projectId.toString(), type = "PROTOCOL", date = "2026-09-28", participants = "Novák, Dvořák")
+    private fun protocolInput() = handoverInput(participants = "Novák, Dvořák")
 
     private fun photoFiles(): Int {
         val dir = AppConfig.uploadsDir.resolve("photos")
@@ -67,38 +67,37 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
     @Test
     fun `a non-member app admin can read handovers but not write them`() = runBlocking<Unit> {
         val s = site()
-        val handover = SiteHandoverService.createHandover(s.owner, handoverDto(s.projectId))
-        val handoverId = UUID.fromString(handover.id)
+        val handover = SiteHandoverService.createHandover(s.owner, s.projectId, protocolInput())
+        val handoverId = handover.uuid
 
         for (admin in listOf(createTestUser(role = Role.BOSS, isAdmin = true), createTestUser(role = Role.WORKER, isAdmin = true))) {
             // Reading works for every admin ...
             assertNotNull(SiteHandoverService.getHandover(dsl, admin, handoverId))
             assertEquals(1, SiteHandoverService.listHandovers(dsl, admin, s.projectId).size)
             // ... writing does not.
-            assertThrows<ForbiddenException> { SiteHandoverService.createHandover(admin, handoverDto(s.projectId)) }
-            assertThrows<ForbiddenException> { SiteHandoverService.updateHandover(admin, handoverId, handoverDto(s.projectId).copy(type = "CHANGED")) }
-            assertThrows<ForbiddenException> { SiteHandoverService.signHandover(admin, handoverId) }
+            assertThrows<ForbiddenException> { SiteHandoverService.createHandover(admin, s.projectId, protocolInput()) }
+            assertThrows<ForbiddenException> { SiteHandoverService.updateHandover(admin, handoverId, handover.asInput(type = "CHANGED")) }
+            assertThrows<ForbiddenException> { signHandover(admin, handover) }
             assertThrows<ForbiddenException> { SiteHandoverService.deleteHandover(admin, handoverId) }
         }
 
         val row = dsl.selectFrom(SITE_HANDOVERS).fetchOne()!!
         assertEquals(1, dsl.fetchCount(SITE_HANDOVERS), "nothing was created")
         assertEquals("PROTOCOL", row.type, "nothing was changed")
-        assertNull(row.signedat, "nothing was signed")
+        assertEquals(0, dsl.fetchCount(SITE_HANDOVER_SIGNATURES), "nothing was signed")
         assertNull(row.deletedat, "nothing was deleted")
     }
 
     @Test
     fun `a member can do all of it`() = runBlocking<Unit> {
         val s = site()
-        val handover = SiteHandoverService.createHandover(s.owner, handoverDto(s.projectId))
-        val id = UUID.fromString(handover.id)
+        val handover = SiteHandoverService.createHandover(s.owner, s.projectId, protocolInput())
 
-        val updated = SiteHandoverService.updateHandover(s.owner, id, handoverDto(s.projectId).copy(type = "CHANGED"))
-        val signed = SiteHandoverService.signHandover(s.owner, id)
+        val updated = SiteHandoverService.updateHandover(s.owner, handover.uuid, handover.asInput(type = "CHANGED"))
+        val signed = signHandover(s.owner, updated)
 
         assertEquals("CHANGED", updated.type)
-        assertNotNull(signed.signedAt)
+        assertNotNull(signed.contractorSignature)
     }
 
     // --- photos --------------------------------------------------------------------------------
@@ -140,11 +139,11 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
     fun `an administrator joins a project the audited way and is then a member`() = runBlocking<Unit> {
         val s = site()
         val admin = createTestUser(role = Role.BOSS, isAdmin = true)
-        assertThrows<ForbiddenException> { SiteHandoverService.createHandover(admin, handoverDto(s.projectId)) }
+        assertThrows<ForbiddenException> { SiteHandoverService.createHandover(admin, s.projectId, protocolInput()) }
 
         ProjectMemberService.addMember(admin, s.projectId, AddMemberRequest(userId = admin.id.toString(), role = "BOSS"))
 
-        assertNotNull(SiteHandoverService.createHandover(admin, handoverDto(s.projectId)), "as a member the administrator may write")
+        assertNotNull(SiteHandoverService.createHandover(admin, s.projectId, protocolInput()), "as a member the administrator may write")
         // The first row is the owner's, made with the project; the administrator's is the one that follows.
         val rows = auditRows("project.member.add")
         assertEquals(2, rows.size)

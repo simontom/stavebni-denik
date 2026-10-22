@@ -1,14 +1,16 @@
 package cz.stavebni.denik.services
 
 import cz.stavebni.denik.BaseIntegrationTest
+import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
+import cz.stavebni.denik.domain.StaleVersionException
 import cz.stavebni.denik.jooq.tables.references.AUDIT_LOG
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
-import cz.stavebni.denik.jooq.tables.references.PROJECT_MEMBERS
 import cz.stavebni.denik.jooq.tables.references.SITE_HANDOVERS
+import cz.stavebni.denik.jooq.tables.references.SITE_HANDOVER_SIGNATURES
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -63,9 +65,6 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         return out.toByteArray()
     }
 
-    private fun handoverDto(projectId: UUID) =
-        SiteHandoverDto(projectId = projectId.toString(), type = "PROTOCOL", date = "2026-09-28", participants = "Novák")
-
     private fun auditRows(action: String) = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq(action)).orderBy(AUDIT_LOG.ID.asc()).fetch()
 
     // --- the database ---------------------------------------------------------------------------
@@ -107,16 +106,16 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `the database refuses to change or delete a signed handover protocol`() = runBlocking<Unit> {
+    fun `the database refuses to change or delete a handover protocol that a party signed`() = runBlocking<Unit> {
         val s = site()
-        val handover = SiteHandoverService.createHandover(s.boss, handoverDto(s.projectId))
-        val id = UUID.fromString(handover.id)
+        val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
+        val id = handover.uuid
 
         dsl.update(SITE_HANDOVERS).set(SITE_HANDOVERS.NOTES, "před podpisem").where(SITE_HANDOVERS.ID.eq(id)).execute()
-        SiteHandoverService.signHandover(s.boss, id)
+        signHandover(s.boss, SiteHandoverService.getHandover(dsl, s.boss, id)!!)
 
         assertThrows<DataAccessException> { dsl.update(SITE_HANDOVERS).set(SITE_HANDOVERS.NOTES, "po podpisu").where(SITE_HANDOVERS.ID.eq(id)).execute() }
-        assertThrows<DataAccessException> { dsl.update(SITE_HANDOVERS).setNull(SITE_HANDOVERS.SIGNEDAT).where(SITE_HANDOVERS.ID.eq(id)).execute() }
+        assertThrows<DataAccessException> { dsl.update(SITE_HANDOVERS).set(SITE_HANDOVERS.DELETEDAT, OffsetDateTime.now()).where(SITE_HANDOVERS.ID.eq(id)).execute() }
         assertThrows<DataAccessException> { dsl.deleteFrom(SITE_HANDOVERS).where(SITE_HANDOVERS.ID.eq(id)).execute() }
         assertEquals("před podpisem", dsl.selectFrom(SITE_HANDOVERS).fetchOne()!!.notes)
     }
@@ -155,64 +154,112 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `two requests signing the same handover give one signature and one conflict`() = runBlocking<Unit> {
+    fun `two requests signing the same side of a handover give one signature and one conflict`() = runBlocking<Unit> {
         val s = site()
-        val id = UUID.fromString(SiteHandoverService.createHandover(s.boss, handoverDto(s.projectId)).id)
+        val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
         val second = createTestUser(role = Role.BOSS)
         addMember(s.projectId, second)
 
         val results = coroutineScope {
-            listOf(s.boss, second).map { signer -> async(Dispatchers.IO) { runCatching { SiteHandoverService.signHandover(signer, id) } } }.awaitAll()
+            listOf(s.boss, second).map { signer -> async(Dispatchers.IO) { runCatching { signHandover(signer, handover) } } }.awaitAll()
         }
 
         assertEquals(1, results.count { it.isSuccess }, results.toString())
-        assertTrue(results.single { it.isFailure }.exceptionOrNull() is IllegalStateException)
+        assertTrue(results.single { it.isFailure }.exceptionOrNull() is ConflictException, results.toString())
         assertEquals(1, auditRows("siteHandover.sign").size)
-        val signer = dsl.selectFrom(SITE_HANDOVERS).fetchOne()!!.signedbyid
+        assertEquals(1, dsl.fetchCount(SITE_HANDOVER_SIGNATURES))
+        val signer = dsl.selectFrom(SITE_HANDOVER_SIGNATURES).fetchOne()!!.signedbyid
         assertTrue(signer == s.boss.id || signer == second.id)
+    }
+
+    @Test
+    fun `the two parties signing at the same moment both get their signature`() = runBlocking<Unit> {
+        val s = site()
+        val investor = createTestUser(role = Role.INVESTOR)
+        addMember(s.projectId, investor)
+        val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
+
+        val results = coroutineScope {
+            listOf(s.boss, investor).map { signer -> async(Dispatchers.IO) { runCatching { signHandover(signer, handover) } } }.awaitAll()
+        }
+
+        assertTrue(results.all { it.isSuccess }, results.toString())
+        assertEquals(setOf("CONTRACTOR", "CLIENT"), dsl.selectFrom(SITE_HANDOVER_SIGNATURES).fetch().map { it.side }.toSet())
+        assertEquals(1, dsl.selectFrom(SITE_HANDOVER_SIGNATURES).fetch().map { it.contenthash }.toSet().size, "both signed the same content")
+        assertEquals(2, auditRows("siteHandover.sign").size)
+        assertTrue(AuditService.verifyChain(dsl).ok)
     }
 
     @Test
     fun `a handover change that races with the signature cannot land after it`() = runBlocking<Unit> {
         val s = site()
-        val id = UUID.fromString(SiteHandoverService.createHandover(s.boss, handoverDto(s.projectId)).id)
+        val handover = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
 
+        // Both were prepared from the same version: whichever runs first moves or freezes it, and the other is refused.
         val results = coroutineScope {
-            val update = async(Dispatchers.IO) { runCatching { SiteHandoverService.updateHandover(s.boss, id, handoverDto(s.projectId).copy(type = "LATE CHANGE")) } }
-            val sign = async(Dispatchers.IO) { runCatching { SiteHandoverService.signHandover(s.boss, id) } }
+            val update = async(Dispatchers.IO) { runCatching { SiteHandoverService.updateHandover(s.boss, handover.uuid, handover.asInput(type = "LATE CHANGE")) } }
+            val sign = async(Dispatchers.IO) { runCatching { signHandover(s.boss, handover) } }
             listOf(update, sign).awaitAll()
         }
 
-        assertTrue(results[1].isSuccess, "signing succeeds: ${results[1]}")
-        val signId = auditRows("siteHandover.sign").single().get(AUDIT_LOG.ID)!!
-        for (update in auditRows("siteHandover.update")) {
-            assertTrue(update.get(AUDIT_LOG.ID)!! < signId, "no change after the signature")
-        }
+        assertEquals(1, results.count { it.isSuccess }, "exactly one of them goes through: $results")
         val final = dsl.selectFrom(SITE_HANDOVERS).fetchOne()!!
-        assertEquals(if (results[0].isSuccess) "LATE CHANGE" else "PROTOCOL", final.type)
-        assertNotNull(final.signedat)
+        if (results[1].isSuccess) {
+            // The signature came first: it froze the protocol, and the change that was behind it is refused.
+            assertEquals("PROTOCOL", final.type)
+            assertEquals(0, auditRows("siteHandover.update").size)
+            assertTrue(results[0].exceptionOrNull() is ConflictException, "refused because the protocol is signed: ${results[0]}")
+        } else {
+            // The change came first and moved the version, so the signature of the version that was seen is refused.
+            assertEquals("LATE CHANGE", final.type)
+            assertEquals(0, dsl.fetchCount(SITE_HANDOVER_SIGNATURES))
+            assertTrue(results[1].exceptionOrNull() is StaleVersionException, "refused because the version moved: ${results[1]}")
+        }
     }
 
     // --- the audit trail ------------------------------------------------------------------------
 
     @Test
-    fun `handover create, update and sign are audited with the entity id and before and after`() = runBlocking<Unit> {
+    fun `handover create, update, both signatures and delete are audited with the entity id, before and after, and no password`() = runBlocking<Unit> {
         val s = site()
-        val created = SiteHandoverService.createHandover(s.boss, handoverDto(s.projectId))
-        val id = UUID.fromString(created.id)
-        SiteHandoverService.updateHandover(s.boss, id, handoverDto(s.projectId).copy(type = "ZMĚNA"))
-        SiteHandoverService.signHandover(s.boss, id)
+        val investor = createTestUser(role = Role.INVESTOR, displayName = "Marie Stavebníková")
+        addMember(s.projectId, investor)
+        val created = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput())
+        val updated = SiteHandoverService.updateHandover(s.boss, created.uuid, created.asInput(type = "ZMĚNA"))
+        val byContractor = signHandover(s.boss, updated)
+        val complete = signHandover(investor, byContractor)
+        val removed = SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(type = "Zrušený"))
+        SiteHandoverService.deleteHandover(s.boss, removed.uuid)
 
-        val create = auditRows("siteHandover.create").single()
+        val create = auditRows("siteHandover.create").first()
         assertEquals(created.id, create.get(AUDIT_LOG.ENTITY_ID))
         assertNull(create.auditBeforeText())
         val update = auditRows("siteHandover.update").single()
         assertEquals("PROTOCOL", Json.parseToJsonElement(update.auditBeforeText()!!).jsonObject["type"]!!.jsonPrimitive.content)
         assertEquals("ZMĚNA", Json.parseToJsonElement(update.auditAfterText()!!).jsonObject["type"]!!.jsonPrimitive.content)
-        val sign = auditRows("siteHandover.sign").single()
-        assertEquals(created.id, sign.get(AUDIT_LOG.ENTITY_ID))
-        assertEquals("null", Json.parseToJsonElement(sign.auditBeforeText()!!).jsonObject["signedAt"].toString())
-        assertNotEquals("null", Json.parseToJsonElement(sign.auditAfterText()!!).jsonObject["signedAt"].toString())
+
+        val signs = auditRows("siteHandover.sign")
+        assertEquals(2, signs.size, "one row for each signature")
+        for (sign in signs) assertEquals(created.id, sign.get(AUDIT_LOG.ENTITY_ID))
+        val beforeFirst = Json.parseToJsonElement(signs[0].auditBeforeText()!!).jsonObject
+        val afterFirst = Json.parseToJsonElement(signs[0].auditAfterText()!!).jsonObject
+        assertEquals("null", beforeFirst["contractorSignature"].toString())
+        val contractor = afterFirst["contractorSignature"]!!.jsonObject
+        assertEquals(s.boss.id.toString(), contractor["signedById"]!!.jsonPrimitive.content)
+        assertEquals("BOSS", contractor["signerRole"]!!.jsonPrimitive.content)
+        assertEquals(complete.contractorSignature!!.signatureHash, contractor["signatureHash"]!!.jsonPrimitive.content)
+        assertEquals("null", afterFirst["clientSignature"].toString(), "the first row shows only the contractor's signature")
+        val afterSecond = Json.parseToJsonElement(signs[1].auditAfterText()!!).jsonObject
+        assertEquals("Marie Stavebníková", afterSecond["clientSignature"]!!.jsonObject["signerName"]!!.jsonPrimitive.content)
+        assertEquals(complete.clientSignature!!.contentHash, afterSecond["clientSignature"]!!.jsonObject["contentHash"]!!.jsonPrimitive.content)
+
+        val delete = auditRows("siteHandover.delete").single()
+        assertEquals(removed.id, delete.get(AUDIT_LOG.ENTITY_ID))
+        assertNotEquals("null", Json.parseToJsonElement(delete.auditAfterText()!!).jsonObject["deletedAt"].toString())
+
+        for (row in dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.like("siteHandover.%")).fetch()) {
+            assertFalse(row.auditAfterText().orEmpty().contains("assword"), "no password in ${row.get(AUDIT_LOG.ACTION)}")
+        }
         assertTrue(AuditService.verifyChain(dsl).ok)
     }
 }

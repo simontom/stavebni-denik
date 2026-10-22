@@ -65,7 +65,6 @@ val SITE_HANDOVER_SIGNATURES_SIGNEDBYID_IDX: Index = Internal.createIndex(DSL.na
 val SITE_HANDOVERS_CREATEDBYID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_createdById_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.CREATEDBYID), false)
 val SITE_HANDOVERS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("site_handovers_deletedAt_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.DELETEDAT), false)
 val SITE_HANDOVERS_PROJECTID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_projectId_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.PROJECTID), false)
-val SITE_HANDOVERS_SIGNEDBYID_IDX: Index = Internal.createIndex(DSL.name("site_handovers_signedById_idx"), SiteHandovers.SITE_HANDOVERS, arrayOf(SiteHandovers.SITE_HANDOVERS.SIGNEDBYID), false)
 val USERS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("users_deletedAt_idx"), Users.USERS, arrayOf(Users.USERS.DELETEDAT), false)
 val USERS_NICKNAME_KEY: Index = Internal.createIndex(DSL.name("users_nickname_key"), Users.USERS, arrayOf(Users.USERS.NICKNAME), true)
 val VISITS_DELETEDAT_IDX: Index = Internal.createIndex(DSL.name("visits_deletedAt_idx"), Visits.VISITS, arrayOf(Visits.VISITS.DELETEDAT), false)
