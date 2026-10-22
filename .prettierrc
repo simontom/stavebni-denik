@@ -4,6 +4,7 @@
   "singleQuote": false,
   "printWidth": 180,
   "tabWidth": 2,
+  "tailwindStylesheet": "./frontend/src/index.css",
   "plugins": [
     "prettier-plugin-tailwindcss"
   ]
