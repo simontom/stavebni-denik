@@ -156,7 +156,7 @@ fun Application.reportRoutes() {
                     val limit = call.request.queryParameters["limit"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("limit musí být celé číslo") }
                         ?: DailyReportService.DEFAULT_PAGE_SIZE
                     val offset = call.request.queryParameters["offset"]?.let { it.toIntOrNull() ?: throw IllegalArgumentException("offset musí být celé číslo") } ?: 0
-                    val page = DailyReportService.getReports(projectId, limit, offset)
+                    val page = DailyReportService.getReports(projectId, limit, offset, user)
                     // The body stays a plain list; how many entries the project has in all is in a header.
                     call.response.header("X-Total-Count", page.total.toString())
                     call.respond(page.reports)
@@ -189,7 +189,7 @@ fun Application.reportRoutes() {
                         val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
                         val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
                         ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
-                        val report = DailyReportService.getReport(projectId, reportIdOrDate)
+                        val report = DailyReportService.getReport(projectId, reportIdOrDate, user)
                             ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Report not found"))
                         call.respond(report)
                     }
@@ -247,7 +247,7 @@ fun Application.reportRoutes() {
                     val tx = DatabaseFactory.dsl
                     val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     val projectId = ProjectAccess.requireReportAccess(tx, user, reportId)
-                    val report = DailyReportService.getReport(projectId, reportId.toString())
+                    val report = DailyReportService.getReport(projectId, reportId.toString(), user)
                         ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to "Report not found"))
                     call.respond(report)
                 }

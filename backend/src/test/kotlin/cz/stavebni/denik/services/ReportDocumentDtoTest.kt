@@ -191,6 +191,145 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         assertEquals(listOf(null, "zataženo, 8,5 až 15 °C"), DailyReportService.getReports(s.projectId).reports.map { it.weatherText })
     }
 
+    // --- who may change it ------------------------------------------------------------------------------
+
+    private class Cast(val site: Site, val otherWorker: SessionUser, val inspector: SessionUser, val investor: SessionUser, val admin: SessionUser)
+
+    private suspend fun cast(): Cast {
+        val s = site()
+        val otherWorker = createTestUser(nickname = "worker2", displayName = "Druhý Pracovník", role = Role.WORKER)
+        val inspector = createTestUser(nickname = "inspector", displayName = "Dozor", role = Role.INSPECTOR)
+        val investor = createTestUser(nickname = "investor", displayName = "Ivo Investor", role = Role.INVESTOR)
+        val admin = createTestUser(nickname = "admin", displayName = "Správce", role = Role.WORKER, isAdmin = true)
+        addMember(s.projectId, otherWorker, Role.WORKER)
+        addMember(s.projectId, inspector, Role.INSPECTOR)
+        addMember(s.projectId, investor, Role.INVESTOR)
+        return Cast(s, otherWorker, inspector, investor, admin)
+    }
+
+    /** What [viewer] is told about the entry of [day] by the single read, by the read by id and by the list: all three must agree. */
+    private suspend fun canEditSeenBy(c: Cast, viewer: SessionUser?, day: String): Boolean {
+        val single = DailyReportService.getReport(c.site.projectId, day, viewer)!!
+        val byId = DailyReportService.getReport(c.site.projectId, single.id, viewer)!!
+        val inList = DailyReportService.getReports(c.site.projectId, user = viewer).reports.single { it.date == day }
+        assertEquals(single.canEdit, byId.canEdit, "by id")
+        assertEquals(single.canEdit, inList.canEdit, "in the list")
+        return single.canEdit
+    }
+
+    @Test
+    fun `the manager may change any unsigned entry, a worker only their own, nobody else`() = runBlocking<Unit> {
+        val c = cast()
+        val s = c.site
+        save(s, s.worker, "2026-09-28") // the worker's
+        save(s, s.boss, "2026-09-29") // the manager's
+
+        assertTrue(canEditSeenBy(c, s.boss, "2026-09-28"), "a manager corrects the worker's entry")
+        assertTrue(canEditSeenBy(c, s.boss, "2026-09-29"))
+        assertTrue(canEditSeenBy(c, s.worker, "2026-09-28"), "a worker's own")
+        assertFalse(canEditSeenBy(c, s.worker, "2026-09-29"), "a worker may not change the manager's entry")
+        assertFalse(canEditSeenBy(c, c.otherWorker, "2026-09-28"), "nor another worker's")
+        assertFalse(canEditSeenBy(c, c.inspector, "2026-09-28"))
+        assertFalse(canEditSeenBy(c, c.investor, "2026-09-28"))
+        assertFalse(canEditSeenBy(c, c.admin, "2026-09-28"), "an administrator who is not a member has no right to write")
+        assertFalse(canEditSeenBy(c, null, "2026-09-28"), "an internal read that does not know who asks says no")
+    }
+
+    @Test
+    fun `nobody may change a signed entry`() = runBlocking<Unit> {
+        val c = cast()
+        val s = c.site
+        val saved = save(s, s.worker, "2026-09-28")
+        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+
+        for (viewer in listOf(s.boss, s.worker, c.otherWorker, c.inspector, c.investor, c.admin)) {
+            assertFalse(canEditSeenBy(c, viewer, "2026-09-28"), viewer.nickname)
+        }
+    }
+
+    @Test
+    fun `the answer to a save says whether the saver may go on changing the entry, by the same rule`() = runBlocking<Unit> {
+        val c = cast()
+        val s = c.site
+        val created = save(s, s.worker, "2026-09-28")
+        assertTrue(created.canEdit, "the worker who created it")
+
+        val corrected = DailyReportService.saveReport(
+            s.boss, s.projectId, "2026-09-28",
+            DailyReportService.ReportInput(workDescription = "Opraveno", expectedUpdatedAt = java.time.OffsetDateTime.parse(created.updatedAt!!)),
+        )
+        assertTrue(corrected.canEdit, "the manager who corrected it")
+    }
+
+    @Test
+    fun `the decision is the one the save makes, so what the page is told is not allowed is refused over the route`() = testApplication {
+        application { module() }
+        val c = runBlocking { cast() }
+        val s = c.site
+        val bosses = runBlocking { save(s, s.boss, "2026-09-29") }
+        val workers = runBlocking { save(s, s.worker, "2026-09-28") }
+
+        suspend fun read(user: SessionUser, day: String) =
+            Json.parseToJsonElement(client.get("/api/projects/${s.projectId}/reports/$day") { header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}") }.bodyAsText()).jsonObject
+        suspend fun saveAs(user: SessionUser, day: String, updatedAt: String) =
+            client.post("/api/projects/${s.projectId}/reports/$day") {
+                header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}")
+                contentType(ContentType.Application.Json)
+                setBody("""{"workDescription":"Změna","expectedUpdatedAt":"$updatedAt"}""")
+            }
+
+        // The worker is told they may not change the manager's entry, and the save agrees.
+        assertEquals("false", read(s.worker, "2026-09-29")["canEdit"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.Forbidden, saveAs(s.worker, "2026-09-29", bosses.updatedAt!!).status)
+        // ... and that they may change their own, and the save agrees.
+        assertEquals("true", read(s.worker, "2026-09-28")["canEdit"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.OK, saveAs(s.worker, "2026-09-28", workers.updatedAt!!).status)
+        // An investor is told no, and the save refuses.
+        assertEquals("false", read(c.investor, "2026-09-28")["canEdit"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.Forbidden, saveAs(c.investor, "2026-09-28", workers.updatedAt!!).status)
+    }
+
+    // --- a signature that lacks its signer ---------------------------------------------------------------------
+
+    @Test
+    fun `a format 3 entry that lost its signer name or number says the signer is incomplete, and a whole one does not`() = runBlocking<Unit> {
+        val s = site()
+        val whole = save(s, s.boss, "2026-09-28")
+        val noName = save(s, s.boss, "2026-09-29")
+        val noNumber = save(s, s.boss, "2026-09-30")
+        for (e in listOf(whole, noName, noNumber)) DailyReportService.signReport(s.boss, UUID.fromString(e.id))
+        // The database refuses such a row; whoever owns the table can switch the constraint and the triggers off.
+        dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
+            dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
+            try {
+                dsl.execute("""update daily_reports set "signerName" = null where id = ?""", UUID.fromString(noName.id))
+                dsl.execute("""update daily_reports set "signerCkaitNumber" = '  ' where id = ?""", UUID.fromString(noNumber.id))
+            } finally {
+                dsl.execute("""ALTER TABLE "daily_reports" ENABLE TRIGGER USER""")
+            }
+        }
+
+        assertFalse(DailyReportService.getReport(s.projectId, whole.id)!!.signerIncomplete)
+        for (id in listOf(noName.id, noNumber.id)) {
+            val one = DailyReportService.getReport(s.projectId, id)!!
+            assertTrue(one.signerIncomplete, "one of the two is missing: ${one.signerName} / ${one.signerCkaitNumber}")
+            assertTrue(one.isSigned)
+        }
+        assertEquals(listOf(false, true, true), DailyReportService.getReports(s.projectId).reports.reversed().map { it.signerIncomplete }, "the list says the same")
+    }
+
+    @Test
+    fun `a draft, and an entry of format 2 that kept no copy of the signer, are not incomplete`() = runBlocking<Unit> {
+        val s = site()
+        assertFalse(save(s, s.boss, "2026-09-28").signerIncomplete)
+
+        GoldenFixture.insertSignedEntry(dsl, signatureHash = "9".repeat(64), signatureFormat = 2)
+        assertFalse(
+            DailyReportService.getReport(GoldenFixture.projectId, GoldenFixture.entryId.toString())!!.signerIncomplete,
+            "formats 1 and 2 never stored it, and say so by signerFrozen = false",
+        )
+    }
+
     // --- over the routes: who may read it ---------------------------------------------------------------
 
     @Test

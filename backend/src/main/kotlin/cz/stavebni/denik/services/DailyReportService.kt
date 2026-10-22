@@ -8,6 +8,7 @@ import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SignerNotQualifiedException
 import cz.stavebni.denik.domain.Resource
+import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.StaleVersionException
 import cz.stavebni.denik.domain.WeatherData
@@ -77,6 +78,19 @@ data class DailyReportDto(
     val signerCkaitNumber: String? = null,
     /** [signerName] and [signerCkaitNumber] are the stored ones (format 3), not read from the account as it is now. */
     val signerFrozen: Boolean = false,
+    /**
+     * A signature of format 3 needs both the name and the ČKAIT number of the signer; the database refuses a row that lacks either,
+     * and the PDF and the signature check call such a row a failure. True when the entry is signed in format 3 and one of them is
+     * missing or blank (only a row changed behind the application's back): the page says the data is incomplete instead of showing
+     * half a signer as if it were whole.
+     */
+    val signerIncomplete: Boolean = false,
+    /**
+     * Whether the person who asks may change this entry (the same decision as the save: `ReportUpdate` in `Rbac.kt`, a manager of
+     * the project any unsigned entry, a worker their own, nobody a signed one, nobody who is no member). False when the caller is
+     * not known (an internal read). The page offers the form only when it is true, instead of a form whose save ends in 403.
+     */
+    val canEdit: Boolean = false,
     /** SHA-256 of the entry's content at signing (see [ReportSignature]); null while unsigned. */
     val signatureHash: String? = null,
     val photos: List<PhotoDto> = emptyList()
@@ -296,7 +310,7 @@ object DailyReportService {
                     .fetchOne() ?: throw IllegalStateException("Failed to insert report")
 
                 Audited(
-                    result = toDto(created, emptyList(), whoOf(tx, created)),
+                    result = toDto(created, emptyList(), whoOf(tx, created), canEdit = mayEdit(user, role, created)),
                     action = "report.create",
                     entityId = created.id.toString(),
                     after = created.toSnapshot(),
@@ -334,7 +348,10 @@ object DailyReportService {
                     .fetchOne() ?: throw ConflictException("Záznam je podepsán a uzamčen, nelze jej měnit")
 
                 Audited(
-                    result = toDto(updated, PhotoService.listPhotos(tx, updated.id!!), whoOf(tx, updated), acknowledgementsOf(tx, listOf(updated.id!!))[updated.id!!].orEmpty()),
+                    result = toDto(
+                        updated, PhotoService.listPhotos(tx, updated.id!!), whoOf(tx, updated),
+                        acknowledgementsOf(tx, listOf(updated.id!!))[updated.id!!].orEmpty(), canEdit = mayEdit(user, role, updated),
+                    ),
                     action = "report.update",
                     entityId = updated.id.toString(),
                     before = existing.toSnapshot(),
@@ -355,7 +372,7 @@ object DailyReportService {
      * A diary grows by an entry a day for years, so the list must never be "everything", and the photos of the page
      * come in one query, not one per entry.
      */
-    suspend fun getReports(projectId: UUID, limit: Int = DEFAULT_PAGE_SIZE, offset: Int = 0): ReportPage {
+    suspend fun getReports(projectId: UUID, limit: Int = DEFAULT_PAGE_SIZE, offset: Int = 0, user: SessionUser? = null): ReportPage {
         require(limit in 1..MAX_PAGE_SIZE) { "limit musí být 1 až $MAX_PAGE_SIZE" }
         require(offset >= 0) { "offset nesmí být záporný" }
         val tx = DatabaseFactory.dsl
@@ -371,11 +388,12 @@ object DailyReportService {
         val ids = rows.mapNotNull { it.get(DAILY_REPORTS.ID) }
         val photos = PhotoService.listPhotosForReports(tx, ids)
         val acknowledgements = acknowledgementsOf(tx, ids)
+        val role = user?.let { ProjectAccess.roleIn(tx, it.id, projectId) }
         return ReportPage(
             reports = rows.mapNotNull { row ->
                 val record = row.into(DAILY_REPORTS)
                 val reportId = record.id ?: return@mapNotNull null
-                toDto(record, photos[reportId].orEmpty(), whoOf(row), acknowledgements[reportId].orEmpty())
+                toDto(record, photos[reportId].orEmpty(), whoOf(row), acknowledgements[reportId].orEmpty(), canEdit = mayEdit(user, role, record))
             },
             total = total,
         )
@@ -386,7 +404,7 @@ object DailyReportService {
      * A report id that belongs to another project is "not found", not readable
      * through this project.
      */
-    suspend fun getReport(projectId: UUID, reportIdOrDate: String): DailyReportDto? {
+    suspend fun getReport(projectId: UUID, reportIdOrDate: String, user: SessionUser? = null): DailyReportDto? {
         val tx = DatabaseFactory.dsl
         val uuid = try {
             UUID.fromString(reportIdOrDate)
@@ -409,7 +427,11 @@ object DailyReportService {
 
         val record = row.into(DAILY_REPORTS)
         val reportId = record.id ?: return null
-        return toDto(record, PhotoService.listPhotos(tx, reportId), whoOf(row), acknowledgementsOf(tx, listOf(reportId))[reportId].orEmpty())
+        val role = user?.let { ProjectAccess.roleIn(tx, it.id, projectId) }
+        return toDto(
+            record, PhotoService.listPhotos(tx, reportId), whoOf(row),
+            acknowledgementsOf(tx, listOf(reportId))[reportId].orEmpty(), canEdit = mayEdit(user, role, record),
+        )
     }
 
     /**
@@ -600,7 +622,21 @@ object DailyReportService {
     private fun whoOf(tx: DSLContext, record: DailyReportsRecord): Who =
         selectEntries(tx).where(DAILY_REPORTS.ID.eq(record.id)).fetchOne()?.let { whoOf(it) } ?: Who(null, null, null)
 
-    private fun toDto(record: DailyReportsRecord, photos: List<PhotoDto>, who: Who, acknowledgements: List<AcknowledgementDto> = emptyList()): DailyReportDto {
+    /**
+     * Whether [user], who holds [role] in the project, may change the entry [record]: **the decision the save makes** (`ReportUpdate`
+     * in Rbac.kt: a manager any unsigned entry, a worker their own, nobody a signed one or one of a project they are no member of),
+     * so the page offers the form exactly when the save would be accepted. False when the caller is not known.
+     */
+    private fun mayEdit(user: SessionUser?, role: Role?, record: DailyReportsRecord): Boolean =
+        user != null && record.lockedat == null && can(user, Action.ReportUpdate, Resource(role = role, authorId = record.authorid))
+
+    private fun toDto(
+        record: DailyReportsRecord,
+        photos: List<PhotoDto>,
+        who: Who,
+        acknowledgements: List<AcknowledgementDto> = emptyList(),
+        canEdit: Boolean = false,
+    ): DailyReportDto {
         val signed = record.signedat != null
         // From signature format 3 the signer is what was stored when the entry was signed. Before, no copy was kept and the account
         // is read as it is now, which is also what the signature check says of such an entry.
@@ -630,6 +666,9 @@ object DailyReportService {
             signerName = if (!signed) null else if (frozen) record.get(DAILY_REPORTS.SIGNERNAME) else who.signerAccountName,
             signerCkaitNumber = if (!signed) null else if (frozen) record.get(DAILY_REPORTS.SIGNERCKAITNUMBER) else who.signerAccountCkait,
             signerFrozen = signed && frozen,
+            // Format 3 needs both; the database refuses a row without one, so this is a row that was changed behind the application.
+            signerIncomplete = signed && frozen && (record.get(DAILY_REPORTS.SIGNERNAME).isNullOrBlank() || record.get(DAILY_REPORTS.SIGNERCKAITNUMBER).isNullOrBlank()),
+            canEdit = canEdit,
             signatureHash = record.get(DAILY_REPORTS.SIGNATUREHASH),
             photos = photos,
         )
