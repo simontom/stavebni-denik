@@ -202,6 +202,78 @@ class PartASnapshotTest : BaseIntegrationTest() {
         assertThrows<ConflictException> { PartASnapshot.build(dsl, projectId) }
     }
 
+    @Test
+    fun `memberships of deleted users are not counted against the limit, because nobody can see or remove them`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+        // The manager and 99 visible members fill the project; three more memberships belong to users who were deleted since.
+        val users = (1..PartASnapshot.MAX_PERSONS - 1 + 3).map { n ->
+            val id = UUID.randomUUID()
+            dsl.insertInto(USERS)
+                .set(USERS.ID, id).set(USERS.NICKNAME, "bulk$n").set(USERS.DISPLAYNAME, "Člen $n").set(USERS.PASSWORDHASH, "x")
+                .set(USERS.ROLE, cz.stavebni.denik.jooq.enums.Role.INSPECTOR).set(USERS.ISACTIVE, true).set(USERS.MUSTCHANGEPWD, false)
+                .execute()
+            dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, projectId).set(PROJECT_MEMBERS.USERID, id)
+                .set(PROJECT_MEMBERS.ROLE, cz.stavebni.denik.jooq.enums.Role.INSPECTOR).execute()
+            id
+        }
+        dsl.update(USERS).set(USERS.DELETEDAT, OffsetDateTime.now()).where(USERS.ID.`in`(users.takeLast(3))).execute()
+        assertEquals(PartASnapshot.MAX_PERSONS + 3, dsl.fetchCount(PROJECT_MEMBERS, PROJECT_MEMBERS.ROLE.`in`(cz.stavebni.denik.jooq.enums.Role.BOSS, cz.stavebni.denik.jooq.enums.Role.INSPECTOR)))
+
+        val snapshot = json(PartASnapshot.build(dsl, projectId))
+
+        assertEquals(PartASnapshot.MAX_PERSONS, snapshot["members"]!!.jsonArray.size, "what the snapshot holds is what the list of members shows")
+    }
+
+    @Test
+    fun `the largest part A that ordinary text can make fits, and only control characters make one that does not`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS)
+        val projectId = project(boss)
+        // Every text at its limit, with 4-byte characters (the most that a character of ordinary text takes in UTF-8), for the
+        // most members and persons a project may have.
+        val emoji = "\uD83D\uDE00"
+        fun fill(chars: Int, unit: String) = unit.repeat(chars)
+        dsl.update(PROJECTS)
+            .set(PROJECTS.SUPPORTINGDOCUMENTS, fill(5_000, emoji)).set(PROJECTS.SUBCONTRACTORS, fill(5_000, emoji))
+            .set(PROJECTS.NAME, fill(200, emoji)).set(PROJECTS.ADDRESS, fill(500, emoji)).set(PROJECTS.PARCELNUMBERS, fill(500, emoji))
+            .set(PROJECTS.BUILDER, fill(500, emoji)).set(PROJECTS.CONTRACTOR, fill(500, emoji)).set(PROJECTS.DESIGNERNAME, fill(500, emoji))
+            .set(PROJECTS.AUTHORSUPERVISIONNAME, fill(500, emoji)).set(PROJECTS.AUTHORSUPERVISIONAUTHORIZATION, fill(200, emoji))
+            .set(PROJECTS.CADASTRALAREA, fill(200, emoji)).set(PROJECTS.PERMITNUMBER, fill(200, emoji)).set(PROJECTS.TDSNAME, fill(200, emoji))
+            .set(PROJECTS.BOZPNAME, fill(200, emoji)).set(PROJECTS.CONTRACTNUMBER, fill(200, emoji)).set(PROJECTS.DESIGNDOCVERSION, fill(200, emoji))
+            .where(PROJECTS.ID.eq(projectId)).execute()
+        for (n in 1 until PartASnapshot.MAX_PERSONS) {
+            val id = UUID.randomUUID()
+            dsl.insertInto(USERS)
+                .set(USERS.ID, id).set(USERS.NICKNAME, "bulk$n").set(USERS.DISPLAYNAME, fill(200, emoji)).set(USERS.CKAITNUMBER, fill(50, emoji))
+                .set(USERS.PASSWORDHASH, "x").set(USERS.ROLE, cz.stavebni.denik.jooq.enums.Role.INSPECTOR).set(USERS.ISACTIVE, true).set(USERS.MUSTCHANGEPWD, false)
+                .execute()
+            dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, projectId).set(PROJECT_MEMBERS.USERID, id)
+                .set(PROJECT_MEMBERS.ROLE, cz.stavebni.denik.jooq.enums.Role.INSPECTOR).set(PROJECT_MEMBERS.SCOPE, fill(500, emoji)).execute()
+        }
+        repeat(PartASnapshot.MAX_PERSONS) { n ->
+            dsl.insertInto(AUTHORIZED_PERSONS).set(AUTHORIZED_PERSONS.PROJECTID, projectId).set(AUTHORIZED_PERSONS.NAME, fill(200, emoji))
+                .set(AUTHORIZED_PERSONS.COMPANY, fill(200, emoji)).set(AUTHORIZED_PERSONS.AUTHORIZATION, fill(500, emoji)).execute()
+        }
+
+        val text = PartASnapshot.build(dsl, projectId)
+
+        assertTrue(text.toByteArray(Charsets.UTF_8).size < PartASnapshot.MAX_BYTES, "ordinary characters fit: ${text.toByteArray(Charsets.UTF_8).size} bytes")
+
+        // A control character is written as six bytes (\u0001), and every text of the same length is then half as long again: this
+        // is what can exceed the limit, and it takes a manager (the scope, the persons, the identification) and an administrator
+        // (the names of the accounts) to fill every field of a full project with them.
+        val control = "\u0001"
+        dsl.update(PROJECT_MEMBERS).set(PROJECT_MEMBERS.SCOPE, fill(500, control)).where(PROJECT_MEMBERS.PROJECTID.eq(projectId)).execute()
+        dsl.update(AUTHORIZED_PERSONS)
+            .set(AUTHORIZED_PERSONS.NAME, fill(200, control)).set(AUTHORIZED_PERSONS.COMPANY, fill(200, control)).set(AUTHORIZED_PERSONS.AUTHORIZATION, fill(500, control))
+            .where(AUTHORIZED_PERSONS.PROJECTID.eq(projectId)).execute()
+        dsl.update(USERS).set(USERS.DISPLAYNAME, fill(200, control)).set(USERS.CKAITNUMBER, fill(50, control)).execute()
+        dsl.update(PROJECTS).set(PROJECTS.SUPPORTINGDOCUMENTS, fill(5_000, control)).set(PROJECTS.SUBCONTRACTORS, fill(5_000, control)).where(PROJECTS.ID.eq(projectId)).execute()
+
+        val refused = assertThrows<ConflictException> { PartASnapshot.build(dsl, projectId) }
+        assertTrue(refused.message!!.contains("příliš rozsáhlé"), refused.message)
+    }
+
     // --- what the live view is ---------------------------------------------------------------------
 
     @Test

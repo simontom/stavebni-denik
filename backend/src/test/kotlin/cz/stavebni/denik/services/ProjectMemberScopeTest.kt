@@ -230,6 +230,28 @@ class ProjectMemberScopeTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `memberships of deleted users do not count, because the list of members does not show them and nobody can remove them`() = runBlocking<Unit> {
+        val s = site()
+        val ids = insertUsers(PartASnapshot.MAX_PERSONS - 1 + 4)
+        for (id in ids) {
+            dsl.insertInto(PROJECT_MEMBERS).set(PROJECT_MEMBERS.PROJECTID, s.projectId).set(PROJECT_MEMBERS.USERID, id)
+                .set(PROJECT_MEMBERS.ROLE, cz.stavebni.denik.jooq.enums.Role.INSPECTOR).execute()
+        }
+        // Four of them were deleted since: 100 are visible (the manager and 99), 104 are rows.
+        dsl.update(USERS).set(USERS.DELETEDAT, java.time.OffsetDateTime.now()).where(USERS.ID.`in`(ids.takeLast(4))).execute()
+        val one = createTestUser(nickname = "one_more", role = Role.INSPECTOR)
+        assertEquals(PartASnapshot.MAX_PERSONS, ProjectMemberService.listMembers(dsl, s.boss, s.projectId).size)
+
+        assertThrows<ConflictException> { add(s.boss, s.projectId, one, "INSPECTOR") }
+
+        // One of the visible ones goes: now there is room for one more, whatever the deleted ones are.
+        ProjectMemberService.removeMember(s.boss, s.projectId, ids.first())
+        add(s.boss, s.projectId, one, "INSPECTOR", "Dozor")
+        assertEquals("INSPECTOR", roleOf(s.projectId, one))
+        assertEquals(PartASnapshot.MAX_PERSONS, ProjectMemberService.listMembers(dsl, s.boss, s.projectId).size)
+    }
+
+    @Test
     fun `a project has at most 100 active authorized persons, and revoking one makes room`() = runBlocking<Unit> {
         val s = site()
         repeat(PartASnapshot.MAX_PERSONS) { n ->

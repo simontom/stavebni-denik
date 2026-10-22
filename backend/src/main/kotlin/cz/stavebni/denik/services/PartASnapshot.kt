@@ -57,7 +57,9 @@ data class PartA(
  *
  * Its size is bounded. Every text has the limit of the field it comes from (they are the limits of the services that write
  * them), at most [MAX_PERSONS] members with a role of BOSS or INSPECTOR and [MAX_PERSONS] active authorised persons are
- * allowed (the services refuse another), and [build] refuses more than [MAX_BYTES] of text with a message.
+ * allowed (the services refuse another), and [build] refuses more than [MAX_BYTES] of text with a message. Any text of ordinary
+ * characters fits with room to spare (about 740 KB at the most, every character taking four bytes); what can exceed it is a
+ * project whose fields are filled to their limits with control characters, which the text is written as six bytes each (`\u0001`).
  */
 object PartASnapshot {
     /** The most BOSS and INSPECTOR members, and the most active authorised persons, a project may have. */
@@ -154,6 +156,17 @@ object PartASnapshot {
         return PartA(authorizedPersons = persons, identification = identification, members = members, projectId = projectId.toString(), siteManager = siteManager)
     }
 
+    /**
+     * How many members with a role of BOSS or INSPECTOR the project has, **as the list of members shows them**: the memberships of
+     * users who were deleted are not in the list and not in the snapshot, and nobody can remove them, so they do not count against
+     * the limit either. One rule for the snapshot ([build]) and for adding a member (`ProjectMemberService.addMember`).
+     */
+    fun countMembersWithRole(tx: DSLContext, projectId: UUID): Int =
+        tx.fetchCount(
+            tx.selectOne().from(PROJECT_MEMBERS).join(USERS).on(USERS.ID.eq(PROJECT_MEMBERS.USERID))
+                .where(PROJECT_MEMBERS.PROJECTID.eq(projectId)).and(PROJECT_MEMBERS.ROLE.`in`(Role.BOSS, Role.INSPECTOR)).and(USERS.DELETEDAT.isNull),
+        )
+
     /** The canonical text of [partA]: sorted keys, compact. This exact text is stored and hashed. */
     fun textOf(partA: PartA): String = AuditHash.canonicalJson(Json.encodeToJsonElement(PartA.serializer(), partA))
 
@@ -163,7 +176,7 @@ object PartASnapshot {
      * make a signature read them all.
      */
     fun build(tx: DSLContext, projectId: UUID): String {
-        val members = tx.fetchCount(PROJECT_MEMBERS, PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.ROLE.`in`(Role.BOSS, Role.INSPECTOR)))
+        val members = countMembersWithRole(tx, projectId)
         val persons = tx.fetchCount(AUTHORIZED_PERSONS, AUTHORIZED_PERSONS.PROJECTID.eq(projectId).and(AUTHORIZED_PERSONS.REVOKEDAT.isNull))
         if (members > MAX_PERSONS || persons > MAX_PERSONS) throw tooLarge()
         val text = textOf(read(tx, projectId))

@@ -154,7 +154,7 @@ object ProjectMemberService {
             }
             // Part A of the diary names these persons and is stored with every signature: their number is bounded.
             if (newDbRole in ROLES_WITH_SCOPE && before !in ROLES_WITH_SCOPE &&
-                tx.fetchCount(PROJECT_MEMBERS, PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.ROLE.`in`(ROLES_WITH_SCOPE))) >= PartASnapshot.MAX_PERSONS
+                PartASnapshot.countMembersWithRole(tx, projectId) >= PartASnapshot.MAX_PERSONS
             ) {
                 throw ConflictException("Projekt může mít nejvýše ${PartASnapshot.MAX_PERSONS} členů s rolí stavbyvedoucího nebo technického dozoru")
             }
