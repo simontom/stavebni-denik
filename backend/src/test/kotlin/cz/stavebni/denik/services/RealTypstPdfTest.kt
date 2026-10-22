@@ -50,8 +50,32 @@ class RealTypstPdfTest : BaseIntegrationTest() {
         }
     }
 
-    /** No white space at all: a long hash or a watermark may be broken over several lines of the extracted text. */
-    private fun squeezed(text: String): String = text.filterNot { it.isWhitespace() }
+    /**
+     * No white space at all, and no zero-width space (the template puts one into a very long word, so that it can break): a long hash,
+     * a watermark or such a word may be broken over several lines of the extracted text.
+     */
+    private fun squeezed(text: String): String = text.filterNot { it.isWhitespace() || it == '\u200b' }
+
+    /** The furthest point to the right that any text of the document reaches, in points (a page is 595 wide, its margin is 57), and the letter that reaches it. */
+    private fun rightmostPoint(pdf: ByteArray): Pair<Float, String> = Loader.loadPDF(pdf).use { document ->
+        var furthest = 0f
+        var letter = ""
+        val stripper = object : PDFTextStripper() {
+            override fun writeString(text: String, textPositions: MutableList<org.apache.pdfbox.text.TextPosition>) {
+                for (position in textPositions) {
+                    // The space at the end of a line that fills the width is not text that can be seen to run over.
+                    if (position.unicode.isBlank()) continue
+                    val end = position.xDirAdj + position.widthDirAdj
+                    if (end > furthest) {
+                        furthest = end
+                        letter = position.unicode + " in \"" + text.take(40) + "\" on page ${currentPageNo}"
+                    }
+                }
+            }
+        }
+        stripper.getText(document)
+        furthest to letter
+    }
 
     private suspend fun projectOf(boss: SessionUser, name: String = "Náležitosti", extra: (ProjectDto) -> ProjectDto = { it }): UUID =
         UUID.fromString(
@@ -518,6 +542,39 @@ class RealTypstPdfTest : BaseIntegrationTest() {
         // The signer is the stored one, and so is the site manager of part A.
         assertTrue(Regex("""Podepsal:[^\n]*Ing\. Jan Stavbyvedoucí, ČKAIT 0012345""").containsMatchIn(text), text)
         assertTrue(Regex("""Autor záznamu:[^\n]*Pavel Dělník""").containsMatchIn(text), text)
+    }
+
+    @Test
+    fun `text without a space in the tables of persons breaks inside its cell, is all printed, and does not run over the edge of the page`() = runBlocking<Unit> {
+        val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Jan Stavbyvedoucí")
+        val projectId = projectOf(boss)
+        // Each long text is made of a letter that is nowhere else in the document, so that the letters of the page can be counted: a
+        // table may break a word over several lines, and the text of a row is then extracted line by line, with its other cells.
+        val other = createTestUser(nickname = "dozor", displayName = "\u010e".repeat(200), role = Role.INSPECTOR, ckaitNumber = "W".repeat(50))
+        ProjectMemberService.addMember(boss, projectId, AddMemberRequest(other.id.toString(), "INSPECTOR", "\u011a".repeat(ProjectMemberService.MAX_SCOPE_CHARS)))
+        ProjectMemberService.addMember(boss, projectId, AddMemberRequest(boss.id.toString(), "BOSS", "Ý".repeat(ProjectMemberService.MAX_SCOPE_CHARS)))
+        AuthorizedPersonService.create(
+            boss, projectId,
+            CreateAuthorizedPersonRequest(
+                "\u017d".repeat(AuthorizedPersonService.MAX_NAME_CHARS), "\u016e".repeat(AuthorizedPersonService.MAX_COMPANY_CHARS),
+                "\u0164".repeat(AuthorizedPersonService.MAX_AUTHORIZATION_CHARS),
+            ),
+        )
+        val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
+        DailyReportService.signReport(boss, report)
+
+        val pdf = PdfExportService.generateReportPdf(dsl, report).bytes
+        val text = squeezed(textOf(pdf))
+
+        for ((letter, count) in listOf('\u010e' to 200, 'W' to 50, '\u011a' to 500, 'Ý' to 500, '\u017d' to 200, '\u016e' to 200, '\u0164' to 500)) {
+            assertEquals(count, text.count { it == letter }, "every character of the text made of '$letter' is printed, once")
+        }
+        // Everything stays inside the margins of the page (2 cm = 57 points from the edge of 595), the footer included.
+        val (furthest, where) = rightmostPoint(pdf)
+        assertTrue(furthest <= 595.28f - 56.69f + 1f, "the text reaches $furthest, past the margin: $where")
+        val pages = pagesOf(pdf)
+        assertTrue(pages.size <= 4, "the pages are ${pages.size}")
+        assertTrue(pages.any { Regex("(?m)^Podpis$").containsMatchIn(it) && it.contains("Konec denního záznamu č. 1") }, "the signature and the end of the entry are on one page")
     }
 
     @Test

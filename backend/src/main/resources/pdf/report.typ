@@ -18,18 +18,30 @@
 #let rule = 0.5pt + luma(140)
 #let none-mark = text(fill: grey, style: "italic")[bez záznamu]
 
+// Text without a space has nowhere to break and runs over the edge of its table cell (and of the page): a word longer than `max`
+// characters is given a place to break after every `max` of them, a zero-width space that prints nothing (but is in the text that is
+// copied out of the document, so `max` is long enough for an ordinary word to stay whole). Words that are shorter are left as they
+// are, and a line is broken at a place like that only when it is full.
+#let breakable(s, max: 16) = s.split(" ").map(word => {
+  let cs = word.clusters()
+  if cs.len() <= max { word } else {
+    range(0, cs.len(), step: max).map(i => cs.slice(i, calc.min(i + max, cs.len())).join()).join("\u{200b}")
+  }
+}).join(" ")
+
 // Shows a string as plain text and keeps its line breaks. Windows line endings count as one
-// break, and a tab becomes spaces (a tab character would otherwise render as nothing).
-#let plain(s) = {
+// break, and a tab becomes spaces (a tab character would otherwise render as nothing). With `wrap`, a very long word may break (see breakable).
+#let plain(s, wrap: false, max: 16) = {
   let normalized = s.replace("\r\n", "\n").replace("\r", "\n")
   for (i, line) in normalized.split("\n").enumerate() {
     if i > 0 { linebreak() }
-    line.replace("\t", "    ")
+    let spaced = line.replace("\t", "    ")
+    if wrap { breakable(spaced, max: max) } else { spaced }
   }
 }
 
 // The text, or "bez záznamu" when there is none: an empty field is stated, never left out.
-#let or-none(s) = if s.trim() != "" { plain(s) } else { none-mark }
+#let or-none(s, wrap: false) = if s.trim() != "" { plain(s, wrap: wrap) } else { none-mark }
 
 // A text on one line, cut with an ellipsis when it is long (for the footer, which has a fixed height).
 #let one-line(s, max) = {
@@ -119,15 +131,16 @@
 // The persons of part A (příloha 12 A d), e), f)): who ensures the technical management of the works and for what, the
 // supervision, and the persons who may make entries. A table that has no row is not printed.
 #let people(rows) = table(
-  columns: (1fr, auto, 1.4fr),
+  columns: (1fr, 3.2cm, 1.4fr),
   stroke: rule,
   inset: (x: 6pt, y: 5pt),
   fill: (x, y) => if y == 0 { luma(243) },
   table.header([*Jméno*], [*Číslo ČKAIT*], [*Rozsah oprávnění a odpovědnosti*]),
   ..rows.map(m => (
-    [#plain(m.name)#if m.siteManager [ (stavbyvedoucí)]],
-    if m.ckait != "" { plain(m.ckait) } else [—],
-    or-none(m.scope),
+    [#plain(m.name, wrap: true)#if m.siteManager [ (stavbyvedoucí)]],
+    // A narrow column: a number of up to seven characters (the usual one) is never broken, and seven of the widest letters fit.
+    if m.ckait != "" { plain(m.ckait, wrap: true, max: 7) } else [—],
+    or-none(m.scope, wrap: true),
   )).flatten(),
 )
 
@@ -152,7 +165,7 @@
     inset: (x: 6pt, y: 5pt),
     fill: (x, y) => if y == 0 { luma(243) },
     table.header([*Jméno*], [*Organizace*], [*Funkce, rozsah pověření*]),
-    ..d.authorizedPersons.map(p => (plain(p.name), or-none(p.company), or-none(p.function))).flatten(),
+    ..d.authorizedPersons.map(p => (plain(p.name, wrap: true), or-none(p.company, wrap: true), or-none(p.function, wrap: true))).flatten(),
   )
 ]
 
