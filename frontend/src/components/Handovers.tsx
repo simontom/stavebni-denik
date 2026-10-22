@@ -337,7 +337,8 @@ function HandoverForm({
         : await api<Handover>(`/api/projects/${projectId}/handovers`, { method: "POST", body: json(body) });
       modal.close(() => onSaved(saved));
     } catch (err) {
-      if (err instanceof ApiError && err.code === "STALE_VERSION") {
+      if (err instanceof ApiError && (err.code === "STALE_VERSION" || err.status === 409)) {
+        // The protocol was changed, or signed, by somebody else meanwhile: nothing of what was typed is saved over it.
         modal.close(() => onStale(err.message));
       } else {
         setProblem(err instanceof Error ? err.message : "Předání se nepodařilo uložit");
@@ -463,11 +464,12 @@ function SignForm({
       });
       modal.close(() => onSigned(signed));
     } catch (err) {
-      if (err instanceof ApiError && err.code === "STALE_VERSION") {
-        // Somebody changed the protocol after it was loaded here: what the signer sees is not what would be signed.
+      if (err instanceof ApiError && (err.code === "STALE_VERSION" || err.status === 409 || err.status === 401)) {
+        // Somebody changed the protocol or signed this side after it was loaded here (what the signer sees is not what would be
+        // signed), or the session is over (its dialog is behind this one until this one is closed): the page says so and loads again.
         modal.close(() => onStale(err.message));
       } else {
-        // A wrong password, a missing ČKAIT number, too many attempts, a side that is signed already: said in the dialog, which stays open.
+        // A wrong password, a missing ČKAIT number, too many attempts: said in the dialog, which stays open.
         setError(err instanceof Error ? err.message : "Protokol se nepodařilo podepsat");
         setBusy(false);
       }
