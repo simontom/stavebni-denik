@@ -143,6 +143,14 @@ object SiteHandoverService {
     const val MAX_METERS = 50
     const val MAX_METER_FIELD_CHARS = 100
 
+    /**
+     * Lines are limited as well as characters: a newline is one character, so without these a few thousand characters would be
+     * thousands of printed lines, and the project's protocols are printed in the PDF of every entry. The type and the fields of a meter
+     * are one line.
+     */
+    const val MAX_PARTICIPANTS_LINES = 100
+    const val MAX_NOTES_LINES = 200
+
     private val json = Json {
         encodeDefaults = true
         ignoreUnknownKeys = true
@@ -261,20 +269,21 @@ object SiteHandoverService {
     }
 
     private fun validated(input: SiteHandoverInput): Content {
-        val type = Text.checked(input.type.trim(), "Typ předání", MAX_TYPE_CHARS)
+        val type = Text.singleLine(Text.checked(input.type.trim(), "Typ předání", MAX_TYPE_CHARS), "Typ předání")
         require(type.isNotEmpty()) { "Typ předání je povinný" }
         // A calendar day, stored at midnight UTC: the same reading as the day of an entry (a time part is dropped, not converted).
         val date = Dates.parseLocalDate(input.date).atStartOfDay().atOffset(ZoneOffset.UTC)
-        val participants = Text.checked(input.participants.trim(), "Účastníci předání", MAX_PARTICIPANTS_CHARS)
-        val notes = input.notes?.trim()?.takeIf { it.isNotEmpty() }?.let { Text.checked(it, "Poznámky", MAX_NOTES_CHARS) }
+        val participants = Text.maxLines(Text.checked(input.participants.trim(), "Účastníci předání", MAX_PARTICIPANTS_CHARS), "Účastníci předání", MAX_PARTICIPANTS_LINES)
+        val notes = input.notes?.trim()?.takeIf { it.isNotEmpty() }
+            ?.let { Text.maxLines(Text.checked(it, "Poznámky", MAX_NOTES_CHARS), "Poznámky", MAX_NOTES_LINES) }
         val given = input.meterStates.orEmpty()
         require(given.size <= MAX_METERS) { "Protokol může mít nejvýše $MAX_METERS měřidel" }
         val meters = given
             .map { m ->
                 MeterState(
-                    medium = Text.checked(m.medium.trim(), "Médium měřidla", MAX_METER_FIELD_CHARS),
-                    serialNumber = Text.checked(m.serialNumber.trim(), "Výrobní číslo měřidla", MAX_METER_FIELD_CHARS),
-                    state = Text.checked(m.state.trim(), "Stav měřidla", MAX_METER_FIELD_CHARS),
+                    medium = Text.singleLine(Text.checked(m.medium.trim(), "Médium měřidla", MAX_METER_FIELD_CHARS), "Médium měřidla"),
+                    serialNumber = Text.singleLine(Text.checked(m.serialNumber.trim(), "Výrobní číslo měřidla", MAX_METER_FIELD_CHARS), "Výrobní číslo měřidla"),
+                    state = Text.singleLine(Text.checked(m.state.trim(), "Stav měřidla", MAX_METER_FIELD_CHARS), "Stav měřidla"),
                 )
             }
             // A row that says nothing is not a meter.
