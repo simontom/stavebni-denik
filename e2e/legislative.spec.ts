@@ -226,6 +226,8 @@ test.describe("Legislative Compliance", () => {
     // Verify acknowledged status appears in header
     await expect(page.getByText(/Seznámil\(a\) se: .*\(stavebník\)/)).toBeVisible();
     await expect(ackBtn).not.toBeVisible();
+    // The button that asked is gone with the acknowledgement: the focus is on the heading of the page, not lost to the top of the document
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
 
     // An investor reads the daily entry but does not write it: a day nobody wrote says so, with no form and no save button.
     const yesterday = new Date(`${new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date())}T00:00:00Z`);

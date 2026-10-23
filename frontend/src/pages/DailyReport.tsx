@@ -5,12 +5,13 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
-import { Button, Card, Modal, StatusBadge, useModal } from "../components/ui";
+import { Button, Card, FormActions, Modal, StalledNotice, StatusBadge } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { useReportDraft } from "../lib/useReportDraft";
+import { useStalled } from "../lib/useStalled";
 
 interface PhotoItem {
   id: string;
@@ -144,6 +145,8 @@ export const DailyReport: React.FC = () => {
   const [signPassword, setSignPassword] = useState("");
   const [signError, setSignError] = useState("");
   const [signing, setSigning] = useState(false);
+  // The server has not answered the signature for a long time: the dialog says so, and can be closed (nobody knows whether it signed).
+  const signStalled = useStalled(signing);
   const [signatureCheck, setSignatureCheck] = useState<SignatureCheck | null>(null);
   // Each party that took note of the signed entry (technical supervision, author's supervision, the client, ...).
   const [acknowledgements, setAcknowledgements] = useState<Acknowledgement[]>([]);
@@ -186,16 +189,8 @@ export const DailyReport: React.FC = () => {
   useEffect(() => {
     if (error) errorBox.current?.scrollIntoView?.({ block: "center", behavior: "smooth" });
   }, [error, errorTick]);
-  // Closing the tab, reloading or leaving the app with unsaved text: the browser asks first.
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  // Closing the tab or reloading with unsaved text: the browser asks first. That is `AppLayout`'s one handler, which asks whenever a page
+  // or a dialog says it holds unsaved work; this page says it through `useReportDraft` below (`setUnsavedWork(dirty)`).
   const roleKnown = myRole !== undefined;
   // Whether the person may change THIS entry. For an entry that exists the server says (`canEdit`: the rule of the save, so a worker
   // is not offered a form for the manager's entry, whose save would end in 403); for a day nobody has written the role does
@@ -959,8 +954,8 @@ export const DailyReport: React.FC = () => {
           title="Podepsat a uzamknout záznam"
           description={`Podepisujete uloženou verzi záznamu ze dne ${reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
           onCancel={() => setShowSign(false)}
-          dismissible={!signing}
-          footer={<SignAnswers signing={signing} canSign={signPassword.length > 0} onCancel={() => setShowSign(false)} />}
+          dismissible={!signing || signStalled}
+          footer={<FormActions formId="sign-form" submitLabel="Podepsat" submitVariant="danger" busy={signing} stalled={signStalled} canSubmit={signPassword.length > 0} />}
         >
           <form id="sign-form" onSubmit={(e) => void handleConfirmSign(e)} className="space-y-3">
             <div>
@@ -982,6 +977,7 @@ export const DailyReport: React.FC = () => {
                 {signError}
               </div>
             )}
+            {signStalled && <StalledNotice>Nevíme, jestli se záznam podepsal. Zkontrolujte jeho stav po zavření dialogu, než podpis zopakujete.</StalledNotice>}
           </form>
         </Modal>
       )}
@@ -1008,21 +1004,6 @@ export const DailyReport: React.FC = () => {
     </div>
   );
 };
-
-/** The two answers of the sign dialog. They are inside the [Modal], so "Zrušit" can close it (and give the focus back) before the page reacts. */
-function SignAnswers({ signing, canSign, onCancel }: { signing: boolean; canSign: boolean; onCancel: () => void }) {
-  const modal = useModal();
-  return (
-    <>
-      <Button variant="secondary" disabled={signing} onClick={() => modal.close(onCancel, { restoreFocus: true })}>
-        Zrušit
-      </Button>
-      <Button type="submit" form="sign-form" variant="danger" disabled={signing || !canSign}>
-        Podepsat
-      </Button>
-    </>
-  );
-}
 
 /**
  * The route element of the entry page: [DailyReport] mounted once per project and day. When only the day in the URL changes

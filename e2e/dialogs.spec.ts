@@ -70,6 +70,17 @@ async function passwordIn(dialog: Locator): Promise<string> {
   return password;
 }
 
+/**
+ * What the browser does when the tab is closed or reloaded: the event goes to the window, and the page cancels it to make the browser
+ * ask (the page cannot choose the words). True when the page asks.
+ */
+const tabCloseIsAsked = (page: Page): Promise<boolean> =>
+  page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+
 /** A project of its own (the administrator is its site manager), made through the API. */
 async function makeProject(page: Page): Promise<string> {
   const res = await page.request.post("/api/projects", {
@@ -142,13 +153,18 @@ async function expectAsksBeforeDiscarding(page: Page, { opener, dialog, field, t
 test("a new account's temporary password is shown once: it cannot be dismissed before it is handed over, and is gone from the page afterwards", async ({ page, request }) => {
   test.setTimeout(90_000);
   await login(page);
-  await page.goto("/admin/users");
+  // the page before the users, reached by the application's own link, so that the Back button is a step inside the application (not the load of another document)
+  await page.goto("/projects");
+  await page.getByRole("navigation", { name: "Hlavní" }).getByRole("link", { name: "Uživatelé", exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/users$/);
   const nickname = `e2e-dlg-new-${Date.now()}`;
   const openCreate = page.getByRole("button", { name: "Nový uživatel" });
+  expect(await tabCloseIsAsked(page), "nothing typed: closing the tab is not asked about").toBe(false);
   await openCreate.click();
   const form = page.getByRole("dialog", { name: "Vytvořit nového uživatele" });
   await form.getByLabel("Přihlašovací jméno (nickname)").fill(nickname);
   await form.getByLabel("Jméno a příjmení (displayName)").fill("Dialog Nový");
+  expect(await tabCloseIsAsked(page), "typed text: the browser asks before the tab is closed or reloaded").toBe(true);
   await form.getByRole("button", { name: "Vytvořit", exact: true }).click();
 
   const shown = page.getByRole("dialog", { name: "Uživatel byl vytvořen" });
@@ -166,12 +182,25 @@ test("a new account's temporary password is shown once: it cannot be dismissed b
   await expect(shown).toBeVisible();
   expect(await page.content(), "the password is shown while it is not handed over").toContain(password);
 
+  // Closing or reloading the tab would lose the only copy: the browser asks. So does the Back button, and the question says the password is lost for good.
+  expect(await tabCloseIsAsked(page), "the browser asks before the tab is closed or reloaded").toBe(true);
+  await page.goBack();
+  const leave = page.getByRole("dialog", { name: "Neuložené změny" });
+  await expect(leave).toBeVisible();
+  await expect(leave).toContainText("Dočasné heslo se už nikdy nezobrazí");
+  await leave.getByRole("button", { name: "Zůstat" }).click();
+  await expect(leave).toHaveCount(0);
+  await expect(shown).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/users$/);
+  expect(await page.content(), "the password is still there").toContain(password);
+
   // The password is what the person can really sign in with
   const signedIn = await request.post("/api/auth/login", { data: { nickname, password } });
   expect(signedIn.ok(), "the shown password is the account's").toBeTruthy();
 
   await shown.getByLabel("Heslo jsem předal(a)").check();
   await expect(done).toBeEnabled();
+  expect(await tabCloseIsAsked(page), "handed over: nothing is lost by closing the tab").toBe(false);
   await done.click();
   await expect(shown).toHaveCount(0);
   expect(await page.content(), "the password is gone from the page").not.toContain(password);
@@ -262,6 +291,8 @@ test("deactivating, activating and deleting a user ask in the application's own 
     await expect(del.getByRole("button", { name: "Zrušit", exact: true })).toBeFocused();
     await del.getByRole("button", { name: "Smazat", exact: true }).click();
     await expect(rowOf(page, user)).toHaveCount(0, { timeout: 15_000 });
+    // the button that asked went with the row: the focus is on the first thing of the page, not on the top of the document
+    await expect(page.getByRole("button", { name: "Nový uživatel" })).toBeFocused();
   } finally {
     await dropUser(page, user);
   }
@@ -291,6 +322,8 @@ test("revoking an authorised person asks first, says it cannot be taken back, an
   await ask.getByRole("button", { name: "Zrušit pověření", exact: true }).click();
   await expect(page.getByText("Zrušeno", { exact: true })).toBeVisible({ timeout: 15_000 });
   await expect(ask).toHaveCount(0);
+  // the button that asked is gone with the answer: the focus is on the heading of the list
+  await expect(page.getByRole("heading", { name: "Seznam pověřených osob" })).toBeFocused();
 });
 
 // --- Typed text, saving and refusals ---------------------------------------------------------------------------------
@@ -353,7 +386,8 @@ test("a dialog that is saving cannot be dismissed, and what the server refuses i
     await expect(edit).toBeVisible();
     await expect(name).toHaveValue("x".repeat(201));
     await expect(page.locator("main [role=alert]:not(dialog [role=alert])"), "the refusal is not shown on the page behind the dialog").toHaveCount(0);
-    await expect(edit.getByRole("button", { name: "Uložit změny" }), "the person can try again").toBeEnabled();
+    await expect(edit.getByRole("button", { name: "Uložit změny" }), "the person can try again").not.toHaveAttribute("aria-disabled", "true");
+    await expect(edit.getByRole("button", { name: "Uložit změny" }), "the button that was pressed still has the focus").toBeFocused();
     await page.unroute("**/api/users/*");
 
     // The same in a question: an account cannot delete itself, and the dialog says so and stays
@@ -362,9 +396,20 @@ test("a dialog that is saving cannot be dismissed, and what the server refuses i
     await expect(edit).toHaveCount(0);
     await page.locator("tr", { hasText: ADMIN_NICKNAME }).first().getByRole("button", { name: "Smazat", exact: true }).click();
     const ask = page.getByRole("dialog", { name: "Smazat uživatele?" });
-    await ask.getByRole("button", { name: "Smazat", exact: true }).click();
+    let deletes = 0;
+    page.on("request", (r) => {
+      if (r.method() === "DELETE") deletes++;
+    });
+    // From the keyboard: Enter on "Smazat" is refused, the focus stays on it, and a second Enter asks the server again
+    const yes = ask.getByRole("button", { name: "Smazat", exact: true });
+    await yes.focus();
+    await page.keyboard.press("Enter");
     await expect(ask.getByRole("alert")).toContainText(/nelze smazat vlastní účet/i, { timeout: 15_000 });
     await expect(ask).toBeVisible();
+    await expect(yes, "the focus is still on the button that was pressed").toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect.poll(() => deletes, "a second Enter does something").toBe(2);
+    await expect(ask.getByRole("alert")).toContainText(/nelze smazat vlastní účet/i);
     await ask.getByRole("button", { name: "Zrušit", exact: true }).click();
     await expect(ask).toHaveCount(0);
   } finally {
@@ -491,4 +536,150 @@ test("a member and a role are picked in native selects, and a person without a �
   await expect(page.getByRole("button", { name: "Přidat", exact: true })).toBeDisabled();
   await role.selectOption("WORKER");
   await expect(page.getByRole("button", { name: "Přidat", exact: true })).toBeEnabled();
+});
+
+// --- Leaving while an action runs, and the Back button between the tabs of a page ------------------------------------------
+
+test("leaving while a password reset runs asks, says that the new password would not be shown, and the reset still ends in the password dialog", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const user = await makeUser(page, "leave");
+  try {
+    await page.goto("/projects");
+    await page.getByRole("navigation", { name: "Hlavní" }).getByRole("link", { name: "Uživatelé", exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/users$/);
+    // The server is slow: the answer of the reset is held until the test lets it go
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/api/users/*/reset-password", async (route) => {
+      await held;
+      await route.continue();
+    });
+    await rowOf(page, user).getByRole("button", { name: "Obnovit heslo", exact: true }).click();
+    const ask = page.getByRole("dialog", { name: "Obnovit heslo?" });
+    await ask.getByRole("button", { name: "Obnovit heslo", exact: true }).click();
+    await expect(ask.getByRole("button", { name: "Zrušit", exact: true })).toHaveAttribute("aria-disabled", "true");
+    expect(await tabCloseIsAsked(page), "the browser asks before the tab is closed while the password is being changed").toBe(true);
+
+    // The Back button: the page is not left without a question, and the question says what would be lost
+    await page.goBack();
+    const leave = page.getByRole("dialog", { name: "Neuložené změny" });
+    await expect(leave).toBeVisible();
+    await expect(leave).toContainText("Heslo se právě mění; když odejdete, nové heslo se nezobrazí a bude potřeba ho obnovit znovu.");
+    await leave.getByRole("button", { name: "Zůstat" }).click();
+    await expect(page).toHaveURL(/\/admin\/users$/);
+
+    // The person stayed: the answer comes, and the new password is shown, once
+    release();
+    const shown = page.getByRole("dialog", { name: "Heslo bylo obnoveno" });
+    await expect(shown).toBeVisible({ timeout: 15_000 });
+    expect((await passwordIn(shown)).length).toBeGreaterThanOrEqual(12);
+    await shown.getByLabel("Heslo jsem předal(a)").check();
+    await shown.getByRole("button", { name: "Hotovo" }).click();
+    await expect(shown).toHaveCount(0);
+    expect(await tabCloseIsAsked(page), "nothing is running or unsaved now").toBe(false);
+  } finally {
+    await dropUser(page, user);
+  }
+});
+
+test("the Back button from one tab of a page to another asks when a dialog holds typed text, and staying keeps the dialog and the text", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const projectId = await makeProject(page);
+
+  // A dialog of the members tab: Back goes to the overview (the same path, no `tab`)
+  await page.goto(`/projects/${projectId}`);
+  await page.getByRole("link", { name: "Členové" }).click();
+  await expect(page).toHaveURL(/\?tab=members$/);
+  await page.getByRole("button", { name: "Přidat osobu" }).click();
+  const add = page.getByRole("dialog", { name: "Přidat pověřenou osobu" });
+  await add.getByLabel("Jméno a příjmení / Titul").fill("Ing. Rozepsaný");
+  await page.goBack();
+  const leave = page.getByRole("dialog", { name: "Neuložené změny" });
+  await expect(leave).toBeVisible();
+  await leave.getByRole("button", { name: "Zůstat" }).click();
+  await expect(leave).toHaveCount(0);
+  await expect(page).toHaveURL(/\?tab=members$/);
+  await expect(add.getByLabel("Jméno a příjmení / Titul")).toHaveValue("Ing. Rozepsaný");
+
+  // Without typed text nothing is asked: the Back button leaves
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Zahodit rozepsané?" }).getByRole("button", { name: "Zahodit", exact: true }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/projects/${projectId}$`));
+
+  // The handover form is the same
+  await page.getByRole("link", { name: "Předání staveniště" }).click();
+  await expect(page).toHaveURL(/\?tab=handovers$/);
+  await page.getByRole("button", { name: "Přidat předání" }).click();
+  const form = page.getByRole("dialog", { name: "Protokol o předání staveniště" });
+  await form.getByLabel("Účastníci předání").fill("Novák, Svoboda");
+  await page.goBack();
+  const leaveForm = page.getByRole("dialog", { name: "Neuložené změny" });
+  await expect(leaveForm).toBeVisible();
+  await leaveForm.getByRole("button", { name: "Zůstat" }).click();
+  await expect(form.getByLabel("Účastníci předání")).toHaveValue("Novák, Svoboda");
+});
+
+// --- A server that does not answer -----------------------------------------------------------------------------------------
+
+test("a question whose server does not answer says so after a while and can be closed, without saying that it failed or went through", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const user = await makeUser(page, "stalled");
+  try {
+    await page.goto("/admin/users");
+    // The answer never comes (and the request never reaches the server, so the password is not changed)
+    await page.route("**/api/users/*/reset-password", () => new Promise(() => undefined));
+    const opener = rowOf(page, user).getByRole("button", { name: "Obnovit heslo", exact: true });
+    await opener.click();
+    const ask = page.getByRole("dialog", { name: "Obnovit heslo?" });
+    await ask.getByRole("button", { name: "Obnovit heslo", exact: true }).click();
+
+    // At first there is no way out: Escape does nothing
+    await page.keyboard.press("Escape");
+    await expect(ask).toBeVisible();
+    await expect(ask.getByText("Server neodpovídá.")).toHaveCount(0);
+
+    // After about 20 s the dialog says so, and what to check; it does not say that the reset failed or that it went through
+    await expect(ask.getByText("Server neodpovídá.")).toBeVisible({ timeout: 30_000 });
+    await expect(ask).toContainText("Nevíme, jestli se heslo změnilo");
+    await expect(ask.getByRole("alert")).toHaveCount(0);
+    await expect(ask.getByRole("button", { name: "Zrušit", exact: true })).toHaveCount(0);
+    await ask.getByRole("button", { name: "Zavřít", exact: true }).click();
+    await expect(ask).toHaveCount(0);
+    await expect(opener).toBeFocused();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  } finally {
+    await page.unroute("**/api/users/*/reset-password").catch(() => undefined);
+    await dropUser(page, user);
+  }
+});
+
+test("a form dialog whose server does not answer says so after a while and can be closed with Escape", async ({ page }) => {
+  test.setTimeout(90_000);
+  await login(page);
+  const user = await makeUser(page, "stalledform");
+  try {
+    await page.goto("/admin/users");
+    await page.route("**/api/users/*", (route) => (route.request().method() === "PATCH" ? new Promise(() => undefined) : route.continue()));
+    await rowOf(page, user).getByRole("button", { name: "Upravit", exact: true }).click();
+    const edit = page.getByRole("dialog", { name: "Upravit uživatele" });
+    await edit.getByLabel("Jméno a příjmení").fill("Přepsané jméno");
+    await edit.getByRole("button", { name: "Uložit změny" }).click();
+    await page.keyboard.press("Escape");
+    await expect(edit).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Zahodit rozepsané?" }), "nothing is asked while it is saving").toHaveCount(0);
+
+    await expect(edit.getByText("Server neodpovídá.")).toBeVisible({ timeout: 30_000 });
+    await expect(edit.getByRole("button", { name: "Zavřít", exact: true })).not.toHaveAttribute("aria-disabled", "true");
+    // The typed text is still unsaved: closing asks, as it always does
+    await page.keyboard.press("Escape");
+    await page.getByRole("dialog", { name: "Zahodit rozepsané?" }).getByRole("button", { name: "Zahodit", exact: true }).click();
+    await expect(edit).toHaveCount(0);
+  } finally {
+    await page.unroute("**/api/users/*").catch(() => undefined);
+    await dropUser(page, user);
+  }
 });

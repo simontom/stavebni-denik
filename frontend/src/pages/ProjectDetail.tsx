@@ -3,11 +3,12 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
+import { useStalled } from "../lib/useStalled";
 import { useUnsavedWork } from "../lib/useUnsavedWork";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { Handovers } from "../components/Handovers";
-import { Banner, Button, Card, Field, FormActions, Modal, PageState, Select, StatusBadge, TabLink, TabNav, TextInput, type ModalHandle } from "../components/ui";
+import { Banner, Button, Card, Field, FormActions, Modal, PageState, Select, StalledNotice, StatusBadge, TabLink, TabNav, TextInput, type ModalHandle } from "../components/ui";
 
 interface AuthorizedPerson {
   id: string;
@@ -778,6 +779,7 @@ function AddPersonDialog({ projectId, onAdded, onCancel }: { projectId: string; 
   const [problem, setProblem] = useState("");
   const dirty = name !== "" || company !== "" || authorization !== "";
   useUnsavedWork(dirty);
+  const stalled = useStalled(saving);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -801,9 +803,9 @@ function AddPersonDialog({ projectId, onAdded, onCancel }: { projectId: string; 
       title="Přidat pověřenou osobu"
       handleRef={modal}
       unsaved={dirty}
-      dismissible={!saving}
+      dismissible={!saving || stalled}
       onCancel={onCancel}
-      footer={<FormActions formId="add-person-form" submitLabel="Uložit" busy={saving} />}
+      footer={<FormActions formId="add-person-form" submitLabel="Uložit" busy={saving} stalled={stalled} />}
     >
       <form id="add-person-form" onSubmit={(e) => void submit(e)} className="space-y-4">
         <Field id="person-name" label="Jméno a příjmení / Titul">
@@ -816,6 +818,7 @@ function AddPersonDialog({ projectId, onAdded, onCancel }: { projectId: string; 
           <TextInput type="text" value={authorization} onChange={(e) => setAuthorization(e.target.value)} />
         </Field>
         {problem && <Banner tone="danger">{problem}</Banner>}
+        {stalled && <StalledNotice>Nevíme, jestli se osoba uložila. Zkontrolujte seznam pověřených osob po zavření dialogu a případně ji přidejte znovu.</StalledNotice>}
       </form>
     </Modal>
   );

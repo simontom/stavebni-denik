@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api, currentUser, json, ROLE_LABELS } from "../lib/api";
+import { useStalled } from "../lib/useStalled";
 import { useUnsavedWork } from "../lib/useUnsavedWork";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { OneTimePasswordDialog } from "../components/OneTimePasswordDialog";
-import { Banner, Button, Field, FormActions, Modal, Select, TextInput, type ModalHandle } from "../components/ui";
+import { Banner, Button, Field, FormActions, Modal, Select, StalledNotice, TextInput, type ModalHandle } from "../components/ui";
 
 interface User {
   id: string;
@@ -126,6 +127,8 @@ export const AdminUsers: React.FC = () => {
             title="Obnovit heslo?"
             confirmLabel="Obnovit heslo"
             cancelLabel="Zrušit"
+            leaveMessage="Heslo se právě mění; když odejdete, nové heslo se nezobrazí a bude potřeba ho obnovit znovu."
+            stalledNote="Nevíme, jestli se heslo změnilo (nové heslo by se už nezobrazilo). Ověřte to po zavření dialogu; v případě pochybností heslo obnovte znovu."
             action={() => api<{ initialPassword: string }>(`/api/users/${user.id}/reset-password`, { method: "POST" })}
             onDone={(result) => {
               done();
@@ -305,6 +308,7 @@ function CreateUserDialog({ onCreated, onCancel }: { onCreated: (result: CreateU
   // Typed text: Escape and "Zrušit" ask before they throw it away, and a page that is left asks too.
   const dirty = nickname !== "" || displayName !== "" || role !== "WORKER" || ckait !== "";
   useUnsavedWork(dirty);
+  const stalled = useStalled(saving);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -325,9 +329,9 @@ function CreateUserDialog({ onCreated, onCancel }: { onCreated: (result: CreateU
       title="Vytvořit nového uživatele"
       handleRef={modal}
       unsaved={dirty}
-      dismissible={!saving}
+      dismissible={!saving || stalled}
       onCancel={onCancel}
-      footer={<FormActions formId="create-user-form" submitLabel="Vytvořit" busy={saving} />}
+      footer={<FormActions formId="create-user-form" submitLabel="Vytvořit" busy={saving} stalled={stalled} />}
     >
       <form id="create-user-form" onSubmit={(e) => void submit(e)} className="space-y-4">
         <Field id="new-nickname" label="Přihlašovací jméno (nickname)">
@@ -343,6 +347,9 @@ function CreateUserDialog({ onCreated, onCancel }: { onCreated: (result: CreateU
           <TextInput name="ckaitNumber" type="text" value={ckait} onChange={(e) => setCkait(e.target.value)} />
         </Field>
         {problem && <Banner tone="danger">{problem}</Banner>}
+        {stalled && (
+          <StalledNotice>Nevíme, jestli se účet vytvořil. Zkontrolujte seznam uživatelů; pokud vznikl, jeho heslo už nejde zobrazit a je potřeba ho obnovit.</StalledNotice>
+        )}
       </form>
     </Modal>
   );
@@ -359,6 +366,7 @@ function EditUserDialog({ user, onSaved, onCancel }: { user: User; onSaved: (upd
   const [problem, setProblem] = useState("");
   const dirty = displayName !== user.displayName || role !== user.role || (!own && ckait !== (user.ckaitNumber ?? ""));
   useUnsavedWork(dirty);
+  const stalled = useStalled(saving);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -382,9 +390,9 @@ function EditUserDialog({ user, onSaved, onCancel }: { user: User; onSaved: (upd
       title="Upravit uživatele"
       handleRef={modal}
       unsaved={dirty}
-      dismissible={!saving}
+      dismissible={!saving || stalled}
       onCancel={onCancel}
-      footer={<FormActions formId="edit-user-form" submitLabel="Uložit změny" busy={saving} />}
+      footer={<FormActions formId="edit-user-form" submitLabel="Uložit změny" busy={saving} stalled={stalled} />}
     >
       <form id="edit-user-form" onSubmit={(e) => void submit(e)} className="space-y-4">
         <Field id="edit-displayName" label="Jméno a příjmení">
@@ -401,6 +409,7 @@ function EditUserDialog({ user, onSaved, onCancel }: { user: User; onSaved: (upd
           <TextInput type="text" value={ckait} disabled={own} onChange={(e) => setCkait(e.target.value)} />
         </Field>
         {problem && <Banner tone="danger">{problem}</Banner>}
+        {stalled && <StalledNotice>Nevíme, jestli se změna uložila. Zkontrolujte účet v seznamu po zavření dialogu a případně ji zopakujte.</StalledNotice>}
       </form>
     </Modal>
   );
