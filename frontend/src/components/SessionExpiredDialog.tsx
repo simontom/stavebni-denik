@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { currentUser, hasUnsavedWork, setUnsavedWork, SESSION_EXPIRED_EVENT, unsavedWorkIsKeptAsDraft, type SessionUser } from "../lib/api";
+import { currentUser, discardUnsavedWork, hasUnsavedWork, SESSION_EXPIRED_EVENT, unsavedWorkIsKeptAsDraft, type SessionUser } from "../lib/api";
 import { browserStorage, clearAllDrafts } from "../lib/draftStore";
 import { Button, Field, Modal, TextInput, useModal } from "./ui";
 
@@ -56,7 +56,7 @@ function ExpiredForm({ refusedMethod, onClosed, passwordInput }: { refusedMethod
   const leave = () => {
     // Signing out for good: nothing of the page stays on the device (a draft holds the names of the people on site), and
     // the guard that asks before leaving a page with unsaved work must let this through (the button says what is thrown away).
-    setUnsavedWork(false);
+    discardUnsavedWork();
     clearAllDrafts(browserStorage());
     localStorage.removeItem("user");
     modal.close(() => {

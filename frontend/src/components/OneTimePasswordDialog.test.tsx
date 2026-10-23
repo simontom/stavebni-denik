@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { hasUnsavedWork } from "../lib/api";
+import { hasUnsavedWork, unsavedWorkMessage } from "../lib/api";
 import { OneTimePasswordDialog } from "./OneTimePasswordDialog";
 
 /**
@@ -98,6 +98,7 @@ describe("a temporary password that is shown once", () => {
   it("is unsaved work until it is handed over, so that leaving the page asks first (the password cannot be shown again)", () => {
     const view = render(<Page />);
     expect(hasUnsavedWork()).toBe(true);
+    expect(unsavedWorkMessage(), "the leave question says the password is lost for good").toMatch(/nikdy nezobrazí/);
     fireEvent.click(within(dialog()).getByLabelText("Heslo jsem předal(a)"));
     expect(hasUnsavedWork(), "handed over: nothing is lost by leaving").toBe(false);
     fireEvent.click(within(dialog()).getByLabelText("Heslo jsem předal(a)"));

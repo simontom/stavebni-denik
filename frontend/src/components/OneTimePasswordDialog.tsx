@@ -4,6 +4,9 @@ import { Button } from "./ui/Button";
 import { Modal } from "./ui/Modal";
 import { useModal } from "./ui/modalContext";
 
+/** What the question before leaving the page says while the password has not been handed over: it is lost for good, not "unsaved changes". */
+export const LEAVE_MESSAGE = "Dočasné heslo se už nikdy nezobrazí. Když odejdete, dřív než ho předáte, bude potřeba vygenerovat nové.";
+
 /**
  * The temporary password of an account, shown once (after an account is made, and after an administrator resets a password): the
  * server will never show it again, so it must not be lost by a stray Escape or a click beside the dialog.
@@ -11,7 +14,8 @@ import { useModal } from "./ui/modalContext";
  *  - It **cannot be dismissed** until the person ticks "Heslo jsem předal(a)": Escape does nothing, and "Hotovo" is off. After the
  *    tick both close it.
  *  - Until then it counts as unsaved work (`useUnsavedWork`): a link inside the application, or the browser's Back button, asks
- *    before leaving a page whose password could not be shown again.
+ *    before leaving a page whose password could not be shown again, and says in words that the password is lost for good
+ *    ([LEAVE_MESSAGE]); closing or reloading the tab is asked about by the browser (`AppLayout`'s one `beforeunload`).
  *  - The password lives in the page's own state (a person's name and a password, `onClosed` clears them) and in this dialog only: when
  *    the dialog is closed the page stops rendering it and the password is in no element and in no state. It is selectable (one click
  *    selects all of it), so it can be copied by hand; there is no clipboard button.
@@ -33,7 +37,7 @@ export function OneTimePasswordDialog({
 }) {
   const [handedOver, setHandedOver] = useState(false);
   const hintId = useId();
-  useUnsavedWork(!handedOver);
+  useUnsavedWork(!handedOver, { message: LEAVE_MESSAGE });
   return (
     <Modal title={title} description={intro} dismissible={handedOver} onCancel={onClosed} footer={<Done handedOver={handedOver} onClosed={onClosed} hintId={hintId} />}>
       <dl className="space-y-2 rounded-md border border-success bg-success-soft p-3 text-success-ink">
