@@ -10,6 +10,8 @@
 //           for an entry signed in format 3 as it stood on the day of signing (part of the signature), otherwise as it stands today
 //   part B  the entry of the day: every field that the signature covers, with "bez záznamu" where it says nothing
 //   the signature, and the end of the entry ("Konec denního záznamu č. N")
+//   the handover of the site (příloha 12 B.2 a)): the protocols of handover and takeover, each with the signatures of its two parties.
+//           They have signatures of their own and are not part of the signature of the entry, so they stand after its end.
 //   what was added after the signature: acknowledgements, addenda, entries of other parties (not part of the signature)
 // Every page has a footer (project, number, date, page of the total); a draft has a watermark across every page.
 #let d = json("data.json")
@@ -41,7 +43,7 @@
 }
 
 // The text, or "bez záznamu" when there is none: an empty field is stated, never left out.
-#let or-none(s, wrap: false) = if s.trim() != "" { plain(s, wrap: wrap) } else { none-mark }
+#let or-none(s, wrap: false, max: 16) = if s.trim() != "" { plain(s, wrap: wrap, max: max) } else { none-mark }
 
 // A text on one line, cut with an ellipsis when it is long (for the footer, which has a fixed height).
 #let one-line(s, max) = {
@@ -182,7 +184,7 @@
   ([Datum], [#d.weekday #d.date]),
   ([Číslo záznamu], if d.sequenceNumber != none [č. #d.sequenceNumber] else [zatím bez čísla (číslo se přidělí při podpisu)]),
   ([Stav záznamu], if d.isSigned [podepsán a uzamčen] else [rozpracovaný, nepodepsáno]),
-  ([Autor záznamu], or-none(d.author)),
+  ([Autor záznamu], or-none(d.author, wrap: true)),
   // A late entry (written after the previous working day) says so, with the author's reason.
   ..if d.isLateEntry { (([Pozdní zápis], plain(d.lateEntryReason)),) } else { () },
   ([Kontrolní den], if d.isControlDay [ano (proběhla stavební kontrola)] else [ne]),
@@ -232,7 +234,7 @@
     table.header([*Č.*], [*Nahrál(a), čas, otisk souboru (SHA-256)*]),
     ..d.photos.enumerate().map(((i, p)) => (
       [#(i + 1)],
-      [#plain(p.uploadedBy), #p.at \ #if p.sha256 != "" [#hash(p.sha256)] else [otisk neuložen]],
+      [#plain(p.uploadedBy, wrap: true), #p.at \ #if p.sha256 != "" [#hash(p.sha256)] else [otisk neuložen]],
     )).flatten(),
   )
 ] else [#none-mark]
@@ -280,6 +282,74 @@
   ]
 ]
 
+// ---- the handover of the site (příloha 12 B.2 a)) ---------------------------------------------------------
+// The protocols of handover and takeover of the site. They have the signatures of their own two parties, not the signature of this
+// entry, which is why they come after its end; the note says so, and which state of the protocols it describes. Each protocol is a table
+// of its content and, below it, ONE block with the signatures of its two sides that is never split between two pages.
+
+#let party(label, s) = (
+  label,
+  if s == none [zatím nepodepsáno] else [#plain(s.signedBy, wrap: true) \ #s.at \ #hash(s.signatureHash)],
+)
+
+== Předání a převzetí staveniště
+
+// The note stays with the heading above it and with the first protocol below it (a sticky block is never the last thing on a page).
+#block(sticky: true, text(size: 9pt, style: "italic", fill: grey)[#plain(d.handoversNote)])
+
+#if d.handovers.len() == 0 [
+  #none-mark
+]
+
+#for (i, h) in d.handovers.enumerate() [
+  === Protokol č. #(i + 1)
+
+  // Text of a protocol is free text up to 5 000 characters: a word without a space breaks inside its cell (a column of 11 cm: 28 letters).
+  #facts((
+    ([Typ předání], plain(h.type, wrap: true, max: 28)),
+    ([Datum předání], [#h.date]),
+    ([Účastníci], or-none(h.participants, wrap: true, max: 28)),
+    ([Poznámky], or-none(h.notes, wrap: true, max: 28)),
+    ([Stav protokolu], [#h.state]),
+  ))
+
+  #v(0.4em)
+  #strong[Stavy měřidel]
+  #v(0.2em)
+
+  #if h.meters.len() > 0 [
+    #table(
+      columns: (1fr, 1fr, 1fr),
+      stroke: rule,
+      inset: (x: 6pt, y: 4pt),
+      fill: (x, y) => if y == 0 { luma(243) },
+      table.header([*Médium*], [*Výrobní číslo*], [*Stav*]),
+      ..h.meters.map(m => (
+        if m.medium.trim() != "" { plain(m.medium, wrap: true) } else [—],
+        if m.serialNumber.trim() != "" { plain(m.serialNumber, wrap: true) } else [—],
+        if m.state.trim() != "" { plain(m.state, wrap: true) } else [—],
+      )).flatten(),
+    )
+  ] else [#none-mark]
+
+  #v(0.4em)
+  #block(breakable: false, width: 100%)[
+    // The block may land on a page of its own (it is never split), so it says whose signatures these are.
+    #strong[Podpisy protokolu č. #(i + 1)]
+    #v(0.2em)
+    #facts((
+      party([Podpis strany zhotovitele], h.contractor),
+      party([Podpis strany stavebníka], h.client),
+      ..if h.contentHash != "" { (([Otisk obsahu protokolu (SHA-256)], hash(h.contentHash)),) } else { () },
+    ))
+  ]
+  #v(0.6em)
+]
+
+#if d.handoversLeftOut > 0 [
+  #text(size: 9pt, style: "italic", fill: grey)[Další protokoly se zde netisknou (jsou v aplikaci); jejich počet: #d.handoversLeftOut.]
+]
+
 // ---- what was added after the signature -----------------------------------------------------------------------
 // These are separate records with their own author and time; they are not part of what the signature covers. An entry of
 // another party can also be made on a draft, which has no signature to come after: its heading says so in neutral words.
@@ -300,7 +370,7 @@
     === Seznámení se záznamem
 
     #for a in d.acknowledgements [
-      - #plain(a.who), #a.at
+      - #plain(a.who, wrap: true), #a.at
     ]
   ]
 
@@ -309,7 +379,7 @@
     === Dodatky
 
     #for a in d.addenda [
-      *#plain(a.author)*, #a.at
+      *#plain(a.author, wrap: true)*, #a.at
 
       #plain(a.text)
 
@@ -323,9 +393,9 @@
 
     #for r in d.remarks [
       #if r.onBehalfOf != "" [
-        *#plain(r.onBehalfOf)* (zapsal #plain(r.author)), #r.at
+        *#plain(r.onBehalfOf, wrap: true)* (zapsal #plain(r.author, wrap: true)), #r.at
       ] else [
-        *#plain(r.author)*, #r.at
+        *#plain(r.author, wrap: true)*, #r.at
       ]
 
       #plain(r.text)

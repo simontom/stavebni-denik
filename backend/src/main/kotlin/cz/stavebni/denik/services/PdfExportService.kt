@@ -1,8 +1,11 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.HandoverSide
+import cz.stavebni.denik.domain.MeterState
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.WeatherData
 import cz.stavebni.denik.domain.WorkerEntry
+import cz.stavebni.denik.jooq.tables.records.SiteHandoverSignaturesRecord
 import cz.stavebni.denik.jooq.tables.records.DailyReportsRecord
 import cz.stavebni.denik.jooq.tables.references.*
 import cz.stavebni.denik.util.CzechFormat
@@ -14,6 +17,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import org.jooq.DSLContext
+import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.io.IOException
@@ -150,6 +154,23 @@ object PdfExportService {
     private const val SIGNER_NAME_LIMIT = 120
     private const val SIGNER_CKAIT_LIMIT = 40
 
+    /**
+     * The longest name and ČKAIT number printed next to a record that is made later (an addendum, an entry of another party, an
+     * acknowledgement): the limits the application puts on an account (200 and 50 characters), so that nothing that was accepted is cut.
+     */
+    private const val IDENTITY_NAME_LIMIT = 200
+    private const val IDENTITY_CKAIT_LIMIT = 50
+
+    /**
+     * A person as the document names them next to a record: the name, and `ČKAIT <number>` when the account had a number at the moment
+     * the record was made (both as the record stored them; an inspector or an investor often has no number, and nothing is printed then).
+     */
+    internal fun identityLine(name: String?, ckaitNumber: String?, nameLimit: Int = IDENTITY_NAME_LIMIT, ckaitLimit: Int = IDENTITY_CKAIT_LIMIT): String {
+        val shownName = name?.trim().orEmpty().ifEmpty { null }?.let { shortened(it, nameLimit) }
+        val shownNumber = ckaitNumber?.trim().orEmpty().ifEmpty { null }?.let { "ČKAIT ${shortened(it, ckaitLimit)}" }
+        return listOfNotNull(shownName, shownNumber).joinToString(", ")
+    }
+
     /** A calendar day of part A (`YYYY-MM-DD`: the date of a permit or a contract) in Czech form. */
     private fun partADay(value: String?): String? = value?.let { runCatching { CzechFormat.date(LocalDate.parse(it)) }.getOrDefault(it) }
 
@@ -239,15 +260,14 @@ object PdfExportService {
     private fun detailsOf(report: DailyReportsRecord): List<DetailPdf> =
         EntryDetails.valuesOf(report).map { (field, text) -> DetailPdf(field.label, text.orEmpty()) }
 
-    /** The photos that are part of the entry (a removed photo is not), oldest first. */
+    /** The photos that are part of the entry (a removed photo is not), oldest first; the uploader is the name stored at upload. */
     private fun photosOf(tx: DSLContext, reportId: UUID): List<PhotoPdf> =
-        tx.select(USERS.DISPLAYNAME, PHOTOS.CREATEDAT, PHOTOS.SHA256)
+        tx.select(PHOTOS.UPLOADEDBYNAME, PHOTOS.CREATEDAT, PHOTOS.SHA256)
             .from(PHOTOS)
-            .join(USERS).on(USERS.ID.eq(PHOTOS.UPLOADEDBYID))
             .where(PHOTOS.REPORTID.eq(reportId).and(PHOTOS.DELETEDAT.isNull))
             .orderBy(PHOTOS.CREATEDAT.asc(), PHOTOS.ID.asc())
             .fetch()
-            .map { PhotoPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(PHOTOS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(PHOTOS.SHA256).orEmpty()) }
+            .map { PhotoPdf(it.get(PHOTOS.UPLOADEDBYNAME) ?: "", it.get(PHOTOS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(PHOTOS.SHA256).orEmpty()) }
 
     /**
      * The hash of the `report.lock` row of the audit chain that recorded the signature of this entry, or empty when there is none
@@ -262,35 +282,165 @@ object PdfExportService {
             .fetchOne(AUDIT_LOG.ROW_HASH)
             .orEmpty()
 
+    /** Who took note, with the name and the ČKAIT number the person had at that moment (stored with the acknowledgement), and the role. */
     private fun acknowledgementsOf(tx: DSLContext, reportId: UUID): List<AcknowledgementPdf> =
-        tx.select(USERS.DISPLAYNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+        tx.select(REPORT_ACKNOWLEDGEMENTS.USERNAME, REPORT_ACKNOWLEDGEMENTS.USERCKAITNUMBER, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
             .from(REPORT_ACKNOWLEDGEMENTS)
-            .join(USERS).on(USERS.ID.eq(REPORT_ACKNOWLEDGEMENTS.USERID))
             .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.eq(reportId))
             .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc(), REPORT_ACKNOWLEDGEMENTS.ID.asc())
             .fetch()
             .map {
                 val role = if (it.get(REPORT_ACKNOWLEDGEMENTS.ROLE) == cz.stavebni.denik.jooq.enums.Role.INVESTOR) "stavebník" else "dozor"
-                AcknowledgementPdf("${it.get(USERS.DISPLAYNAME) ?: ""} ($role)", it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "")
+                val person = identityLine(it.get(REPORT_ACKNOWLEDGEMENTS.USERNAME), it.get(REPORT_ACKNOWLEDGEMENTS.USERCKAITNUMBER))
+                AcknowledgementPdf("$person ($role)", it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "")
             }
 
+    /** The addenda with the name and the ČKAIT number their authors had when they wrote them (stored with the addendum). */
     private fun addendaOf(tx: DSLContext, reportId: UUID): List<AddendumPdf> =
-        tx.select(USERS.DISPLAYNAME, ADDENDA.CREATEDAT, ADDENDA.TEXT)
+        tx.select(ADDENDA.AUTHORNAME, ADDENDA.AUTHORCKAITNUMBER, ADDENDA.CREATEDAT, ADDENDA.TEXT)
             .from(ADDENDA)
-            .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))
             .where(ADDENDA.REPORTID.eq(reportId))
             .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
             .fetch()
-            .map { AddendumPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(ADDENDA.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(ADDENDA.TEXT) ?: "") }
+            .map {
+                AddendumPdf(
+                    identityLine(it.get(ADDENDA.AUTHORNAME), it.get(ADDENDA.AUTHORCKAITNUMBER)),
+                    it.get(ADDENDA.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(ADDENDA.TEXT) ?: "",
+                )
+            }
 
+    /** The entries of other parties with the name and the ČKAIT number of whoever wrote them (the manager, for an outside party), as stored with the entry. */
     private fun remarksOf(tx: DSLContext, reportId: UUID): List<RemarkPdf> =
-        tx.select(USERS.DISPLAYNAME, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
+        tx.select(REMARKS.AUTHORNAME, REMARKS.AUTHORCKAITNUMBER, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
             .from(REMARKS)
-            .join(USERS).on(USERS.ID.eq(REMARKS.AUTHORID))
             .where(REMARKS.REPORTID.eq(reportId))
             .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
             .fetch()
-            .map { RemarkPdf(it.get(USERS.DISPLAYNAME) ?: "", it.get(REMARKS.EXTERNALAUTHOR) ?: "", it.get(REMARKS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(REMARKS.TEXT) ?: "") }
+            .map {
+                RemarkPdf(
+                    identityLine(it.get(REMARKS.AUTHORNAME), it.get(REMARKS.AUTHORCKAITNUMBER)), it.get(REMARKS.EXTERNALAUTHOR) ?: "",
+                    it.get(REMARKS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(REMARKS.TEXT) ?: "",
+                )
+            }
+
+    // ---- the handover of the site (příloha 12 B.2 a)) ---------------------------------------------------------
+
+    /**
+     * The most handover protocols the document prints. Each can hold 50 meters and 7 000 characters of text, and a render is limited to
+     * 20 s; a project does not make this many (a handover of the site, of the networks, of the work). The rest is counted, not hidden.
+     */
+    internal const val MAX_HANDOVERS = 50
+
+    private fun stateWords(state: SiteHandoverState): String = when (state) {
+        SiteHandoverState.DRAFT -> "nepodepsáno"
+        SiteHandoverState.SIGNED_BY_CONTRACTOR -> "zatím podepsáno jen stranou zhotovitele"
+        SiteHandoverState.SIGNED_BY_CLIENT -> "zatím podepsáno jen stranou stavebníka"
+        SiteHandoverState.COMPLETE -> "podepsáno oběma stranami"
+    }
+
+    /** What the section says before the protocols: which state it describes, and that the protocols have signatures of their own. */
+    internal fun handoversNote(signed: Boolean): String =
+        if (signed) {
+            "Protokoly o předání a převzetí staveniště mají vlastní podpisy obou stran a nejsou součástí podpisu tohoto záznamu. " +
+                "Uveden je stav ke dni podpisu záznamu: protokoly, které tehdy už některá strana podepsala, a podpisy, které tehdy existovaly; " +
+                "co přibylo později, se zde netiskne."
+        } else {
+            "Protokoly o předání a převzetí staveniště mají vlastní podpisy obou stran. Záznam ještě není podepsán, proto jsou uvedeny " +
+                "všechny protokoly stavby tak, jak jsou nyní, i ty, které ještě nikdo nepodepsal."
+        }
+
+    /** The role a signer held in the project, as the document says it. */
+    private fun roleWords(role: cz.stavebni.denik.jooq.enums.Role?): String = when (role) {
+        cz.stavebni.denik.jooq.enums.Role.BOSS -> "stavbyvedoucí"
+        cz.stavebni.denik.jooq.enums.Role.INSPECTOR -> "technický dozor"
+        cz.stavebni.denik.jooq.enums.Role.INVESTOR -> "stavebník"
+        cz.stavebni.denik.jooq.enums.Role.WORKER -> "pracovník"
+        null -> ""
+    }
+
+    private fun handoverSignatureOf(signature: SiteHandoverSignaturesRecord): HandoverSignaturePdf {
+        val name = shortened(signature.signername.orEmpty().trim(), SIGNER_NAME_LIMIT)
+        val ckait = signature.signerckaitnumber?.trim().orEmpty().ifEmpty { null }?.let { "ČKAIT ${shortened(it, SIGNER_CKAIT_LIMIT)}" }
+        return HandoverSignaturePdf(
+            signedBy = listOfNotNull(name.ifEmpty { null }, roleWords(signature.signerrole).ifEmpty { null }, ckait).joinToString(", "),
+            at = signature.signedat?.let { CzechFormat.dateTime(it) } ?: "",
+            signatureHash = signature.signaturehash.orEmpty(),
+        )
+    }
+
+    private fun metersOf(record: org.jooq.Record): List<MeterPdf> =
+        record.get(SITE_HANDOVERS.METERSTATES)?.data()
+            ?.let { raw ->
+                runCatching { lenientJson.decodeFromString(ListSerializer(MeterState.serializer()), raw) }
+                    .onFailure { log.warn("The meters of handover protocol {} are not readable: {}", record.get(SITE_HANDOVERS.ID), it.javaClass.simpleName) }
+                    .getOrNull()
+            }
+            ?.map { MeterPdf(it.medium, it.serialNumber, it.state) }
+            .orEmpty()
+
+    /** The protocols the document prints, and how many more belong to the entry and are left out. */
+    private class HandoverSection(val handovers: List<HandoverPdf>, val leftOut: Int)
+
+    /**
+     * The handover protocols of [projectId] that belong to an entry (backlog B9).
+     *
+     * - [signedAt] null (a draft): every protocol that is not deleted, with the state it has now, also one that nobody has signed.
+     * - [signedAt] (a signed entry): the protocols that had a signature at that moment or before it, and of each only the signatures
+     *   made then or before: the state of the protocol on the day of the entry. A protocol that came later, and a signature that
+     *   came later, are never printed as if they had been there.
+     *
+     * Reading the live rows is safe for a signed entry: the content of a protocol is frozen from its first signature (V5), a signature
+     * is stamped with the time it was inserted and is never changed, and a protocol with a signature cannot be deleted, so what is
+     * printed for a given entry does not change over time. The order is the day of the handover, then the order they were made in.
+     */
+    private fun handoversOf(tx: DSLContext, projectId: UUID, signedAt: OffsetDateTime?): HandoverSection {
+        val thatDay = if (signedAt == null) DSL.noCondition() else SITE_HANDOVER_SIGNATURES.SIGNEDAT.le(signedAt)
+        val belongs = SITE_HANDOVERS.PROJECTID.eq(projectId).and(SITE_HANDOVERS.DELETEDAT.isNull).and(
+            if (signedAt == null) DSL.noCondition()
+            else DSL.exists(
+                DSL.selectOne().from(SITE_HANDOVER_SIGNATURES).where(SITE_HANDOVER_SIGNATURES.HANDOVERID.eq(SITE_HANDOVERS.ID)).and(thatDay),
+            ),
+        )
+        val total = tx.fetchCount(SITE_HANDOVERS, belongs)
+        val records = tx.selectFrom(SITE_HANDOVERS)
+            .where(belongs)
+            .orderBy(SITE_HANDOVERS.DATE.asc(), SITE_HANDOVERS.CREATEDAT.asc(), SITE_HANDOVERS.ID.asc())
+            .limit(MAX_HANDOVERS)
+            .fetch()
+        val signatures = if (records.isEmpty()) emptyMap() else {
+            tx.selectFrom(SITE_HANDOVER_SIGNATURES)
+                .where(SITE_HANDOVER_SIGNATURES.HANDOVERID.`in`(records.mapNotNull { it.id }))
+                .and(thatDay)
+                .orderBy(SITE_HANDOVER_SIGNATURES.SIGNEDAT.asc(), SITE_HANDOVER_SIGNATURES.ID.asc())
+                .fetch()
+                .groupBy { it.handoverid!! }
+        }
+        val printed = records.map { record ->
+            val ofRecord = signatures[record.id].orEmpty()
+            val contractor = ofRecord.firstOrNull { it.side == HandoverSide.CONTRACTOR.name }
+            val client = ofRecord.firstOrNull { it.side == HandoverSide.CLIENT.name }
+            HandoverPdf(
+                date = record.date?.let { at -> Dates.format(at) }?.let { day -> runCatching { CzechFormat.date(LocalDate.parse(day)) }.getOrDefault(day) } ?: "",
+                type = record.type.orEmpty(),
+                participants = record.participants.orEmpty(),
+                notes = record.notes.orEmpty(),
+                meters = metersOf(record),
+                state = stateWords(
+                    when {
+                        contractor != null && client != null -> SiteHandoverState.COMPLETE
+                        contractor != null -> SiteHandoverState.SIGNED_BY_CONTRACTOR
+                        client != null -> SiteHandoverState.SIGNED_BY_CLIENT
+                        else -> SiteHandoverState.DRAFT
+                    },
+                ),
+                // Both sides signed the same content, so the first signature says what it was.
+                contentHash = ofRecord.firstOrNull()?.contenthash.orEmpty(),
+                contractor = contractor?.let { handoverSignatureOf(it) },
+                client = client?.let { handoverSignatureOf(it) },
+            )
+        }
+        return HandoverSection(printed, total - printed.size)
+    }
 
     private fun loadData(tx: DSLContext, reportId: UUID): ReportPdfData {
         val report = tx.selectFrom(DAILY_REPORTS)
@@ -319,6 +469,9 @@ object PdfExportService {
                 .getOrNull()
         }
         val partAMissing = frozen && partA == null
+        // A signed entry is given the protocols as they were at the moment it was signed (an entry signed before the time was kept
+        // has the time of its lock).
+        val handovers = handoversOf(tx, report.get(DAILY_REPORTS.PROJECTID)!!, if (lockedAt != null) signedAt ?: lockedAt else null)
         return ReportPdfData(
             // the page
             projectName = partA?.identification?.get("name") ?: project.get(PROJECTS.NAME) ?: "",
@@ -342,7 +495,8 @@ object PdfExportService {
             partASha256 = if (storedPartA != null && partA != null) PartASnapshot.sha256(storedPartA) else "",
             partAMissing = partAMissing,
             // part B
-            author = personOf(tx, report.get(DAILY_REPORTS.AUTHORID)),
+            // The name the account had when the entry was made, stored with it (backlog B9); the signature covers the author by id.
+            author = report.get(DAILY_REPORTS.AUTHORNAME).orEmpty(),
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
             isControlDay = report.get(DAILY_REPORTS.ISCONTROLDAY) ?: false,
@@ -361,6 +515,10 @@ object PdfExportService {
             signedAt = signedAt?.let { CzechFormat.dateTime(it) } ?: "",
             signatureHash = report.get(DAILY_REPORTS.SIGNATUREHASH) ?: "",
             auditRowHash = if (lockedAt != null) lockRowHashOf(tx, reportId) else "",
+            // the handover of the site: for a signed entry as it stood when it was signed
+            handovers = handovers.handovers,
+            handoversNote = handoversNote(signed = lockedAt != null),
+            handoversLeftOut = handovers.leftOut,
             // after the signature
             addenda = addendaOf(tx, reportId),
             remarks = remarksOf(tx, reportId),
