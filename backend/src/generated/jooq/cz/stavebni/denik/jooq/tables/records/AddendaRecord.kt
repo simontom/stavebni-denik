@@ -31,13 +31,21 @@ open class AddendaRecord() : UpdatableRecordImpl<AddendaRecord>(Addenda.ADDENDA)
         set(value): Unit = set(2, value)
         get(): UUID? = get(2) as UUID?
 
-    open var text: String?
+    open var authorname: String?
         set(value): Unit = set(3, value)
         get(): String? = get(3) as String?
 
-    open var createdat: OffsetDateTime?
+    open var authorckaitnumber: String?
         set(value): Unit = set(4, value)
-        get(): OffsetDateTime? = get(4) as OffsetDateTime?
+        get(): String? = get(4) as String?
+
+    open var text: String?
+        set(value): Unit = set(5, value)
+        get(): String? = get(5) as String?
+
+    open var createdat: OffsetDateTime?
+        set(value): Unit = set(6, value)
+        get(): OffsetDateTime? = get(6) as OffsetDateTime?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -48,10 +56,12 @@ open class AddendaRecord() : UpdatableRecordImpl<AddendaRecord>(Addenda.ADDENDA)
     /**
      * Create a detached, initialised AddendaRecord
      */
-    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, text: String? = null, createdat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, authorname: String? = null, authorckaitnumber: String? = null, text: String? = null, createdat: OffsetDateTime? = null): this() {
         this.id = id
         this.reportid = reportid
         this.authorid = authorid
+        this.authorname = authorname
+        this.authorckaitnumber = authorckaitnumber
         this.text = text
         this.createdat = createdat
         resetTouchedOnNotNull()

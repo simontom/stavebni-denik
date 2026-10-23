@@ -33,6 +33,7 @@ class CsvExportServiceTest : BaseIntegrationTest() {
             .set(DAILY_REPORTS.ID, r2Id)
             .set(DAILY_REPORTS.PROJECTID, projectId)
             .set(DAILY_REPORTS.AUTHORID, boss.id)
+            .set(DAILY_REPORTS.AUTHORNAME, boss.displayName)
             .set(DAILY_REPORTS.DATE, java.time.LocalDate.parse("2026-09-28"))
             .set(DAILY_REPORTS.SEQUENCENUMBER, 2)
             .set(DAILY_REPORTS.LOCKEDAT, java.time.OffsetDateTime.now())

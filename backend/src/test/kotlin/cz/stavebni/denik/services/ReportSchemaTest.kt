@@ -37,6 +37,7 @@ class ReportSchemaTest : BaseIntegrationTest() {
         dsl.insertInto(DAILY_REPORTS)
             .set(DAILY_REPORTS.PROJECTID, projectId)
             .set(DAILY_REPORTS.AUTHORID, authorId)
+            .set(DAILY_REPORTS.AUTHORNAME, "Autor")
             .set(DAILY_REPORTS.DATE, LocalDate.parse(date))
             .set(DAILY_REPORTS.SEQUENCENUMBER, sequence)
             .set(DAILY_REPORTS.WORKERSBYTRADE, JSONB.valueOf("[]"))

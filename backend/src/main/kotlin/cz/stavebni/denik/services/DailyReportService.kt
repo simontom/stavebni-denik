@@ -41,8 +41,8 @@ data class DailyReportDto(
      */
     val weatherText: String? = null,
     /**
-     * The display name of the author of the entry, **as the account has it now** (like the PDF; signature format 3 does not freeze
-     * it, backlog B9). Null only if the account cannot be read.
+     * The display name of the author of the entry **as the account had it when the entry was made** (stored with the entry and never
+     * changed, backlog B9: renaming the user later does not rename the author of an old entry; the PDF prints the same name).
      */
     val authorName: String? = null,
     /** What the vyhláška asks an entry to say besides the day's work (see [EntryDetails]); only the fields that have a text, by key. */
@@ -96,13 +96,21 @@ data class DailyReportDto(
     val photos: List<PhotoDto> = emptyList()
 )
 
-/** One party's acknowledgement of a signed entry. */
+/** One party's acknowledgement of a signed entry; [name] is the name the person had when they took note (stored with the acknowledgement). */
 @Serializable
 data class AcknowledgementDto(val userId: String, val name: String, val role: String, val at: String)
 
-/** What the audit log keeps of one acknowledgement. */
+/** What the audit log keeps of one acknowledgement: who took note, with the name and the ČKAIT number (if any) stored with it. */
 @Serializable
-internal data class AcknowledgementSnapshot(val id: String, val reportId: String, val projectId: String, val userId: String, val role: String)
+internal data class AcknowledgementSnapshot(
+    val id: String,
+    val reportId: String,
+    val projectId: String,
+    val userId: String,
+    val userName: String,
+    val userCkaitNumber: String? = null,
+    val role: String,
+)
 
 /**
  * What the audit log keeps of a report before and after a change.
@@ -119,6 +127,8 @@ internal data class ReportSnapshot(
     val date: String,
     val sequenceNumber: Int? = null,
     val authorId: String,
+    /** The author's name as it was when the entry was made (stored with the entry). */
+    val authorName: String? = null,
     val workDescription: String,
     val workersByTrade: String,
     val isControlDay: Boolean,
@@ -294,9 +304,12 @@ object DailyReportService {
                     throw StaleVersionException("Záznam, který upravujete, už neexistuje. Načtěte stránku znovu.")
                 }
                 val lateReason = lateReasonFor(parsedDate, input.lateEntryReason)
+                // The author's name as the account says it now: stored with the entry and never changed (backlog B9).
+                val author = AccountIdentity.of(tx, user.id)
                 val created = tx.insertInto(DAILY_REPORTS)
                     .set(DAILY_REPORTS.PROJECTID, projectId)
                     .set(DAILY_REPORTS.AUTHORID, user.id)
+                    .set(DAILY_REPORTS.AUTHORNAME, author.name)
                     .set(DAILY_REPORTS.DATE, parsedDate)
                     .set(DAILY_REPORTS.WORKERSBYTRADE, workers ?: JSONB.valueOf("[]"))
                     .set(DAILY_REPORTS.WORKDESCRIPTION, input.workDescription ?: "")
@@ -554,9 +567,13 @@ object DailyReportService {
                 throw ConflictException("Se záznamem jste se již seznámil(a)")
             }
 
+            // Who takes note, as the account says it now: stored with the acknowledgement, which is never changed.
+            val person = AccountIdentity.of(tx, user.id)
             val inserted = tx.insertInto(REPORT_ACKNOWLEDGEMENTS)
                 .set(REPORT_ACKNOWLEDGEMENTS.REPORTID, reportId)
                 .set(REPORT_ACKNOWLEDGEMENTS.USERID, user.id)
+                .set(REPORT_ACKNOWLEDGEMENTS.USERNAME, person.name)
+                .set(REPORT_ACKNOWLEDGEMENTS.USERCKAITNUMBER, person.ckaitNumber)
                 .set(REPORT_ACKNOWLEDGEMENTS.ROLE, cz.stavebni.denik.jooq.enums.Role.valueOf(role!!.name))
                 .returning()
                 .fetchOne() ?: throw IllegalStateException("Potvrzení se nepodařilo uložit")
@@ -567,7 +584,10 @@ object DailyReportService {
                 entityId = reportId.toString(),
                 after = Json.encodeToJsonElement(
                     AcknowledgementSnapshot.serializer(),
-                    AcknowledgementSnapshot(inserted.get(REPORT_ACKNOWLEDGEMENTS.ID).toString(), reportId.toString(), report.projectid.toString(), user.id.toString(), role.name),
+                    AcknowledgementSnapshot(
+                        inserted.get(REPORT_ACKNOWLEDGEMENTS.ID).toString(), reportId.toString(), report.projectid.toString(), user.id.toString(),
+                        person.name, person.ckaitNumber, role.name,
+                    ),
                 ),
             )
         }
@@ -576,16 +596,15 @@ object DailyReportService {
     /** The acknowledgements of many entries in one query, keyed by entry, oldest first. */
     private fun acknowledgementsOf(tx: DSLContext, reportIds: Collection<UUID>): Map<UUID, List<AcknowledgementDto>> {
         if (reportIds.isEmpty()) return emptyMap()
-        return tx.select(REPORT_ACKNOWLEDGEMENTS.REPORTID, REPORT_ACKNOWLEDGEMENTS.USERID, USERS.DISPLAYNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
+        return tx.select(REPORT_ACKNOWLEDGEMENTS.REPORTID, REPORT_ACKNOWLEDGEMENTS.USERID, REPORT_ACKNOWLEDGEMENTS.USERNAME, REPORT_ACKNOWLEDGEMENTS.ROLE, REPORT_ACKNOWLEDGEMENTS.CREATEDAT)
             .from(REPORT_ACKNOWLEDGEMENTS)
-            .join(USERS).on(USERS.ID.eq(REPORT_ACKNOWLEDGEMENTS.USERID))
             .where(REPORT_ACKNOWLEDGEMENTS.REPORTID.`in`(reportIds))
             .orderBy(REPORT_ACKNOWLEDGEMENTS.CREATEDAT.asc(), REPORT_ACKNOWLEDGEMENTS.ID.asc())
             .fetch()
             .groupBy({ it.get(REPORT_ACKNOWLEDGEMENTS.REPORTID)!! }) {
                 AcknowledgementDto(
                     userId = it.get(REPORT_ACKNOWLEDGEMENTS.USERID).toString(),
-                    name = it.get(USERS.DISPLAYNAME) ?: "",
+                    name = it.get(REPORT_ACKNOWLEDGEMENTS.USERNAME) ?: "",
                     role = it.get(REPORT_ACKNOWLEDGEMENTS.ROLE)!!.name,
                     at = it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT).toString(),
                 )
@@ -603,24 +622,25 @@ object DailyReportService {
     /** The weather stored on the row; the legacy placeholder `{}` and unreadable values count as "not stated". */
     private fun weatherOf(record: DailyReportsRecord): WeatherData? = WeatherData.fromStored(record.weather?.data())
 
-    /** The display names the page shows next to an entry: its author, and the account of whoever signed it (for the entries that kept no copy). */
-    private class Who(val authorName: String?, val signerAccountName: String?, val signerAccountCkait: String?)
+    /**
+     * The account of whoever signed an entry, for the entries that kept no copy of the signer (format 1 and 2, test data only). The
+     * author of an entry is not read from the account: its name is stored with the entry (backlog B9).
+     */
+    private class Who(val signerAccountName: String?, val signerAccountCkait: String?)
 
-    private val AUTHOR = USERS.`as`("author")
     private val SIGNER = USERS.`as`("signer")
 
-    /** The entries (all their columns), each with the names of its author and of the account that signed it, in the same statement. */
+    /** The entries (all their columns), each with the account that signed it, in the same statement. */
     private fun selectEntries(tx: DSLContext) =
-        tx.select(DAILY_REPORTS.asterisk(), AUTHOR.DISPLAYNAME, SIGNER.DISPLAYNAME, SIGNER.CKAITNUMBER)
+        tx.select(DAILY_REPORTS.asterisk(), SIGNER.DISPLAYNAME, SIGNER.CKAITNUMBER)
             .from(DAILY_REPORTS)
-            .leftJoin(AUTHOR).on(AUTHOR.ID.eq(DAILY_REPORTS.AUTHORID))
             .leftJoin(SIGNER).on(SIGNER.ID.eq(DAILY_REPORTS.SIGNEDBYID))
 
-    private fun whoOf(row: org.jooq.Record) = Who(row.get(AUTHOR.DISPLAYNAME), row.get(SIGNER.DISPLAYNAME), row.get(SIGNER.CKAITNUMBER))
+    private fun whoOf(row: org.jooq.Record) = Who(row.get(SIGNER.DISPLAYNAME), row.get(SIGNER.CKAITNUMBER))
 
-    /** The names for an entry the transaction has just written. */
+    /** The account of the signer for an entry the transaction has just written. */
     private fun whoOf(tx: DSLContext, record: DailyReportsRecord): Who =
-        selectEntries(tx).where(DAILY_REPORTS.ID.eq(record.id)).fetchOne()?.let { whoOf(it) } ?: Who(null, null, null)
+        selectEntries(tx).where(DAILY_REPORTS.ID.eq(record.id)).fetchOne()?.let { whoOf(it) } ?: Who(null, null)
 
     /**
      * Whether [user], who holds [role] in the project, may change the entry [record]: **the decision the save makes** (`ReportUpdate`
@@ -648,7 +668,7 @@ object DailyReportService {
             date = record.date.toString(),
             weather = weather,
             weatherText = weather?.describe()?.takeIf { it.isNotEmpty() },
-            authorName = who.authorName,
+            authorName = record.get(DAILY_REPORTS.AUTHORNAME),
             details = EntryDetails.filledOf(record),
             isLocked = record.lockedat != null,
             sequenceNumber = record.get(DAILY_REPORTS.SEQUENCENUMBER),
@@ -682,6 +702,7 @@ object DailyReportService {
             date = date.toString(),
             sequenceNumber = get(DAILY_REPORTS.SEQUENCENUMBER),
             authorId = get(DAILY_REPORTS.AUTHORID).toString(),
+            authorName = get(DAILY_REPORTS.AUTHORNAME),
             workDescription = workdescription ?: "",
             workersByTrade = workersbytrade?.data() ?: "[]",
             isControlDay = iscontrolday ?: false,

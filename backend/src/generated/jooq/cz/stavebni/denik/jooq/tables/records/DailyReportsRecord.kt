@@ -41,133 +41,137 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
         set(value): Unit = set(4, value)
         get(): UUID? = get(4) as UUID?
 
-    open var constructionobj: String?
+    open var authorname: String?
         set(value): Unit = set(5, value)
         get(): String? = get(5) as String?
 
-    open var iscontrolday: Boolean?
+    open var constructionobj: String?
         set(value): Unit = set(6, value)
-        get(): Boolean? = get(6) as Boolean?
+        get(): String? = get(6) as String?
+
+    open var iscontrolday: Boolean?
+        set(value): Unit = set(7, value)
+        get(): Boolean? = get(7) as Boolean?
 
     open var meetingnotes: String?
-        set(value): Unit = set(7, value)
-        get(): String? = get(7) as String?
+        set(value): Unit = set(8, value)
+        get(): String? = get(8) as String?
 
     open var meetingattendees: JSONB?
-        set(value): Unit = set(8, value)
-        get(): JSONB? = get(8) as JSONB?
+        set(value): Unit = set(9, value)
+        get(): JSONB? = get(9) as JSONB?
 
     open var worksuspended: Boolean?
-        set(value): Unit = set(9, value)
-        get(): Boolean? = get(9) as Boolean?
+        set(value): Unit = set(10, value)
+        get(): Boolean? = get(10) as Boolean?
 
     open var suspensionreason: String?
-        set(value): Unit = set(10, value)
-        get(): String? = get(10) as String?
+        set(value): Unit = set(11, value)
+        get(): String? = get(11) as String?
 
     open var workersbytrade: JSONB?
-        set(value): Unit = set(11, value)
-        get(): JSONB? = get(11) as JSONB?
+        set(value): Unit = set(12, value)
+        get(): JSONB? = get(12) as JSONB?
 
     open var workdescription: String?
-        set(value): Unit = set(12, value)
-        get(): String? = get(12) as String?
-
-    open var materialsin: String?
         set(value): Unit = set(13, value)
         get(): String? = get(13) as String?
 
-    open var machinery: String?
+    open var materialsin: String?
         set(value): Unit = set(14, value)
         get(): String? = get(14) as String?
 
-    open var testsandchecks: String?
+    open var machinery: String?
         set(value): Unit = set(15, value)
         get(): String? = get(15) as String?
 
-    open var safetynotes: String?
+    open var testsandchecks: String?
         set(value): Unit = set(16, value)
         get(): String? = get(16) as String?
 
-    open var defects: String?
+    open var safetynotes: String?
         set(value): Unit = set(17, value)
         get(): String? = get(17) as String?
 
-    open var workstatechanges: String?
+    open var defects: String?
         set(value): Unit = set(18, value)
         get(): String? = get(18) as String?
 
-    open var othernotes: String?
+    open var workstatechanges: String?
         set(value): Unit = set(19, value)
         get(): String? = get(19) as String?
 
-    open var weather: JSONB?
+    open var othernotes: String?
         set(value): Unit = set(20, value)
-        get(): JSONB? = get(20) as JSONB?
+        get(): String? = get(20) as String?
+
+    open var weather: JSONB?
+        set(value): Unit = set(21, value)
+        get(): JSONB? = get(21) as JSONB?
 
     open var signedat: OffsetDateTime?
-        set(value): Unit = set(21, value)
-        get(): OffsetDateTime? = get(21) as OffsetDateTime?
+        set(value): Unit = set(22, value)
+        get(): OffsetDateTime? = get(22) as OffsetDateTime?
 
     open var signedbyid: UUID?
-        set(value): Unit = set(22, value)
-        get(): UUID? = get(22) as UUID?
+        set(value): Unit = set(23, value)
+        get(): UUID? = get(23) as UUID?
 
     open var lockedat: OffsetDateTime?
-        set(value): Unit = set(23, value)
-        get(): OffsetDateTime? = get(23) as OffsetDateTime?
+        set(value): Unit = set(24, value)
+        get(): OffsetDateTime? = get(24) as OffsetDateTime?
 
     open var signername: String?
-        set(value): Unit = set(24, value)
-        get(): String? = get(24) as String?
-
-    open var signerckaitnumber: String?
         set(value): Unit = set(25, value)
         get(): String? = get(25) as String?
 
-    open var partasnapshot: String?
+    open var signerckaitnumber: String?
         set(value): Unit = set(26, value)
         get(): String? = get(26) as String?
 
-    open var createdat: OffsetDateTime?
+    open var partasnapshot: String?
         set(value): Unit = set(27, value)
-        get(): OffsetDateTime? = get(27) as OffsetDateTime?
+        get(): String? = get(27) as String?
 
-    open var updatedat: OffsetDateTime?
+    open var createdat: OffsetDateTime?
         set(value): Unit = set(28, value)
         get(): OffsetDateTime? = get(28) as OffsetDateTime?
 
-    open var createdbyid: UUID?
+    open var updatedat: OffsetDateTime?
         set(value): Unit = set(29, value)
-        get(): UUID? = get(29) as UUID?
+        get(): OffsetDateTime? = get(29) as OffsetDateTime?
+
+    open var createdbyid: UUID?
+        set(value): Unit = set(30, value)
+        get(): UUID? = get(30) as UUID?
 
     open var deletedat: OffsetDateTime?
-        set(value): Unit = set(30, value)
-        get(): OffsetDateTime? = get(30) as OffsetDateTime?
+        set(value): Unit = set(31, value)
+        get(): OffsetDateTime? = get(31) as OffsetDateTime?
 
     open var islateentry: Boolean?
-        set(value): Unit = set(31, value)
-        get(): Boolean? = get(31) as Boolean?
+        set(value): Unit = set(32, value)
+        get(): Boolean? = get(32) as Boolean?
 
     open var lateentryreason: String?
-        set(value): Unit = set(32, value)
-        get(): String? = get(32) as String?
-
-    open var signaturehash: String?
         set(value): Unit = set(33, value)
         get(): String? = get(33) as String?
 
-    open var dustmeasures: String?
+    open var signaturehash: String?
         set(value): Unit = set(34, value)
         get(): String? = get(34) as String?
 
-    open var accessibilitymeasures: String?
+    open var dustmeasures: String?
         set(value): Unit = set(35, value)
         get(): String? = get(35) as String?
 
-    open var signatureformat: Short?
+    open var accessibilitymeasures: String?
         set(value): Unit = set(36, value)
-        get(): Short? = get(36) as Short?
+        get(): String? = get(36) as String?
+
+    open var signatureformat: Short?
+        set(value): Unit = set(37, value)
+        get(): Short? = get(37) as Short?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -178,12 +182,13 @@ open class DailyReportsRecord() : UpdatableRecordImpl<DailyReportsRecord>(DailyR
     /**
      * Create a detached, initialised DailyReportsRecord
      */
-    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, workstatechanges: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, signername: String? = null, signerckaitnumber: String? = null, partasnapshot: String? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null, signaturehash: String? = null, dustmeasures: String? = null, accessibilitymeasures: String? = null, signatureformat: Short? = null): this() {
+    constructor(id: UUID? = null, projectid: UUID? = null, sequencenumber: Int? = null, date: LocalDate? = null, authorid: UUID? = null, authorname: String? = null, constructionobj: String? = null, iscontrolday: Boolean? = null, meetingnotes: String? = null, meetingattendees: JSONB? = null, worksuspended: Boolean? = null, suspensionreason: String? = null, workersbytrade: JSONB? = null, workdescription: String? = null, materialsin: String? = null, machinery: String? = null, testsandchecks: String? = null, safetynotes: String? = null, defects: String? = null, workstatechanges: String? = null, othernotes: String? = null, weather: JSONB? = null, signedat: OffsetDateTime? = null, signedbyid: UUID? = null, lockedat: OffsetDateTime? = null, signername: String? = null, signerckaitnumber: String? = null, partasnapshot: String? = null, createdat: OffsetDateTime? = null, updatedat: OffsetDateTime? = null, createdbyid: UUID? = null, deletedat: OffsetDateTime? = null, islateentry: Boolean? = null, lateentryreason: String? = null, signaturehash: String? = null, dustmeasures: String? = null, accessibilitymeasures: String? = null, signatureformat: Short? = null): this() {
         this.id = id
         this.projectid = projectid
         this.sequencenumber = sequencenumber
         this.date = date
         this.authorid = authorid
+        this.authorname = authorname
         this.constructionobj = constructionobj
         this.iscontrolday = iscontrolday
         this.meetingnotes = meetingnotes

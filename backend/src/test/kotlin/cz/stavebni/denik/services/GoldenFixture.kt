@@ -37,27 +37,27 @@ internal object GoldenFixture {
                values ('$projectId', 'Golden', 'A 1', 'C', '1', 'B', 'C', '$signerId')"""
         )
         dsl.execute(
-            """insert into daily_reports (id, "projectId", date, "authorId", "constructionObj", "isControlDay", "workersByTrade",
+            """insert into daily_reports (id, "projectId", date, "authorId", "authorName", "constructionObj", "isControlDay", "workersByTrade",
                                           "workDescription", weather, "isLateEntry", "lateEntryReason")
-               values ('$entryId', '$projectId', '2026-09-28', '$signerId', 'SO 01', true,
+               values ('$entryId', '$projectId', '2026-09-28', '$signerId', 'Golden Signer', 'SO 01', true,
                        '[{"trade":"Betonáři","count":3},{"trade":"Zedníci","count":2}]'::jsonb,
                        'Betonáž stropu' || chr(10) || 'Druhý řádek',
                        '{"tempMin":8.5,"tempMax":15.0,"condition":"zataženo"}'::jsonb,
                        true, 'Deník byl na jiné stavbě')"""
         )
         dsl.execute(
-            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256")
-               values ('$photoId', '$entryId', 'photos/golden.jpg', 'photos/golden-thumb.jpg', 800, 600, 1000, '$signerId',
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "uploadedByName", "sha256", "thumbSha256")
+               values ('$photoId', '$entryId', 'photos/golden.jpg', 'photos/golden-thumb.jpg', 800, 600, 1000, '$signerId', 'Golden Signer',
                        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')"""
         )
         dsl.execute(
-            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256")
-               values ('$firstPhotoId', '$entryId', 'photos/golden-0.jpg', 'photos/golden-0-thumb.jpg', 800, 600, 1000, '$signerId',
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "uploadedByName", "sha256", "thumbSha256")
+               values ('$firstPhotoId', '$entryId', 'photos/golden-0.jpg', 'photos/golden-0-thumb.jpg', 800, 600, 1000, '$signerId', 'Golden Signer',
                        'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd')"""
         )
         dsl.execute(
-            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "sha256", "thumbSha256", "deletedAt")
-               values ('$deletedPhotoId', '$entryId', 'photos/golden-x.jpg', 'photos/golden-x-thumb.jpg', 800, 600, 1000, '$signerId',
+            """insert into photos (id, "reportId", "pathOriginal", "pathThumb", width, height, bytes, "uploadedById", "uploadedByName", "sha256", "thumbSha256", "deletedAt")
+               values ('$deletedPhotoId', '$entryId', 'photos/golden-x.jpg', 'photos/golden-x-thumb.jpg', 800, 600, 1000, '$signerId', 'Golden Signer',
                        'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff', now())"""
         )
         // Signed: the first entry of the project, so its number is 1 (V13).

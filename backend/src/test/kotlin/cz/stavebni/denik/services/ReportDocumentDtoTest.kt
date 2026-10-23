@@ -73,13 +73,17 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
     }
 
     @Test
-    fun `the author is named as the account says it now`() = runBlocking<Unit> {
+    fun `the author is named as the account said when the entry was made, whatever the account says now`() = runBlocking<Unit> {
         val s = site()
         val created = save(s, s.worker, "2026-09-28")
+        val before = created.authorName
+        assertNotNull(before)
 
         dsl.update(USERS).set(USERS.DISPLAYNAME, "Karel Novák").where(USERS.ID.eq(s.worker.id)).execute()
 
-        assertEquals("Karel Novák", DailyReportService.getReport(s.projectId, created.id)!!.authorName)
+        // The name is stored with the entry (backlog B9): the page shows what the PDF prints, however the account is renamed.
+        assertEquals(before, DailyReportService.getReport(s.projectId, created.id)!!.authorName)
+        assertEquals(before, DailyReportService.getReports(s.projectId).reports.single().authorName, "the list reads it the same way")
     }
 
     // --- who signed -----------------------------------------------------------------------------------
@@ -139,7 +143,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         val renamed = DailyReportService.getReport(s.projectId, saved.id)!!
         assertEquals("Jan Stavbyvedoucí", renamed.signerName)
         assertEquals("0012345", renamed.signerCkaitNumber)
-        assertEquals("Úplně Jiné Jméno", renamed.authorName, "the author, unlike the signer, is read from the account as it is now (backlog B9)")
+        assertEquals("Jan Stavbyvedoucí", renamed.authorName, "the author's name is stored with the entry as well (backlog B9)")
 
         dsl.update(USERS).setNull(USERS.CKAITNUMBER).where(USERS.ID.eq(s.boss.id)).execute()
         assertEquals("0012345", DailyReportService.getReport(s.projectId, saved.id)!!.signerCkaitNumber)

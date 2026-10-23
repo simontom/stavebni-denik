@@ -90,7 +90,8 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         assertThrows<DataAccessException> {
             dsl.insertInto(PHOTOS)
                 .set(PHOTOS.REPORTID, reportId).set(PHOTOS.PATHORIGINAL, "photos/x_orig.jpg").set(PHOTOS.PATHTHUMB, "photos/x_thumb.jpg")
-                .set(PHOTOS.WIDTH, 1).set(PHOTOS.HEIGHT, 1).set(PHOTOS.BYTES, 1).set(PHOTOS.UPLOADEDBYID, s.worker.id).execute()
+                .set(PHOTOS.WIDTH, 1).set(PHOTOS.HEIGHT, 1).set(PHOTOS.BYTES, 1).set(PHOTOS.UPLOADEDBYID, s.worker.id)
+                .set(PHOTOS.UPLOADEDBYNAME, s.worker.displayName).execute()
         }
         assertThrows<DataAccessException> { dsl.update(PHOTOS).set(PHOTOS.DELETEDAT, OffsetDateTime.now()).where(PHOTOS.ID.eq(photo.id)).execute() }
         assertThrows<DataAccessException> { dsl.deleteFrom(PHOTOS).where(PHOTOS.ID.eq(photo.id)).execute() }

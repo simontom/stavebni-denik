@@ -37,7 +37,7 @@ CREATE TRIGGER daily_reports_locked_immutable
   BEFORE UPDATE OR DELETE ON "daily_reports"
   FOR EACH ROW EXECUTE FUNCTION daily_reports_block_locked_change();
 
--- Photos of a signed report cannot be added, changed or removed.
+-- Photos of a signed report cannot be added, changed or removed; the name of the uploader of any photo is never changed.
 CREATE OR REPLACE FUNCTION photos_block_locked_report()
 RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -49,6 +49,10 @@ BEGIN
   IF TG_OP IN ('INSERT', 'UPDATE') AND EXISTS (
        SELECT 1 FROM "daily_reports" r WHERE r."id" = NEW."reportId" AND r."lockedAt" IS NOT NULL) THEN
     RAISE EXCEPTION 'a photo cannot be added to a signed daily report (report %)', NEW."reportId" USING ERRCODE = 'check_violation';
+  END IF;
+  -- The uploader's name is what the account said at upload (backlog B9), also on a photo of a draft: only the insert writes it.
+  IF TG_OP = 'UPDATE' AND NEW."uploadedByName" IS DISTINCT FROM OLD."uploadedByName" THEN
+    RAISE EXCEPTION 'the name of the uploader of a photo cannot be changed (photo %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
   IF TG_OP = 'DELETE' THEN
     RETURN OLD;

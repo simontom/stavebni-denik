@@ -125,6 +125,11 @@ open class DailyReports(
     val AUTHORID: TableField<DailyReportsRecord, UUID?> = createField(DSL.name("authorId"), SQLDataType.UUID.nullable(false), this, "")
 
     /**
+     * The column <code>public.daily_reports.authorName</code>.
+     */
+    val AUTHORNAME: TableField<DailyReportsRecord, String?> = createField(DSL.name("authorName"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
      * The column <code>public.daily_reports.constructionObj</code>.
      */
     val CONSTRUCTIONOBJ: TableField<DailyReportsRecord, String?> = createField(DSL.name("constructionObj"), SQLDataType.CLOB, this, "")
@@ -443,6 +448,7 @@ open class DailyReports(
     val users: UsersPath
         get(): UsersPath = reportAcknowledgements().users()
     override fun getChecks(): List<Check<DailyReportsRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("daily_reports_authorName_check"), "((btrim(\"authorName\") <> ''::text))", true),
         Internal.createCheck(this, DSL.name("daily_reports_late_entry_reason_chk"), "(((NOT \"isLateEntry\") OR (btrim(COALESCE(\"lateEntryReason\", ''::text)) <> ''::text)))", true),
         Internal.createCheck(this, DSL.name("daily_reports_signature_format_3_check"), "(\nCASE\n    WHEN (\"signatureFormat\" = 3) THEN ((\"lockedAt\" IS NOT NULL) AND (btrim(COALESCE(\"signerName\", ''::text)) <> ''::text) AND (btrim(COALESCE(\"signerCkaitNumber\", ''::text)) <> ''::text) AND (btrim(COALESCE(\"partASnapshot\", ''::text)) <> ''::text))\n    ELSE ((\"signerName\" IS NULL) AND (\"signerCkaitNumber\" IS NULL) AND (\"partASnapshot\" IS NULL))\nEND)", true),
         Internal.createCheck(this, DSL.name("daily_reports_signature_format_check"), "((\"signatureFormat\" = ANY (ARRAY[1, 2, 3])))", true),

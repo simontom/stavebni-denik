@@ -262,6 +262,7 @@ class SignatureFormat3Test : BaseIntegrationTest() {
             "deletedAt" to "a removed entry is not exported",
             "signatureHash" to "the signature itself", "signatureFormat" to "inside the content as `format`", "lockedAt" to "the moment of signing is `signedAt`",
             "partASnapshot" to "covered by its SHA-256, `partASha256`",
+            "authorName" to "printed as stored when the entry was made (backlog B9); the signature covers the author by `authorId`",
         )
         val covered = ReportSignature.FORMAT_3_COLUMNS.map { it.name }.toSet() + EntryDetails.FIELDS.map { it.column.name }
         val columns = DAILY_REPORTS.fields().map { it.name }.toSet()
