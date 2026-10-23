@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD, INVESTOR_NICKNAME, INVESTOR_PASSWORD } from "./global-setup";
+import { chooseSiteManager, selectByText } from "./helpers";
 
 test.describe("Legislative Compliance", () => {
   test("complete flow: legislative fields, site handovers signed by both parties, authorized persons, and investor acknowledgment", async ({ page }) => {
@@ -20,8 +21,7 @@ test.describe("Legislative Compliance", () => {
     await page.locator('input[name="parcelNumbers"]').fill("123");
     await page.locator('input[name="builder"]').fill("B");
     await page.locator('input[name="contractor"]').fill("C");
-    await page.locator('button[id="siteManagerId"]').click();
-    await page.getByRole("option", { name: new RegExp(ADMIN_NICKNAME) }).click();
+    await chooseSiteManager(page, ADMIN_NICKNAME);
 
     await page.locator('input[name="contractNumber"]').fill("SML-123");
     await page.locator('input[name="contractDate"]').fill("2026-09-01");
@@ -147,19 +147,14 @@ test.describe("Legislative Compliance", () => {
     await expect(page.getByText("Architekti s.r.o.")).toBeVisible();
     await expect(page.getByText("Autorský dozor projektanta")).toBeVisible();
 
-    // Revoke external person
-    page.once("dialog", (d) => d.accept());
+    // Revoke external person: the application asks in a dialog of its own (not window.confirm), and the verb is on the button
     await page.getByRole("button", { name: /Zrušit Ing. Arch. Petr Černý/i }).click();
+    await page.getByRole("dialog", { name: "Zrušit pověření?" }).getByRole("button", { name: "Zrušit pověření", exact: true }).click();
     await expect(page.getByText("Zrušeno", { exact: true })).toBeVisible();
 
-    // 6. Add Investor as project member
-    const userSelect = page.locator('button[data-slot="select-trigger"]').first();
-    await userSelect.click();
-    await page.getByRole("option", { name: new RegExp(INVESTOR_NICKNAME) }).click();
-
-    const roleSelect = page.locator('button[data-slot="select-trigger"]').nth(1);
-    await roleSelect.click();
-    await page.getByRole("option", { name: /Investor/i }).click();
+    // 6. Add Investor as project member: two native selects, a person and a role
+    await selectByText(page.getByLabel("Uživatel", { exact: true }), INVESTOR_NICKNAME);
+    await page.getByLabel("Role v projektu").selectOption({ label: "Investor" });
 
     await page.getByRole("button", { name: /Přidat$/i }).click();
     await expect(page.locator("table").getByText(INVESTOR_NICKNAME)).toBeVisible();
@@ -222,8 +217,11 @@ test.describe("Legislative Compliance", () => {
     const ackBtn = page.getByRole("button", { name: /potvrdit seznámení/i });
     await expect(ackBtn).toBeVisible();
 
-    page.once("dialog", (d) => d.accept());
+    // The application asks in a dialog of its own, with the safe answer in focus; "Zrušit" would have changed nothing
     await ackBtn.click();
+    const confirmAck = page.getByRole("dialog", { name: "Potvrdit seznámení?" });
+    await expect(confirmAck.getByRole("button", { name: "Zrušit", exact: true })).toBeFocused();
+    await confirmAck.getByRole("button", { name: "Potvrdit seznámení", exact: true }).click();
 
     // Verify acknowledged status appears in header
     await expect(page.getByText(/Seznámil\(a\) se: .*\(stavebník\)/)).toBeVisible();

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
+import { chooseSiteManager } from "./helpers";
 
 async function login(page: Page) {
   await page.goto("/login");
@@ -30,8 +31,7 @@ test("the identification of a project is entered, changed by its manager, and a 
   await page.locator('input[name="bozpName"]').fill("Eva Bozp");
   await page.locator('textarea[name="subcontractors"]').fill("Elektro s.r.o.\nVodoinstalace s.r.o.");
   await page.locator('textarea[name="supportingDocuments"]').fill("Smlouva o dílo č. SML-1");
-  await page.locator('button[id="siteManagerId"]').click();
-  await page.getByRole("option", { name: new RegExp(ADMIN_NICKNAME) }).click();
+  await chooseSiteManager(page, ADMIN_NICKNAME);
   await page.getByRole("button", { name: /založit zakázku/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-fA-F-]{36}$/);
   const projectUrl = page.url();

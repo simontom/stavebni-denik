@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
 import { Button, Card, Modal, StatusBadge, useModal } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
-import { formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
+import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { useReportDraft } from "../lib/useReportDraft";
@@ -135,6 +136,8 @@ export const DailyReport: React.FC = () => {
   // The number of the entry in the diary, given when it is signed.
   const [sequenceNumber, setSequenceNumber] = useState<number | null>(null);
   const [showSign, setShowSign] = useState(false);
+  // The question before an acknowledgement is written (state of the page's own: taken off the screen the moment it is answered).
+  const [askingAcknowledge, setAskingAcknowledge] = useState(false);
   // After signing the entry is read again (the signer, the time and the number are known only to the server). When that fails
   // the signature card says so and offers to try again, instead of saying "loading" for ever.
   const [signatureReloadFailed, setSignatureReloadFailed] = useState(false);
@@ -485,28 +488,29 @@ export const DailyReport: React.FC = () => {
     }
   };
 
-  const handleAcknowledge = async () => {
-    if (!window.confirm("Potvrdit seznámení se záznamem?")) return;
-
+  /**
+   * The acknowledgement itself, once the question has been answered yes (the question stays open while this runs). A refusal throws
+   * a message that the question says inside itself, where the person is looking; the page behind it stays as it was.
+   */
+  const acknowledge = async () => {
     try {
       const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}/acknowledge`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ acknowledged: true }),
       });
-      if (res.ok) {
-        // Take the list from the server: it knows the others, and the order.
-        const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
-        if (reloaded && Array.isArray(reloaded.acknowledgements)) setAcknowledgements(reloaded.acknowledgements as Acknowledgement[]);
-        setError("");
-      } else {
-        showError(await readError(res, "Záznam se nepodařilo potvrdit"));
-      }
+      if (!res.ok) throw new Error(await readError(res, "Záznam se nepodařilo potvrdit"));
+      // Take the list from the server: it knows the others, and the order.
+      const reloaded = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (reloaded && Array.isArray(reloaded.acknowledgements)) setAcknowledgements(reloaded.acknowledgements as Acknowledgement[]);
+      setError("");
     } catch (err) {
+      // The server's own message (or the sign-in that is needed) is said as it is; a network that failed is said in words.
+      if (!(err instanceof TypeError)) throw err;
       console.error("Failed to acknowledge report:", err);
-      showError("Záznam se nepodařilo potvrdit");
+      throw new Error("Záznam se nepodařilo potvrdit");
     }
   };
 
@@ -915,7 +919,7 @@ export const DailyReport: React.FC = () => {
             onCheck={() => void handleCheckSignature()}
           >
             {/* Only a signed (locked) entry can be acknowledged, by the investor and the supervision */}
-            {isInvestor && !iAcknowledged && <Button onClick={handleAcknowledge}>Potvrdit seznámení</Button>}
+            {isInvestor && !iAcknowledged && <Button onClick={() => setAskingAcknowledge(true)}>Potvrdit seznámení</Button>}
           </SignatureCard>
         </div>
       )}
@@ -932,6 +936,21 @@ export const DailyReport: React.FC = () => {
         <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <Addenda entryId={entryId} canWrite={myRole === "BOSS" || myRole === "WORKER"} />
         </div>
+      )}
+
+      {/* Acknowledging is binding (it is written with the person's name and the time, and cannot be taken back): it is asked in a dialog of the application's own. */}
+      {askingAcknowledge && (
+        <ConfirmDialog
+          title="Potvrdit seznámení?"
+          confirmLabel="Potvrdit seznámení"
+          cancelLabel="Zrušit"
+          destructive={false}
+          action={acknowledge}
+          onDone={() => setAskingAcknowledge(false)}
+          onCancel={() => setAskingAcknowledge(false)}
+        >
+          Potvrzujete, že jste se seznámil(a) se záznamem ze dne {formatDay(entry?.date ?? reportId ?? "")}. Potvrzení se zapíše s vaším jménem a časem a nejde vzít zpět.
+        </ConfirmDialog>
       )}
 
       {/* The dialog is the application's Modal: focus stays inside it and the form behind it is inert, so nothing can be typed there while it is open. */}

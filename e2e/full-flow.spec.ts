@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
+import { chooseSiteManager } from "./helpers";
 
 test.describe("Full E2E flow", () => {
   test("creates project, report, photo, signs and generates PDF", async ({ page }) => {
@@ -26,8 +27,7 @@ test.describe("Full E2E flow", () => {
     await page.locator('input[name="contractor"]').fill("Contractor s.r.o.");
 
     // Select site manager
-    await page.locator('button[id="siteManagerId"]').click();
-    await page.getByRole("option", { name: new RegExp(ADMIN_NICKNAME) }).click();
+    await chooseSiteManager(page, ADMIN_NICKNAME);
 
     // Submit project form
     await page.getByRole("button", { name: /založit zakázku/i }).click();
