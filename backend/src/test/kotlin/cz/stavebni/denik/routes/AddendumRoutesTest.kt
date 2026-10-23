@@ -131,18 +131,20 @@ class AddendumRoutesTest : BaseIntegrationTest() {
         val s = site()
         post(s.boss, s.reportId, text("Původní dodatek"))
 
-        val update = runCatching { dsl.execute("update addenda set text = 'Změněno'") }
-        val delete = runCatching { dsl.execute("delete from addenda") }
-        assertTrue(update.isFailure, "update")
-        assertTrue(delete.isFailure, "delete")
+        // The refusal is the trigger's (V9), named by its message: a statement that failed for another reason would not pass.
+        val update = runCatching { dsl.execute("update addenda set text = 'Změněno'") }.exceptionOrNull()
+        val delete = runCatching { dsl.execute("delete from addenda") }.exceptionOrNull()
+        assertTrue(update?.message?.contains("an addendum cannot be changed or deleted") == true, "update: ${update?.message}")
+        assertTrue(delete?.message?.contains("an addendum cannot be changed or deleted") == true, "delete: ${delete?.message}")
         assertEquals("Původní dodatek", dsl.select(ADDENDA.TEXT).from(ADDENDA).fetchOne(ADDENDA.TEXT))
 
         // A second, unsigned entry: the database refuses an addendum there even when the application is bypassed.
         val unsigned = DailyReportService.createReport(s.boss, s.projectId, "2026-09-29")
         val insert = runCatching {
             dsl.execute("""insert into addenda ("reportId", "authorId", "authorName", text) values (?, ?, 'Ing. Autor', 'x')""", UUID.fromString(unsigned.id), s.boss.id)
-        }
-        assertTrue(insert.isFailure, "insert into an unsigned entry")
+        }.exceptionOrNull()
+        assertTrue(insert?.message?.contains("an addendum can only be added to a signed daily report") == true, "insert into an unsigned entry: ${insert?.message}")
+        assertEquals(1, dsl.fetchCount(ADDENDA))
     }
 
     @Test

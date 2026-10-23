@@ -128,14 +128,17 @@ class AcknowledgementRoutesTest : BaseIntegrationTest() {
         val s = site()
         acknowledge(s.tds, s.reportId)
 
-        assertTrue(runCatching { dsl.execute("update report_acknowledgements set \"userId\" = \"userId\"") }.isFailure, "update")
-        assertTrue(runCatching { dsl.execute("delete from report_acknowledgements") }.isFailure, "delete")
+        // The refusal is the trigger's (V11), named by its message: a statement that failed for another reason would not pass.
+        val update = runCatching { dsl.execute("update report_acknowledgements set \"userId\" = \"userId\"") }.exceptionOrNull()
+        val delete = runCatching { dsl.execute("delete from report_acknowledgements") }.exceptionOrNull()
+        assertTrue(update?.message?.contains("an acknowledgement cannot be changed or deleted") == true, "update: ${update?.message}")
+        assertTrue(delete?.message?.contains("an acknowledgement cannot be changed or deleted") == true, "delete: ${delete?.message}")
 
         val unsigned = DailyReportService.createReport(s.boss, s.projectId, "2026-09-29")
         val insert = runCatching {
             dsl.execute("""insert into report_acknowledgements ("reportId", "userId", "userName", "role") values (?, ?, 'Ing. Dozor', 'INSPECTOR')""", UUID.fromString(unsigned.id), s.tds.id)
-        }
-        assertTrue(insert.isFailure, "insert for an unsigned entry")
+        }.exceptionOrNull()
+        assertTrue(insert?.message?.contains("only a signed daily report can be acknowledged") == true, "insert for an unsigned entry: ${insert?.message}")
         assertEquals(1, dsl.fetchCount(REPORT_ACKNOWLEDGEMENTS))
     }
 
@@ -149,7 +152,8 @@ class AcknowledgementRoutesTest : BaseIntegrationTest() {
         assertEquals(2, dsl.fetchCount(cz.stavebni.denik.jooq.tables.references.AUDIT_LOG, cz.stavebni.denik.jooq.tables.references.AUDIT_LOG.ACTION.eq("report.acknowledge")))
         assertTrue(AuditService.verifyChain(dsl).ok)
         // The signed row itself cannot change in any column (no exception for the acknowledgement any more).
-        assertTrue(runCatching { dsl.execute("""update daily_reports set "updatedAt" = now() where id = ?""", UUID.fromString(s.reportId)) }.isFailure)
+        val update = runCatching { dsl.execute("""update daily_reports set "updatedAt" = now() where id = ?""", UUID.fromString(s.reportId)) }.exceptionOrNull()
+        assertTrue(update?.message?.contains("a signed daily report cannot be changed") == true, "the trigger of the signed entry says so: ${update?.message}")
     }
 
     @Test
