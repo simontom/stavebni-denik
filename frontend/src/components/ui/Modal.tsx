@@ -6,7 +6,9 @@ const sizes = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg" } as const;
 
 /**
  * A modal dialog on the browser's own `<dialog>`: focus stays inside, the page behind is inert and does not scroll, and Escape means
- * "cancel". Render it only while it is open: it opens itself when it mounts and closes when it unmounts. It is at most as wide as
+ * "cancel". Render it only while it is open: it opens itself when it mounts and closes when it unmounts. A page must stop rendering it
+ * as soon as it has been answered (state of its own, not a state that arrives later, such as the router's): a dialog that has closed
+ * itself and is still rendered is not opened again, not even for a new question. It is at most as wide as
  * the screen less a margin and scrolls inside when it is taller than the screen, so no part of it is out of reach on a phone.
  *
  * - [title] is the dialog's name (`aria-labelledby`).
