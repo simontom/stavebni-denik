@@ -28,6 +28,12 @@ export function AppLayout() {
   // A link inside the application (or the browser's Back button) away from a page with unsaved changes asks first. The
   // page says it has unsaved work (setUnsavedWork); a page that is only reloaded or closed is covered by the browser's own question.
   const blocker = useBlocker(({ currentLocation, nextLocation }) => hasUnsavedWork() && currentLocation.pathname !== nextLocation.pathname);
+  // "Stay" ends the question at once, here, not when the router has drawn it (the router puts its blocker back to idle in a React
+  // transition, which is drawn later). A second attempt to leave in between (Back pressed twice, a link clicked twice) would
+  // otherwise find the dialog of the first question still mounted but closed, and nothing opens a closed dialog again: the
+  // person would be asked nothing and the page could not be left. The router makes a new blocker (and a new `reset`) for every
+  // question, which is what tells a new question from the one that was answered.
+  const [answeredStay, setAnsweredStay] = useState<{ reset: () => void } | null>(null);
   const userStr = typeof window !== "undefined" ? localStorage.getItem("user") : null;
   if (!userStr) {
     return <Navigate to="/login" replace />;
@@ -92,8 +98,17 @@ export function AppLayout() {
       <main className="flex-1">
         <Outlet />
       </main>
-      {blocker.state === "blocked" && (
-        <ConfirmDialog title="Neuložené změny" cancelLabel="Zůstat" confirmLabel="Odejít bez uložení" onCancel={() => blocker.reset()} onConfirm={() => blocker.proceed()}>
+      {blocker.state === "blocked" && blocker.reset !== answeredStay?.reset && (
+        <ConfirmDialog
+          title="Neuložené změny"
+          cancelLabel="Zůstat"
+          confirmLabel="Odejít bez uložení"
+          onCancel={() => {
+            setAnsweredStay({ reset: blocker.reset });
+            blocker.reset();
+          }}
+          onConfirm={() => blocker.proceed()}
+        >
           {unsavedWorkIsKeptAsDraft()
             ? "Tento záznam má neuložené změny. Když odejdete, rozepsaný text zůstane jako koncept v tomto zařízení a při dalším otevření dne vám ho nabídneme."
             : "Stránka má neuložené změny. Když odejdete, ztratí se."}

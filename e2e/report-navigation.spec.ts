@@ -45,6 +45,21 @@ const leaveDialog = (page: Page) => page.getByRole("dialog", { name: /neuložen�
 const logoutDialog = (page: Page) => page.getByRole("dialog", { name: /odhlásit se/i });
 const backToList = (page: Page) => page.getByRole("link", { name: /zpět na seznam záznamů/i });
 
+/**
+ * Which entry of the history the browser is on: the number React Router writes into `history.state` (`idx`) for every entry it
+ * makes. The URL cannot say it (the same day can be in the history twice); a step back or forward is counted in these entries.
+ */
+const historyIndex = (page: Page) => page.evaluate(() => (history.state as { idx?: number } | null)?.idx ?? null);
+
+/**
+ * A blocked step back is undone by the router with a second `history.go`, which the browser carries out later, on its own (the
+ * router has to be told about it, too: `popstate`). A step the test takes before that has happened is counted from an entry the
+ * router has not come back to yet, and is lost. So after a question has been answered "stay", wait until the browser is where it was.
+ */
+async function expectBackOnEntry(page: Page, entry: number | null) {
+  await expect.poll(() => historyIndex(page)).toBe(entry);
+}
+
 async function opensDay(page: Page, url: string) {
   await page.goto(url);
   await expect(page.getByText(/načítám záznam/i)).toBeHidden({ timeout: 15_000 });
@@ -85,8 +100,8 @@ test("the text of one day is never carried over into another day", async ({ page
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
-test("unsaved text on day B is not carried to day A either: the person is asked first", async ({ page }) => {
-  test.setTimeout(90_000);
+/** The way through the application as in the test above (the list, day A, the list again, day B), with text typed on day B and not saved. */
+async function unsavedTextOnDayB(page: Page): Promise<{ dayA: string; dayB: string }> {
   const projectUrl = await loginAndCreateProject(page);
   const dayA = pragueDay(0);
   const dayB = pragueDay(-1);
@@ -99,13 +114,23 @@ test("unsaved text on day B is not carried to day A either: the person is asked 
   await page.getByRole("button", { name: /otevřít den/i }).click();
   await expect(description(page)).toBeEditable({ timeout: 15_000 });
   await description(page).fill("Rozepsaný den B");
+  return { dayA, dayB };
+}
+
+test("unsaved text on day B is not carried to day A either: the person is asked first", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { dayA, dayB } = await unsavedTextOnDayB(page);
 
   // Going back two steps would leave day B with unsaved text: the page asks, and the URL does not change.
+  const dayBEntry = await historyIndex(page);
   await page.evaluate(() => history.go(-2));
   await expect(leaveDialog(page)).toBeVisible();
   await expect(page).toHaveURL(new RegExp(`/reports/${dayB}$`));
   await leaveDialog(page).getByRole("button", { name: "Zůstat", exact: true }).click();
-  await expect(leaveDialog(page)).toBeHidden();
+  // The question is gone from the page (not only hidden: a closed <dialog> would not be found by its role either), and the browser
+  // is back on day B's entry.
+  await expect(page.locator("dialog")).toHaveCount(0);
+  await expectBackOnEntry(page, dayBEntry);
   await expect(description(page)).toHaveValue("Rozepsaný den B");
   // Focus is where it was before the question: back in the text the person was typing.
   await expect(description(page)).toBeFocused();
@@ -113,6 +138,41 @@ test("unsaved text on day B is not carried to day A either: the person is asked 
   // Leaving anyway: day A is a fresh, empty form.
   await page.evaluate(() => history.go(-2));
   await expect(leaveDialog(page)).toBeVisible();
+  await leaveDialog(page).getByRole("button", { name: "Odejít bez uložení", exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/reports/${dayA}$`));
+  await expect(page.getByText(/načítám záznam/i)).toBeHidden({ timeout: 15_000 });
+  await expect(description(page)).toHaveValue("");
+});
+
+test("a second step back right after 'Zůstat' is asked about again, also when the page is slow to draw the first answer", async ({ page }) => {
+  test.setTimeout(90_000);
+  const { dayA, dayB } = await unsavedTextOnDayB(page);
+
+  // A slow phone: the page draws what the router tells it (a React transition) a good while after it was told, and the next step
+  // back can come sooner than that. (Chromium's DevTools protocol; this file does not run in the phone projects.)
+  const slowDevice = await page.context().newCDPSession(page);
+  await slowDevice.send("Emulation.setCPUThrottlingRate", { rate: 20 });
+
+  const dayBEntry = await historyIndex(page);
+  await page.evaluate(() => history.go(-2));
+  await expect(leaveDialog(page)).toBeVisible();
+  await expectBackOnEntry(page, dayBEntry);
+
+  // "Zůstat" and the next step back arrive together (Back pressed twice, a link clicked twice). The question was answered and is asked
+  // again before the page has drawn the answer: it has to be there, open, and not the closed dialog of the first question.
+  await leaveDialog(page)
+    .getByRole("button", { name: "Zůstat", exact: true })
+    .evaluate((button: HTMLElement) => {
+      button.click();
+      history.go(-2);
+    });
+  await expect(leaveDialog(page)).toBeVisible();
+  await expect(page.locator("dialog")).toHaveCount(1);
+  await expect(page).toHaveURL(new RegExp(`/reports/${dayB}$`));
+  await slowDevice.send("Emulation.setCPUThrottlingRate", { rate: 1 });
+
+  // It is a real question: nothing was lost, and leaving goes on.
+  await expect(description(page)).toHaveValue("Rozepsaný den B");
   await leaveDialog(page).getByRole("button", { name: "Odejít bez uložení", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/reports/${dayA}$`));
   await expect(page.getByText(/načítám záznam/i)).toBeHidden({ timeout: 15_000 });
