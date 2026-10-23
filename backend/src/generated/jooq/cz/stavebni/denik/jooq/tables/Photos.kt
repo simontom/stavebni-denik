@@ -20,6 +20,7 @@ import java.util.UUID
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -133,6 +134,11 @@ open class Photos(
     val UPLOADEDBYID: TableField<PhotosRecord, UUID?> = createField(DSL.name("uploadedById"), SQLDataType.UUID.nullable(false), this, "")
 
     /**
+     * The column <code>public.photos.uploadedByName</code>.
+     */
+    val UPLOADEDBYNAME: TableField<PhotosRecord, String?> = createField(DSL.name("uploadedByName"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
      * The column <code>public.photos.createdAt</code>.
      */
     val CREATEDAT: TableField<PhotosRecord, OffsetDateTime?> = createField(DSL.name("createdAt"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false).defaultValue(DSL.field(DSL.raw("CURRENT_TIMESTAMP"), SQLDataType.TIMESTAMPWITHTIMEZONE)), this, "")
@@ -200,6 +206,9 @@ open class Photos(
      */
     fun users(): UsersPath = users
     val users: UsersPath by lazy { UsersPath(this, PHOTOS__PHOTOS_UPLOADEDBYID_FKEY, null) }
+    override fun getChecks(): List<Check<PhotosRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("photos_uploadedByName_check"), "((btrim(\"uploadedByName\") <> ''::text))", true)
+    )
     override fun `as`(alias: String): Photos = Photos(DSL.name(alias), this)
     override fun `as`(alias: Name): Photos = Photos(alias, this)
     override fun `as`(alias: Table<*>): Photos = Photos(alias.qualifiedName, this)

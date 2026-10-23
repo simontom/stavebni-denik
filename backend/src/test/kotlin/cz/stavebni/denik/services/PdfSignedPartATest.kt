@@ -138,9 +138,10 @@ class PdfSignedPartATest : BaseIntegrationTest() {
         val data = dataOf(report)
 
         assertEquals("Ing. Jan Stavbyvedoucí, ČKAIT 0012345", data.text("signedBy"))
-        // The site manager of part A is the one of the snapshot as well, and the author is read as before (backlog B9).
+        // The site manager of part A is the one of the snapshot as well, and so is the author of the entry: its name is stored when the
+        // entry is made (backlog B9), not read from the account.
         assertEquals("Ing. Jan Stavbyvedoucí, ČKAIT 0012345", data.rows("projectInfo")["Stavbyvedoucí"])
-        assertEquals("Změněné Jméno", data.text("author"))
+        assertEquals("Ing. Jan Stavbyvedoucí", data.text("author"))
     }
 
     @Test

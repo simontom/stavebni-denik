@@ -32,13 +32,21 @@ open class ReportAcknowledgementsRecord() : UpdatableRecordImpl<ReportAcknowledg
         set(value): Unit = set(2, value)
         get(): UUID? = get(2) as UUID?
 
-    open var role: Role?
+    open var username: String?
         set(value): Unit = set(3, value)
-        get(): Role? = get(3) as Role?
+        get(): String? = get(3) as String?
+
+    open var userckaitnumber: String?
+        set(value): Unit = set(4, value)
+        get(): String? = get(4) as String?
+
+    open var role: Role?
+        set(value): Unit = set(5, value)
+        get(): Role? = get(5) as Role?
 
     open var createdat: OffsetDateTime?
-        set(value): Unit = set(4, value)
-        get(): OffsetDateTime? = get(4) as OffsetDateTime?
+        set(value): Unit = set(6, value)
+        get(): OffsetDateTime? = get(6) as OffsetDateTime?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -49,10 +57,12 @@ open class ReportAcknowledgementsRecord() : UpdatableRecordImpl<ReportAcknowledg
     /**
      * Create a detached, initialised ReportAcknowledgementsRecord
      */
-    constructor(id: UUID? = null, reportid: UUID? = null, userid: UUID? = null, role: Role? = null, createdat: OffsetDateTime? = null): this() {
+    constructor(id: UUID? = null, reportid: UUID? = null, userid: UUID? = null, username: String? = null, userckaitnumber: String? = null, role: Role? = null, createdat: OffsetDateTime? = null): this() {
         this.id = id
         this.reportid = reportid
         this.userid = userid
+        this.username = username
+        this.userckaitnumber = userckaitnumber
         this.role = role
         this.createdat = createdat
         resetTouchedOnNotNull()

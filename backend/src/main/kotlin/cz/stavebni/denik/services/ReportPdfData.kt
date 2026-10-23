@@ -54,7 +54,10 @@ internal data class ReportPdfData(
 
     // ---- part B: the entry of the day -------------------------------------------------------------------------------
     // Everything the signature covers is here, so the printed entry says everything that was signed.
-    /** The name of the author of the entry (the signature covers the author's id). */
+    /**
+     * The name of the author of the entry as it was stored when the entry was made (the signature covers the author's id; the name
+     * is printed, not signed).
+     */
     val author: String = "",
     val isLateEntry: Boolean,
     val lateEntryReason: String,
@@ -62,11 +65,19 @@ internal data class ReportPdfData(
     val isControlDay: Boolean = false,
     /** The construction object (SO) the entry is about; empty when none was entered. */
     val constructionObj: String = "",
+    /**
+     * The texts of the entry (the construction object, the trades and names of the workers, the work description and the fields of the
+     * vyhláška) are printed within a budget of lines ([PrintBudget]): what does not fit is cut, and the sentence that says how many lines were
+     * left out is in the `...Cut` field of the text (empty when nothing was). An ordinary entry is far from the budget.
+     */
+    val constructionObjCut: String = "",
     /** The weather as readable text, or `Neuvedeno`. */
     val weather: String,
     /** The people on site by trade (the vyhláška asks for their names); empty when none were entered. */
     val workers: List<WorkerPdf> = emptyList(),
+    val workersCut: String = "",
     val workDescription: String,
+    val workDescriptionCut: String = "",
     /** Every field of [EntryDetails], in their fixed order, with the label of the vyhláška; the text is empty when nothing was entered. */
     val details: List<DetailPdf> = emptyList(),
     /** The photos of the entry (the files themselves are not in the PDF), oldest first. */
@@ -93,12 +104,30 @@ internal data class ReportPdfData(
      */
     val auditRowHash: String = "",
 
+    // ---- the handover of the site (příloha 12 B.2 a)): records of their own, after the end of the entry -----------------
+    /**
+     * The handover protocols that belong to this entry, oldest day first, at most [PdfExportService.MAX_HANDOVERS]. For a signed entry
+     * the ones that had a signature when the entry was signed, with the signatures that existed then; for a draft all the current
+     * ones, as they are. A protocol has its own two signatures and is not part of the signature of the entry.
+     */
+    val handovers: List<HandoverPdf> = emptyList(),
+    /** Says which of the two it is, and that the protocols are not covered by the signature of the entry. */
+    val handoversNote: String = "",
+    /**
+     * Protocols that belong to the entry and are not printed, because the document prints at most [PdfExportService.MAX_HANDOVERS] and the
+     * section has a budget of lines ([PdfExportService.HANDOVER_BUDGET_LINES]); [handoversLeftOutNote] is the sentence that says so (empty when none).
+     */
+    val handoversLeftOut: Int = 0,
+    val handoversLeftOutNote: String = "",
+
     // ---- after the signature: records of their own, not part of what the signature covers ---------------------------
     /** The addenda of a signed entry, oldest first. */
     val addenda: List<AddendumPdf> = emptyList(),
     /** The entries of other parties, oldest first. */
     val remarks: List<RemarkPdf> = emptyList(),
-    /** Who took note of the signed entry ("Name (role)"), with the time, oldest first. */
+    /** The addenda and entries of other parties are printed within a budget of lines; this says how many records did not fit (empty when all did). */
+    val recordsLeftOutNote: String = "",
+    /** Who took note of the signed entry ("Name, ČKAIT number (role)"), with the time, oldest first. */
     val acknowledgements: List<AcknowledgementPdf> = emptyList(),
 )
 
@@ -115,18 +144,57 @@ internal data class AuthorizedPersonPdf(val name: String, val company: String, v
 @Serializable
 internal data class WorkerPdf(val trade: String, val count: Int, val names: String)
 
+/** A field of the vyhláška: [cut] is the sentence that says how many lines of [text] did not fit the budget of the entry (empty when none). */
 @Serializable
-internal data class DetailPdf(val label: String, val text: String)
+internal data class DetailPdf(val label: String, val text: String, val cut: String = "")
 
-/** A photo of the entry: who uploaded it, when (Prague time), and the SHA-256 of the stored file (empty when none was recorded). */
+/** A photo of the entry: who uploaded it (the name stored at upload), when (Prague time), and the SHA-256 of the stored file (empty when none was recorded). */
 @Serializable
 internal data class PhotoPdf(val uploadedBy: String, val at: String, val sha256: String)
 
+/** [who] is the name and the ČKAIT number (if the person had one) as they were stored when the person took note, and the role. */
 @Serializable
 internal data class AcknowledgementPdf(val who: String, val at: String)
 
+/** [author] is the name and the ČKAIT number (if any) as they were stored with the entry: of the manager who recorded it when it speaks for [onBehalfOf]. */
 @Serializable
-internal data class RemarkPdf(val author: String, val onBehalfOf: String, val at: String, val text: String)
+internal data class RemarkPdf(val author: String, val onBehalfOf: String, val at: String, val text: String, val cut: String = "")
 
+/** [author] is the name and the ČKAIT number (if any) as they were stored with the addendum. */
 @Serializable
-internal data class AddendumPdf(val author: String, val at: String, val text: String)
+internal data class AddendumPdf(val author: String, val at: String, val text: String, val cut: String = "")
+
+/** One reading of a meter in a handover protocol. */
+@Serializable
+internal data class MeterPdf(val medium: String, val serialNumber: String, val state: String)
+
+/**
+ * One side's signature of a handover protocol as the signature stored it: [signedBy] is the name (cut when it is enormous, so the
+ * block of the signatures has a known height), the role in the project and, for the contractor, the ČKAIT number; [at] is Prague time
+ * with the zone; [signatureHash] the SHA-256 of the signature.
+ */
+@Serializable
+internal data class HandoverSignaturePdf(val signedBy: String, val at: String, val signatureHash: String)
+
+/**
+ * A handover protocol (předání a převzetí staveniště) as the entry's document prints it. A side that has not signed is null. [state]
+ * is the state at the moment the document describes: for a signed entry the one on the day it was signed.
+ */
+@Serializable
+internal data class HandoverPdf(
+    /** The day of the handover (`28. 9. 2026`). */
+    val date: String,
+    val type: String,
+    val participants: String,
+    /** Empty when there are none. */
+    val notes: String,
+    val meters: List<MeterPdf>,
+    /** The sentence that says how many lines of this protocol did not fit the budget of the section (empty when none). */
+    val cut: String = "",
+    /** In words: nobody has signed, one side has, both have. */
+    val state: String,
+    /** SHA-256 of the content that the parties signed; empty while nobody has signed. */
+    val contentHash: String,
+    val contractor: HandoverSignaturePdf? = null,
+    val client: HandoverSignaturePdf? = null,
+)

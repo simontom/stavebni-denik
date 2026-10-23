@@ -20,6 +20,7 @@ import java.util.UUID
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -96,6 +97,16 @@ open class ReportAcknowledgements(
     val USERID: TableField<ReportAcknowledgementsRecord, UUID?> = createField(DSL.name("userId"), SQLDataType.UUID.nullable(false), this, "")
 
     /**
+     * The column <code>public.report_acknowledgements.userName</code>.
+     */
+    val USERNAME: TableField<ReportAcknowledgementsRecord, String?> = createField(DSL.name("userName"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
+     * The column <code>public.report_acknowledgements.userCkaitNumber</code>.
+     */
+    val USERCKAITNUMBER: TableField<ReportAcknowledgementsRecord, String?> = createField(DSL.name("userCkaitNumber"), SQLDataType.CLOB, this, "")
+
+    /**
      * The column <code>public.report_acknowledgements.role</code>.
      */
     val ROLE: TableField<ReportAcknowledgementsRecord, Role?> = createField(DSL.name("role"), SQLDataType.VARCHAR.nullable(false).asEnumDataType(Role::class.java), this, "")
@@ -155,6 +166,10 @@ open class ReportAcknowledgements(
      */
     fun users(): UsersPath = users
     val users: UsersPath by lazy { UsersPath(this, REPORT_ACKNOWLEDGEMENTS__REPORT_ACKNOWLEDGEMENTS_USERID_FKEY, null) }
+    override fun getChecks(): List<Check<ReportAcknowledgementsRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("report_acknowledgements_userCkaitNumber_check"), "(((\"userCkaitNumber\" IS NULL) OR (btrim(\"userCkaitNumber\") <> ''::text)))", true),
+        Internal.createCheck(this, DSL.name("report_acknowledgements_userName_check"), "((btrim(\"userName\") <> ''::text))", true)
+    )
     override fun `as`(alias: String): ReportAcknowledgements = ReportAcknowledgements(DSL.name(alias), this)
     override fun `as`(alias: Name): ReportAcknowledgements = ReportAcknowledgements(alias, this)
     override fun `as`(alias: Table<*>): ReportAcknowledgements = ReportAcknowledgements(alias.qualifiedName, this)

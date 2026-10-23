@@ -32,29 +32,37 @@ open class RemarksRecord() : UpdatableRecordImpl<RemarksRecord>(Remarks.REMARKS)
         set(value): Unit = set(2, value)
         get(): UUID? = get(2) as UUID?
 
-    open var type: Remarktype?
+    open var authorname: String?
         set(value): Unit = set(3, value)
-        get(): Remarktype? = get(3) as Remarktype?
+        get(): String? = get(3) as String?
 
-    open var text: String?
+    open var authorckaitnumber: String?
         set(value): Unit = set(4, value)
         get(): String? = get(4) as String?
 
-    open var isofficial: Boolean?
+    open var type: Remarktype?
         set(value): Unit = set(5, value)
-        get(): Boolean? = get(5) as Boolean?
+        get(): Remarktype? = get(5) as Remarktype?
+
+    open var text: String?
+        set(value): Unit = set(6, value)
+        get(): String? = get(6) as String?
+
+    open var isofficial: Boolean?
+        set(value): Unit = set(7, value)
+        get(): Boolean? = get(7) as Boolean?
 
     open var createdat: OffsetDateTime?
-        set(value): Unit = set(6, value)
-        get(): OffsetDateTime? = get(6) as OffsetDateTime?
+        set(value): Unit = set(8, value)
+        get(): OffsetDateTime? = get(8) as OffsetDateTime?
 
     open var deletedat: OffsetDateTime?
-        set(value): Unit = set(7, value)
-        get(): OffsetDateTime? = get(7) as OffsetDateTime?
+        set(value): Unit = set(9, value)
+        get(): OffsetDateTime? = get(9) as OffsetDateTime?
 
     open var externalauthor: String?
-        set(value): Unit = set(8, value)
-        get(): String? = get(8) as String?
+        set(value): Unit = set(10, value)
+        get(): String? = get(10) as String?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -65,10 +73,12 @@ open class RemarksRecord() : UpdatableRecordImpl<RemarksRecord>(Remarks.REMARKS)
     /**
      * Create a detached, initialised RemarksRecord
      */
-    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, type: Remarktype? = null, text: String? = null, isofficial: Boolean? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null, externalauthor: String? = null): this() {
+    constructor(id: UUID? = null, reportid: UUID? = null, authorid: UUID? = null, authorname: String? = null, authorckaitnumber: String? = null, type: Remarktype? = null, text: String? = null, isofficial: Boolean? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null, externalauthor: String? = null): this() {
         this.id = id
         this.reportid = reportid
         this.authorid = authorid
+        this.authorname = authorname
+        this.authorckaitnumber = authorckaitnumber
         this.type = type
         this.text = text
         this.isofficial = isofficial

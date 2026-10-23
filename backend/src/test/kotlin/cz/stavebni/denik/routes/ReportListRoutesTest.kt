@@ -44,9 +44,9 @@ class ReportListRoutesTest : BaseIntegrationTest() {
     private fun entries(projectId: UUID, author: SessionUser, days: Int, last: LocalDate = LocalDate.of(2026, 9, 28), firstSequence: Int = 1) {
         for (i in 0 until days) {
             dsl.execute(
-                """insert into daily_reports ("projectId", "sequenceNumber", "date", "authorId", "workDescription", "workersByTrade", "updatedAt")
-                   values (?, ?, ?, ?, ?, '[]'::jsonb, now())""",
-                projectId, firstSequence + i, last.minusDays((days - 1 - i).toLong()), author.id, "work $i",
+                """insert into daily_reports ("projectId", "sequenceNumber", "date", "authorId", "authorName", "workDescription", "workersByTrade", "updatedAt")
+                   values (?, ?, ?, ?, ?, ?, '[]'::jsonb, now())""",
+                projectId, firstSequence + i, last.minusDays((days - 1 - i).toLong()), author.id, author.displayName, "work $i",
             )
         }
     }

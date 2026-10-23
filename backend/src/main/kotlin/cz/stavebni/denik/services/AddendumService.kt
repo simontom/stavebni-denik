@@ -8,7 +8,6 @@ import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.tables.references.ADDENDA
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
-import cz.stavebni.denik.jooq.tables.references.USERS
 import cz.stavebni.denik.services.AuditService.Audited
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -21,6 +20,7 @@ data class AddendumDto(
     val id: String,
     val reportId: String,
     val authorId: String,
+    /** The author's display name **as the account had it when the addendum was written** (stored with it, never read from the account again). */
     val authorName: String,
     val text: String,
     val createdAt: String,
@@ -29,9 +29,17 @@ data class AddendumDto(
 @Serializable
 data class CreateAddendumRequest(val text: String = "")
 
-/** What the audit log keeps of an addendum: the whole of it (it can never change). */
+/** What the audit log keeps of an addendum: the whole of it (it can never change), the author's name and number as they were stored. */
 @Serializable
-internal data class AddendumSnapshot(val id: String, val reportId: String, val projectId: String, val authorId: String, val text: String)
+internal data class AddendumSnapshot(
+    val id: String,
+    val reportId: String,
+    val projectId: String,
+    val authorId: String,
+    val authorName: String,
+    val authorCkaitNumber: String? = null,
+    val text: String,
+)
 
 /**
  * Addenda (dodatky): how a **signed** daily entry is corrected or completed. The entry itself can no longer be changed,
@@ -48,9 +56,8 @@ object AddendumService {
 
     fun list(tx: DSLContext, user: SessionUser, reportId: UUID): List<AddendumDto> {
         ProjectAccess.requireReportAccess(tx, user, reportId)
-        return tx.select(ADDENDA.ID, ADDENDA.REPORTID, ADDENDA.AUTHORID, USERS.DISPLAYNAME, ADDENDA.TEXT, ADDENDA.CREATEDAT)
+        return tx.select(ADDENDA.ID, ADDENDA.REPORTID, ADDENDA.AUTHORID, ADDENDA.AUTHORNAME, ADDENDA.TEXT, ADDENDA.CREATEDAT)
             .from(ADDENDA)
-            .join(USERS).on(USERS.ID.eq(ADDENDA.AUTHORID))
             .where(ADDENDA.REPORTID.eq(reportId))
             .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
             .fetch()
@@ -59,7 +66,7 @@ object AddendumService {
                     id = r.get(ADDENDA.ID).toString(),
                     reportId = r.get(ADDENDA.REPORTID).toString(),
                     authorId = r.get(ADDENDA.AUTHORID).toString(),
-                    authorName = r.get(USERS.DISPLAYNAME) ?: "",
+                    authorName = r.get(ADDENDA.AUTHORNAME) ?: "",
                     text = r.get(ADDENDA.TEXT) ?: "",
                     createdAt = r.get(ADDENDA.CREATEDAT).toString(),
                 )
@@ -85,9 +92,13 @@ object AddendumService {
                 throw ConflictException("Dodatek lze přidat jen k podepsanému záznamu. Nepodepsaný záznam se upravuje přímo.")
             }
 
+            // Who the author is, as the account says it now: stored with the addendum, which is never changed.
+            val author = AccountIdentity.of(tx, user.id)
             val record = tx.insertInto(ADDENDA)
                 .set(ADDENDA.REPORTID, reportId)
                 .set(ADDENDA.AUTHORID, user.id)
+                .set(ADDENDA.AUTHORNAME, author.name)
+                .set(ADDENDA.AUTHORCKAITNUMBER, author.ckaitNumber)
                 .set(ADDENDA.TEXT, text)
                 .returning()
                 .fetchOne() ?: throw IllegalStateException("Dodatek se nepodařilo uložit")
@@ -96,7 +107,7 @@ object AddendumService {
                 id = record.get(ADDENDA.ID).toString(),
                 reportId = reportId.toString(),
                 authorId = user.id.toString(),
-                authorName = user.displayName,
+                authorName = author.name,
                 text = text,
                 createdAt = record.get(ADDENDA.CREATEDAT).toString(),
             )
@@ -106,7 +117,7 @@ object AddendumService {
                 entityId = reportId.toString(),
                 after = Json.encodeToJsonElement(
                     AddendumSnapshot.serializer(),
-                    AddendumSnapshot(dto.id, reportId.toString(), projectId.toString(), user.id.toString(), text),
+                    AddendumSnapshot(dto.id, reportId.toString(), projectId.toString(), user.id.toString(), author.name, author.ckaitNumber, text),
                 ),
             )
         }
