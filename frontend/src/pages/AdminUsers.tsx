@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { api, currentUser, json, ROLE_LABELS } from "../lib/api";
-import { Button } from "../components/ui";
+import { useUnsavedWork } from "../lib/useUnsavedWork";
+import { ConfirmDialog } from "../components/ConfirmDialog";
+import { OneTimePasswordDialog } from "../components/OneTimePasswordDialog";
+import { Banner, Button, Field, FormActions, Modal, Select, TextInput, type ModalHandle } from "../components/ui";
 
 interface User {
   id: string;
@@ -20,6 +23,27 @@ interface CreateUserResponse {
   initialPassword: string;
 }
 
+/** A question about a user that is open: which one it is, and about whom. */
+type Question = { kind: "deactivate" | "activate" | "reset" | "delete"; user: User };
+
+/** A temporary password that is shown once (the page keeps it only until the dialog that shows it is closed). */
+interface Issued {
+  title: string;
+  intro: string;
+  nickname: string;
+  password: string;
+}
+
+const RoleSelect = ({ id, value, onChange }: { id: string; value: string; onChange: (role: string) => void }) => (
+  <Select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+    {Object.entries(ROLE_LABELS).map(([key, label]) => (
+      <option key={key} value={key}>
+        {label}
+      </option>
+    ))}
+  </Select>
+);
+
 export const AdminUsers: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,24 +52,13 @@ export const AdminUsers: React.FC = () => {
   // deactivation (projects left without an active site manager).
   const [notice, setNotice] = useState("");
 
-  // Create User Modal State
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [createStep, setCreateStep] = useState<"form" | "credentials">("form");
-  const [newNickname, setNewNickname] = useState("");
-  const [newDisplayName, setNewDisplayName] = useState("");
-  const [newRole, setNewRole] = useState("WORKER");
-  const [newCkait, setNewCkait] = useState("");
-  const [generatedPassword, setGeneratedPassword] = useState("");
-  const [createError, setCreateError] = useState("");
-
-  // Password reset result (the password is shown once)
-  const [resetResult, setResetResult] = useState<{ nickname: string; password: string } | null>(null);
-
-  // Edit User Modal State
-  const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editDisplayName, setEditDisplayName] = useState("");
-  const [editRole, setEditRole] = useState("WORKER");
-  const [editCkait, setEditCkait] = useState("");
+  // The overlays. Each one is the state of this page's own, and is taken off the screen the moment it is answered.
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null);
+  const [question, setQuestion] = useState<Question | null>(null);
+  // The temporary password, shown once. It is in no other state: closing the dialog that shows it clears it.
+  const [issued, setIssued] = useState<Issued | null>(null);
+  const newUserButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -66,107 +79,88 @@ export const AdminUsers: React.FC = () => {
 
   const replaceUser = (updated: User) => setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
 
-  const handleOpenCreate = () => {
-    setNewNickname("");
-    setNewDisplayName("");
-    setNewRole("WORKER");
-    setNewCkait("");
-    setGeneratedPassword("");
-    setCreateError("");
-    setCreateStep("form");
-    setShowCreateModal(true);
-  };
-
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNickname || !newDisplayName) return;
-    try {
-      const created = await api<CreateUserResponse>("/api/users", {
-        method: "POST",
-        body: json({ nickname: newNickname, displayName: newDisplayName, role: newRole, ckaitNumber: newCkait }),
-      });
-      setGeneratedPassword(created.initialPassword);
-      setUsers((prev) => [...prev, created.user].sort((a, b) => a.nickname.localeCompare(b.nickname)));
-      setCreateStep("credentials");
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Chyba při vytváření uživatele");
+  /** The question a button asks, with the action it stands for. A refusal of the server is said inside the dialog. */
+  const askAbout = (q: Question) => {
+    const { user } = q;
+    const done = () => setQuestion(null);
+    switch (q.kind) {
+      case "deactivate":
+        return (
+          <ConfirmDialog
+            title="Deaktivovat uživatele?"
+            confirmLabel="Deaktivovat"
+            cancelLabel="Zrušit"
+            action={() => api<User>(`/api/users/${user.id}/deactivate`, { method: "POST" })}
+            onDone={(updated) => {
+              replaceUser({ ...updated, warning: undefined });
+              // Deactivating a site manager is allowed, and the answer says which projects are left without an active one.
+              setNotice(updated.warning ?? "");
+              done();
+            }}
+            onCancel={done}
+          >
+            Uživatel {user.nickname} se nebude moci přihlásit a jeho přihlášení skončí. Účet půjde znovu aktivovat.
+          </ConfirmDialog>
+        );
+      case "activate":
+        return (
+          <ConfirmDialog
+            title="Aktivovat uživatele?"
+            confirmLabel="Aktivovat"
+            cancelLabel="Zrušit"
+            destructive={false}
+            action={() => api<User>(`/api/users/${user.id}/activate`, { method: "POST" })}
+            onDone={(updated) => {
+              replaceUser({ ...updated, warning: undefined });
+              setNotice(updated.warning ?? "");
+              done();
+            }}
+            onCancel={done}
+          >
+            Uživatel {user.nickname} se bude moci znovu přihlásit.
+          </ConfirmDialog>
+        );
+      case "reset":
+        return (
+          <ConfirmDialog
+            title="Obnovit heslo?"
+            confirmLabel="Obnovit heslo"
+            cancelLabel="Zrušit"
+            action={() => api<{ initialPassword: string }>(`/api/users/${user.id}/reset-password`, { method: "POST" })}
+            onDone={(result) => {
+              done();
+              setIssued({
+                title: "Heslo bylo obnoveno",
+                intro: "Předejte tyto údaje uživateli. Při přihlášení si zvolí vlastní heslo. Dočasné heslo platí 7 dní.",
+                nickname: user.nickname,
+                password: result.initialPassword,
+              });
+            }}
+            onCancel={done}
+          >
+            Uživateli {user.nickname} se vygeneruje nové dočasné heslo. Stávající heslo i všechna jeho přihlášení přestanou platit.
+          </ConfirmDialog>
+        );
+      case "delete":
+        return (
+          <ConfirmDialog
+            title="Smazat uživatele?"
+            confirmLabel="Smazat"
+            cancelLabel="Zrušit"
+            action={() => api<void>(`/api/users/${user.id}`, { method: "DELETE" })}
+            onDone={() => {
+              setUsers((prev) => prev.filter((u) => u.id !== user.id));
+              // The button that asked is gone with the row: the focus goes to the first thing of the page, not to the top of the document.
+              newUserButton.current?.focus();
+              done();
+            }}
+            onCancel={done}
+          >
+            Uživatel {user.nickname} se už nebude moci přihlásit a zmizí ze seznamu. Podepsané záznamy zůstanou beze změny.
+          </ConfirmDialog>
+        );
     }
   };
-
-  const handleFinishCreate = () => {
-    if (window.confirm("Heslo se po zavření nezobrazí. Máte údaje bezpečně uloženy?")) {
-      setShowCreateModal(false);
-      setCreateStep("form");
-      setGeneratedPassword("");
-    }
-  };
-
-  const handleOpenEdit = (user: User) => {
-    setEditingUser(user);
-    setEditDisplayName(user.displayName);
-    setEditRole(user.role);
-    setEditCkait(user.ckaitNumber ?? "");
-  };
-
-  const editingOwnAccount = editingUser !== null && editingUser.id === currentUser()?.id;
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    try {
-      // An administrator cannot change their own number (the server refuses): it is not sent for their own account.
-      const body = editingOwnAccount ? { displayName: editDisplayName, role: editRole } : { displayName: editDisplayName, role: editRole, ckaitNumber: editCkait };
-      const updated = await api<User>(`/api/users/${editingUser.id}`, { method: "PATCH", body: json(body) });
-      replaceUser({ ...updated, warning: undefined });
-      setNotice(updated.warning ?? "");
-      setEditingUser(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Chyba při ukládání");
-    }
-  };
-
-  const handleToggleActive = async (user: User) => {
-    const actionName = user.isActive ? "deaktivovat" : "aktivovat";
-    if (!window.confirm(`Opravdu chcete uživatele ${actionName}?`)) return;
-    try {
-      const updated = await api<User>(`/api/users/${user.id}/${user.isActive ? "deactivate" : "activate"}`, { method: "POST" });
-      replaceUser({ ...updated, warning: undefined });
-      // Deactivating a site manager is allowed, and the answer says which projects are left without an active one.
-      setNotice(updated.warning ?? "");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Akce se nezdařila");
-    }
-  };
-
-  const handleResetPassword = async (user: User) => {
-    if (!window.confirm(`Vygenerovat uživateli ${user.nickname} nové dočasné heslo? Stávající heslo i všechna jeho přihlášení přestanou platit.`)) return;
-    try {
-      const result = await api<{ initialPassword: string }>(`/api/users/${user.id}/reset-password`, { method: "POST" });
-      setResetResult({ nickname: user.nickname, password: result.initialPassword });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Heslo se nepodařilo obnovit");
-    }
-  };
-
-  const handleDeleteUser = async (user: User) => {
-    if (!window.confirm("Opravdu chcete uživatele smazat?")) return;
-    try {
-      await api<void>(`/api/users/${user.id}`, { method: "DELETE" });
-      setUsers((prev) => prev.filter((u) => u.id !== user.id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Smazání se nezdařilo");
-    }
-  };
-
-  const roleSelect = (value: string, onChange: (v: string) => void, id: string) => (
-    <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-md border border-gray-300 p-2 text-sm">
-      {Object.entries(ROLE_LABELS).map(([key, label]) => (
-        <option key={key} value={key}>
-          {label}
-        </option>
-      ))}
-    </select>
-  );
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
@@ -176,10 +170,16 @@ export const AdminUsers: React.FC = () => {
           <div className="text-2xl font-bold text-gray-900">Uživatelé</div>
           <p className="mt-1 text-sm text-gray-500">Správa uživatelských účtů a oprávnění v systému.</p>
         </div>
-        <Button onClick={handleOpenCreate}>Nový uživatel</Button>
+        <Button ref={newUserButton} onClick={() => setCreating(true)}>
+          Nový uživatel
+        </Button>
       </div>
 
-      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <Banner tone="danger" className="mb-4">
+          {error}
+        </Banner>
+      )}
       {notice && (
         <div role="status" className="mb-4 flex items-start justify-between gap-4 rounded bg-amber-100 p-3 text-sm text-amber-900">
           <span>{notice}</span>
@@ -239,16 +239,16 @@ export const AdminUsers: React.FC = () => {
                   )}
                 </td>
                 <td className="space-x-2 px-6 py-4 text-right text-sm font-medium whitespace-nowrap">
-                  <button type="button" onClick={() => handleOpenEdit(user)} className="text-indigo-600 hover:text-indigo-900">
+                  <button type="button" onClick={() => setEditing(user)} className="text-indigo-600 hover:text-indigo-900">
                     Upravit
                   </button>
-                  <button type="button" onClick={() => void handleResetPassword(user)} className="text-gray-600 hover:text-gray-900">
+                  <button type="button" onClick={() => setQuestion({ kind: "reset", user })} className="text-gray-600 hover:text-gray-900">
                     Obnovit heslo
                   </button>
-                  <button type="button" onClick={() => void handleToggleActive(user)} className="text-amber-700 hover:text-amber-900">
+                  <button type="button" onClick={() => setQuestion({ kind: user.isActive ? "deactivate" : "activate", user })} className="text-amber-700 hover:text-amber-900">
                     {user.isActive ? "Deaktivovat" : "Aktivovat"}
                   </button>
-                  <button type="button" onClick={() => void handleDeleteUser(user)} className="text-red-600 hover:text-red-900">
+                  <button type="button" onClick={() => setQuestion({ kind: "delete", user })} className="text-red-600 hover:text-red-900">
                     Smazat
                   </button>
                 </td>
@@ -258,178 +258,150 @@ export const AdminUsers: React.FC = () => {
         </table>
       </div>
 
-      {/* Create User Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">Vytvořit nového uživatele</h3>
-
-            {createStep === "form" ? (
-              <form onSubmit={(e) => void handleCreateSubmit(e)} className="space-y-4">
-                {createError && <div className="rounded bg-red-100 p-2 text-sm text-red-700">{createError}</div>}
-                <div>
-                  <label htmlFor="new-nickname" className="mb-1 block text-sm font-medium text-gray-700">
-                    Přihlašovací jméno (nickname)
-                  </label>
-                  <input
-                    id="new-nickname"
-                    name="nickname"
-                    type="text"
-                    required
-                    value={newNickname}
-                    onChange={(e) => setNewNickname(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="new-displayName" className="mb-1 block text-sm font-medium text-gray-700">
-                    Jméno a příjmení (displayName)
-                  </label>
-                  <input
-                    id="new-displayName"
-                    name="displayName"
-                    type="text"
-                    required
-                    value={newDisplayName}
-                    onChange={(e) => setNewDisplayName(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="new-role" className="mb-1 block text-sm font-medium text-gray-700">
-                    Role
-                  </label>
-                  {roleSelect(newRole, setNewRole, "new-role")}
-                </div>
-                <div>
-                  <label htmlFor="new-ckait" className="mb-1 block text-sm font-medium text-gray-700">
-                    Číslo ČKAIT (vedoucí projektu a podepisující)
-                  </label>
-                  <input
-                    id="new-ckait"
-                    name="ckaitNumber"
-                    type="text"
-                    value={newCkait}
-                    onChange={(e) => setNewCkait(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                  />
-                </div>
-                <div className="flex justify-end gap-2 border-t pt-2">
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                    Zrušit
-                  </button>
-                  <button type="submit" className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
-                    Vytvořit
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-                  <p className="font-semibold">Uživatel byl úspěšně vytvořen!</p>
-                  <p className="mt-1">Předejte tyto údaje uživateli pro jeho první přihlášení. Heslo platí 7 dní; pak je nutné vygenerovat nové.</p>
-                  <div className="mt-3 space-y-1 rounded border border-green-300 bg-white p-2 font-mono text-xs">
-                    <div>
-                      <strong>Uživatel:</strong> {newNickname}
-                    </div>
-                    <div>
-                      <strong>Heslo:</strong> {generatedPassword}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex justify-end border-t pt-2">
-                  <button type="button" onClick={handleFinishCreate} className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
-                    Hotovo
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+      {creating && (
+        <CreateUserDialog
+          onCancel={() => setCreating(false)}
+          onCreated={({ user, initialPassword }) => {
+            setCreating(false);
+            setUsers((prev) => [...prev, user].sort((a, b) => a.nickname.localeCompare(b.nickname)));
+            setIssued({
+              title: "Uživatel byl vytvořen",
+              intro: "Předejte tyto údaje uživateli pro jeho první přihlášení. Heslo platí 7 dní; pak je nutné vygenerovat nové.",
+              nickname: user.nickname,
+              password: initialPassword,
+            });
+          }}
+        />
       )}
 
-      {/* Password reset result */}
-      {resetResult && (
-        <div role="dialog" aria-modal="true" aria-label="Nové heslo" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">Heslo bylo obnoveno</h3>
-            <div className="rounded border border-green-200 bg-green-50 p-4 text-sm text-green-900">
-              <p>Předejte tyto údaje uživateli. Při přihlášení si zvolí vlastní heslo. Dočasné heslo platí 7 dní.</p>
-              <div className="mt-3 space-y-1 rounded border border-green-300 bg-white p-2 font-mono text-xs">
-                <div>
-                  <strong>Uživatel:</strong> {resetResult.nickname}
-                </div>
-                <div>
-                  <strong>Heslo:</strong> {resetResult.password}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end border-t pt-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (window.confirm("Heslo se po zavření nezobrazí. Máte údaje bezpečně uloženy?")) setResetResult(null);
-                }}
-                className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700"
-              >
-                Hotovo
-              </button>
-            </div>
-          </div>
-        </div>
+      {editing && (
+        <EditUserDialog
+          user={editing}
+          onCancel={() => setEditing(null)}
+          onSaved={(updated) => {
+            setEditing(null);
+            replaceUser({ ...updated, warning: undefined });
+            setNotice(updated.warning ?? "");
+          }}
+        />
       )}
 
-      {/* Edit User Modal */}
-      {editingUser && (
-        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-bold text-gray-900">Upravit uživatele</h3>
-            <form onSubmit={(e) => void handleSaveEdit(e)} className="space-y-4">
-              <div>
-                <label htmlFor="edit-displayName" className="mb-1 block text-sm font-medium text-gray-700">
-                  Jméno a příjmení
-                </label>
-                <input
-                  id="edit-displayName"
-                  type="text"
-                  required
-                  value={editDisplayName}
-                  onChange={(e) => setEditDisplayName(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                />
-              </div>
-              <div>
-                <label htmlFor="edit-role" className="mb-1 block text-sm font-medium text-gray-700">
-                  Role
-                </label>
-                {roleSelect(editRole, setEditRole, "edit-role")}
-              </div>
-              <div>
-                <label htmlFor="edit-ckait" className="mb-1 block text-sm font-medium text-gray-700">
-                  Číslo ČKAIT (vedoucí projektu a podepisující)
-                </label>
-                <input
-                  id="edit-ckait"
-                  type="text"
-                  value={editCkait}
-                  disabled={editingOwnAccount}
-                  onChange={(e) => setEditCkait(e.target.value)}
-                  className="w-full rounded-md border border-gray-300 p-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
-                />
-                {editingOwnAccount && <p className="mt-1 text-xs text-gray-600">Své číslo ČKAIT si administrátor měnit nemůže. Požádejte jiného administrátora.</p>}
-              </div>
-              <div className="flex justify-end gap-2 border-t pt-2">
-                <button type="button" onClick={() => setEditingUser(null)} className="rounded border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
-                  Zrušit
-                </button>
-                <button type="submit" className="rounded bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700">
-                  Uložit změny
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {question && askAbout(question)}
+
+      {issued && <OneTimePasswordDialog title={issued.title} intro={issued.intro} nickname={issued.nickname} password={issued.password} onClosed={() => setIssued(null)} />}
     </div>
   );
 };
+
+/** A new account: a login name, a name, a role and (for a manager of a project) a ČKAIT number. The server makes the temporary password. */
+function CreateUserDialog({ onCreated, onCancel }: { onCreated: (result: CreateUserResponse) => void; onCancel: () => void }) {
+  const modal = useRef<ModalHandle>(null);
+  const [nickname, setNickname] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [role, setRole] = useState("WORKER");
+  const [ckait, setCkait] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+  // Typed text: Escape and "Zrušit" ask before they throw it away, and a page that is left asks too.
+  const dirty = nickname !== "" || displayName !== "" || role !== "WORKER" || ckait !== "";
+  useUnsavedWork(dirty);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving || !nickname || !displayName) return;
+    setSaving(true);
+    setProblem("");
+    try {
+      const created = await api<CreateUserResponse>("/api/users", { method: "POST", body: json({ nickname, displayName, role, ckaitNumber: ckait }) });
+      modal.current?.close(() => onCreated(created), { restoreFocus: true });
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : "Chyba při vytváření uživatele");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Vytvořit nového uživatele"
+      handleRef={modal}
+      unsaved={dirty}
+      dismissible={!saving}
+      onCancel={onCancel}
+      footer={<FormActions formId="create-user-form" submitLabel="Vytvořit" busy={saving} />}
+    >
+      <form id="create-user-form" onSubmit={(e) => void submit(e)} className="space-y-4">
+        <Field id="new-nickname" label="Přihlašovací jméno (nickname)">
+          <TextInput name="nickname" type="text" required value={nickname} onChange={(e) => setNickname(e.target.value)} />
+        </Field>
+        <Field id="new-displayName" label="Jméno a příjmení (displayName)">
+          <TextInput name="displayName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </Field>
+        <Field id="new-role" label="Role">
+          <RoleSelect id="new-role" value={role} onChange={setRole} />
+        </Field>
+        <Field id="new-ckait" label="Číslo ČKAIT (vedoucí projektu a podepisující)">
+          <TextInput name="ckaitNumber" type="text" value={ckait} onChange={(e) => setCkait(e.target.value)} />
+        </Field>
+        {problem && <Banner tone="danger">{problem}</Banner>}
+      </form>
+    </Modal>
+  );
+}
+
+/** A change of an account's name, role and ČKAIT number. An administrator cannot change their own number (the server refuses). */
+function EditUserDialog({ user, onSaved, onCancel }: { user: User; onSaved: (updated: User) => void; onCancel: () => void }) {
+  const modal = useRef<ModalHandle>(null);
+  const own = user.id === currentUser()?.id;
+  const [displayName, setDisplayName] = useState(user.displayName);
+  const [role, setRole] = useState(user.role);
+  const [ckait, setCkait] = useState(user.ckaitNumber ?? "");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+  const dirty = displayName !== user.displayName || role !== user.role || (!own && ckait !== (user.ckaitNumber ?? ""));
+  useUnsavedWork(dirty);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setProblem("");
+    try {
+      // An administrator cannot change their own number (the server refuses): it is not sent for their own account.
+      const body = own ? { displayName, role } : { displayName, role, ckaitNumber: ckait };
+      const updated = await api<User>(`/api/users/${user.id}`, { method: "PATCH", body: json(body) });
+      modal.current?.close(() => onSaved(updated), { restoreFocus: true });
+    } catch (err) {
+      // Said here, in the dialog that asked: a banner on the page behind it would be out of sight.
+      setProblem(err instanceof Error ? err.message : "Chyba při ukládání");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Upravit uživatele"
+      handleRef={modal}
+      unsaved={dirty}
+      dismissible={!saving}
+      onCancel={onCancel}
+      footer={<FormActions formId="edit-user-form" submitLabel="Uložit změny" busy={saving} />}
+    >
+      <form id="edit-user-form" onSubmit={(e) => void submit(e)} className="space-y-4">
+        <Field id="edit-displayName" label="Jméno a příjmení">
+          <TextInput type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </Field>
+        <Field id="edit-role" label="Role">
+          <RoleSelect id="edit-role" value={role} onChange={setRole} />
+        </Field>
+        <Field
+          id="edit-ckait"
+          label="Číslo ČKAIT (vedoucí projektu a podepisující)"
+          hint={own ? "Své číslo ČKAIT si administrátor měnit nemůže. Požádejte jiného administrátora." : undefined}
+        >
+          <TextInput type="text" value={ckait} disabled={own} onChange={(e) => setCkait(e.target.value)} />
+        </Field>
+        {problem && <Banner tone="danger">{problem}</Banner>}
+      </form>
+    </Modal>
+  );
+}
