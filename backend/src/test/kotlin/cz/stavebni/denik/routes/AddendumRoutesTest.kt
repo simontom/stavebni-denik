@@ -140,7 +140,7 @@ class AddendumRoutesTest : BaseIntegrationTest() {
         // A second, unsigned entry: the database refuses an addendum there even when the application is bypassed.
         val unsigned = DailyReportService.createReport(s.boss, s.projectId, "2026-09-29")
         val insert = runCatching {
-            dsl.execute("""insert into addenda ("reportId", "authorId", text) values (?, ?, 'x')""", UUID.fromString(unsigned.id), s.boss.id)
+            dsl.execute("""insert into addenda ("reportId", "authorId", "authorName", text) values (?, ?, 'Ing. Autor', 'x')""", UUID.fromString(unsigned.id), s.boss.id)
         }
         assertTrue(insert.isFailure, "insert into an unsigned entry")
     }

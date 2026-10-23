@@ -133,7 +133,7 @@ class AcknowledgementRoutesTest : BaseIntegrationTest() {
 
         val unsigned = DailyReportService.createReport(s.boss, s.projectId, "2026-09-29")
         val insert = runCatching {
-            dsl.execute("""insert into report_acknowledgements ("reportId", "userId", "role") values (?, ?, 'INSPECTOR')""", UUID.fromString(unsigned.id), s.tds.id)
+            dsl.execute("""insert into report_acknowledgements ("reportId", "userId", "userName", "role") values (?, ?, 'Ing. Dozor', 'INSPECTOR')""", UUID.fromString(unsigned.id), s.tds.id)
         }
         assertTrue(insert.isFailure, "insert for an unsigned entry")
         assertEquals(1, dsl.fetchCount(REPORT_ACKNOWLEDGEMENTS))

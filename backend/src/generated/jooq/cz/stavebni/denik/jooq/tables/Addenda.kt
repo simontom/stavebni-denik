@@ -19,6 +19,7 @@ import java.util.UUID
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -96,6 +97,16 @@ open class Addenda(
     val AUTHORID: TableField<AddendaRecord, UUID?> = createField(DSL.name("authorId"), SQLDataType.UUID.nullable(false), this, "")
 
     /**
+     * The column <code>public.addenda.authorName</code>.
+     */
+    val AUTHORNAME: TableField<AddendaRecord, String?> = createField(DSL.name("authorName"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
+     * The column <code>public.addenda.authorCkaitNumber</code>.
+     */
+    val AUTHORCKAITNUMBER: TableField<AddendaRecord, String?> = createField(DSL.name("authorCkaitNumber"), SQLDataType.CLOB, this, "")
+
+    /**
      * The column <code>public.addenda.text</code>.
      */
     val TEXT: TableField<AddendaRecord, String?> = createField(DSL.name("text"), SQLDataType.CLOB.nullable(false), this, "")
@@ -153,6 +164,10 @@ open class Addenda(
      */
     fun dailyReports(): DailyReportsPath = dailyReports
     val dailyReports: DailyReportsPath by lazy { DailyReportsPath(this, ADDENDA__ADDENDA_REPORTID_FKEY, null) }
+    override fun getChecks(): List<Check<AddendaRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("addenda_authorCkaitNumber_check"), "(((\"authorCkaitNumber\" IS NULL) OR (btrim(\"authorCkaitNumber\") <> ''::text)))", true),
+        Internal.createCheck(this, DSL.name("addenda_authorName_check"), "((btrim(\"authorName\") <> ''::text))", true)
+    )
     override fun `as`(alias: String): Addenda = Addenda(DSL.name(alias), this)
     override fun `as`(alias: Name): Addenda = Addenda(alias, this)
     override fun `as`(alias: Table<*>): Addenda = Addenda(alias.qualifiedName, this)

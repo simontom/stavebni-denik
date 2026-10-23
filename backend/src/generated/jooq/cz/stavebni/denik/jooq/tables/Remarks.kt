@@ -21,6 +21,7 @@ import java.util.UUID
 import kotlin.collections.Collection
 import kotlin.collections.List
 
+import org.jooq.Check
 import org.jooq.Condition
 import org.jooq.Field
 import org.jooq.ForeignKey
@@ -96,6 +97,16 @@ open class Remarks(
      * The column <code>public.remarks.authorId</code>.
      */
     val AUTHORID: TableField<RemarksRecord, UUID?> = createField(DSL.name("authorId"), SQLDataType.UUID.nullable(false), this, "")
+
+    /**
+     * The column <code>public.remarks.authorName</code>.
+     */
+    val AUTHORNAME: TableField<RemarksRecord, String?> = createField(DSL.name("authorName"), SQLDataType.CLOB.nullable(false), this, "")
+
+    /**
+     * The column <code>public.remarks.authorCkaitNumber</code>.
+     */
+    val AUTHORCKAITNUMBER: TableField<RemarksRecord, String?> = createField(DSL.name("authorCkaitNumber"), SQLDataType.CLOB, this, "")
 
     /**
      * The column <code>public.remarks.type</code>.
@@ -175,6 +186,10 @@ open class Remarks(
      */
     fun dailyReports(): DailyReportsPath = dailyReports
     val dailyReports: DailyReportsPath by lazy { DailyReportsPath(this, REMARKS__REMARKS_REPORTID_FKEY, null) }
+    override fun getChecks(): List<Check<RemarksRecord>> = listOf(
+        Internal.createCheck(this, DSL.name("remarks_authorCkaitNumber_check"), "(((\"authorCkaitNumber\" IS NULL) OR (btrim(\"authorCkaitNumber\") <> ''::text)))", true),
+        Internal.createCheck(this, DSL.name("remarks_authorName_check"), "((btrim(\"authorName\") <> ''::text))", true)
+    )
     override fun `as`(alias: String): Remarks = Remarks(DSL.name(alias), this)
     override fun `as`(alias: Name): Remarks = Remarks(alias, this)
     override fun `as`(alias: Table<*>): Remarks = Remarks(alias.qualifiedName, this)

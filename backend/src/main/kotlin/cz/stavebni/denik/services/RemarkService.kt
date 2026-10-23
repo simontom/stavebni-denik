@@ -9,7 +9,6 @@ import cz.stavebni.denik.domain.assertCan
 import cz.stavebni.denik.jooq.enums.Remarktype
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.REMARKS
-import cz.stavebni.denik.jooq.tables.references.USERS
 import cz.stavebni.denik.services.AuditService.Audited
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -22,6 +21,10 @@ data class RemarkDto(
     val id: String,
     val reportId: String,
     val authorId: String,
+    /**
+     * The name of who wrote the entry **as the account had it when it was written** (stored with it, never read from the account
+     * again); for an EXTERNAL_ENTRY it is the manager who recorded it, the party it speaks for is [externalAuthor].
+     */
     val authorName: String,
     /** INSPECTOR_REMARK (technical or author's supervision, ...), INVESTOR_NOTE (the client) or EXTERNAL_ENTRY (an outside party, recorded by the manager). */
     val type: String,
@@ -41,6 +44,9 @@ internal data class RemarkSnapshot(
     val reportId: String,
     val projectId: String,
     val authorId: String,
+    /** The author's name and ČKAIT number as they were stored with the entry (a person without a number has none). */
+    val authorName: String,
+    val authorCkaitNumber: String? = null,
     val type: String,
     val text: String,
     val externalAuthor: String? = null,
@@ -63,9 +69,8 @@ object RemarkService {
 
     fun list(tx: DSLContext, user: SessionUser, reportId: UUID): List<RemarkDto> {
         ProjectAccess.requireReportAccess(tx, user, reportId)
-        return tx.select(REMARKS.ID, REMARKS.REPORTID, REMARKS.AUTHORID, USERS.DISPLAYNAME, REMARKS.TYPE, REMARKS.TEXT, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT)
+        return tx.select(REMARKS.ID, REMARKS.REPORTID, REMARKS.AUTHORID, REMARKS.AUTHORNAME, REMARKS.TYPE, REMARKS.TEXT, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT)
             .from(REMARKS)
-            .join(USERS).on(USERS.ID.eq(REMARKS.AUTHORID))
             .where(REMARKS.REPORTID.eq(reportId))
             .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
             .fetch()
@@ -74,7 +79,7 @@ object RemarkService {
                     id = r.get(REMARKS.ID).toString(),
                     reportId = r.get(REMARKS.REPORTID).toString(),
                     authorId = r.get(REMARKS.AUTHORID).toString(),
-                    authorName = r.get(USERS.DISPLAYNAME) ?: "",
+                    authorName = r.get(REMARKS.AUTHORNAME) ?: "",
                     type = r.get(REMARKS.TYPE)!!.name,
                     text = r.get(REMARKS.TEXT) ?: "",
                     externalAuthor = r.get(REMARKS.EXTERNALAUTHOR),
@@ -115,9 +120,13 @@ object RemarkService {
                 }
             }
 
+            // Who writes, as the account says it now: stored with the entry, which is never changed.
+            val author = AccountIdentity.of(tx, user.id)
             val record = tx.insertInto(REMARKS)
                 .set(REMARKS.REPORTID, reportId)
                 .set(REMARKS.AUTHORID, user.id)
+                .set(REMARKS.AUTHORNAME, author.name)
+                .set(REMARKS.AUTHORCKAITNUMBER, author.ckaitNumber)
                 .set(REMARKS.TYPE, type)
                 .set(REMARKS.TEXT, text)
                 .set(REMARKS.ISOFFICIAL, type == Remarktype.EXTERNAL_ENTRY)
@@ -129,7 +138,7 @@ object RemarkService {
                 id = record.get(REMARKS.ID).toString(),
                 reportId = reportId.toString(),
                 authorId = user.id.toString(),
-                authorName = user.displayName,
+                authorName = author.name,
                 type = type.name,
                 text = text,
                 externalAuthor = externalAuthor,
@@ -141,7 +150,7 @@ object RemarkService {
                 entityId = reportId.toString(),
                 after = Json.encodeToJsonElement(
                     RemarkSnapshot.serializer(),
-                    RemarkSnapshot(dto.id, reportId.toString(), projectId.toString(), user.id.toString(), type.name, text, externalAuthor),
+                    RemarkSnapshot(dto.id, reportId.toString(), projectId.toString(), user.id.toString(), author.name, author.ckaitNumber, type.name, text, externalAuthor),
                 ),
             )
         }

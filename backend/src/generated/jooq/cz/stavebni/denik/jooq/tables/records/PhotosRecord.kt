@@ -60,21 +60,25 @@ open class PhotosRecord() : UpdatableRecordImpl<PhotosRecord>(Photos.PHOTOS) {
         set(value): Unit = set(9, value)
         get(): UUID? = get(9) as UUID?
 
-    open var createdat: OffsetDateTime?
+    open var uploadedbyname: String?
         set(value): Unit = set(10, value)
-        get(): OffsetDateTime? = get(10) as OffsetDateTime?
+        get(): String? = get(10) as String?
 
-    open var deletedat: OffsetDateTime?
+    open var createdat: OffsetDateTime?
         set(value): Unit = set(11, value)
         get(): OffsetDateTime? = get(11) as OffsetDateTime?
 
-    open var sha256: String?
+    open var deletedat: OffsetDateTime?
         set(value): Unit = set(12, value)
-        get(): String? = get(12) as String?
+        get(): OffsetDateTime? = get(12) as OffsetDateTime?
 
-    open var thumbsha256: String?
+    open var sha256: String?
         set(value): Unit = set(13, value)
         get(): String? = get(13) as String?
+
+    open var thumbsha256: String?
+        set(value): Unit = set(14, value)
+        get(): String? = get(14) as String?
 
     // -------------------------------------------------------------------------
     // Primary key information
@@ -85,7 +89,7 @@ open class PhotosRecord() : UpdatableRecordImpl<PhotosRecord>(Photos.PHOTOS) {
     /**
      * Create a detached, initialised PhotosRecord
      */
-    constructor(id: UUID? = null, reportid: UUID? = null, pathoriginal: String? = null, paththumb: String? = null, width: Int? = null, height: Int? = null, bytes: Int? = null, capturedat: OffsetDateTime? = null, gps: JSONB? = null, uploadedbyid: UUID? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null, sha256: String? = null, thumbsha256: String? = null): this() {
+    constructor(id: UUID? = null, reportid: UUID? = null, pathoriginal: String? = null, paththumb: String? = null, width: Int? = null, height: Int? = null, bytes: Int? = null, capturedat: OffsetDateTime? = null, gps: JSONB? = null, uploadedbyid: UUID? = null, uploadedbyname: String? = null, createdat: OffsetDateTime? = null, deletedat: OffsetDateTime? = null, sha256: String? = null, thumbsha256: String? = null): this() {
         this.id = id
         this.reportid = reportid
         this.pathoriginal = pathoriginal
@@ -96,6 +100,7 @@ open class PhotosRecord() : UpdatableRecordImpl<PhotosRecord>(Photos.PHOTOS) {
         this.capturedat = capturedat
         this.gps = gps
         this.uploadedbyid = uploadedbyid
+        this.uploadedbyname = uploadedbyname
         this.createdat = createdat
         this.deletedat = deletedat
         this.sha256 = sha256

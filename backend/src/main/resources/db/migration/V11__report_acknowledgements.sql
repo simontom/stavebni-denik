@@ -13,11 +13,17 @@ CREATE TABLE "report_acknowledgements" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "reportId" UUID NOT NULL,
     "userId" UUID NOT NULL,
+    -- who took note, as the account said it at that moment (backlog B9): the name, and the ČKAIT number when the account had one
+    -- (an inspector or an investor often has none); the table is append-only, so both stay as they were
+    "userName" TEXT NOT NULL,
+    "userCkaitNumber" TEXT,
     -- the role the person held in the project when they took note (INSPECTOR or INVESTOR)
     "role" "Role" NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "report_acknowledgements_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "report_acknowledgements_userName_check" CHECK (btrim("userName") <> ''),
+    CONSTRAINT "report_acknowledgements_userCkaitNumber_check" CHECK ("userCkaitNumber" IS NULL OR btrim("userCkaitNumber") <> ''),
     CONSTRAINT "report_acknowledgements_reportId_fkey" FOREIGN KEY ("reportId") REFERENCES "daily_reports"("id") ON DELETE RESTRICT,
     CONSTRAINT "report_acknowledgements_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE RESTRICT,
     -- once per person and entry
@@ -26,8 +32,10 @@ CREATE TABLE "report_acknowledgements" (
 
 -- What was acknowledged under the old scheme keeps its place (the role is the person's role in the project, falling
 -- back to their account role).
-INSERT INTO "report_acknowledgements" ("reportId", "userId", "role", "createdAt")
+INSERT INTO "report_acknowledgements" ("reportId", "userId", "userName", "userCkaitNumber", "role", "createdAt")
 SELECT r."id", r."acknowledgedById",
+       (SELECT u."displayName" FROM "users" u WHERE u."id" = r."acknowledgedById"),
+       (SELECT NULLIF(btrim(u."ckaitNumber"), '') FROM "users" u WHERE u."id" = r."acknowledgedById"),
        COALESCE((SELECT m."role" FROM "project_members" m WHERE m."projectId" = r."projectId" AND m."userId" = r."acknowledgedById"),
                 (SELECT u."role" FROM "users" u WHERE u."id" = r."acknowledgedById")),
        COALESCE(r."acknowledgedAt", r."updatedAt")
@@ -74,6 +82,10 @@ BEGIN
 
   IF OLD."lockedAt" IS NOT NULL AND to_jsonb(NEW) IS DISTINCT FROM to_jsonb(OLD) THEN
     RAISE EXCEPTION 'a signed daily report cannot be changed (report %)', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  -- The author's name is what the account said when the entry was made (backlog B9), also on a draft: only the insert writes it.
+  IF NEW."authorName" IS DISTINCT FROM OLD."authorName" THEN
+    RAISE EXCEPTION 'the name of the author of an entry cannot be changed (report %)', OLD."id" USING ERRCODE = 'check_violation';
   END IF;
   RETURN NEW;
 END;

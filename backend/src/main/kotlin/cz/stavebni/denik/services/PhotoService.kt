@@ -54,6 +54,8 @@ internal data class PhotoSnapshot(
     val height: Int,
     val bytes: Int,
     val uploadedById: String,
+    /** The uploader's name as it was at upload (stored with the photo, backlog B9). */
+    val uploadedByName: String? = null,
     val sha256Original: String?,
     val sha256Thumbnail: String?,
     val deletedAt: String?,
@@ -346,6 +348,8 @@ object PhotoService {
                     Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
                 )
 
+                // Who uploads, as the account says it now: stored with the photo, never changed (backlog B9).
+                val uploader = AccountIdentity.of(tx, user.id)
                 val record = tx.insertInto(PHOTOS)
                     .set(PHOTOS.ID, photoId)
                     .set(PHOTOS.REPORTID, reportId)
@@ -358,6 +362,7 @@ object PhotoService {
                     .set(PHOTOS.SHA256, sha256(original.bytes))
                     .set(PHOTOS.THUMBSHA256, sha256(thumbnail.bytes))
                     .set(PHOTOS.UPLOADEDBYID, user.id)
+                    .set(PHOTOS.UPLOADEDBYNAME, uploader.name)
                     .returning()
                     .fetchOne() ?: throw IllegalStateException("Failed to insert photo")
 
@@ -372,7 +377,7 @@ object PhotoService {
                         PhotoSnapshot(
                             id = photoId.toString(), reportId = reportId.toString(), projectId = projectId.toString(),
                             width = original.width, height = original.height, bytes = original.bytes.size,
-                            uploadedById = user.id.toString(),
+                            uploadedById = user.id.toString(), uploadedByName = uploader.name,
                             sha256Original = sha256(original.bytes), sha256Thumbnail = sha256(thumbnail.bytes),
                             deletedAt = null,
                         )
@@ -411,7 +416,8 @@ object PhotoService {
                 PhotoSnapshot(
                     id = photoId.toString(), reportId = photo.get(PHOTOS.REPORTID).toString(), projectId = projectId.toString(),
                     width = photo.get(PHOTOS.WIDTH)!!, height = photo.get(PHOTOS.HEIGHT)!!, bytes = photo.get(PHOTOS.BYTES)!!,
-                    uploadedById = photo.get(PHOTOS.UPLOADEDBYID).toString(), sha256Original = null, sha256Thumbnail = null,
+                    uploadedById = photo.get(PHOTOS.UPLOADEDBYID).toString(), uploadedByName = photo.get(PHOTOS.UPLOADEDBYNAME),
+                    sha256Original = null, sha256Thumbnail = null,
                     deletedAt = deletedAt,
                 )
             )

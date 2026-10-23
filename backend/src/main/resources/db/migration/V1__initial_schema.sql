@@ -165,6 +165,10 @@ CREATE TABLE "daily_reports" (
     "sequenceNumber" INTEGER NOT NULL,
     "date" DATE NOT NULL,
     "authorId" UUID NOT NULL,
+    -- The author's display name as the account had it when the entry was made (backlog B9): written by the insert, never changed
+    -- (V11 refuses a change, also of a draft), so renaming the user later does not rename the author of an old entry. The
+    -- signature covers the author by id (format 3); the name is printed, not signed.
+    "authorName" TEXT NOT NULL,
     "constructionObj" TEXT,
     "isControlDay" BOOLEAN NOT NULL DEFAULT false,
     "meetingNotes" TEXT,
@@ -198,7 +202,8 @@ CREATE TABLE "daily_reports" (
     "createdById" UUID,
     "deletedAt" TIMESTAMPTZ,
 
-    CONSTRAINT "daily_reports_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "daily_reports_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "daily_reports_authorName_check" CHECK (btrim("authorName") <> '')
 );
 
 -- CreateTable
@@ -213,10 +218,14 @@ CREATE TABLE "photos" (
     "capturedAt" TIMESTAMPTZ,
     "gps" JSONB,
     "uploadedById" UUID NOT NULL,
+    -- The uploader's display name as the account had it at upload (backlog B9): written by the insert, never changed (V5 refuses
+    -- a change, of a photo of a draft too). The signature covers the uploader by id; the name is printed, not signed.
+    "uploadedByName" TEXT NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMPTZ,
 
-    CONSTRAINT "photos_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "photos_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "photos_uploadedByName_check" CHECK (btrim("uploadedByName") <> '')
 );
 
 -- CreateTable
@@ -224,13 +233,19 @@ CREATE TABLE "remarks" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "reportId" UUID NOT NULL,
     "authorId" UUID NOT NULL,
+    -- Who wrote the entry, as the account said it when it was written (backlog B9): the name, and the ČKAIT number when the
+    -- account had one (an inspector or an investor often has none). The table is append-only (V10), so both stay as they were.
+    "authorName" TEXT NOT NULL,
+    "authorCkaitNumber" TEXT,
     "type" "RemarkType" NOT NULL DEFAULT 'INSPECTOR_REMARK',
     "text" TEXT NOT NULL,
     "isOfficial" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "deletedAt" TIMESTAMPTZ,
 
-    CONSTRAINT "remarks_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "remarks_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "remarks_authorName_check" CHECK (btrim("authorName") <> ''),
+    CONSTRAINT "remarks_authorCkaitNumber_check" CHECK ("authorCkaitNumber" IS NULL OR btrim("authorCkaitNumber") <> '')
 );
 
 -- CreateTable
@@ -255,10 +270,16 @@ CREATE TABLE "addenda" (
     "id" UUID NOT NULL DEFAULT uuidv7(),
     "reportId" UUID NOT NULL,
     "authorId" UUID NOT NULL,
+    -- Who wrote the addendum, as the account said it when it was written (backlog B9): the name, and the ČKAIT number when the
+    -- account had one. The table is append-only (V9), so both stay as they were.
+    "authorName" TEXT NOT NULL,
+    "authorCkaitNumber" TEXT,
     "text" TEXT NOT NULL,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "addenda_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "addenda_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "addenda_authorName_check" CHECK (btrim("authorName") <> ''),
+    CONSTRAINT "addenda_authorCkaitNumber_check" CHECK ("authorCkaitNumber" IS NULL OR btrim("authorCkaitNumber") <> '')
 );
 
 -- CreateTable
