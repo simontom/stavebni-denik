@@ -220,13 +220,26 @@ class RealTypstPdfTest : RealTypstTestBase() {
     }
 
     @Test
-    fun `a very long description still renders within the time limit`() = runBlocking {
-        val long = (1..2000).joinToString("\n") { "Řádek číslo $it popisu prací na stavbě." }
+    fun `a very long description still renders within the time limit, whole up to its budget`() = runBlocking {
+        val long = (1..900).joinToString("\n") { "Řádek číslo $it popisu prací na stavbě." }
 
         val text = exportText("Dlouhý záznam", long)
 
         assertTrue(text.contains("Řádek číslo 1 popisu"), text.take(200))
-        assertTrue(text.contains("Řádek číslo 2000 popisu"))
+        assertTrue(text.contains("Řádek číslo 900 popisu"))
+        assertFalse(text.contains("se do tohoto výtisku nevešlo"), "nothing was left out")
+    }
+
+    @Test
+    fun `a description of more lines than the budget allows is cut, and the document says how many lines were left out`() = runBlocking {
+        val long = (1..2500).joinToString("\n") { "Řádek číslo $it popisu prací na stavbě." }
+
+        val text = exportText("Dlouhý záznam", long)
+
+        assertTrue(text.contains("Řádek číslo 1 popisu"), text.take(200))
+        assertTrue(text.contains("Řádek číslo ${PdfExportService.ENTRY_FIELD_CAP_LINES} popisu"), "the lines up to the cap are printed")
+        assertFalse(text.contains("Řádek číslo ${PdfExportService.ENTRY_FIELD_CAP_LINES + 1} popisu"), "the next one is not")
+        assertTrue(text.replace(Regex("\\s+"), " ").contains("… a dalších ${2500 - PdfExportService.ENTRY_FIELD_CAP_LINES} řádků se do tohoto výtisku nevešlo; úplné znění je v aplikaci."), text.takeLast(600))
     }
 
     // --- the entry as a document (backlog B8) -------------------------------------------------------------

@@ -250,15 +250,61 @@ object PdfExportService {
 
     private fun weatherOf(report: org.jooq.Record): String = WeatherData.fromStored(report.get(DAILY_REPORTS.WEATHER)?.data())?.describe() ?: "Neuvedeno"
 
-    private fun workersOf(report: org.jooq.Record): List<WorkerPdf> =
-        report.get(DAILY_REPORTS.WORKERSBYTRADE)?.data()
-            ?.let { raw -> runCatching { lenientJson.decodeFromString(ListSerializer(WorkerEntry.serializer()), raw) }.getOrNull() }
-            ?.map { WorkerPdf(it.trade, it.count, it.names.joinToString("; ")) }
-            .orEmpty()
+    // ---- how much text the document prints (see PrintBudget) --------------------------------------------------------
 
-    /** Every field of the entry in its fixed order; one that says nothing has an empty text, which the template prints as "bez záznamu". */
-    private fun detailsOf(report: DailyReportsRecord): List<DetailPdf> =
-        EntryDetails.valuesOf(report).map { (field, text) -> DetailPdf(field.label, text.orEmpty()) }
+    /**
+     * The budget of the texts of the entry: the construction object, the workers, the work description and the nine fields. A text of
+     * nothing but line breaks is about 50 lines to a page, so this is some 80 pages at most; an entry of ordinary text, even of the longest
+     * the fields hold, is a tenth of it.
+     */
+    internal const val ENTRY_BUDGET_LINES = 4000
+
+    /** The most lines one text of the entry may take; a field of 5 000 characters is some 90 lines of prose, and 400 of a list of short items. */
+    internal const val ENTRY_FIELD_CAP_LINES = 1000
+
+    /** The budget of the addenda and the entries of other parties together, and the most lines one record may take. */
+    internal const val RECORDS_BUDGET_LINES = 3000
+    private const val RECORD_CAP_LINES = 1000
+
+    /** What a record costs besides its text (the line with its author, and the space after it). */
+    private const val RECORD_FIXED_LINES = 3
+
+    /** The most records of each kind that are read for the document (a person may write any number of addenda). */
+    private const val RECORDS_READ_LIMIT = 500
+
+    /** How many characters a line holds, for the place a text is printed in; deliberately a little less than it does, so that a text is never more lines than counted. */
+    private const val FULL_WIDTH_CHARS = 60
+    private const val NARROW_COLUMN_CHARS = 30
+    private const val WIDE_CELL_CHARS = 40
+    private const val METER_CELL_CHARS = 20
+
+    /**
+     * The workers by trade: the trade and the names of each, cut to the budget of the entry. The people are counted by `count`, not by
+     * what is printed; every row stays (there are at most 50), only its text is cut. The second value is the sentence about what was cut.
+     */
+    private fun workersOf(report: org.jooq.Record, budget: PrintBudget): Pair<List<WorkerPdf>, String> {
+        var omitted = 0
+        val workers = report.get(DAILY_REPORTS.WORKERSBYTRADE)?.data()
+            ?.let { raw -> runCatching { lenientJson.decodeFromString(ListSerializer(WorkerEntry.serializer()), raw) }.getOrNull() }
+            ?.map { worker ->
+                val trade = budget.take(worker.trade, NARROW_COLUMN_CHARS, cap = 3)
+                val names = budget.take(worker.names.joinToString("; "), NARROW_COLUMN_CHARS, cap = 100)
+                omitted += trade.omitted + names.omitted
+                WorkerPdf(trade.shown, worker.count, names.shown)
+            }
+            .orEmpty()
+        return workers to PrintBudget.omittedLines(omitted)
+    }
+
+    /**
+     * Every field of the entry in its fixed order, cut to the budget of the entry; one that says nothing has an empty text, which the
+     * template prints as "bez záznamu".
+     */
+    private fun detailsOf(report: DailyReportsRecord, budget: PrintBudget): List<DetailPdf> =
+        EntryDetails.valuesOf(report).map { (field, text) ->
+            if (text == null) DetailPdf(field.label, "")
+            else budget.take(text, FULL_WIDTH_CHARS, ENTRY_FIELD_CAP_LINES).let { DetailPdf(field.label, it.shown, PrintBudget.omittedLines(it.omitted)) }
+        }
 
     /** The photos that are part of the entry (a removed photo is not), oldest first; the uploader is the name stored at upload. */
     private fun photosOf(tx: DSLContext, reportId: UUID): List<PhotoPdf> =
@@ -295,41 +341,84 @@ object PdfExportService {
                 AcknowledgementPdf("$person ($role)", it.get(REPORT_ACKNOWLEDGEMENTS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "")
             }
 
-    /** The addenda with the name and the ČKAIT number their authors had when they wrote them (stored with the addendum). */
-    private fun addendaOf(tx: DSLContext, reportId: UUID): List<AddendumPdf> =
-        tx.select(ADDENDA.AUTHORNAME, ADDENDA.AUTHORCKAITNUMBER, ADDENDA.CREATEDAT, ADDENDA.TEXT)
-            .from(ADDENDA)
-            .where(ADDENDA.REPORTID.eq(reportId))
-            .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
-            .fetch()
-            .map {
-                AddendumPdf(
-                    identityLine(it.get(ADDENDA.AUTHORNAME), it.get(ADDENDA.AUTHORCKAITNUMBER)),
-                    it.get(ADDENDA.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(ADDENDA.TEXT) ?: "",
-                )
-            }
+    /** The records that were printed, and how many more there were and did not fit the budget. */
+    private class Printed<T>(val records: List<T>, val leftOut: Int)
 
-    /** The entries of other parties with the name and the ČKAIT number of whoever wrote them (the manager, for an outside party), as stored with the entry. */
-    private fun remarksOf(tx: DSLContext, reportId: UUID): List<RemarkPdf> =
-        tx.select(REMARKS.AUTHORNAME, REMARKS.AUTHORCKAITNUMBER, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
-            .from(REMARKS)
-            .where(REMARKS.REPORTID.eq(reportId))
-            .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
-            .fetch()
-            .map {
-                RemarkPdf(
-                    identityLine(it.get(REMARKS.AUTHORNAME), it.get(REMARKS.AUTHORCKAITNUMBER)), it.get(REMARKS.EXTERNALAUTHOR) ?: "",
-                    it.get(REMARKS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", it.get(REMARKS.TEXT) ?: "",
-                )
-            }
+    /**
+     * The records of [rows] (at most [RECORDS_READ_LIMIT] are read; [total] is how many there are) made into what the document prints, in
+     * order, while the budget lasts: each costs [RECORD_FIXED_LINES] and the lines of its text. The records after the one that does not fit are
+     * left out and counted, and so are those that were not read.
+     */
+    private fun <T> printRecords(rows: List<org.jooq.Record>, total: Int, budget: PrintBudget, text: (org.jooq.Record) -> String, make: (org.jooq.Record, PrintBudget.Fitted) -> T): Printed<T> {
+        val printed = mutableListOf<T>()
+        for (row in rows) {
+            if (!budget.spend(RECORD_FIXED_LINES)) break
+            printed += make(row, budget.take(text(row), FULL_WIDTH_CHARS, RECORD_CAP_LINES))
+        }
+        return Printed(printed, total - printed.size)
+    }
+
+    /** The addenda with the name and the ČKAIT number their authors had when they wrote them (stored with the addendum), within [budget]. */
+    private fun addendaOf(tx: DSLContext, reportId: UUID, budget: PrintBudget): Printed<AddendumPdf> =
+        printRecords(
+            tx.select(ADDENDA.AUTHORNAME, ADDENDA.AUTHORCKAITNUMBER, ADDENDA.CREATEDAT, ADDENDA.TEXT)
+                .from(ADDENDA)
+                .where(ADDENDA.REPORTID.eq(reportId))
+                .orderBy(ADDENDA.CREATEDAT.asc(), ADDENDA.ID.asc())
+                .limit(RECORDS_READ_LIMIT)
+                .fetch(),
+            tx.fetchCount(ADDENDA, ADDENDA.REPORTID.eq(reportId)), budget,
+            text = { it.get(ADDENDA.TEXT) ?: "" },
+        ) { row, fitted ->
+            AddendumPdf(
+                identityLine(row.get(ADDENDA.AUTHORNAME), row.get(ADDENDA.AUTHORCKAITNUMBER)),
+                row.get(ADDENDA.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", fitted.shown, PrintBudget.omittedLines(fitted.omitted),
+            )
+        }
+
+    /** The entries of other parties with the name and the ČKAIT number of whoever wrote them (the manager, for an outside party), as stored with the entry, within [budget]. */
+    private fun remarksOf(tx: DSLContext, reportId: UUID, budget: PrintBudget): Printed<RemarkPdf> =
+        printRecords(
+            tx.select(REMARKS.AUTHORNAME, REMARKS.AUTHORCKAITNUMBER, REMARKS.EXTERNALAUTHOR, REMARKS.CREATEDAT, REMARKS.TEXT)
+                .from(REMARKS)
+                .where(REMARKS.REPORTID.eq(reportId))
+                .orderBy(REMARKS.CREATEDAT.asc(), REMARKS.ID.asc())
+                .limit(RECORDS_READ_LIMIT)
+                .fetch(),
+            tx.fetchCount(REMARKS, REMARKS.REPORTID.eq(reportId)), budget,
+            text = { it.get(REMARKS.TEXT) ?: "" },
+        ) { row, fitted ->
+            RemarkPdf(
+                identityLine(row.get(REMARKS.AUTHORNAME), row.get(REMARKS.AUTHORCKAITNUMBER)), row.get(REMARKS.EXTERNALAUTHOR) ?: "",
+                row.get(REMARKS.CREATEDAT)?.let { at -> CzechFormat.dateTime(at) } ?: "", fitted.shown, PrintBudget.omittedLines(fitted.omitted),
+            )
+        }
 
     // ---- the handover of the site (příloha 12 B.2 a)) ---------------------------------------------------------
 
     /**
-     * The most handover protocols the document prints. Each can hold 50 meters and 7 000 characters of text, and a render is limited to
-     * 20 s; a project does not make this many (a handover of the site, of the networks, of the work). The rest is counted, not hidden.
+     * The most handover protocols the document prints; a project does not make this many (a handover of the site, of the networks, of
+     * the work). The rest is counted, not hidden.
      */
     internal const val MAX_HANDOVERS = 50
+
+    /**
+     * The budget of the whole section, in lines of text ([PrintBudget]): the protocols are printed one after the other, each with its fixed
+     * part and its text, while it lasts. A protocol of a normal size is a few dozen lines, so fifty of them fit; the largest that the limits
+     * at the time of saving allow (100 lines of participants, 200 of notes, 50 meters of three fields of 100 characters) is some 560, so nine
+     * of those fit, and the rest are counted and named. What is stored past those limits is cut to the budget with a sentence. Measured with
+     * the real typst, the section is at most about a hundred pages whatever is stored (`RealTypstHandoversPdfTest`).
+     */
+    internal const val HANDOVER_BUDGET_LINES = 5000
+
+    /** What a protocol costs besides its text: the heading, the table of its content, the block of the signatures and the space round them. */
+    private const val PROTOCOL_FIXED_LINES = 14
+
+    /** The most lines of a type, of participants and of notes, and of one field of a meter, that a protocol prints (the limits at the time of saving, with room for the wrapping of a long line). */
+    private const val TYPE_CAP_LINES = 3
+    private const val PARTICIPANTS_CAP_LINES = 150
+    private const val NOTES_CAP_LINES = 330
+    private const val METER_FIELD_CAP_LINES = 6
 
     private fun stateWords(state: SiteHandoverState): String = when (state) {
         SiteHandoverState.DRAFT -> "nepodepsáno"
@@ -415,16 +504,37 @@ object PdfExportService {
                 .fetch()
                 .groupBy { it.handoverid!! }
         }
-        val printed = records.map { record ->
+        val budget = PrintBudget(HANDOVER_BUDGET_LINES)
+        val printed = mutableListOf<HandoverPdf>()
+        for (record in records) {
+            // The protocols that come after the one that does not fit are counted, not printed (and a smaller one is not slipped in before them).
+            if (!budget.spend(PROTOCOL_FIXED_LINES)) break
             val ofRecord = signatures[record.id].orEmpty()
             val contractor = ofRecord.firstOrNull { it.side == HandoverSide.CONTRACTOR.name }
             val client = ofRecord.firstOrNull { it.side == HandoverSide.CLIENT.name }
-            HandoverPdf(
+            val type = budget.take(record.type.orEmpty(), WIDE_CELL_CHARS, TYPE_CAP_LINES)
+            val participants = budget.take(record.participants.orEmpty(), WIDE_CELL_CHARS, PARTICIPANTS_CAP_LINES)
+            val notes = budget.take(record.notes.orEmpty(), WIDE_CELL_CHARS, NOTES_CAP_LINES)
+            var omitted = type.omitted + participants.omitted + notes.omitted
+            val meters = metersOf(record)
+            val printedMeters = mutableListOf<MeterPdf>()
+            for ((index, meter) in meters.withIndex()) {
+                val row = budget.row(listOf(meter.medium, meter.serialNumber, meter.state), METER_CELL_CHARS, METER_FIELD_CAP_LINES)
+                if (row == null) {
+                    // What is left of the meters is at least a line each.
+                    omitted += meters.size - index
+                    break
+                }
+                omitted += row.omitted
+                printedMeters += MeterPdf(row.cells[0], row.cells[1], row.cells[2])
+            }
+            printed += HandoverPdf(
                 date = record.date?.let { at -> Dates.format(at) }?.let { day -> runCatching { CzechFormat.date(LocalDate.parse(day)) }.getOrDefault(day) } ?: "",
-                type = record.type.orEmpty(),
-                participants = record.participants.orEmpty(),
-                notes = record.notes.orEmpty(),
-                meters = metersOf(record),
+                type = type.shown,
+                participants = participants.shown,
+                notes = notes.shown,
+                meters = printedMeters,
+                cut = PrintBudget.omittedLines(omitted),
                 state = stateWords(
                     when {
                         contractor != null && client != null -> SiteHandoverState.COMPLETE
@@ -472,6 +582,16 @@ object PdfExportService {
         // A signed entry is given the protocols as they were at the moment it was signed (an entry signed before the time was kept
         // has the time of its lock).
         val handovers = handoversOf(tx, report.get(DAILY_REPORTS.PROJECTID)!!, if (lockedAt != null) signedAt ?: lockedAt else null)
+        // The texts of the entry, in the order the document prints them, within one budget of lines; and the records written after the
+        // signature within another (see PrintBudget: a text of nothing but line breaks is thousands of pages, and is never cut silently).
+        val entryBudget = PrintBudget(ENTRY_BUDGET_LINES)
+        val construction = entryBudget.take(report.get(DAILY_REPORTS.CONSTRUCTIONOBJ).orEmpty(), FULL_WIDTH_CHARS, cap = 5)
+        val (workers, workersCut) = workersOf(report, entryBudget)
+        val description = entryBudget.take(report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "", FULL_WIDTH_CHARS, ENTRY_FIELD_CAP_LINES)
+        val details = detailsOf(report, entryBudget)
+        val recordsBudget = PrintBudget(RECORDS_BUDGET_LINES)
+        val addenda = addendaOf(tx, reportId, recordsBudget)
+        val remarks = remarksOf(tx, reportId, recordsBudget)
         return ReportPdfData(
             // the page
             projectName = partA?.identification?.get("name") ?: project.get(PROJECTS.NAME) ?: "",
@@ -500,11 +620,14 @@ object PdfExportService {
             isLateEntry = report.get(DAILY_REPORTS.ISLATEENTRY) ?: false,
             lateEntryReason = report.get(DAILY_REPORTS.LATEENTRYREASON) ?: "",
             isControlDay = report.get(DAILY_REPORTS.ISCONTROLDAY) ?: false,
-            constructionObj = report.get(DAILY_REPORTS.CONSTRUCTIONOBJ).orEmpty(),
+            constructionObj = construction.shown,
+            constructionObjCut = PrintBudget.omittedLines(construction.omitted),
             weather = weatherOf(report),
-            workers = workersOf(report),
-            workDescription = report.get(DAILY_REPORTS.WORKDESCRIPTION) ?: "",
-            details = detailsOf(report),
+            workers = workers,
+            workersCut = workersCut,
+            workDescription = description.shown,
+            workDescriptionCut = PrintBudget.omittedLines(description.omitted),
+            details = details,
             photos = photosOf(tx, reportId),
             // the signature
             entryId = reportId.toString(),
@@ -519,9 +642,11 @@ object PdfExportService {
             handovers = handovers.handovers,
             handoversNote = handoversNote(signed = lockedAt != null),
             handoversLeftOut = handovers.leftOut,
+            handoversLeftOutNote = PrintBudget.omittedProtocols(handovers.leftOut),
             // after the signature
-            addenda = addendaOf(tx, reportId),
-            remarks = remarksOf(tx, reportId),
+            addenda = addenda.records,
+            remarks = remarks.records,
+            recordsLeftOutNote = PrintBudget.omittedRecords(addenda.leftOut + remarks.leftOut),
             acknowledgements = acknowledgementsOf(tx, reportId),
         )
     }

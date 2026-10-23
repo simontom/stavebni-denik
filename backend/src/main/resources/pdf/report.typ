@@ -45,6 +45,10 @@
 // The text, or "bez záznamu" when there is none: an empty field is stated, never left out.
 #let or-none(s, wrap: false, max: 16) = if s.trim() != "" { plain(s, wrap: wrap, max: max) } else { none-mark }
 
+// The sentence that says how many lines of a text did not fit the budget of lines of the document (it is empty when nothing was left
+// out): a text is never cut without saying so, and the sentence is not part of the text.
+#let cut-note(s) = if s != "" { block(above: 0.4em, text(size: 9pt, style: "italic", fill: grey)[#plain(s)]) }
+
 // A text on one line, cut with an ellipsis when it is long (for the footer, which has a fixed height).
 #let one-line(s, max) = {
   let flat = s.replace(regex("\s+"), " ").trim()
@@ -188,7 +192,7 @@
   // A late entry (written after the previous working day) says so, with the author's reason.
   ..if d.isLateEntry { (([Pozdní zápis], plain(d.lateEntryReason)),) } else { () },
   ([Kontrolní den], if d.isControlDay [ano (proběhla stavební kontrola)] else [ne]),
-  ([Stavební objekt (SO)], or-none(d.constructionObj)),
+  ([Stavební objekt (SO)], [#or-none(d.constructionObj)#cut-note(d.constructionObjCut)]),
 ))
 
 === Počasí
@@ -208,17 +212,20 @@
     // The total is printed once, under the last row (not repeated on every page of a long table).
     table.footer(repeat: false, [*Celkem*], [*#d.workers.map(w => w.count).sum(default: 0)*], []),
   )
+  #cut-note(d.workersCut)
 ] else [#none-mark]
 
 === Popis prací
 
 #or-none(d.workDescription)
+#cut-note(d.workDescriptionCut)
 
 // The other fields the vyhláška asks for: every one has its heading (the labels are fixed in the application, the text is plain content).
 #for x in d.details [
   === #x.label
 
   #or-none(x.text)
+  #cut-note(x.cut)
 ]
 
 === Fotografie
@@ -324,13 +331,15 @@
       inset: (x: 6pt, y: 4pt),
       fill: (x, y) => if y == 0 { luma(243) },
       table.header([*Médium*], [*Výrobní číslo*], [*Stav*]),
+      // A cell is 148 pt wide, and the widest capital (W, M) is 10 pt: a word breaks after 12 characters, which are 119 pt of the widest letters.
       ..h.meters.map(m => (
-        if m.medium.trim() != "" { plain(m.medium, wrap: true) } else [—],
-        if m.serialNumber.trim() != "" { plain(m.serialNumber, wrap: true) } else [—],
-        if m.state.trim() != "" { plain(m.state, wrap: true) } else [—],
+        if m.medium.trim() != "" { plain(m.medium, wrap: true, max: 12) } else [—],
+        if m.serialNumber.trim() != "" { plain(m.serialNumber, wrap: true, max: 12) } else [—],
+        if m.state.trim() != "" { plain(m.state, wrap: true, max: 12) } else [—],
       )).flatten(),
     )
   ] else [#none-mark]
+  #cut-note(h.cut)
 
   #v(0.4em)
   #block(breakable: false, width: 100%)[
@@ -346,15 +355,13 @@
   #v(0.6em)
 ]
 
-#if d.handoversLeftOut > 0 [
-  #text(size: 9pt, style: "italic", fill: grey)[Další protokoly se zde netisknou (jsou v aplikaci); jejich počet: #d.handoversLeftOut.]
-]
+#cut-note(d.handoversLeftOutNote)
 
 // ---- what was added after the signature -----------------------------------------------------------------------
 // These are separate records with their own author and time; they are not part of what the signature covers. An entry of
 // another party can also be made on a draft, which has no signature to come after: its heading says so in neutral words.
 
-#if d.acknowledgements.len() > 0 or d.addenda.len() > 0 or d.remarks.len() > 0 [
+#if d.acknowledgements.len() > 0 or d.addenda.len() > 0 or d.remarks.len() > 0 or d.recordsLeftOutNote != "" [
   #if d.isSigned [
     == Připojeno po podpisu záznamu
 
@@ -382,6 +389,7 @@
       *#plain(a.author, wrap: true)*, #a.at
 
       #plain(a.text)
+      #cut-note(a.cut)
 
       #v(0.6em)
     ]
@@ -399,8 +407,11 @@
       ]
 
       #plain(r.text)
+      #cut-note(r.cut)
 
       #v(0.6em)
     ]
   ]
+
+  #cut-note(d.recordsLeftOutNote)
 ]

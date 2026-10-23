@@ -320,10 +320,192 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
     }
 
     @Test
-    fun `the protocols that do not fit are counted in a sentence`() {
-        val pages = pagesOf(render(dataOf("Zápis", listOf(protocol(1, meters = 1))).copy(handoversLeftOut = 3)))
+    fun `what was left out is said in a sentence next to the place it was left out of`() {
+        val data = dataOf("Zápis", listOf(protocol(1, meters = 1).copy(cut = PrintBudget.omittedLines(12))))
+            .copy(
+                handoversLeftOut = 3, handoversLeftOutNote = PrintBudget.omittedProtocols(3),
+                workDescriptionCut = PrintBudget.omittedLines(40), details = listOf(DetailPdf("Použité stroje a mechanizace", "Bagr", PrintBudget.omittedLines(1))),
+                workers = listOf(WorkerPdf("Betonáři", 3, "Jan Novák")), workersCut = PrintBudget.omittedLines(2),
+                constructionObjCut = PrintBudget.omittedLines(5),
+                addenda = listOf(AddendumPdf("Ing. Jan Stavbyvedoucí", "29. 9. 2026 9:00:00 SELČ (UTC+2)", "Oprava", PrintBudget.omittedLines(7))),
+                recordsLeftOutNote = PrintBudget.omittedRecords(4),
+            )
 
-        assertTrue(pages.joinToString("\n").contains("Další protokoly se zde netisknou"), pages.joinToString("\n"))
-        assertTrue(Regex("""jejich počet: 3""").containsMatchIn(pages.joinToString("\n")))
+        val text = squeezed(pagesOf(render(data)).joinToString("\n"))
+
+        for (sentence in listOf(
+            PrintBudget.omittedLines(12), PrintBudget.omittedProtocols(3), PrintBudget.omittedLines(40), PrintBudget.omittedLines(1), PrintBudget.omittedLines(2),
+            PrintBudget.omittedLines(5), PrintBudget.omittedLines(7), PrintBudget.omittedRecords(4),
+        )) {
+            assertTrue(text.contains(squeezed(sentence)), "'$sentence' is printed: $text")
+        }
+    }
+
+    @Test
+    fun `the widest capitals in the fields of a meter stay inside their columns and inside the page`() {
+        // W is the widest letter (10 pt at this size; M is 9); a cell is 148 pt wide inside its padding, and a word broke only every 16
+        // characters, which is 158 pt of Ws: the last of them lay over the next column, and in the last column past the margin. (The
+        // reviewer's case; the Ms of a second test column would be the letter of the header "Médium" and the name "Marie", so Ws are used.)
+        val wide = MeterPdf("W".repeat(100), "W".repeat(100), "W".repeat(100))
+        val pdf = render(dataOf("Betonáž", listOf(protocol(1, meters = 0).copy(meters = listOf(wide, wide)))))
+
+        val (furthest, where) = rightmostPoint(pdf)
+        assertTrue(furthest <= 595.28f - 56.69f + 1f, "the text reaches $furthest, past the margin: $where")
+        // The table is 482 pt wide, from the left margin, in three columns of the same width with a padding of 6 pt: a W is wholly inside the
+        // padding of one of them.
+        val column = (595.28f - 2 * 56.69f) / 3
+        val inside = (0..2).map { 56.69f + it * column + 6f..56.69f + (it + 1) * column - 6f }
+        val outside = lettersOutside(pdf, mapOf('W' to inside))
+        assertEquals(emptyList<String>(), outside, "letters that are not inside a column")
+        // Every letter is there.
+        assertEquals(600, squeezed(textOf(pdf)).count { it == 'W' }, "the Ws of two meters")
+    }
+
+    /** The letters among [allowed] that are not wholly inside one of the ranges that the letter may be in, with where. */
+    private fun lettersOutside(pdf: ByteArray, allowed: Map<Char, List<ClosedFloatingPointRange<Float>>>): List<String> =
+        org.apache.pdfbox.Loader.loadPDF(pdf).use { document ->
+            val found = mutableListOf<String>()
+            val stripper = object : org.apache.pdfbox.text.PDFTextStripper() {
+                override fun writeString(text: String, textPositions: MutableList<org.apache.pdfbox.text.TextPosition>) {
+                    for (position in textPositions) {
+                        val ranges = position.unicode.singleOrNull()?.let { allowed[it] } ?: continue
+                        val from = position.xDirAdj
+                        val to = position.xDirAdj + position.widthDirAdj
+                        if (ranges.none { from >= it.start - 0.5f && to <= it.endInclusive + 0.5f }) found += "'${position.unicode}' at $from..$to on page $currentPageNo"
+                    }
+                }
+            }
+            stripper.getText(document)
+            found.take(5)
+        }
+
+    // --- the budget of lines, with the real typst ---------------------------------------------------------------------
+
+    private fun repeated(count: Int, text: String) = (1..count).joinToString("\n") { "$text $it" }
+
+    /** Both sides have signed the protocol (rows written by SQL, with hashes of the right shape: the point is the size of what is printed). */
+    private fun signBothSides(s: Site, handover: UUID) {
+        for ((side, user, role, ckait) in listOf(
+            listOf("CONTRACTOR", s.boss.id, "BOSS", "0012345"), listOf("CLIENT", s.investor.id, "INVESTOR", null),
+        )) {
+            dsl.execute(
+                """insert into site_handover_signatures ("handoverId", side, "signedById", "signerName", "signerRole", "signerCkaitNumber", "signedAt", "contentHash", "signatureHash")
+                   values (?, ?, ?, ?, ?::"Role", ?, now(), repeat('a', 64), repeat('b', 64))""",
+                handover, side, user, if (side == "CONTRACTOR") "Ing. Jan Stavbyvedoucí" else "Marie Stavebníková", role, ckait,
+            )
+        }
+    }
+
+    private fun meterJson(count: Int, field: (Int) -> Triple<String, String, String>): String =
+        (1..count).joinToString(",", "[", "]") { n ->
+            val (m, s, v) = field(n)
+            """{"medium":${kotlinx.serialization.json.JsonPrimitive(m)},"serialNumber":${kotlinx.serialization.json.JsonPrimitive(s)},"state":${kotlinx.serialization.json.JsonPrimitive(v)}}"""
+        }
+
+    private fun storeProtocol(s: Site, number: Int, type: String, participants: String, notes: String, meters: String): UUID {
+        val id = UUID.randomUUID()
+        dsl.execute(
+            """insert into site_handovers (id, "projectId", type, date, participants, "meterStates", notes, "createdById") values (?, ?, ?, ?::date, ?, ?::jsonb, ?, ?)""",
+            id, s.projectId, type, java.time.LocalDate.of(2026, 1, 1).plusDays(number.toLong()).toString(), participants, meters, notes, s.boss.id,
+        )
+        signBothSides(s, id)
+        return id
+    }
+
+    /** The pages and the seconds the real typst takes for an entry, and what it printed. */
+    private class Measured(val pages: List<String>, val seconds: Double, val kib: Int) {
+        val text: String get() = pages.joinToString("\n")
+    }
+
+    private suspend fun measure(report: UUID): Measured {
+        val started = System.nanoTime()
+        val pdf = pdfOf(report)
+        val seconds = (System.nanoTime() - started) / 1e9
+        return Measured(pagesOf(pdf), seconds, pdf.size / 1024)
+    }
+
+    @Test
+    fun `fifty protocols stored with newlines past every limit are printed within the budget, with a sentence, in a few dozen pages`() = runBlocking<Unit> {
+        val s = site()
+        // What the reviewer found: 50 protocols, a type of 100 lines, participants of 1 000 lines, notes of 2 500 lines and 50 meters of
+        // 50 lines in each of three fields. Past the limits that are checked at the time of saving, so written by SQL.
+        val huge = meterJson(50) { Triple(repeated(50, "m"), repeated(50, "s"), repeated(50, "v")) }
+        repeat(PdfExportService.MAX_HANDOVERS) { n ->
+            storeProtocol(s, n + 1, type = repeated(100, "typ"), participants = "u" + "\n".repeat(1000) + "u", notes = "n" + "\n".repeat(2500) + "n", meters = huge)
+        }
+        val report = entry(s)
+        DailyReportService.signReport(s.boss, report)
+
+        val measured = measure(report)
+
+        println("B9 measure (stored with newlines, 50 protocols): ${measured.pages.size} pages, %.1f s, ${measured.kib} KiB".format(measured.seconds))
+        assertTrue(measured.pages.size <= 150, "the pages are ${measured.pages.size}")
+        assertTrue(measured.seconds < 20, "the render takes ${measured.seconds} s")
+        assertTrue(measured.text.contains("do tohoto výtisku nevešl"), "the cut is said")
+        assertTrue(Regex("""a dalších? \d+ protokol[a-zů]* se do tohoto výtisku nevešl""").containsMatchIn(measured.text.replace(Regex("\\s+"), " ")), "the protocols that did not fit are counted")
+        assertTrue(measured.text.contains("Protokol č. 1"), "the first protocol is printed")
+        assertTrue(measured.text.contains("Podpisy protokolu č. 1"))
+    }
+
+    @Test
+    fun `the largest protocols that the limits allow, fifty of them, are printed within the budget too, in fewer than 150 pages`() = runBlocking<Unit> {
+        val s = site()
+        // 100 lines of participants and 200 of notes at the limit of their characters, 50 meters of three fields of 100 characters, a type of 200.
+        fun words(length: Int, seed: String) = (0..length).joinToString(" ") { "$seed$it-slovo" }.take(length)
+        val participants = (1..SiteHandoverService.MAX_PARTICIPANTS_LINES).joinToString("\n") { words(19, "u$it") }
+        val notes = (1..SiteHandoverService.MAX_NOTES_LINES).joinToString("\n") { words(24, "n$it") }
+        val meters = (1..SiteHandoverService.MAX_METERS).map { MeterState(words(100, "m$it"), words(100, "s$it"), words(100, "v$it")) }
+        repeat(PdfExportService.MAX_HANDOVERS) { n ->
+            val created = SiteHandoverService.createHandover(
+                s.boss, s.projectId,
+                handoverInput(type = words(200, "t"), date = java.time.LocalDate.of(2026, 1, 1).plusDays(n.toLong()).toString(), participants = participants, notes = notes, meterStates = meters),
+            )
+            signHandover(s.investor, signHandover(s.boss, created))
+        }
+        val report = entry(s)
+        DailyReportService.signReport(s.boss, report)
+
+        val measured = measure(report)
+
+        println("B9 measure (the largest legal protocols, 50): ${measured.pages.size} pages, %.1f s, ${measured.kib} KiB".format(measured.seconds))
+        assertTrue(measured.pages.size <= 150, "the pages are ${measured.pages.size}")
+        assertTrue(measured.seconds < 20, "the render takes ${measured.seconds} s")
+        assertTrue(measured.text.contains("do tohoto výtisku nevešl"), "what did not fit is said: the budget is smaller than fifty of these")
+    }
+
+    @Test
+    fun `an entry whose texts are thousands of lines and a record after it that are thousands of lines are printed within their budgets`() = runBlocking<Unit> {
+        val s = site()
+        val huge = "x" + "\n".repeat(4998) + "y"
+        val details = mapOf("materials" to huge, "machinery" to huge, "testsAndChecks" to huge, "safetyNotes" to huge, "dustMeasures" to huge, "accessibilityMeasures" to huge, "defects" to huge, "workStateChanges" to huge, "otherNotes" to huge)
+        val report = UUID.fromString(
+            DailyReportService.saveReport(
+                s.boss, s.projectId, "2026-09-28",
+                DailyReportService.ReportInput(workDescription = "x" + "\n".repeat(100_000) + "y", details = details),
+            ).id,
+        )
+        dsl.execute(
+            """update daily_reports set "workersByTrade" = ?::jsonb where id = ?""",
+            """[{"trade":"Betonáři","count":131,"names":[${(1..131).joinToString(",") { "\"Jan${"\\n".repeat(98)}$it\"" }}]}]""", report,
+        )
+        DailyReportService.signReport(s.boss, report)
+        repeat(30) { n ->
+            dsl.execute(
+                """insert into addenda ("reportId", "authorId", "authorName", text) values (?, ?, 'Pavel Dělník', ?)""",
+                report, s.worker.id, "x" + "\n".repeat(3998) + "dodatek $n",
+            )
+        }
+
+        val measured = measure(report)
+
+        println("B9 measure (an entry of newlines and 30 addenda of newlines): ${measured.pages.size} pages, %.1f s, ${measured.kib} KiB".format(measured.seconds))
+        assertTrue(measured.pages.size <= 250, "the pages are ${measured.pages.size}")
+        assertTrue(measured.seconds < 20, "the render takes ${measured.seconds} s")
+        assertTrue(measured.pages.last().contains("Strana ${measured.pages.size} z ${measured.pages.size}"))
+        val text = measured.text.replace(Regex("\\s+"), " ")
+        assertTrue(text.contains("do tohoto výtisku nevešl"), "the cut is said")
+        assertTrue(Regex("""a dalších? \d+ záznam[a-zů]* se do tohoto výtisku nevešl""").containsMatchIn(text), "the addenda that did not fit are counted")
+        // The signature of the entry is whole, whatever was cut from the text.
+        assertTrue(text.contains("Konec denního záznamu č. 1"))
     }
 }
