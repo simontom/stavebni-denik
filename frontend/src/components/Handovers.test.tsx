@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasUnsavedWork } from "../lib/api";
 import type { Handover, HandoverSignature } from "../lib/handovers";
@@ -373,8 +373,39 @@ describe("making and changing a protocol", () => {
 
     fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "Novák" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Zrušit" }));
+    // typed text is not thrown away without asking
+    const question = await screen.findByRole("dialog", { name: "Zahodit rozepsané?" });
+    expect(hasUnsavedWork(), "still unsaved while it is asked").toBe(true);
+    fireEvent.click(within(question).getByRole("button", { name: "Zahodit" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(hasUnsavedWork(), "closed").toBe(false);
+  });
+
+  it("asks before Escape or Zrušit throws typed text away (the known gap of the form), keeps it when the person writes on, and closes a form with nothing typed at once", async () => {
+    serve(list(draft));
+    render(<Handovers projectId="p1" myRole="WORKER" />);
+    const open = await screen.findByRole("button", { name: "Přidat předání" });
+    fireEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "Protokol o předání staveniště" });
+    const escape = (element: HTMLElement) =>
+      act(() => {
+        element.dispatchEvent(new Event("cancel", { cancelable: true }));
+      });
+
+    // typed: Escape asks, "Psát dál" keeps the text
+    fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "Novák" } });
+    escape(dialog);
+    const question = await screen.findByRole("dialog", { name: "Zahodit rozepsané?" });
+    fireEvent.click(within(question).getByRole("button", { name: "Psát dál" }));
+    expect(screen.queryByRole("dialog", { name: "Zahodit rozepsané?" })).toBeNull();
+    expect((within(dialog).getByLabelText("Účastníci předání") as HTMLInputElement).value).toBe("Novák");
+    expect(hasUnsavedWork()).toBe(true);
+
+    // typed back to what it was: nothing to lose, so Escape closes it
+    fireEvent.change(within(dialog).getByLabelText("Účastníci předání"), { target: { value: "" } });
+    escape(dialog);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(hasUnsavedWork()).toBe(false);
   });
 
   it("puts the focus on the protocol that was signed, as the button that was used is gone", async () => {

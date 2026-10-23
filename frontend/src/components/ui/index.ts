@@ -5,6 +5,7 @@ export { buttonClasses, type ButtonSize, type ButtonVariant } from "./buttonClas
 export { Card } from "./Card";
 export { Field } from "./Field";
 export { useFieldControl } from "./fieldContext";
+export { FormActions } from "./FormActions";
 export { Modal } from "./Modal";
 export { useModal, type ModalHandle } from "./modalContext";
 export { PageState } from "./PageState";
