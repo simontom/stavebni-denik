@@ -10,6 +10,7 @@ export { Modal } from "./Modal";
 export { useModal, type ModalHandle } from "./modalContext";
 export { PageState } from "./PageState";
 export { Select, type SelectProps } from "./Select";
+export { StalledNotice } from "./StalledNotice";
 export { StatusBadge, type BadgeTone } from "./StatusBadge";
 export { TabLink, TabNav } from "./TabNav";
 export { TextArea, type TextAreaProps } from "./TextArea";

@@ -161,6 +161,92 @@ describe("Escape", () => {
   });
 });
 
+describe("the focus after an answer that changes the page", () => {
+  /** A page whose button asks, and whose answer ("yes") removes that very button: a deleted row, an acknowledgement that is written. */
+  function Yes({ answer, fallback }: { answer: () => void; fallback?: () => HTMLElement | null }) {
+    const modal = useModal();
+    return <button onClick={() => modal.close(answer, { restoreFocus: true, fallback })}>Ano</button>;
+  }
+  function Page({ heading = true, fallback, afterYes }: { heading?: boolean; fallback?: () => HTMLElement | null; afterYes?: () => void }) {
+    const [row, setRow] = useState(true);
+    const [asking, setAsking] = useState(false);
+    const answer = () => {
+      setRow(false);
+      setAsking(false);
+      afterYes?.();
+    };
+    return (
+      <main>
+        {heading && <h1>Seznam</h1>}
+        <button id="other">jiné</button>
+        {row && <button onClick={() => setAsking(true)}>smazat</button>}
+        {asking && (
+          <Modal title="Smazat?" onCancel={() => setAsking(false)} footer={<Yes answer={answer} fallback={fallback} />}>
+            text
+          </Modal>
+        )}
+      </main>
+    );
+  }
+
+  const ask = () => {
+    const opener = screen.getByText("smazat");
+    opener.focus();
+    fireEvent.click(opener);
+  };
+
+  it("is on the heading of the page when the button that asked is gone with the answer", () => {
+    render(<Page />);
+    ask();
+    fireEvent.click(screen.getByText("Ano"));
+    expect(screen.queryByText("smazat"), "the button is gone").toBeNull();
+    expect(document.activeElement, "the focus is not lost to the top of the document").toBe(screen.getByRole("heading", { name: "Seznam" }));
+  });
+
+  it("is on the page itself when it has no heading", () => {
+    render(<Page heading={false} />);
+    ask();
+    fireEvent.click(screen.getByText("Ano"));
+    expect(document.activeElement).toBe(document.querySelector("main"));
+  });
+
+  it("is on the place the page names when it names one, before the heading", () => {
+    render(<Page fallback={() => document.getElementById("other")} />);
+    ask();
+    fireEvent.click(screen.getByText("Ano"));
+    expect(document.activeElement).toBe(document.getElementById("other"));
+  });
+
+  it("is left alone when the page itself put it somewhere, and is on the button that asked when that is still there", () => {
+    render(<Page afterYes={() => document.getElementById("other")?.focus()} />);
+    ask();
+    fireEvent.click(screen.getByText("Ano"));
+    expect(document.activeElement, "the page's own choice").toBe(document.getElementById("other"));
+    cleanup();
+
+    function Stays() {
+      const [asking, setAsking] = useState(false);
+      return (
+        <main>
+          <h1>Seznam</h1>
+          <button onClick={() => setAsking(true)}>zeptat se</button>
+          {asking && (
+            <Modal title="Otázka" onCancel={() => setAsking(false)}>
+              text
+            </Modal>
+          )}
+        </main>
+      );
+    }
+    render(<Stays />);
+    const opener = screen.getByText("zeptat se");
+    opener.focus();
+    fireEvent.click(opener);
+    pressEscape(screen.getByRole("dialog", { name: "Otázka" }));
+    expect(document.activeElement).toBe(opener);
+  });
+});
+
 describe("a dialog that holds typed text (unsaved)", () => {
   const question = () => screen.queryByRole("dialog", { name: "Zahodit rozepsané?" });
 

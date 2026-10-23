@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { ApiError } from "../lib/api";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError, discardUnsavedWork, hasUnsavedWork, unsavedWorkMessage } from "../lib/api";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /**
@@ -23,7 +23,10 @@ beforeAll(() => {
   };
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  discardUnsavedWork();
+});
 
 function pressEscape(dialog: HTMLElement) {
   act(() => {
@@ -91,34 +94,55 @@ describe("a question with a verb on its button", () => {
     expect(openWhenAsked, "the dialog was closed before the page reacted").toBe(false);
   });
 
-  it("is a no on Escape and on the safe button, and the focus goes back to what had it", () => {
-    const onCancel = vi.fn();
-    render(
-      <Page>
-        {(done) => (
-          <ConfirmDialog
-            title="Smazat uživatele?"
-            confirmLabel="Smazat"
-            cancelLabel="Zrušit"
-            onCancel={() => {
-              onCancel();
-              done();
-            }}
-            onConfirm={done}
-          >
+  /** A page whose button asks the question: the focus is on that button when the question opens, and has to be back on it when it is answered "no". */
+  function Asking({ onCancel }: { onCancel: () => void }) {
+    const [open, setOpen] = useState(false);
+    const no = () => {
+      onCancel();
+      setOpen(false);
+    };
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>smazat</button>
+        {open && (
+          <ConfirmDialog title="Smazat uživatele?" confirmLabel="Smazat" cancelLabel="Zrušit" onCancel={no} onConfirm={no}>
             Otázka
           </ConfirmDialog>
         )}
-      </Page>,
+      </>
     );
+  }
+  const askFrom = (button: HTMLElement) => {
+    button.focus();
+    fireEvent.click(button);
+  };
+
+  it("is a no on Escape, and the focus goes back to the button that asked", () => {
+    const onCancel = vi.fn();
+    render(<Asking onCancel={onCancel} />);
+    const opener = screen.getByText("smazat");
+    askFrom(opener);
+    expect(document.activeElement, "the safe answer is in focus").toBe(within(dialog()).getByRole("button", { name: "Zrušit" }));
     pressEscape(dialog());
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it("is a no on the safe button, and the focus goes back to the button that asked", () => {
+    const onCancel = vi.fn();
+    render(<Asking onCancel={onCancel} />);
+    const opener = screen.getByText("smazat");
+    askFrom(opener);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Zrušit" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(opener);
   });
 });
 
 describe("an answer that is an action that can fail", () => {
-  const ask = (action: () => Promise<string>, onDone: (result: string) => void, onCancel = vi.fn()) =>
+  const ask = (action: () => Promise<string>, onDone: (result: string) => void, onCancel = vi.fn(), extra: { leaveMessage?: string; stalledNote?: string } = {}) =>
     render(
       <Page>
         {(done) => (
@@ -126,6 +150,7 @@ describe("an answer that is an action that can fail", () => {
             title="Smazat uživatele?"
             confirmLabel="Smazat"
             cancelLabel="Zrušit"
+            {...extra}
             action={action}
             onDone={(result) => {
               onDone(result);
@@ -150,10 +175,15 @@ describe("an answer that is an action that can fail", () => {
     fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
 
     expect(dialog().open).toBe(true);
-    expect((within(dialog()).getByRole("button", { name: "Zrušit" }) as HTMLButtonElement).disabled, "no second answer while it runs").toBe(true);
-    expect((within(dialog()).getByRole("button", { name: "Smazat" }) as HTMLButtonElement).disabled).toBe(true);
+    // Off for the person (aria-disabled, and a click does nothing) but not `disabled`: a disabled button that has the focus loses it
+    for (const name of ["Zrušit", "Smazat"]) {
+      const button = within(dialog()).getByRole("button", { name }) as HTMLButtonElement;
+      expect(button.getAttribute("aria-disabled"), `"${name}" is off while it runs`).toBe("true");
+      expect(button.disabled, `"${name}" keeps its place in the Tab order and the focus`).toBe(false);
+    }
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Zrušit" }));
     pressEscape(dialog());
-    expect(onCancel, "Escape does nothing while it runs").not.toHaveBeenCalled();
+    expect(onCancel, "neither Escape nor the button answers while it runs").not.toHaveBeenCalled();
     expect(dialog().open).toBe(true);
 
     await act(async () => finish("hotovo"));
@@ -171,11 +201,40 @@ describe("an answer that is an action that can fail", () => {
     expect(alert.textContent).toContain("je stavbyvedoucím projektu X");
     expect(dialog().open).toBe(true);
     expect(onDone).not.toHaveBeenCalled();
-    expect((within(dialog()).getByRole("button", { name: "Zrušit" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(within(dialog()).getByRole("button", { name: "Zrušit" }).getAttribute("aria-disabled")).toBeNull();
 
     fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
     await waitFor(() => expect(onDone).toHaveBeenCalledWith("ok"));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("keeps the focus on the button that was pressed when the action is refused, so the same key can be pressed again", async () => {
+    const action = vi.fn<() => Promise<string>>().mockRejectedValue(new ApiError(409, "Nelze smazat."));
+    ask(action, vi.fn());
+    const yes = within(dialog()).getByRole("button", { name: "Smazat" });
+    yes.focus();
+    fireEvent.click(yes);
+    await within(dialog()).findByRole("alert");
+    expect(document.activeElement, "the focus is not lost to the page when the buttons are on again").toBe(yes);
+    fireEvent.click(yes);
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+  });
+
+  it("counts as unsaved work while it runs, and says what leaving loses", async () => {
+    let finish!: (value: string) => void;
+    ask(() => new Promise<string>((resolve) => (finish = resolve)), vi.fn(), vi.fn(), { leaveMessage: "Heslo se právě mění; když odejdete, nové heslo se nezobrazí." });
+    expect(hasUnsavedWork(), "nothing runs before the answer").toBe(false);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    expect(hasUnsavedWork()).toBe(true);
+    expect(unsavedWorkMessage()).toBe("Heslo se právě mění; když odejdete, nové heslo se nezobrazí.");
+    await act(async () => finish("hotovo"));
+    expect(hasUnsavedWork(), "done").toBe(false);
+  });
+
+  it("has words of its own for what leaving loses when the page gave none", () => {
+    ask(() => new Promise<string>(() => undefined), vi.fn());
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    expect(unsavedWorkMessage()).toMatch(/právě se provádí/i);
   });
 
   it("can still be cancelled after a failure, and Escape is a no again", async () => {
@@ -186,5 +245,85 @@ describe("an answer that is an action that can fail", () => {
     pressEscape(dialog());
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("a server that does not answer", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+  const wait = (ms: number) =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+
+  function Asking({ action, onDone, onCancel, stalledNote }: { action: () => Promise<string>; onDone: (r: string) => void; onCancel: () => void; stalledNote?: string }) {
+    const [open, setOpen] = useState(true);
+    return open ? (
+      <ConfirmDialog
+        title="Smazat uživatele?"
+        confirmLabel="Smazat"
+        cancelLabel="Zrušit"
+        stalledNote={stalledNote}
+        action={action}
+        onDone={(r) => {
+          onDone(r);
+          setOpen(false);
+        }}
+        onCancel={() => {
+          onCancel();
+          setOpen(false);
+        }}
+      >
+        Otázka
+      </ConfirmDialog>
+    ) : null;
+  }
+
+  it("is waited for for a while, and then the dialog says so and can be closed, without claiming that the action failed or went through", async () => {
+    const onCancel = vi.fn();
+    const onDone = vi.fn();
+    render(<Asking action={() => new Promise<string>(() => undefined)} onDone={onDone} onCancel={onCancel} stalledNote="Heslo se mohlo změnit, nebo ne." />);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+
+    await wait(19_000);
+    expect(screen.queryByText(/Server neodpovídá/), "not yet").toBeNull();
+    pressEscape(dialog());
+    expect(onCancel, "no way out in the first seconds").not.toHaveBeenCalled();
+
+    await wait(2_000);
+    expect(screen.getByText(/Server neodpovídá/).closest("[role=status]")!.textContent).toContain("Heslo se mohlo změnit, nebo ne.");
+    expect(screen.queryByRole("alert"), "it is not said to have failed").toBeNull();
+    const close = within(dialog()).getByRole("button", { name: "Zavřít" });
+    expect(close.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(close);
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onDone, "nor to have succeeded").not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("can be left with Escape once it has said so", async () => {
+    const onCancel = vi.fn();
+    render(<Asking action={() => new Promise<string>(() => undefined)} onDone={vi.fn()} onCancel={onCancel} />);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    await wait(21_000);
+    expect(screen.getByText(/Server neodpovídá/).closest("[role=status]")!.textContent).toMatch(/Nevíme, jestli se akce provedla/);
+    pressEscape(dialog());
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not wait for an answer that came in time", async () => {
+    let finish!: (value: string) => void;
+    const onDone = vi.fn();
+    render(<Asking action={() => new Promise<string>((resolve) => (finish = resolve))} onDone={onDone} onCancel={vi.fn()} />);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    await wait(5_000);
+    await act(async () => finish("ok"));
+    expect(onDone).toHaveBeenCalledWith("ok");
+    await wait(30_000);
+    expect(screen.queryByText(/Server neodpovídá/)).toBeNull();
   });
 });

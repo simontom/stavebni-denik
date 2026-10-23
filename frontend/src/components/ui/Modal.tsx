@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useId, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type Ref, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { Button } from "./Button";
 import { ModalContext, useModal, type ModalHandle } from "./modalContext";
 import { lockScroll } from "./scrollLock";
 
 const sizes = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg" } as const;
+
+/**
+ * After an answer the focus must be somewhere: when what had it (the button that asked) is gone with the answer, it would be on `<body>`,
+ * and a keyboard user would start again from the top of the document. So, when nothing has the focus: the place the page named
+ * ([fallback]), else the main heading of the page, else the page's `<main>` itself. A page that put the focus somewhere itself is left alone.
+ */
+function settleFocus(opener: HTMLElement | null, fallback?: () => HTMLElement | null): void {
+  // Something had the focus when the dialog opened and is gone now (nothing did: the dialog was opened by the page itself, and the focus is left where it is).
+  if (!opener || opener === document.body || opener.isConnected) return;
+  const active = document.activeElement;
+  if (active && active !== document.body && active.isConnected) return;
+  const target = fallback?.() ?? document.querySelector<HTMLElement>("main h1") ?? document.querySelector<HTMLElement>("main");
+  if (!target) return;
+  // A heading is not focusable by itself: it can take the focus (and is not in the Tab order) with a tabindex of -1.
+  if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+  // The page stays where it is: the focus is for the keyboard and the screen reader, not a jump to the top.
+  target.focus({ preventScroll: true });
+}
 
 /**
  * A modal dialog on the browser's own `<dialog>`: focus stays inside, the page behind is inert and does not scroll, and Escape means
@@ -88,8 +107,12 @@ export function Modal({
   const close = useCallback<ModalHandle["close"]>((after, options) => {
     closing.current = true;
     dialog.current?.close();
-    if (options?.restoreFocus && opener.current?.isConnected) opener.current.focus();
-    after?.();
+    if (!options?.restoreFocus) return after?.();
+    if (opener.current?.isConnected) opener.current.focus();
+    // What the answer does to the page (a deleted row, an acknowledgement that takes its button away) is drawn now, so that "the opener is
+    // still there" is judged on the page as it is after the answer. Without it the focus would be put on a button that React then removes.
+    if (after) flushSync(() => after());
+    settleFocus(opener.current, options.fallback);
   }, []);
 
   // Escape, and the "Zrušit" button: the same decision. A dialog that is saving does not move; one with typed text asks; the

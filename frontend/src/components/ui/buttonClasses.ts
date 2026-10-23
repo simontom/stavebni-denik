@@ -3,7 +3,9 @@ import { cn } from "./cn";
 export type ButtonVariant = "primary" | "secondary" | "danger" | "danger-quiet" | "quiet";
 export type ButtonSize = "md" | "sm";
 
-const base = "inline-flex items-center justify-center gap-2 rounded-md border font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+// `aria-disabled` is "off for now, but still here": a button that was just pressed and is busy keeps the focus (a `disabled` one loses it).
+const base =
+  "inline-flex items-center justify-center gap-2 rounded-md border font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50";
 
 const variants: Record<ButtonVariant, string> = {
   // The main action of a screen: white on indigo-600 is 6.3:1.
