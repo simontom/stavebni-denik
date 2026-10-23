@@ -62,6 +62,8 @@ pnpm exec playwright test --project=mobile --project=mobile-landscape   # jen te
 
 Stejnou sadu spustí CI i **proti sestavenému produkčnímu obrazu** (`scripts/ci/e2e-image.sh`: obraz s `APP_ENV=production`, role databáze bez vlastnictví, schéma migrované vlastníkem, SPA servírovaná Ktorem). Lokálně: `docker build -t stavebni-denik:e2e .` a potom `IMAGE=stavebni-denik:e2e E2E_PG_PORT=55436 bash scripts/ci/e2e-image.sh` (potřebuje Docker a volný port 8080).
 
+Celá sada obnoví heslo třem účtům (administrátor smí obnovit 10 hesel za 15 minut, pak `429`), takže ji na jedné databázi nespouštějte vícekrát než dvakrát za čtvrt hodiny (`dialogs.spec.ts` obnovuje dvě hesla, `password-lifecycle.spec.ts` jedno). Aplikace nikdy neotevírá vlastní dialogy prohlížeče (`window.confirm`): `e2e/dialogs.spec.ts` každý takový dialog zaznamená a test selže.
+
 E2E seed (`scripts/dev/e2e-prepare.ts`) zakládá účty `e2e-admin` a `e2e-investor` přímo v databázi a odmítne pracovat s čímkoli jiným než s databází na tomto počítači (`DATABASE_URL`, výchozí je lokální compose databáze). Test `full-flow` stahuje PDF, takže potřebuje `typst`; bez něj selže právě tam.
 
 ## Databáze a jOOQ
