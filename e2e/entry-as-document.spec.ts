@@ -266,8 +266,8 @@ test.describe("somebody who cannot write sees a document", () => {
       await expect(page.locator('input[type="file"]')).toHaveCount(0);
       await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
 
-      page.once("dialog", (d) => d.accept());
       await page.getByRole("button", { name: "Potvrdit seznámení" }).click();
+      await page.getByRole("dialog", { name: "Potvrdit seznámení?" }).getByRole("button", { name: "Potvrdit seznámení", exact: true }).click();
       await expect(page.getByText(/Seznámil\(a\) se: E2E Investor \(stavebník\)/)).toBeVisible({ timeout: 15_000 });
       await expect(podepsano(page)).toHaveCount(1);
     } finally {

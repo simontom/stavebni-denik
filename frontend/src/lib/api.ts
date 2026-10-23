@@ -15,27 +15,8 @@ export class ApiError extends Error {
 /** Fired on the window when the server says the session is over (401). `detail.method` is the method of the refused request. */
 export const SESSION_EXPIRED_EVENT = "session-expired";
 
-let unsavedWork = false;
-let unsavedWorkKept = false;
-
-/**
- * A page with typed-in, unsaved work says so: a lapsed session then must not reload or leave the page, and leaving it
- * (a link inside the application, logging out) asks first. [keptAsDraft] says that the text is also kept on this
- * device as a draft, which is what the question tells the person (leaving then does not lose it).
- */
-export function setUnsavedWork(value: boolean, keptAsDraft = false): void {
-  unsavedWork = value;
-  unsavedWorkKept = value && keptAsDraft;
-}
-
-export function hasUnsavedWork(): boolean {
-  return unsavedWork;
-}
-
-/** The unsaved work is also kept on this device as a draft. */
-export function unsavedWorkIsKeptAsDraft(): boolean {
-  return unsavedWork && unsavedWorkKept;
-}
+// What the application knows about unsaved work (a lapsed session must not reload or leave such a page; leaving it asks first).
+export { discardUnsavedWork, hasUnsavedWork, registerUnsavedWork, setUnsavedWork, unsavedWorkIsKeptAsDraft, unsavedWorkMessage, type UnsavedWorkOptions } from "./unsavedWork";
 
 /**
  * `fetch` with the session rule applied. A 401 does NOT throw the user to the login page (that would lose what they

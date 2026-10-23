@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useBlocker, useLocation, useNavigate, Navigate } from "react-router-dom";
-import { hasUnsavedWork, setUnsavedWork, unsavedWorkIsKeptAsDraft } from "../lib/api";
+import { discardUnsavedWork, hasUnsavedWork, unsavedWorkIsKeptAsDraft, unsavedWorkMessage } from "../lib/api";
 import { clearAllDrafts, browserStorage } from "../lib/draftStore";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { SessionExpiredDialog } from "./SessionExpiredDialog";
@@ -25,9 +25,24 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [confirmingLogout, setConfirmingLogout] = useState(false);
-  // A link inside the application (or the browser's Back button) away from a page with unsaved changes asks first. The
-  // page says it has unsaved work (setUnsavedWork); a page that is only reloaded or closed is covered by the browser's own question.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => hasUnsavedWork() && currentLocation.pathname !== nextLocation.pathname);
+  // Closing or reloading the tab with unsaved work: the browser asks first (it shows its own words; the page cannot choose them).
+  // One handler for every page and dialog that says it holds unsaved work (setUnsavedWork, useUnsavedWork): the entry's form, the
+  // dialogs with typed text, a temporary password that has not been handed over, an action that is still running.
+  useEffect(() => {
+    const warn = (e: BeforeUnloadEvent) => {
+      if (!hasUnsavedWork()) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  // A link inside the application (or the browser's Back button) away from a page with unsaved changes asks first. The page or dialog
+  // says it has unsaved work (setUnsavedWork, useUnsavedWork). Another place is another path or another search part of the address (the tabs of a
+  // project are `?tab=…`: Back from the members to the overview leaves a dialog that holds text); a hash alone is the same place.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => hasUnsavedWork() && (currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search),
+  );
   // "Stay" ends the question at once, here, not when the router has drawn it (the router puts its blocker back to idle in a React
   // transition, which is drawn later). A second attempt to leave in between (Back pressed twice, a link clicked twice) would
   // otherwise find the dialog of the first question still mounted but closed, and nothing opens a closed dialog again: the
@@ -47,7 +62,7 @@ export function AppLayout() {
 
   const logout = async () => {
     // Confirmed, or nothing to lose: the leave guard must let the redirect to the login page through.
-    setUnsavedWork(false);
+    discardUnsavedWork();
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } catch {
@@ -95,7 +110,8 @@ export function AppLayout() {
         </div>
       </header>
       <SessionExpiredDialog />
-      <main className="flex-1">
+      {/* tabIndex -1: the place the focus goes to when what had it is gone and the page has no heading of its own to take it (see `Modal`) */}
+      <main tabIndex={-1} className="flex-1 focus:outline-none">
         <Outlet />
       </main>
       {blocker.state === "blocked" && blocker.reset !== answeredStay?.reset && (
@@ -109,9 +125,10 @@ export function AppLayout() {
           }}
           onConfirm={() => blocker.proceed()}
         >
-          {unsavedWorkIsKeptAsDraft()
-            ? "Tento záznam má neuložené změny. Když odejdete, rozepsaný text zůstane jako koncept v tomto zařízení a při dalším otevření dne vám ho nabídneme."
-            : "Stránka má neuložené změny. Když odejdete, ztratí se."}
+          {unsavedWorkMessage() ??
+            (unsavedWorkIsKeptAsDraft()
+              ? "Tento záznam má neuložené změny. Když odejdete, rozepsaný text zůstane jako koncept v tomto zařízení a při dalším otevření dne vám ho nabídneme."
+              : "Stránka má neuložené změny. Když odejdete, ztratí se.")}
         </ConfirmDialog>
       )}
       {confirmingLogout && (
@@ -125,7 +142,7 @@ export function AppLayout() {
             void logout();
           }}
         >
-          Stránka má neuložené změny. Po odhlášení se ztratí{unsavedWorkIsKeptAsDraft() ? ", i s konceptem uloženým v tomto zařízení" : ""}.
+          {unsavedWorkMessage() ?? `Stránka má neuložené změny. Po odhlášení se ztratí${unsavedWorkIsKeptAsDraft() ? ", i s konceptem uloženým v tomto zařízení" : ""}.`}
         </ConfirmDialog>
       )}
     </div>

@@ -381,9 +381,11 @@ test.describe("the pages on a phone", () => {
     await expectPhoneReady(page, "the handovers with their meters");
 
     await page.goto(`/projects/${data.project}?tab=members`);
-    await expect(page.getByText("worker@stavebni-denik.cz")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(data.nickname)).toBeVisible();
-    await expect(page.getByText(data.displayName)).toBeVisible();
+    // The members are in the table (the people who can be added are the options of a select above it, which say the same names)
+    const members = page.locator("table");
+    await expect(members.getByText("worker@stavebni-denik.cz")).toBeVisible({ timeout: 15_000 });
+    await expect(members.getByText(data.nickname)).toBeVisible();
+    await expect(members.getByText(data.displayName)).toBeVisible();
     await expect(page.getByText(data.authorizedPerson, { exact: true })).toBeVisible();
     await expectPhoneReady(page, "the members and the authorised persons");
   });
@@ -493,5 +495,76 @@ test.describe("the pages on a phone", () => {
     await expectNoSidewaysScroll(page, "the new-user dialog");
     await expectInputsAtLeast16px(page, "the new-user dialog");
     await expectControlsAtLeast44px(page, "the new-user dialog");
+  });
+
+  /** A dialog is whole on the screen, does not scroll sideways inside itself, and its controls are as large as a thumb needs. */
+  async function expectDialogFits(page: Page, dialog: Locator, what: string) {
+    await expect(dialog, `${what} is open`).toBeVisible();
+    const box = (await dialog.boundingBox())!;
+    const screen = page.viewportSize()!;
+    expect.soft(box.x, `${what} starts on the screen`).toBeGreaterThanOrEqual(0);
+    expect.soft(box.x + box.width, `${what} ends on the screen`).toBeLessThanOrEqual(screen.width);
+    expect.soft(box.y, `${what} starts on the screen (top)`).toBeGreaterThanOrEqual(0);
+    expect.soft(box.y + box.height, `${what} ends on the screen (bottom)`).toBeLessThanOrEqual(screen.height + 0.5);
+    expect.soft(await dialog.evaluate((el) => el.scrollWidth - el.clientWidth), `${what} does not scroll sideways inside`).toBeLessThanOrEqual(1);
+    await expectNoSidewaysScroll(page, what);
+    await expectInputsAtLeast16px(page, what);
+    await expectControlsAtLeast44px(page, what);
+  }
+
+  test("the questions, the question about typed text and the temporary password fit the screen", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signIn(page);
+    await page.goto("/admin/users");
+    const row = page.locator("tr", { hasText: data.nickname });
+    await expect(row).toBeVisible({ timeout: 15_000 });
+
+    // A question about the person with the login name of 63 letters: the name wraps, the answers can be hit
+    await row.getByRole("button", { name: "Smazat", exact: true }).click();
+    const ask = page.getByRole("dialog", { name: "Smazat uživatele?" });
+    await expectDialogFits(page, ask, "the question about deleting a user");
+    await page.keyboard.press("Escape");
+    await expect(ask).toHaveCount(0);
+
+    // A form with typed text, and the question that asks before the text is thrown away
+    await row.getByRole("button", { name: "Upravit", exact: true }).click();
+    const edit = page.getByRole("dialog", { name: "Upravit uživatele" });
+    await edit.getByLabel("Jméno a příjmení").fill(`${data.displayName}x`);
+    await page.keyboard.press("Escape");
+    const discard = page.getByRole("dialog", { name: "Zahodit rozepsané?" });
+    await expectDialogFits(page, discard, "the question about typed text");
+    await discard.getByRole("button", { name: "Zahodit", exact: true }).click();
+    await expect(discard).toHaveCount(0);
+
+    // The question before a password is reset (asked, not answered: an administrator may reset only 10 passwords in 15 minutes)
+    await row.getByRole("button", { name: "Obnovit heslo", exact: true }).click();
+    const reset = page.getByRole("dialog", { name: "Obnovit heslo?" });
+    await expectDialogFits(page, reset, "the question about resetting a password");
+    await reset.getByRole("button", { name: "Zrušit", exact: true }).click();
+    await expect(reset).toHaveCount(0);
+
+    // The temporary password of a new account with a login name that has no place to break: shown whole, with a tick box that is a
+    // target for a thumb, and a button that opens after it
+    const nickname = oneWord(63, `heslo${runLetters()}`);
+    await page.getByRole("button", { name: "Nový uživatel" }).click();
+    const form = page.getByRole("dialog", { name: "Vytvořit nového uživatele" });
+    await form.getByLabel("Přihlašovací jméno (nickname)").fill(nickname);
+    await form.getByLabel("Jméno a příjmení (displayName)").fill(oneWord(86, "Jmeno"));
+    await form.getByRole("button", { name: "Vytvořit", exact: true }).click();
+    const shown = page.getByRole("dialog", { name: "Uživatel byl vytvořen" });
+    await expect(shown).toBeVisible({ timeout: 15_000 });
+    try {
+      await expectDialogFits(page, shown, "the temporary password");
+      await expectReachable(page, shown.locator("label", { hasText: "Heslo jsem předal(a)" }), "the tick box 'Heslo jsem předal(a)' with its label");
+      await shown.getByLabel("Heslo jsem předal(a)").check();
+      await expectReachable(page, shown.getByRole("button", { name: "Hotovo" }), "the button that closes the temporary password");
+      await shown.getByRole("button", { name: "Hotovo" }).click();
+      await expect(shown).toHaveCount(0);
+    } finally {
+      // the account made for this check is deleted again
+      const users = (await (await page.request.get("/api/users")).json()) as { id: string; nickname: string }[];
+      const made = users.find((u) => u.nickname === nickname);
+      if (made) await page.request.delete(`/api/users/${made.id}`);
+    }
   });
 });

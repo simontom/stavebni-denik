@@ -8,12 +8,13 @@ async function login(page: Page, nickname: string, password: string) {
   await page.locator('button[type="submit"]').click();
 }
 
-/** Reads the one-time password out of the credentials dialog and closes it. */
+/** Reads the one-time password out of the dialog that shows it, says it was handed over, and closes the dialog. */
 async function readAndCloseCredentials(page: Page): Promise<string> {
-  const line = await page.locator("strong", { hasText: "Heslo:" }).locator("xpath=..").innerText();
-  const password = line.replace("Heslo:", "").trim();
-  page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: /^hotovo$/i }).click();
+  const dialog = page.getByRole("dialog", { name: /uživatel byl vytvořen|heslo bylo obnoveno/i });
+  const password = (await dialog.getByTestId("one-time-password").innerText()).trim();
+  await dialog.getByLabel("Heslo jsem předal(a)").check();
+  await dialog.getByRole("button", { name: /^hotovo$/i }).click();
+  await expect(dialog).toHaveCount(0);
   return password;
 }
 
@@ -73,9 +74,9 @@ test("temporary password: forced change, own password afterwards, administrator 
   await page.goto("/admin/users");
   const row = page.locator("tr", { hasText: NICKNAME });
   await expect(row).toBeVisible({ timeout: 15_000 });
-  page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: /obnovit heslo/i }).click();
-  await expect(page.getByRole("dialog", { name: /nové heslo/i })).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("dialog", { name: "Obnovit heslo?" }).getByRole("button", { name: "Obnovit heslo", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: /heslo bylo obnoveno/i })).toBeVisible({ timeout: 15_000 });
   const resetPassword = await readAndCloseCredentials(page);
 
   // The old session is dead on the server (not every page reacts to a 401 by itself).
@@ -88,7 +89,7 @@ test("temporary password: forced change, own password afterwards, administrator 
 
   // --- Clean up ------------------------------------------------------------------------------------
   await userContext.close();
-  page.once("dialog", (d) => d.accept());
   await row.getByRole("button", { name: /smazat/i }).click();
+  await page.getByRole("dialog", { name: "Smazat uživatele?" }).getByRole("button", { name: "Smazat", exact: true }).click();
   await expect(page.locator("tr", { hasText: NICKNAME })).toHaveCount(0, { timeout: 15_000 });
 });

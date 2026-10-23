@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, currentUser, json, type UserOption } from "../../lib/api";
 import { ProjectFields } from "../../components/ProjectFields";
-import { Button } from "../../components/ui";
+import { Button, Field, Select } from "../../components/ui";
 import { emptyProjectFields, projectFieldsProblem, projectPayload, type ProjectFieldValues } from "../../lib/projectFields";
 
 export const NewProject: React.FC = () => {
@@ -10,7 +10,6 @@ export const NewProject: React.FC = () => {
 
   const [fields, setFields] = useState<ProjectFieldValues>(emptyProjectFields());
   const myId = currentUser()?.id;
-  const [showDropdown, setShowDropdown] = useState(false);
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
 
   useEffect(() => {
@@ -25,8 +24,7 @@ export const NewProject: React.FC = () => {
   const [pickedId, setPickedId] = useState<string | null>(null);
   const mine = userOptions.find((u) => u.id === myId);
   const siteManagerId = pickedId ?? (mine?.hasCkait ? mine.id : "");
-  const siteManager = userOptions.find((u) => u.id === siteManagerId);
-  const siteManagerName = siteManager ? `${siteManager.displayName} (${siteManager.nickname})` : "";
+  const someoneWithoutNumber = userOptions.some((u) => !u.hasCkait);
 
   // The creator becomes a manager of the project too, so they need a ČKAIT number as well (the server refuses otherwise).
   const myNumberMissing = mine !== undefined && !mine.hasCkait;
@@ -84,44 +82,30 @@ export const NewProject: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <ProjectFields values={fields} onChange={(patch) => setFields((current) => ({ ...current, ...patch }))}>
-          <div className="relative">
-            <label className="mb-1 block text-sm font-medium text-gray-700">Hlavní stavbyvedoucí</label>
-            <button
-              id="siteManagerId"
-              type="button"
-              onClick={() => setShowDropdown(!showDropdown)}
-              className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white p-2 text-left focus:border-indigo-500 focus:ring-indigo-500"
-            >
-              <span>{siteManagerName || "Vyberte stavbyvedoucího"}</span>
-              <span className="text-gray-400">▼</span>
-            </button>
-            {showDropdown && (
-              <div role="listbox" className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-gray-300 bg-white shadow-lg">
-                {userOptions.length === 0 && <div className="px-4 py-2 text-sm text-gray-500">Žádní uživatelé k výběru</div>}
-                {userOptions.map((u) =>
-                  u.hasCkait ? (
-                    <div
-                      key={u.id}
-                      role="option"
-                      aria-selected={siteManagerId === u.id}
-                      onClick={() => {
-                        setPickedId(u.id);
-                        setShowDropdown(false);
-                      }}
-                      className="cursor-pointer px-4 py-2 text-sm text-gray-900 hover:bg-indigo-50"
-                    >
-                      {u.displayName} ({u.nickname})
-                    </div>
-                  ) : (
-                    // The site manager signs the diary and so needs a ČKAIT number: shown, but not to be picked, with the reason.
-                    <div key={u.id} role="option" aria-selected={false} aria-disabled="true" className="cursor-not-allowed px-4 py-2 text-sm text-gray-500">
-                      {u.displayName} ({u.nickname}) <span className="text-xs">– bez čísla ČKAIT, stavbyvedoucím být nemůže</span>
-                    </div>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
+          {/*
+            A native select (the browser's own list: it works from the keyboard and with a screen reader, and a phone shows its picker).
+            The site manager signs the diary and so needs a ČKAIT number: a person without one stays in the list, disabled, with the
+            reason in the option's own text, and the hint under the field says why once.
+          */}
+          <Field
+            id="siteManagerId"
+            label="Hlavní stavbyvedoucí"
+            hintBelow
+            hint={
+              someoneWithoutNumber
+                ? "Osoby bez čísla ČKAIT jsou v seznamu, ale nelze je vybrat: hlavní stavbyvedoucí podepisuje denní záznamy a musí mít číslo. Číslo doplňuje administrátor."
+                : undefined
+            }
+          >
+            <Select value={siteManagerId} onChange={(e) => setPickedId(e.target.value)}>
+              <option value="">{userOptions.length === 0 ? "Žádní uživatelé k výběru" : "Vyberte stavbyvedoucího"}</option>
+              {userOptions.map((u) => (
+                <option key={u.id} value={u.id} disabled={!u.hasCkait}>
+                  {u.displayName} ({u.nickname}){u.hasCkait ? "" : " – bez čísla ČKAIT"}
+                </option>
+              ))}
+            </Select>
+          </Field>
         </ProjectFields>
 
         <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">

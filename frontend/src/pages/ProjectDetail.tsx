@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
+import { useStalled } from "../lib/useStalled";
+import { useUnsavedWork } from "../lib/useUnsavedWork";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { Handovers } from "../components/Handovers";
-import { Button, Card, Field, PageState, StatusBadge, TabLink, TabNav, TextInput } from "../components/ui";
+import { Banner, Button, Card, Field, FormActions, Modal, PageState, Select, StalledNotice, StatusBadge, TabLink, TabNav, TextInput, type ModalHandle } from "../components/ui";
 
 interface AuthorizedPerson {
   id: string;
@@ -95,10 +98,11 @@ export const ProjectDetail: React.FC = () => {
 
   // Authorized persons
   const [authorizedPersons, setAuthorizedPersons] = useState<AuthorizedPerson[]>([]);
-  const [showPersonModal, setShowPersonModal] = useState(false);
-  const [personName, setPersonName] = useState("");
-  const [personCompany, setPersonCompany] = useState("");
-  const [personAuth, setPersonAuth] = useState("");
+  // The dialog that adds a person, and the question before one is revoked (each is state of this page's own, taken off the screen when answered).
+  const [addingPerson, setAddingPerson] = useState(false);
+  const [revoking, setRevoking] = useState<AuthorizedPerson | null>(null);
+  // After a person is revoked the button that asked is gone: the focus goes to the heading of the list.
+  const personsHeading = useRef<HTMLHeadingElement>(null);
 
   // Members
   const [members, setMembers] = useState<ProjectMember[]>([]);
@@ -109,8 +113,6 @@ export const ProjectDetail: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState("INVESTOR");
   // The scope of the authorisation and responsibility of the person being added or changed (for a manager and the supervision).
   const [memberScope, setMemberScope] = useState("");
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-  const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
   // Replacing the site manager (stavbyvedoucí): the manager of the project names another manager of it.
   const [showSiteManager, setShowSiteManager] = useState(false);
@@ -204,36 +206,6 @@ export const ProjectDetail: React.FC = () => {
     }
   };
 
-  const openPersonModal = () => {
-    setPersonName("");
-    setPersonCompany("");
-    setPersonAuth("");
-    setShowPersonModal(true);
-  };
-
-  const handleSavePerson = async () => {
-    try {
-      const created = await api<AuthorizedPerson>(`/api/projects/${id}/authorized-persons`, {
-        method: "POST",
-        body: json({ name: personName, company: personCompany || null, authorization: personAuth || null }),
-      });
-      setAuthorizedPersons((prev) => [...prev, created]);
-      setShowPersonModal(false);
-    } catch (err) {
-      fail(err, "Pověřenou osobu se nepodařilo uložit");
-    }
-  };
-
-  const handleRevokePerson = async (pId: string) => {
-    if (!window.confirm("Opravdu chcete pověřenou osobu zrušit?")) return;
-    try {
-      const revoked = await api<AuthorizedPerson>(`/api/authorized-persons/${pId}/revoke`, { method: "POST" });
-      setAuthorizedPersons((prev) => prev.map((p) => (p.id === pId ? revoked : p)));
-    } catch (err) {
-      fail(err, "Zrušení se nezdařilo");
-    }
-  };
-
   const handleAddMember = async () => {
     if (!selectedUserId) {
       setError("Vyberte uživatele");
@@ -256,6 +228,20 @@ export const ProjectDetail: React.FC = () => {
     } catch (err) {
       fail(err, "Člena se nepodařilo přidat");
     }
+  };
+
+  /** A person is chosen in the list: a member already is shown as they are (to change their role or scope); anybody else gets their own role as the one offered. */
+  const pickUser = (userId: string) => {
+    setSelectedUserId(userId);
+    const member = members.find((m) => m.userId === userId);
+    if (member) {
+      setSelectedRole(member.role);
+      setMemberScope(member.scope ?? "");
+      return;
+    }
+    const user = userOptions.find((u) => u.id === userId);
+    if (user && ROLE_LABELS[user.role]) setSelectedRole(user.role);
+    setMemberScope("");
   };
 
   const selectedUser = userOptions.find((u) => u.id === selectedUserId);
@@ -624,42 +610,38 @@ export const ProjectDetail: React.FC = () => {
           {/* Authorized Persons Section */}
           <Card>
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-xl font-semibold text-ink">Seznam pověřených osob</h2>
-              {canManage && <Button onClick={openPersonModal}>Přidat osobu</Button>}
+              <h2 ref={personsHeading} tabIndex={-1} className="text-xl font-semibold text-ink focus:outline-none">
+                Seznam pověřených osob
+              </h2>
+              {canManage && <Button onClick={() => setAddingPerson(true)}>Přidat osobu</Button>}
             </div>
 
-            {showPersonModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-6 shadow-xl">
-                  <h3 className="text-lg font-bold">Přidat pověřenou osobu</h3>
-                  <div>
-                    <label htmlFor="person-name" className="mb-1 block text-xs font-medium text-gray-700">
-                      Jméno a příjmení / Titul
-                    </label>
-                    <input id="person-name" type="text" value={personName} onChange={(e) => setPersonName(e.target.value)} className="w-full rounded border p-2 text-sm" />
-                  </div>
-                  <div>
-                    <label htmlFor="person-company" className="mb-1 block text-xs font-medium text-gray-700">
-                      Organizace / Společnost
-                    </label>
-                    <input id="person-company" type="text" value={personCompany} onChange={(e) => setPersonCompany(e.target.value)} className="w-full rounded border p-2 text-sm" />
-                  </div>
-                  <div>
-                    <label htmlFor="person-auth" className="mb-1 block text-xs font-medium text-gray-700">
-                      Rozsah pověření / Funkce
-                    </label>
-                    <input id="person-auth" type="text" value={personAuth} onChange={(e) => setPersonAuth(e.target.value)} className="w-full rounded border p-2 text-sm" />
-                  </div>
-                  <div className="flex justify-end gap-2 border-t pt-2">
-                    <button type="button" onClick={() => setShowPersonModal(false)} className="rounded border px-3 py-1.5 text-sm">
-                      Zrušit
-                    </button>
-                    <button type="button" onClick={() => void handleSavePerson()} className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white">
-                      Uložit
-                    </button>
-                  </div>
-                </div>
-              </div>
+            {addingPerson && (
+              <AddPersonDialog
+                projectId={id ?? ""}
+                onCancel={() => setAddingPerson(false)}
+                onAdded={(created) => {
+                  setAddingPerson(false);
+                  setAuthorizedPersons((prev) => [...prev, created]);
+                }}
+              />
+            )}
+
+            {revoking && (
+              <ConfirmDialog
+                title="Zrušit pověření?"
+                confirmLabel="Zrušit pověření"
+                cancelLabel="Ponechat"
+                action={() => api<AuthorizedPerson>(`/api/authorized-persons/${revoking.id}/revoke`, { method: "POST" })}
+                onDone={(revoked) => {
+                  setRevoking(null);
+                  setAuthorizedPersons((prev) => prev.map((p) => (p.id === revoked.id ? revoked : p)));
+                  personsHeading.current?.focus();
+                }}
+                onCancel={() => setRevoking(null)}
+              >
+                Pověřená osoba {revoking.name} už nebude platná. Zrušení pověření nejde vzít zpět; záznamy, které už byly podepsány, ji uvádějí dál.
+              </ConfirmDialog>
             )}
 
             {authorizedPersons.length === 0 ? (
@@ -677,7 +659,7 @@ export const ProjectDetail: React.FC = () => {
                       {p.revokedAt ? (
                         <span className="text-sm font-semibold text-danger-ink">Zrušeno</span>
                       ) : (
-                        <Button variant="danger-quiet" size="sm" onClick={() => void handleRevokePerson(p.id)}>
+                        <Button variant="danger-quiet" size="sm" onClick={() => setRevoking(p)}>
                           Zrušit {p.name}
                         </Button>
                       )}
@@ -693,81 +675,30 @@ export const ProjectDetail: React.FC = () => {
             <h2 className="mb-4 text-xl font-semibold text-ink">Členové projektu</h2>
 
             {!canManage && <p className="mb-4 text-sm text-gray-500">Členy projektu spravuje stavbyvedoucí projektu.</p>}
-            <div className={canManage ? "mb-6 flex flex-wrap items-center gap-4" : "hidden"}>
-              {/* User select trigger */}
-              <div className="relative">
-                <button
-                  type="button"
-                  data-slot="select-trigger"
-                  aria-haspopup="listbox"
-                  onClick={() => setShowUserDropdown(!showUserDropdown)}
-                  className="flex min-w-[200px] items-center justify-between rounded border border-gray-300 bg-white px-3 py-2 text-left text-sm"
-                >
-                  <span>{selectedUser ? `${selectedUser.displayName} (${selectedUser.nickname})` : "Vyberte uživatele"}</span>
-                  <span className="text-xs text-gray-400">▼</span>
-                </button>
-                {showUserDropdown && (
-                  <div role="listbox" className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded border border-gray-300 bg-white shadow-md">
-                    {userOptions.length === 0 && <div className="px-3 py-1.5 text-sm text-gray-500">Žádní uživatelé</div>}
-                    {userOptions.map((u) => (
-                      <div
-                        key={u.id}
-                        role="option"
-                        aria-selected={selectedUserId === u.id}
-                        onClick={() => {
-                          setSelectedUserId(u.id);
-                          // A person who is a member already is shown as they are (to change their role or scope); otherwise their
-                          // own role is the default, and the role in this project can be set to another.
-                          const member = members.find((m) => m.userId === u.id);
-                          if (member) {
-                            setSelectedRole(member.role);
-                            setMemberScope(member.scope ?? "");
-                          } else {
-                            if (ROLE_LABELS[u.role]) setSelectedRole(u.role);
-                            setMemberScope("");
-                          }
-                          setShowUserDropdown(false);
-                        }}
-                        className="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-100"
-                      >
-                        {u.displayName} ({u.nickname})
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className={canManage ? "mb-6 flex flex-wrap items-end gap-4" : "hidden"}>
+              {/* Native selects (the browser's own list: the keyboard, a screen reader and the picker of a phone all work). A person who is a member
+                  already is shown as they are, to change their role or scope; anybody else gets their own role as the one offered. */}
+              {/* max-w-full: a native select is as wide as its longest option, and a login name of 60 letters must not widen the page */}
+              <Field id="member-user" label="Uživatel" className="max-w-full min-w-[14rem] flex-1 sm:max-w-sm">
+                <Select value={selectedUserId} onChange={(e) => pickUser(e.target.value)}>
+                  <option value="">{userOptions.length === 0 ? "Žádní uživatelé k výběru" : "Vyberte uživatele"}</option>
+                  {userOptions.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.displayName} ({u.nickname})
+                    </option>
+                  ))}
+                </Select>
+              </Field>
 
-              {/* Role select trigger */}
-              <div className="relative">
-                <button
-                  type="button"
-                  data-slot="select-trigger"
-                  aria-haspopup="listbox"
-                  onClick={() => setShowRoleDropdown(!showRoleDropdown)}
-                  className="flex min-w-[160px] items-center justify-between rounded border border-gray-300 bg-white px-3 py-2 text-left text-sm"
-                >
-                  <span>{ROLE_LABELS[selectedRole]}</span>
-                  <span className="text-xs text-gray-400">▼</span>
-                </button>
-                {showRoleDropdown && (
-                  <div role="listbox" className="absolute z-10 mt-1 w-full rounded border border-gray-300 bg-white shadow-md">
-                    {Object.entries(ROLE_LABELS).map(([role, label]) => (
-                      <div
-                        key={role}
-                        role="option"
-                        aria-selected={selectedRole === role}
-                        onClick={() => {
-                          setSelectedRole(role);
-                          setShowRoleDropdown(false);
-                        }}
-                        className="cursor-pointer px-3 py-1.5 text-sm hover:bg-gray-100"
-                      >
-                        {label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+              <Field id="member-role" label="Role v projektu" className="max-w-full min-w-[12rem] flex-1 sm:max-w-60">
+                <Select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+                  {Object.entries(ROLE_LABELS).map(([role, label]) => (
+                    <option key={role} value={role}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
 
               {ROLES_WITH_SCOPE.includes(selectedRole) && (
                 <Field label="Rozsah oprávnění a odpovědnosti" className="basis-full">
@@ -833,3 +764,62 @@ export const ProjectDetail: React.FC = () => {
     </div>
   );
 };
+
+/**
+ * The dialog that adds an authorised person (the persons whom the diary names, with the scope of their authorisation or function).
+ * It holds typed text, so Escape and "Zrušit" ask before they throw it away; while it saves it cannot be dismissed; and what the
+ * server refuses is said inside it.
+ */
+function AddPersonDialog({ projectId, onAdded, onCancel }: { projectId: string; onAdded: (created: AuthorizedPerson) => void; onCancel: () => void }) {
+  const modal = useRef<ModalHandle>(null);
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [authorization, setAuthorization] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [problem, setProblem] = useState("");
+  const dirty = name !== "" || company !== "" || authorization !== "";
+  useUnsavedWork(dirty);
+  const stalled = useStalled(saving);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setProblem("");
+    try {
+      const created = await api<AuthorizedPerson>(`/api/projects/${projectId}/authorized-persons`, {
+        method: "POST",
+        body: json({ name, company: company || null, authorization: authorization || null }),
+      });
+      modal.current?.close(() => onAdded(created), { restoreFocus: true });
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : "Pověřenou osobu se nepodařilo uložit");
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Přidat pověřenou osobu"
+      handleRef={modal}
+      unsaved={dirty}
+      dismissible={!saving || stalled}
+      onCancel={onCancel}
+      footer={<FormActions formId="add-person-form" submitLabel="Uložit" busy={saving} stalled={stalled} />}
+    >
+      <form id="add-person-form" onSubmit={(e) => void submit(e)} className="space-y-4">
+        <Field id="person-name" label="Jméno a příjmení / Titul">
+          <TextInput type="text" value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field id="person-company" label="Organizace / Společnost">
+          <TextInput type="text" value={company} onChange={(e) => setCompany(e.target.value)} />
+        </Field>
+        <Field id="person-auth" label="Rozsah pověření / Funkce">
+          <TextInput type="text" value={authorization} onChange={(e) => setAuthorization(e.target.value)} />
+        </Field>
+        {problem && <Banner tone="danger">{problem}</Banner>}
+        {stalled && <StalledNotice>Nevíme, jestli se osoba uložila. Zkontrolujte seznam pověřených osob po zavření dialogu a případně ji přidejte znovu.</StalledNotice>}
+      </form>
+    </Modal>
+  );
+}

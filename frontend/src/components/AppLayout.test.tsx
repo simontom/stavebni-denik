@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { setUnsavedWork } from "../lib/api";
+import { discardUnsavedWork, registerUnsavedWork, setUnsavedWork } from "../lib/api";
 import { AppLayout } from "./AppLayout";
 
 /**
@@ -30,7 +30,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  setUnsavedWork(false);
+  discardUnsavedWork();
   localStorage.clear();
   document.documentElement.className = "";
 });
@@ -97,5 +97,67 @@ describe("leaving a page with unsaved changes", () => {
     });
     expect(router.state.location.pathname).toBe("/b");
     expect(questions()).toHaveLength(0);
+  });
+
+  it("asks when only the search part of the address changes (the Back button from ?tab=members to the page without it), and not for a hash", async () => {
+    const router = renderApp();
+    await act(async () => {
+      await router.navigate("/a?tab=members");
+    });
+    expect(questions(), "another tab of the same page is another place").toHaveLength(1);
+    expect(router.state.location.search).toBe("");
+
+    await act(async () => {
+      fireEvent.click(stay());
+    });
+    expect(questions()).toHaveLength(0);
+
+    await act(async () => {
+      await router.navigate("/a#top");
+    });
+    expect(questions(), "a hash is the same page").toHaveLength(0);
+    expect(router.state.location.hash).toBe("#top");
+  });
+
+  it("says in the question what the dialog that is open would lose, when it said so", async () => {
+    discardUnsavedWork();
+    registerUnsavedWork({ message: "Dočasné heslo se už nikdy nezobrazí." });
+    const router = renderApp();
+    await act(async () => {
+      await router.navigate("/b");
+    });
+    expect(questions()).toHaveLength(1);
+    expect(questions()[0].textContent).toContain("Dočasné heslo se už nikdy nezobrazí.");
+    expect(questions()[0].textContent, "instead of the general words").not.toContain("Stránka má neuložené změny");
+  });
+});
+
+describe("closing or reloading the tab (beforeunload)", () => {
+  /** What the browser does: the event goes to the window, and the page may cancel it to make the browser ask. */
+  function closeTab(): boolean {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  it("is cancelled, so the browser asks, while the page holds unsaved work, and not when it holds none", () => {
+    renderApp();
+    expect(closeTab(), "the page's own slot").toBe(true);
+    setUnsavedWork(false);
+    expect(closeTab(), "nothing unsaved").toBe(false);
+
+    const dialog = registerUnsavedWork();
+    expect(closeTab(), "a dialog that holds text, or a password that was not handed over").toBe(true);
+    dialog();
+    expect(closeTab()).toBe(false);
+  });
+
+  it("is not asked about any more once the page is gone (the layout takes its handler away)", () => {
+    const { unmount } = render(
+      <RouterProvider router={createMemoryRouter([{ element: <AppLayout />, children: [{ path: "/a", element: <p>A</p> }] }], { initialEntries: ["/a"] })} />,
+    );
+    expect(closeTab()).toBe(true);
+    unmount();
+    expect(closeTab()).toBe(false);
   });
 });

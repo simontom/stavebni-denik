@@ -1,13 +1,21 @@
 import { createContext, useContext } from "react";
 
-/** What something inside a [Modal] (its footer, its body) can do: close it. */
+/** What something inside a [Modal] (its footer, its body) can do: close it, or cancel it. */
 export interface ModalHandle {
   /**
    * Closes the dialog (while it is still in the document, so the browser can do its part) and then runs [after]. With
    * `restoreFocus` the focus goes back to what had it before the dialog opened (the link or the button that was used, the
    * text being typed), so a keyboard user does not start again from the top of the page; leave it off when the page is about to change.
+   * [after] is then drawn at once, and when what had the focus is gone with it (a deleted row, a button an acknowledgement takes away) the
+   * focus goes to `fallback` (a place the page names), else to the main heading of the page, else to its `<main>`.
    */
-  close: (after?: () => void, options?: { restoreFocus?: boolean }) => void;
+  close: (after?: () => void, options?: { restoreFocus?: boolean; fallback?: () => HTMLElement | null }) => void;
+  /**
+   * What the "Zrušit" button does: exactly what Escape does. Nothing while the dialog is not dismissible (it is saving); a question
+   * "Zahodit rozepsané?" while it holds typed text; otherwise the page's `onCancel` runs (unless it refuses) and the dialog closes with the
+   * focus back on the opener.
+   */
+  cancel: () => void;
 }
 
 export const ModalContext = createContext<ModalHandle | null>(null);

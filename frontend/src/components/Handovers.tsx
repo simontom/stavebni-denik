@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { api, ApiError, currentUser, json, ROLE_LABELS, setUnsavedWork } from "../lib/api";
+import { api, ApiError, currentUser, json, ROLE_LABELS } from "../lib/api";
 import { pragueToday } from "../lib/dates";
+import { useStalled } from "../lib/useStalled";
+import { useUnsavedWork } from "../lib/useUnsavedWork";
 import {
   HANDOVER_LIMITS,
   SIDE_NAMES,
@@ -15,7 +17,7 @@ import {
   type HandoverSignature,
   type Meter,
 } from "../lib/handovers";
-import { Banner, Button, Card, Field, Modal, PageState, StatusBadge, TextArea, TextInput, useModal } from "./ui";
+import { Banner, Button, Card, Field, Modal, PageState, StalledNotice, StatusBadge, TextArea, TextInput, useModal } from "./ui";
 
 /** A calendar day (`YYYY-MM-DD`) the way it is written in Czech: it is a day, not a moment, so no time zone is applied. */
 function formatDay(day: string): string {
@@ -268,15 +270,34 @@ function HandoverCard({
   );
 }
 
-/** The buttons of a dialog's form: cancel closes the dialog while it is still in the document, so the focus can go back. */
-function DialogButtons({ busy, canSubmit = true, submit, onCancel }: { busy: boolean; canSubmit?: boolean; submit: string; onCancel: () => void }) {
+/**
+ * The buttons of a dialog's form. "Zrušit" cancels the way Escape does: a form with typed text asks "Zahodit rozepsané?" first, a dialog
+ * that is saving does not move, and the focus goes back to the button that opened the dialog.
+ */
+function DialogButtons({ busy, stalled, canSubmit = true, submit }: { busy: boolean; stalled: boolean; canSubmit?: boolean; submit: string }) {
   const modal = useModal();
+  // Off while the request runs, but `aria-disabled` and not `disabled`: the button that was pressed keeps the focus (see `FormActions`). When
+  // the server has not answered for long, "Zrušit" is "Zavřít" and on again.
+  const cancelOff = busy && !stalled;
   return (
     <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">
-      <Button variant="secondary" disabled={busy} onClick={() => modal.close(onCancel, { restoreFocus: true })}>
-        Zrušit
+      <Button
+        variant="secondary"
+        aria-disabled={cancelOff || undefined}
+        onClick={() => {
+          if (!cancelOff) modal.cancel();
+        }}
+      >
+        {stalled ? "Zavřít" : "Zrušit"}
       </Button>
-      <Button type="submit" disabled={busy || !canSubmit}>
+      <Button
+        type="submit"
+        disabled={!canSubmit}
+        aria-disabled={busy || undefined}
+        onClick={(e) => {
+          if (busy) e.preventDefault();
+        }}
+      >
         {submit}
       </Button>
     </div>
@@ -285,9 +306,18 @@ function DialogButtons({ busy, canSubmit = true, submit, onCancel }: { busy: boo
 
 function HandoverFormDialog({ projectId, editing, onCancel, onSaved }: { projectId: string; editing: Handover | null; onCancel: () => void; onSaved: (saved: Handover) => void }) {
   const [saving, setSaving] = useState(false);
+  // What the form holds is typed text: Escape and "Zrušit" ask before they throw it away (the form tells the dialog whether it holds any).
+  const [dirty, setDirty] = useState(false);
+  const stalled = useStalled(saving);
   return (
-    <Modal title={editing ? "Upravit protokol o předání staveniště" : "Protokol o předání staveniště"} size="lg" onCancel={onCancel} dismissible={!saving}>
-      <HandoverForm projectId={projectId} editing={editing} saving={saving} setSaving={setSaving} onCancel={onCancel} onSaved={onSaved} />
+    <Modal
+      title={editing ? "Upravit protokol o předání staveniště" : "Protokol o předání staveniště"}
+      size="lg"
+      onCancel={onCancel}
+      dismissible={!saving || stalled}
+      unsaved={dirty}
+    >
+      <HandoverForm projectId={projectId} editing={editing} saving={saving} stalled={stalled} setSaving={setSaving} onDirtyChange={setDirty} onSaved={onSaved} />
     </Modal>
   );
 }
@@ -307,15 +337,17 @@ function HandoverForm({
   projectId,
   editing,
   saving,
+  stalled,
   setSaving,
-  onCancel,
+  onDirtyChange,
   onSaved,
 }: {
   projectId: string;
   editing: Handover | null;
   saving: boolean;
+  stalled: boolean;
   setSaving: (saving: boolean) => void;
-  onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
   onSaved: (saved: Handover) => void;
 }) {
   const modal = useModal();
@@ -335,13 +367,12 @@ function HandoverForm({
   const set = (patch: Partial<HandoverFormValues>) => setValues((current) => ({ ...current, ...patch }));
   const updateMeter = (idx: number, patch: Partial<Meter>) => set({ meters: values.meters.map((m, i) => (i === idx ? { ...m, ...patch } : m)) });
 
-  // Typed and not yet saved: a page that holds work says so, so that a lapsed session or a click on a link does not take it by surprise.
+  // Typed and not yet saved: a page that holds work says so, so that a lapsed session or a click on a link does not take it by surprise,
+  // and the dialog asks before Escape or "Zrušit" throws it away.
   // (The session dialog is a modal dialog of its own that stacks on top of this one, so the person can sign in again and carry on.)
   const dirty = JSON.stringify(values) !== JSON.stringify(baseline);
-  useEffect(() => {
-    setUnsavedWork(dirty);
-    return () => setUnsavedWork(false);
-  }, [dirty]);
+  useUnsavedWork(dirty);
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -497,7 +528,8 @@ function HandoverForm({
         </section>
       )}
       {problem && <Banner tone="danger">{problem}</Banner>}
-      <DialogButtons busy={saving} canSubmit={!locked} submit="Uložit předání" onCancel={onCancel} />
+      {stalled && <StalledNotice>Nevíme, jestli se protokol uložil. Zkontrolujte seznam předání po zavření dialogu, než ho uložíte znovu.</StalledNotice>}
+      <DialogButtons busy={saving} stalled={stalled} canSubmit={!locked} submit="Uložit předání" />
     </form>
   );
 }
@@ -516,15 +548,16 @@ function SignDialog({
   onStale: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const stalled = useStalled(busy);
   const party = side === "CONTRACTOR" ? "za zhotovitele" : "za stavebníka";
   return (
     <Modal
       title={`Podepsat předání ${party}`}
       description="Podepisujete právě tuto verzi protokolu. Po prvním podpisu jedné ze stran už protokol nelze změnit ani smazat. K podpisu zadejte své heslo."
       onCancel={onCancel}
-      dismissible={!busy}
+      dismissible={!busy || stalled}
     >
-      <SignForm handover={handover} side={side} busy={busy} setBusy={setBusy} onCancel={onCancel} onSigned={onSigned} onStale={onStale} />
+      <SignForm handover={handover} side={side} busy={busy} stalled={stalled} setBusy={setBusy} onSigned={onSigned} onStale={onStale} />
     </Modal>
   );
 }
@@ -533,16 +566,16 @@ function SignForm({
   handover,
   side,
   busy,
+  stalled,
   setBusy,
-  onCancel,
   onSigned,
   onStale,
 }: {
   handover: Handover;
   side: HandoverSide;
   busy: boolean;
+  stalled: boolean;
   setBusy: (busy: boolean) => void;
-  onCancel: () => void;
   onSigned: (signed: Handover) => void;
   onStale: (message: string) => void;
 }) {
@@ -583,7 +616,8 @@ function SignForm({
       <Field id="handover-sign-password" label="Heslo" error={error || undefined}>
         <TextInput type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
-      <DialogButtons busy={busy} canSubmit={password.length > 0} submit="Podepsat" onCancel={onCancel} />
+      {stalled && <StalledNotice>Nevíme, jestli se protokol podepsal. Zkontrolujte jeho stav po zavření dialogu, než podpis zopakujete.</StalledNotice>}
+      <DialogButtons busy={busy} stalled={stalled} canSubmit={password.length > 0} submit="Podepsat" />
     </form>
   );
 }

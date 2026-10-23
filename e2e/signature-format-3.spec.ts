@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
+import { chooseSiteManager, selectByText } from "./helpers";
 
 /** A date in Prague, today, as YYYY-MM-DD. */
 function pragueToday(): string {
@@ -34,8 +35,7 @@ test("the author's supervision, a member's scope and the start of work are enter
   await page.locator('input[name="contractor"]').fill("Zhotovitel s.r.o.");
   await page.locator('input[name="authorSupervisionName"]').fill("Ing. arch. Petr Dozor");
   await page.locator('input[name="authorSupervisionAuthorization"]').fill("ČKA 00 123");
-  await page.locator('button[id="siteManagerId"]').click();
-  await page.getByRole("option", { name: new RegExp(ADMIN_NICKNAME) }).click();
+  await chooseSiteManager(page, ADMIN_NICKNAME);
   await page.getByRole("button", { name: /založit zakázku/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-fA-F-]{36}$/);
   const projectUrl = page.url();
@@ -47,8 +47,7 @@ test("the author's supervision, a member's scope and the start of work are enter
 
   // A second manager of the project, with the scope of their authorisation and responsibility.
   await page.goto(`${projectUrl}?tab=members`);
-  await page.locator('button[data-slot="select-trigger"]').first().click();
-  await page.getByRole("option", { name: /manager@stavebni-denik\.cz/ }).click();
+  await selectByText(page.getByLabel("Uživatel", { exact: true }), /manager@stavebni-denik\.cz/);
   const scope = page.getByLabel("Rozsah oprávnění a odpovědnosti");
   await expect(scope).toBeVisible();
   await scope.fill("Zástupce stavbyvedoucího, objekty SO 02 a SO 03");

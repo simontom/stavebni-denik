@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
+import { chooseSiteManager } from "./helpers";
 
 /** A date in Prague, [offsetDays] from today, as YYYY-MM-DD. */
 function pragueDay(offsetDays: number): string {
@@ -27,8 +28,7 @@ async function loginAndCreateProject(page: Page): Promise<string> {
   await page.locator('input[name="parcelNumbers"]').fill("1/1");
   await page.locator('input[name="builder"]').fill("Builder a.s.");
   await page.locator('input[name="contractor"]').fill("Contractor s.r.o.");
-  await page.locator('button[id="siteManagerId"]').click();
-  await page.getByRole("option", { name: new RegExp(ADMIN_NICKNAME) }).click();
+  await chooseSiteManager(page, ADMIN_NICKNAME);
   await page.getByRole("button", { name: /založit zakázku/i }).click();
   await expect(page).toHaveURL(/\/projects\/[0-9a-fA-F-]{36}/);
   return page.url().split("?")[0];
