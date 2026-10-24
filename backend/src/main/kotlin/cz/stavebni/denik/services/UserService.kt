@@ -409,7 +409,7 @@ object UserService {
         val which = if (projects.size == 1) "projektu" else "projektů"
         throw ConflictException(
             "Uživatele nelze smazat: je stavbyvedoucím $which ${namedProjects(projects)}. " +
-                "Nejdřív nechte vedoucího projektu určit jiného stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu), pak to zopakujte."
+                "Nejdřív nechte stavbyvedoucího projektu určit jiného hlavního stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu), pak to zopakujte."
         )
     }
 
@@ -425,8 +425,8 @@ object UserService {
         val single = projects.size == 1
         return "Uživatel byl deaktivován, ale je stavbyvedoucím ${if (single) "projektu" else "projektů"} ${namedProjects(projects)}: " +
             "${if (single) "ten zůstává" else "ty zůstávají"} bez aktivního stavbyvedoucího. " +
-            "Záznamy teď může podepisovat jen jiný aktivní vedoucí projektu (BOSS) s číslem ČKAIT. " +
-            "Nechte vedoucího projektu určit jiného stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu, v API PUT /projects/{id}/site-manager)."
+            "Záznamy teď může podepisovat jen jiný aktivní stavbyvedoucí projektu s číslem ČKAIT. " +
+            "Nechte stavbyvedoucího projektu určit jiného hlavního stavbyvedoucího („Změnit stavbyvedoucího“ na stránce projektu, v API PUT /projects/{id}/site-manager)."
     }
 
     /**
@@ -440,7 +440,7 @@ object UserService {
         if (asSiteManager.isEmpty() && asOtherManager.isEmpty()) return null
         val roles = listOfNotNull(
             asSiteManager.takeIf { it.isNotEmpty() }?.let { "stavbyvedoucím ${if (it.size == 1) "projektu" else "projektů"} ${namedProjects(it)}" },
-            asOtherManager.takeIf { it.isNotEmpty() }?.let { "vedoucím (BOSS) ${if (it.size == 1) "projektu" else "projektů"} ${namedProjects(it)}" },
+            asOtherManager.takeIf { it.isNotEmpty() }?.let { "stavbyvedoucím (ne hlavním) ${if (it.size == 1) "projektu" else "projektů"} ${namedProjects(it)}" },
         ).joinToString(" a ")
         val what = if (cleared) "Číslo ČKAIT bylo odebráno" else "Číslo ČKAIT bylo změněno"
         val consequence = if (cleared) {

@@ -34,7 +34,9 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [text, setText] = useState("");
   const [externalAuthor, setExternalAuthor] = useState("");
-  const [error, setError] = useState("");
+  // Two different things: the list could not be loaded (a notice about the page, not about the text field), and the server refused the text that was sent (the field's error).
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const isManager = role === "BOSS";
@@ -47,7 +49,7 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
         if (!ignore) setRemarks(list);
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(err instanceof Error ? err.message : "Záznamy se nepodařilo načíst");
+        if (!ignore) setLoadError(err instanceof Error ? err.message : "Záznamy se nepodařilo načíst");
       });
     return () => {
       ignore = true;
@@ -58,7 +60,7 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
     e.preventDefault();
     if (busy || text.trim() === "" || (isManager && externalAuthor.trim() === "")) return;
     setBusy(true);
-    setError("");
+    setSaveError("");
     try {
       const created = await api<Remark>(`/api/reports/${entryId}/remarks`, {
         method: "POST",
@@ -68,14 +70,14 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
       setText("");
       setExternalAuthor("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Záznam se nepodařilo uložit");
+      setSaveError(err instanceof Error ? err.message : "Záznam se nepodařilo uložit");
     } finally {
       setBusy(false);
     }
   };
 
   // Nothing to show and nobody who could write: no empty box.
-  if (remarks.length === 0 && !canWrite && !error) return null;
+  if (remarks.length === 0 && !canWrite && !loadError) return null;
 
   return (
     <section aria-labelledby="remarks-title" className="space-y-3">
@@ -108,16 +110,25 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
             </Field>
           )}
           {/* A refusal of the server is the text's error: announced at once and tied to the field. */}
-          <Field id="remark-text" label="Nový záznam (po uložení ho nelze změnit ani smazat)" error={error || undefined}>
-            <TextArea name="remarkText" rows={3} maxLength={MAX_LENGTH} value={text} onChange={(e) => setText(e.target.value)} />
+          <Field id="remark-text" label="Nový záznam (po uložení ho nelze změnit ani smazat)" error={saveError || undefined}>
+            <TextArea
+              name="remarkText"
+              rows={3}
+              maxLength={MAX_LENGTH}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setSaveError("");
+              }}
+            />
           </Field>
           <Button type="submit" size="sm" disabled={busy || text.trim() === "" || (isManager && externalAuthor.trim() === "")}>
             Přidat záznam
           </Button>
         </form>
       )}
-      {/* Nobody here can write, so there is no field to tie it to (the list could not be loaded). */}
-      {!canWrite && error && <Banner tone="danger">{error}</Banner>}
+      {/* The list could not be loaded: a notice about the page, not the error of the text field (which is only for a refusal of the text that was sent). */}
+      {loadError && <Banner tone="danger">{loadError}</Banner>}
     </section>
   );
 }

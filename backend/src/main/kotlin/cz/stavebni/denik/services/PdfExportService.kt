@@ -196,8 +196,16 @@ object PdfExportService {
     private fun projectInfoOf(partA: PartA): List<LabeledPdf> {
         val identification = partA.identification
         fun text(key: String) = identification[key]?.trim().orEmpty()
-        fun numbered(number: String, date: String): String =
-            listOfNotNull(number.ifEmpty { null }, partADay(date.ifEmpty { null })?.let { "ze dne $it" }).joinToString(" ")
+        // A number and its date share a row: "SZ/1 ze dne 15. 3. 2026"; the number alone; and a date whose number is missing says so, so the
+        // row under "Číslo jednací povolení" never reads as a bare "ze dne 5. 1. 2026". Neither: no row.
+        fun numbered(number: String, date: String): String {
+            val day = partADay(date.ifEmpty { null })?.let { "ze dne $it" }
+            return when {
+                number.isNotEmpty() -> listOfNotNull(number, day).joinToString(" ")
+                day != null -> "neuvedeno, $day"
+                else -> ""
+            }
+        }
         fun person(name: String, ckait: String?): String = listOfNotNull(name.ifEmpty { null }, ckait?.let { "ČKAIT $it" }).joinToString(", ")
         // The author's supervision (příloha 12 A e)): who it is, and the number of their authorisation.
         val supervision = listOfNotNull(text("authorSupervisionName").ifEmpty { null }, text("authorSupervisionAuthorization").ifEmpty { null }?.let { "autorizace $it" }).joinToString(", ")

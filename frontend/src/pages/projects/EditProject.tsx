@@ -124,7 +124,7 @@ export const EditProject: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
         <ProjectFields values={fields} onChange={(patch) => setFields((current) => ({ ...current, ...patch }))} />
 
-        <p className="text-xs text-ink-muted">Každá změna zůstává v záznamu o změnách (audit logu) i s původní hodnotou.</p>
+        <p className="text-xs text-ink-muted">Každá změna zůstává v auditu i s původní hodnotou.</p>
 
         <div className="flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={() => navigate(`/projects/${id}`)}>

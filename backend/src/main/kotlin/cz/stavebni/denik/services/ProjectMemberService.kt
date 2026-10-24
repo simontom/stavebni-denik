@@ -83,7 +83,7 @@ object ProjectMemberService {
     private fun requireSiteManagerStaysManager(tx: DSLContext, projectId: UUID, userId: UUID, newRole: Role?) {
         val siteManagerId = tx.select(PROJECTS.SITEMANAGERID).from(PROJECTS).where(PROJECTS.ID.eq(projectId)).fetchOne(PROJECTS.SITEMANAGERID)
         if (siteManagerId == userId && newRole != Role.BOSS) {
-            throw ConflictException("Stavbyvedoucí musí zůstat členem projektu s rolí vedoucího (BOSS)")
+            throw ConflictException("Hlavní stavbyvedoucí musí zůstat členem projektu s rolí stavbyvedoucího")
         }
     }
 
@@ -121,7 +121,7 @@ object ProjectMemberService {
         // null: not mentioned; "": cleared.
         val scopeGiven: String? = req.scope?.trim()?.let { Text.checked(it, "Rozsah oprávnění a odpovědnosti", MAX_SCOPE_CHARS) }
         require(scopeGiven.isNullOrEmpty() || newDbRole in ROLES_WITH_SCOPE) {
-            "Rozsah oprávnění a odpovědnosti lze uvést jen u stavbyvedoucího (BOSS) a technického dozoru (INSPECTOR)"
+            "Rozsah oprávnění a odpovědnosti lze uvést jen u stavbyvedoucího a technického dozoru"
         }
 
         // Who may do this: a project manager of the project, or an app administrator as the audited way in (decision D1).
@@ -136,7 +136,7 @@ object ProjectMemberService {
             if (!userExists) throw NotFoundException("Uživatel nenalezen")
             // The manager of a project signs its diary, and a signer has a ČKAIT number (decision D2).
             if (role == Role.BOSS && !ProjectAccess.hasCkaitNumber(tx, userId)) {
-                throw ConflictException("Vedoucí projektu (BOSS) musí mít číslo ČKAIT. Číslo doplňuje administrátor v seznamu uživatelů: požádejte ho o to.")
+                throw ConflictException("Stavbyvedoucí musí mít číslo ČKAIT. Číslo doplňuje administrátor v seznamu uživatelů: požádejte ho o to.")
             }
             val existing = tx.select(PROJECT_MEMBERS.ROLE, PROJECT_MEMBERS.SCOPE).from(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))
@@ -150,7 +150,7 @@ object ProjectMemberService {
             }
             requireSiteManagerStaysManager(tx, projectId, userId, role)
             if (before == DbRole.BOSS && role != Role.BOSS && !anotherManagerExists(tx, projectId, userId)) {
-                throw ConflictException("Projekt musí mít alespoň jednoho aktivního vedoucího (BOSS)")
+                throw ConflictException("Projekt musí mít alespoň jednoho aktivního stavbyvedoucího")
             }
             // Part A of the diary names these persons and is stored with every signature: their number is bounded.
             if (newDbRole in ROLES_WITH_SCOPE && before !in ROLES_WITH_SCOPE &&
@@ -199,7 +199,7 @@ object ProjectMemberService {
             val before = existing.get(PROJECT_MEMBERS.ROLE)!!
             requireSiteManagerStaysManager(tx, projectId, userId, newRole = null)
             if (before == DbRole.BOSS && !anotherManagerExists(tx, projectId, userId)) {
-                throw ConflictException("Projekt musí mít alespoň jednoho aktivního vedoucího (BOSS)")
+                throw ConflictException("Projekt musí mít alespoň jednoho aktivního stavbyvedoucího")
             }
             tx.deleteFrom(PROJECT_MEMBERS)
                 .where(PROJECT_MEMBERS.PROJECTID.eq(projectId).and(PROJECT_MEMBERS.USERID.eq(userId)))

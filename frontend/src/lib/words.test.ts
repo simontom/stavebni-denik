@@ -90,9 +90,65 @@ describe("the words of the interface", () => {
   });
 
   it("has no English label (nor a code name in brackets after a Czech one)", () => {
-    const english = /\b(the|and|failed|error|please|with|for|not|is|of|upload|loading|click|invalid|submit|cancel|audit log)\b/i;
+    const english = /\b(the|and|failed|error|please|with|for|not|is|of|upload|loading|click|invalid|submit|cancel)\b/i;
     const bad = strings.filter((v) => /\s/.test(v.text) && english.test(v.text) && !/^\/|\$\{/.test(v.text)).map(where);
     expect(bad).toEqual([]);
     expect(strings.filter((v) => /\((nickname|displayName|password|login)\)/.test(v.text)).map(where)).toEqual([]);
+  });
+
+  it("says Audit, never 'audit log' (nor an inflected 'audit logu')", () => {
+    expect(strings.filter((v) => /audit\s+log/i.test(v.text)).map(where)).toEqual([]);
+  });
+
+  it("never calls the stavbyvedoucí 'vedoucí projektu'", () => {
+    expect(strings.filter((v) => /(?<!stavby)vedoucí(ho|m|mu)? projektu|(?<!stavby)vedoucích projektů/i.test(v.text)).map(where)).toEqual([]);
+  });
+});
+
+/**
+ * The messages of the server reach the person too (the refusal of a save is shown in the alert), so the same glossary holds for the
+ * string literals of the backend: no English role name in a message, no "(BOSS)" after a Czech word, no zápis, no "vedoucí projektu".
+ * Comments and the operator's command line (`cli/`, English by design) are not looked at; a literal that is only a code (`"BOSS"`) is the key.
+ */
+const BACKEND = fileURLToPath(new URL("../../../backend/src/main/kotlin/", import.meta.url));
+
+function kotlinFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}${entry.name}`;
+    if (entry.isDirectory()) return entry.name === "cli" ? [] : kotlinFiles(`${path}/`);
+    return entry.name.endsWith(".kt") ? [path] : [];
+  });
+}
+
+/** The ordinary string literals of a Kotlin file, with the line they start on (the comments are cut out first). */
+function kotlinLiterals(file: string): Visible[] {
+  const source = readFileSync(file, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, " "))
+    .split("\n")
+    .map((line) => (/^\s*\/\//.test(line) ? "" : line))
+    .join("\n");
+  const found: Visible[] = [];
+  for (const m of source.matchAll(/"((?:[^"\\\n]|\\.)*)"/g)) {
+    found.push({ file: file.slice(BACKEND.length), line: source.slice(0, m.index).split("\n").length, text: m[1], jsx: false });
+  }
+  return found;
+}
+
+const backendStrings = kotlinFiles(BACKEND).flatMap(kotlinLiterals);
+
+describe("the words of the server's messages", () => {
+  it("scans the whole backend (this would pass on nothing otherwise)", () => {
+    expect(backendStrings.length).toBeGreaterThan(1000);
+  });
+
+  it("never name a role in English where a person reads it", () => {
+    const bad = backendStrings.filter((v) => /\s/.test(v.text) && /\b(BOSS|WORKER|INSPECTOR|INVESTOR)\b/.test(v.text) && !/\b(SELECT|INSERT|UPDATE|WHERE|FROM)\b/.test(v.text));
+    expect(bad.map(where)).toEqual([]);
+  });
+
+  it("say záznam, stavebník and stavbyvedoucí", () => {
+    expect(backendStrings.filter((v) => /z[áÁ]pis/i.test(v.text)).map(where)).toEqual([]);
+    expect(backendStrings.filter((v) => /investor/i.test(v.text) && !/^[A-Z_]+$/.test(v.text)).map(where)).toEqual([]);
+    expect(backendStrings.filter((v) => /(?<!stavby)vedoucí(ho|m|mu)? projektu|(?<!stavby)vedoucích projektů/i.test(v.text)).map(where)).toEqual([]);
   });
 });

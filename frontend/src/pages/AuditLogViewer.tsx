@@ -117,7 +117,10 @@ export const AuditLogViewer: React.FC = () => {
                 </td>
                 <td data-label="Objekt" className="px-4 py-2 text-gray-600">
                   {auditEntityLabel(log.entityType)}
-                  {log.entityId ? <span className="block font-mono text-xs break-all text-ink-muted">{log.entityId}</span> : null}
+                  <span className="block font-mono text-xs break-all text-ink-muted">
+                    {log.entityType}
+                    {log.entityId ? `: ${log.entityId}` : ""}
+                  </span>
                 </td>
                 <td data-label="Otisk" className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
                   {log.rowHash.slice(0, 12)}…

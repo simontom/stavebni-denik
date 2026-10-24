@@ -12,8 +12,11 @@ import org.jooq.TableField
  * a frozen list of keys (ReportSignature.FORMAT_2_DETAIL_KEYS, FORMAT_3_DETAIL_KEYS), so a field added here is not signed until
  * a new format covers it (GoldenSignatureTest fails until then).
  *
- * The wording of the labels is **provisional**: it was written from a summary of the annex, not from its official text, and
- * has to be checked against the Sbírka zákonů and confirmed with a lawyer (PROJECT.md, "What an entry says").
+ * The labels are the headings of the printed entry and the labels of the form (the same words, in the same order: the SPA's
+ * `DETAIL_FIELDS`, and `partALabels.test.ts` fails when they differ). Where příloha 12 words an item (B.1 d), B.1 e)) the label is
+ * the words of the decree; the others are this project's wording of the items. The wording was checked on 2026-10-16 against the
+ * consolidated text on zakonyprolidi.cz and the copy on sagit.cz (not the official e-Sbírka) and **still has to be confirmed by
+ * a lawyer before real data** (PROJECT.md, "What an entry says" and the Release gate).
  */
 object EntryDetails {
     class Field(val key: String, val label: String, val column: TableField<DailyReportsRecord, String?>)

@@ -24,7 +24,9 @@ function formatTime(iso: string): string {
 export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: boolean }) {
   const [addenda, setAddenda] = useState<Addendum[]>([]);
   const [text, setText] = useState("");
-  const [error, setError] = useState("");
+  // Two different things: the list could not be loaded (a notice about the page, not about the text field), and the server refused the text that was sent (the field's error).
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -34,7 +36,7 @@ export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: bool
         if (!ignore) setAddenda(list);
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(err instanceof Error ? err.message : "Dodatky se nepodařilo načíst");
+        if (!ignore) setLoadError(err instanceof Error ? err.message : "Dodatky se nepodařilo načíst");
       });
     return () => {
       ignore = true;
@@ -45,13 +47,13 @@ export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: bool
     e.preventDefault();
     if (busy || text.trim() === "") return;
     setBusy(true);
-    setError("");
+    setSaveError("");
     try {
       const created = await api<Addendum>(`/api/reports/${entryId}/addenda`, { method: "POST", body: json({ text }) });
       setAddenda((current) => [...current, created]);
       setText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Dodatek se nepodařilo uložit");
+      setSaveError(err instanceof Error ? err.message : "Dodatek se nepodařilo uložit");
     } finally {
       setBusy(false);
     }
@@ -79,16 +81,25 @@ export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: bool
       {canWrite && (
         <form onSubmit={(e) => void add(e)} className="space-y-3">
           {/* A refusal of the server is the text's error: announced at once and tied to the field. */}
-          <Field id="addendum-text" label="Nový dodatek (oprava nebo doplnění; po uložení ho nelze změnit ani smazat)" error={error || undefined}>
-            <TextArea name="addendumText" rows={3} maxLength={MAX_LENGTH} value={text} onChange={(e) => setText(e.target.value)} />
+          <Field id="addendum-text" label="Nový dodatek (oprava nebo doplnění; po uložení ho nelze změnit ani smazat)" error={saveError || undefined}>
+            <TextArea
+              name="addendumText"
+              rows={3}
+              maxLength={MAX_LENGTH}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setSaveError("");
+              }}
+            />
           </Field>
           <Button type="submit" size="sm" disabled={busy || text.trim() === ""}>
             Přidat dodatek
           </Button>
         </form>
       )}
-      {/* Nobody here can write, so there is no field to tie it to (the list could not be loaded). */}
-      {!canWrite && error && <Banner tone="danger">{error}</Banner>}
+      {/* The list could not be loaded: a notice about the page, not the error of the text field (which is only for a refusal of the text that was sent). */}
+      {loadError && <Banner tone="danger">{loadError}</Banner>}
     </section>
   );
 }

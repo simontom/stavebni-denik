@@ -545,8 +545,10 @@ export const DailyReport: React.FC = () => {
   // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
   const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
   const dayLabel = formatDayWithWeekday(entry?.date ?? reportId ?? "", "long");
-  // "Záznam č. 5 / 28. 9. 2026 – Hala Brno – Stavební deník"; a draft has no number yet.
-  usePageTitle(`${sequenceNumber !== null ? entryNumberLabel(sequenceNumber) : "Rozpracovaný záznam"} / ${formatDay(entry?.date ?? reportId ?? "")}`, projectName);
+  // "Záznam č. 5 / 28. 9. 2026 – Hala Brno – Stavební deník". The number is known once the entry is signed and read again; until then a signed entry is just "Záznam", a draft
+  // is "Rozpracovaný záznam" and a day nobody has written is "Záznam" too: the title never says more than the page knows.
+  const entryTitle = sequenceNumber !== null ? entryNumberLabel(sequenceNumber) : entryState === "draft" ? "Rozpracovaný záznam" : "Záznam";
+  usePageTitle(`${entryTitle} / ${formatDay(entry?.date ?? reportId ?? "")}`, projectName);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -779,9 +781,11 @@ export const DailyReport: React.FC = () => {
                     const length = (details[field.key] ?? "").length;
                     const tooLong = length > MAX_DETAIL_CHARS;
                     const nearLimit = length > MAX_DETAIL_CHARS * 0.9 && !tooLong;
-                    const problem = tooLong ? `Text je příliš dlouhý: ${length} / ${MAX_DETAIL_CHARS} znaků.` : fieldError?.id === id ? fieldError.message : undefined;
+                    // After a Save that was refused the refusal is said (an alert on the message; the focus is on the control); while typing, the text that is too long says so politely (a status).
+                    const refused = fieldError?.id === id ? fieldError.message : undefined;
+                    const live = tooLong ? `Text je příliš dlouhý: ${length} / ${MAX_DETAIL_CHARS} znaků.` : undefined;
                     return (
-                      <Field key={field.key} id={id} label={field.label} hint={field.hint} error={problem} errorRole={tooLong ? "status" : "alert"}>
+                      <Field key={field.key} id={id} label={field.label} hint={field.hint} error={refused ?? live} errorRole={refused ? "alert" : "status"}>
                         <TextArea
                           name={id}
                           value={details[field.key] ?? ""}

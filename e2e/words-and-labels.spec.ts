@@ -118,8 +118,20 @@ test.describe("titles: every page has one of its own", () => {
     await page.getByRole("link", { name: "Členové", exact: true }).click();
     await expect(page).toHaveTitle(`Členové – ${projectName} – ${APP}`);
 
+    // an entry nobody has signed has no number: "Rozpracovaný záznam"; a day nobody has written is only "Záznam"; the signed one has its number
+    await post(page.request, `/api/projects/${projectId}/reports/2026-09-29`, {
+      date: "2026-09-29",
+      workDescription: "Rozpracováno",
+      workersByTrade: JSON.stringify([{ trade: "Zedník", count: 1 }]),
+      lateEntryReason: "Doplněno dodatečně.",
+      expectNew: true,
+    });
     await page.goto(`/projects/${projectId}/reports/2026-09-29`);
     await expect(page).toHaveTitle(`Rozpracovaný záznam / 29. 9. 2026 – ${projectName} – ${APP}`, { timeout: 15_000 });
+    await page.goto(`/projects/${projectId}/reports/2026-09-30`);
+    await expect(page).toHaveTitle(`Záznam / 30. 9. 2026 – ${projectName} – ${APP}`, { timeout: 15_000 });
+    await page.goto(`/projects/${projectId}/reports/${DAY}`);
+    await expect(page).toHaveTitle(`Záznam č. 1 / ${DAY_CZ} – ${projectName} – ${APP}`, { timeout: 15_000 });
   });
 });
 
@@ -245,6 +257,17 @@ test.describe("labels and messages are tied to their fields", () => {
     await materials.fill("x".repeat(5001));
     await expect(materials).toHaveAttribute("aria-invalid", "true");
     await expect(materials).toHaveAccessibleDescription(/Text je příliš dlouhý: 5001 \/ 5000 znaků/);
+    // Save is refused: the refusal is said as an alert on its message under the field (not only the polite note of the typing), the focus
+    // is on the field, and the field is described by it
+    await page.getByRole("button", { name: /uložit záznam/i }).click();
+    const tooLongAlert = page.getByRole("alert").filter({ hasText: /může mít nejvýše 5000 znaků \(teď 5001\)/ });
+    await expect(tooLongAlert).toBeVisible();
+    await expect(materials).toBeFocused();
+    await expect(materials).toHaveAccessibleDescription(/může mít nejvýše 5000 znaků \(teď 5001\)/);
+    // typing is the answer again: the alert goes, the polite note is back
+    await materials.fill("x".repeat(5002));
+    await expect(tooLongAlert).toHaveCount(0);
+    await expect(materials).toHaveAccessibleDescription(/Text je příliš dlouhý: 5002 \/ 5000 znaků/);
     await materials.fill("x".repeat(4600));
     await expect(materials).not.toHaveAttribute("aria-invalid", "true");
     await expect(materials).toHaveAccessibleDescription(/4600 \/ 5000 znaků/);

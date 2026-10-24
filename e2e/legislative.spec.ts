@@ -183,6 +183,39 @@ test.describe("Legislative Compliance", () => {
     await signDialog.getByRole("button", { name: "Podepsat", exact: true }).click();
     await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible();
 
+    // Two things that nobody has signed, made for the contrast further down. A role is told from a document only by something that has a
+    // form (an entry) or buttons (a protocol) for one role and not for the other: on the signed entry above, and on a protocol one side has
+    // signed, nobody has a form or an "Upravit". So the manager looks at them here, and the client looks at the same ones below.
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date());
+    const tenDaysAgo = new Date(`${today}T00:00:00Z`);
+    tenDaysAgo.setUTCDate(tenDaysAgo.getUTCDate() - 10);
+    const draftDay = tenDaysAgo.toISOString().slice(0, 10);
+    const draftEntry = await page.request.post(`/api/projects/${projectId}/reports/${draftDay}`, {
+      data: {
+        date: draftDay,
+        workDescription: "Rozpracováno pro stavebníka",
+        workersByTrade: JSON.stringify([{ trade: "Zedník", count: 1 }]),
+        lateEntryReason: "Doplněno dodatečně.",
+        expectNew: true,
+      },
+    });
+    expect(draftEntry.ok(), await draftEntry.text()).toBeTruthy();
+    const unsignedHandover = await page.request.post(`/api/projects/${projectId}/handovers`, {
+      data: { type: "Druhé předání", date: "2026-09-12", participants: "Obě strany", notes: "Zatím nikdo nepodepsal." },
+    });
+    expect(unsignedHandover.ok(), await unsignedHandover.text()).toBeTruthy();
+    const unsignedHandoverId = ((await unsignedHandover.json()) as { id: string }).id;
+
+    // The manager has the form of the draft with its save and sign buttons, and "Upravit" and the contractor's signature on the protocol.
+    await page.goto(`${projectUrl}/reports/${draftDay}`);
+    await expect(page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /podepsat a uzamknout/i })).toBeVisible();
+    await page.goto(`${projectUrl}?tab=handovers`);
+    const managersProtocol = page.locator(`#handover-${unsignedHandoverId}`);
+    await expect(managersProtocol.getByRole("button", { name: "Upravit", exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(managersProtocol.getByRole("button", { name: "Podepsat za zhotovitele" })).toBeVisible();
+
     // 8. Log in as INVESTOR and acknowledge report
     await page.context().clearCookies();
     await page.goto("/login");
@@ -193,27 +226,36 @@ test.describe("Legislative Compliance", () => {
 
     // The client signs the other side of the handover: the same dialog, the investor's own password, no ČKAIT number
     await page.goto(`${projectUrl}?tab=handovers`);
-    await expect(page.getByText("Podepsal zhotovitel, čeká na stavebníka")).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("button", { name: "Upravit", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: "Podepsat za zhotovitele" })).toHaveCount(0);
-    await page.getByRole("button", { name: "Podepsat za stavebníka" }).click();
+    const signedByContractor = page.locator(`#handover-${stored.id}`);
+    const unsigned = page.locator(`#handover-${unsignedHandoverId}`);
+    await expect(signedByContractor.getByText("Podepsal zhotovitel, čeká na stavebníka")).toBeVisible({ timeout: 15_000 });
+    // On the protocol nobody has signed the manager had "Upravit" and the contractor's signature (above): the client has neither, and has their own.
+    await expect(unsigned.getByText("Druhé předání")).toBeVisible();
+    await expect(unsigned.getByRole("button", { name: "Podepsat za stavebníka" })).toBeVisible();
+    await expect(unsigned.getByRole("button", { name: "Upravit", exact: true })).toHaveCount(0);
+    await expect(unsigned.getByRole("button", { name: "Podepsat za zhotovitele" })).toHaveCount(0);
+    await signedByContractor.getByRole("button", { name: "Podepsat za stavebníka" }).click();
     const clientSign = page.getByRole("dialog", { name: /Podepsat předání za stavebníka/i });
     await clientSign.getByLabel("Heslo").fill(INVESTOR_PASSWORD);
     await clientSign.getByRole("button", { name: "Podepsat", exact: true }).click();
     await expect(page.getByText("Podepsáno oběma stranami")).toBeVisible();
     await expect(page.getByText(/Podepsal\(a\) E2E Investor \(Stavebník\), /)).toBeVisible();
-    await expect(page.getByRole("button", { name: /Podepsat za/ })).toHaveCount(0);
+    // Both sides have signed: the button the client just used is gone (it was there a moment ago)
+    await expect(signedByContractor.getByRole("button", { name: /Podepsat za/ })).toHaveCount(0);
+
+    // The entry nobody has signed: for the manager it was the form with its save and sign buttons (above); for the client it is the
+    // document, with the text and the state, and none of them.
+    await page.goto(`${projectUrl}/reports/${draftDay}`);
+    await expect(page.getByText("Rozpracováno pro stavebníka")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("Rozpracováno", { exact: true })).toBeVisible();
+    await expect(page.locator('textarea[name="workDescription"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /podepsat a uzamknout/i })).toHaveCount(0);
 
     // Go to report
     await page.goto(reportUrl);
     await expect(page.getByRole("group", { name: "Stav záznamu" }).getByText("Kontrolní den", { exact: true })).toBeVisible();
     await expect(page.getByText("SO: SO-101")).toBeVisible();
-
-    // The client cannot edit or sign as the site manager. Every one of these matches something on this very page for the manager (the
-    // field is what step 7 filled in, the buttons are the ones it pressed), so none of them passes only because it names a thing that does not exist.
-    await expect(page.locator('textarea[name="workDescription"]')).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /podepsat a uzamknout/i })).toHaveCount(0);
 
     // Verify investor sees and can click Acknowledge button
     const ackBtn = page.getByRole("button", { name: /potvrdit seznámení/i });

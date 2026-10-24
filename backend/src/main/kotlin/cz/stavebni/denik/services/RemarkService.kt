@@ -106,11 +106,11 @@ object RemarkService {
 
             val type = when (role) {
                 Role.INSPECTOR -> {
-                    require(externalAuthor == null) { "Za jinou osobu zapisuje vedoucí projektu" }
+                    require(externalAuthor == null) { "Za jinou osobu zapisuje stavbyvedoucí" }
                     Remarktype.INSPECTOR_REMARK
                 }
                 Role.INVESTOR -> {
-                    require(externalAuthor == null) { "Za jinou osobu zapisuje vedoucí projektu" }
+                    require(externalAuthor == null) { "Za jinou osobu zapisuje stavbyvedoucí" }
                     Remarktype.INVESTOR_NOTE
                 }
                 // The manager's own words belong in the daily entry; here they record what an outside party said.
