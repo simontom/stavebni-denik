@@ -18,7 +18,7 @@ export function EntryStateBadge({ state }: { state: "none" | "draft" | "signed" 
 export function LateEntryBadge() {
   return (
     <StatusBadge tone="warning" outlined>
-      Pozdní zápis
+      Pozdní záznam
     </StatusBadge>
   );
 }

@@ -92,10 +92,10 @@ class PdfSignedPartATest : BaseIntegrationTest() {
 
         assertEquals("Bytový dům Zelená", data.text("projectName"), "the page names the project as it was")
         val rows = data.rows("projectInfo")
-        assertEquals("Zhotovitel s.r.o.", rows["Zhotovitel"])
+        assertEquals("Zhotovitel s.r.o.", rows["Zhotovitel (název a sídlo, IČO)"])
         assertEquals("Ing. arch. Petr Dozor, autorizace ČKA 123", rows["Autorský dozor"])
         assertEquals("Jan Stavbyvedoucí, ČKAIT 0012345", rows["Stavbyvedoucí"])
-        assertEquals("SZ/1 ze dne 15. 3. 2026", rows["Povolení"])
+        assertEquals("SZ/1 ze dne 15. 3. 2026", rows["Číslo jednací povolení"])
         assertEquals("Elektro s.r.o.", data.text("subcontractors"))
         assertEquals("Smlouva o dílo", data.text("supportingDocuments"))
         assertEquals(listOf("Jan Stavbyvedoucí", "Marie Zástupce"), data.names("managers"))
@@ -179,7 +179,31 @@ class PdfSignedPartATest : BaseIntegrationTest() {
         // It is read when the PDF is made: a change shows at once.
         val current = ProjectService.getProject(dsl, s.boss, s.projectId)
         ProjectService.updateProject(s.boss, s.projectId, current.copy(contractor = "Jiný zhotovitel"))
-        assertEquals("Jiný zhotovitel", dataOf(report).rows("projectInfo")["Zhotovitel"])
+        assertEquals("Jiný zhotovitel", dataOf(report).rows("projectInfo")["Zhotovitel (název a sídlo, IČO)"])
+    }
+
+    @Test
+    fun `a row that holds a number and its date never prints a bare date, and is left out when it has neither`() = runBlocking<Unit> {
+        val s = site()
+        val report = entry(s)
+
+        suspend fun rows(permitNumber: String?, permitDate: String?, contractNumber: String? = null, contractDate: String? = null): Map<String, String> {
+            val current = ProjectService.getProject(dsl, s.boss, s.projectId)
+            ProjectService.updateProject(
+                s.boss, s.projectId,
+                current.copy(permitNumber = permitNumber, permitDate = permitDate, contractNumber = contractNumber, contractDate = contractDate),
+            )
+            return dataOf(report).rows("projectInfo")
+        }
+        val permit = "Číslo jednací povolení"
+
+        assertEquals("SZ/1 ze dne 15. 3. 2026", rows("SZ/1", "2026-03-15")[permit], "both")
+        assertEquals("SZ/1", rows("SZ/1", null)[permit], "the number alone")
+        assertEquals("neuvedeno, ze dne 5. 1. 2026", rows(null, "2026-01-05")[permit], "a date whose number is missing says so")
+        assertFalse(rows(null, null).containsKey(permit), "neither: a row without a value is left out")
+        // the contract and the documentation share the rule
+        assertEquals("neuvedeno, ze dne 1. 2. 2026", rows(null, null, null, "2026-02-01")["Smlouva"])
+        assertEquals("SML-1 ze dne 1. 2. 2026", rows(null, null, "SML-1", "2026-02-01")["Smlouva"])
     }
 
     @Test

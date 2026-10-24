@@ -109,7 +109,7 @@ test("text left in the form when the tab is lost comes back as a draft: Obnovit 
   await page.locator('input[name="workerTrade"]').first().fill("Betonář");
   await page.locator('input[name="workerCount"]').first().fill("3");
   await page.getByLabel("Jména pracovníků 1").fill("Ing. Jan Novák, Ph.D.; Petr Svoboda");
-  await page.getByLabel("Použité stroje a mechanizace").fill("Čerpadlo");
+  await page.getByLabel("Mechanizace", { exact: true }).fill("Čerpadlo");
   await expectDraftKept(page);
 
   // The tab dies (a phone that kills it while the camera is open): no "leave?" question, nothing saved.
@@ -131,7 +131,7 @@ test("text left in the form when the tab is lost comes back as a draft: Obnovit 
   await expect(reopened.locator('input[name="workerTrade"]').first()).toHaveValue("Betonář");
   await expect(reopened.locator('input[name="workerCount"]').first()).toHaveValue("3");
   await expect(reopened.getByLabel("Jména pracovníků 1")).toHaveValue("Ing. Jan Novák, Ph.D.; Petr Svoboda");
-  await expect(reopened.getByLabel("Použité stroje a mechanizace")).toHaveValue("Čerpadlo");
+  await expect(reopened.getByLabel("Mechanizace", { exact: true })).toHaveValue("Čerpadlo");
   // Restored text is still unsaved text.
   await expect(reopened.getByText(/neuložené změny/i)).toBeVisible();
 

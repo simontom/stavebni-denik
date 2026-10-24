@@ -90,8 +90,8 @@ object RemarkService {
 
     suspend fun create(user: SessionUser, reportId: UUID, request: CreateRemarkRequest): RemarkDto {
         val text = request.text.trim()
-        require(text.isNotEmpty()) { "Zápis nesmí být prázdný" }
-        require(text.length <= MAX_LENGTH) { "Zápis je příliš dlouhý (nejvýše $MAX_LENGTH znaků)" }
+        require(text.isNotEmpty()) { "Záznam nesmí být prázdný" }
+        require(text.length <= MAX_LENGTH) { "Záznam je příliš dlouhý (nejvýše $MAX_LENGTH znaků)" }
         val externalAuthor = request.externalAuthor?.trim()?.takeIf { it.isNotEmpty() }
         require(externalAuthor == null || externalAuthor.length <= MAX_AUTHOR_LENGTH) { "Jméno autora je příliš dlouhé (nejvýše $MAX_AUTHOR_LENGTH znaků)" }
 
@@ -106,16 +106,16 @@ object RemarkService {
 
             val type = when (role) {
                 Role.INSPECTOR -> {
-                    require(externalAuthor == null) { "Za jinou osobu zapisuje vedoucí projektu" }
+                    require(externalAuthor == null) { "Za jinou osobu zapisuje stavbyvedoucí" }
                     Remarktype.INSPECTOR_REMARK
                 }
                 Role.INVESTOR -> {
-                    require(externalAuthor == null) { "Za jinou osobu zapisuje vedoucí projektu" }
+                    require(externalAuthor == null) { "Za jinou osobu zapisuje stavbyvedoucí" }
                     Remarktype.INVESTOR_NOTE
                 }
                 // The manager's own words belong in the daily entry; here they record what an outside party said.
                 else -> {
-                    require(externalAuthor != null) { "Uveďte, za koho zápis pořizujete (orgán, osoba bez účtu)" }
+                    require(externalAuthor != null) { "Uveďte, za koho záznam pořizujete (orgán, osoba bez účtu)" }
                     Remarktype.EXTERNAL_ENTRY
                 }
             }
@@ -132,7 +132,7 @@ object RemarkService {
                 .set(REMARKS.ISOFFICIAL, type == Remarktype.EXTERNAL_ENTRY)
                 .set(REMARKS.EXTERNALAUTHOR, externalAuthor)
                 .returning()
-                .fetchOne() ?: throw IllegalStateException("Zápis se nepodařilo uložit")
+                .fetchOne() ?: throw IllegalStateException("Záznam se nepodařilo uložit")
 
             val dto = RemarkDto(
                 id = record.get(REMARKS.ID).toString(),

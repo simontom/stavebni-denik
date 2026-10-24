@@ -33,7 +33,7 @@ describe("EntryDocument", () => {
   it("prints what was written in full, under a heading for each part", () => {
     render(<EntryDocument entry={entry} />);
 
-    for (const name of ["Popis prací", "Pracovníci podle profesí", "Počasí", "Další zápisy"]) {
+    for (const name of ["Popis prací", "Pracovníci podle profesí", "Počasí a stav staveniště", "Další údaje"]) {
       expect(screen.getByRole("heading", { level: 2, name })).toBeTruthy();
     }
     expect(screen.getByText(/Betonáž stropní desky\./).textContent).toBe("Betonáž stropní desky.\nDruhý řádek.");
@@ -73,11 +73,11 @@ describe("EntryDocument", () => {
 
   it("gives the reason of a late entry its own part, and only for a late entry", () => {
     const { rerender } = render(<EntryDocument entry={{ ...entry, isLateEntry: true, lateEntryReason: "Deník byl na jiné stavbě." }} />);
-    expect(screen.getByRole("heading", { level: 2, name: "Důvod pozdního zápisu" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "Důvod pozdního záznamu" })).toBeTruthy();
     expect(screen.getByText("Deník byl na jiné stavbě.")).toBeTruthy();
 
     rerender(<EntryDocument entry={{ ...entry, isLateEntry: false, lateEntryReason: "Zbytek z dřívějška" }} />);
-    expect(screen.queryByText("Důvod pozdního zápisu")).toBeNull();
+    expect(screen.queryByText("Důvod pozdního záznamu")).toBeNull();
     expect(screen.queryByText("Zbytek z dřívějška")).toBeNull();
   });
 });

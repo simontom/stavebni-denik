@@ -162,8 +162,8 @@ test("a new account's temporary password is shown once: it cannot be dismissed b
   expect(await tabCloseIsAsked(page), "nothing typed: closing the tab is not asked about").toBe(false);
   await openCreate.click();
   const form = page.getByRole("dialog", { name: "Vytvořit nového uživatele" });
-  await form.getByLabel("Přihlašovací jméno (nickname)").fill(nickname);
-  await form.getByLabel("Jméno a příjmení (displayName)").fill("Dialog Nový");
+  await form.getByLabel("Přihlašovací jméno").fill(nickname);
+  await form.getByLabel("Jméno a příjmení").fill("Dialog Nový");
   expect(await tabCloseIsAsked(page), "typed text: the browser asks before the tab is closed or reloaded").toBe(true);
   await form.getByRole("button", { name: "Vytvořit", exact: true }).click();
 
@@ -342,7 +342,7 @@ test("the dialogs that hold typed text (edit a user, create a user, add an autho
     const create = page.getByRole("dialog", { name: "Vytvořit nového uživatele" });
     const createOpener = page.getByRole("button", { name: "Nový uživatel" });
     await createOpener.click();
-    await expectAsksBeforeDiscarding(page, { opener: createOpener, dialog: create, field: create.getByLabel("Přihlašovací jméno (nickname)"), typed: "rozepsane-jmeno" });
+    await expectAsksBeforeDiscarding(page, { opener: createOpener, dialog: create, field: create.getByLabel("Přihlašovací jméno"), typed: "rozepsane-jmeno" });
   } finally {
     await dropUser(page, user);
   }

@@ -95,7 +95,7 @@ export function AppLayout() {
             {!mustChangePwd && user?.isAdmin && (
               <>
                 <NavItem to="/admin/users">Uživatelé</NavItem>
-                <NavItem to="/admin/audit">Audit log</NavItem>
+                <NavItem to="/admin/audit">Audit</NavItem>
               </>
             )}
           </nav>

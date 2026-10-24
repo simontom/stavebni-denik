@@ -96,7 +96,7 @@ class EntryDateWindowTest : BaseIntegrationTest() {
         val projectId = project(boss)
 
         val refused = assertThrows<IllegalArgumentException> { DailyReportService.createReport(boss, projectId, "2026-09-28") }
-        assertTrue(refused.message!!.contains("pozdní zápis"), refused.message)
+        assertTrue(refused.message!!.contains("pozdní záznam"), refused.message)
         assertEquals(0, dsl.fetchCount(DAILY_REPORTS))
 
         val late = DailyReportService.createReport(boss, projectId, "2026-09-28", lateEntryReason = "  Deník byl na jiné stavbě  ")
@@ -221,7 +221,7 @@ class EntryDateWindowTest : BaseIntegrationTest() {
             setBody("""{"workDescription":"Zpětně"}""")
         }
         assertEquals(HttpStatusCode.BadRequest, without.status)
-        assertTrue(without.bodyAsText().contains("důvod pozdního zápisu"), without.bodyAsText())
+        assertTrue(without.bodyAsText().contains("důvod pozdního záznamu"), without.bodyAsText())
 
         val with = client.post("/api/projects/$projectId/reports/2026-09-25") {
             header(HttpHeaders.Authorization, "Bearer $token")

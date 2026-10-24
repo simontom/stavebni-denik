@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, json } from "../lib/api";
+import { Banner, Button, Field, TextArea, TextInput } from "./ui";
 
 interface Remark {
   id: string;
@@ -33,7 +34,9 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
   const [remarks, setRemarks] = useState<Remark[]>([]);
   const [text, setText] = useState("");
   const [externalAuthor, setExternalAuthor] = useState("");
-  const [error, setError] = useState("");
+  // Two different things: the list could not be loaded (a notice about the page, not about the text field), and the server refused the text that was sent (the field's error).
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const isManager = role === "BOSS";
@@ -46,7 +49,7 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
         if (!ignore) setRemarks(list);
       })
       .catch((err: unknown) => {
-        if (!ignore) setError(err instanceof Error ? err.message : "Zápisy se nepodařilo načíst");
+        if (!ignore) setLoadError(err instanceof Error ? err.message : "Záznamy se nepodařilo načíst");
       });
     return () => {
       ignore = true;
@@ -57,7 +60,7 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
     e.preventDefault();
     if (busy || text.trim() === "" || (isManager && externalAuthor.trim() === "")) return;
     setBusy(true);
-    setError("");
+    setSaveError("");
     try {
       const created = await api<Remark>(`/api/reports/${entryId}/remarks`, {
         method: "POST",
@@ -67,19 +70,19 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
       setText("");
       setExternalAuthor("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Zápis se nepodařilo uložit");
+      setSaveError(err instanceof Error ? err.message : "Záznam se nepodařilo uložit");
     } finally {
       setBusy(false);
     }
   };
 
   // Nothing to show and nobody who could write: no empty box.
-  if (remarks.length === 0 && !canWrite && !error) return null;
+  if (remarks.length === 0 && !canWrite && !loadError) return null;
 
   return (
     <section aria-labelledby="remarks-title" className="space-y-3">
       <h2 id="remarks-title" className="font-semibold text-gray-900">
-        Zápisy dalších osob
+        Záznamy dalších osob
       </h2>
       {remarks.length === 0 ? (
         <p className="text-sm text-gray-500">K tomuto záznamu zatím nikdo další nezapsal.</p>
@@ -100,49 +103,32 @@ export function Remarks({ entryId, role }: { entryId: string; role: string | nul
         </ul>
       )}
       {canWrite && (
-        <form onSubmit={(e) => void add(e)} className="space-y-2">
+        <form onSubmit={(e) => void add(e)} className="space-y-3">
           {isManager && (
-            <div>
-              <label htmlFor="remark-author" className="block text-xs font-medium text-gray-700">
-                Za koho zápis pořizujete (orgán nebo osoba bez účtu)
-              </label>
-              <input
-                id="remark-author"
-                name="remarkAuthor"
-                type="text"
-                maxLength={200}
-                value={externalAuthor}
-                onChange={(e) => setExternalAuthor(e.target.value)}
-                className="w-full rounded-md border border-gray-300 p-2 text-sm"
-              />
-            </div>
+            <Field id="remark-author" label="Za koho záznam pořizujete (orgán nebo osoba bez účtu)">
+              <TextInput name="remarkAuthor" type="text" maxLength={200} value={externalAuthor} onChange={(e) => setExternalAuthor(e.target.value)} />
+            </Field>
           )}
-          <label htmlFor="remark-text" className="block text-xs font-medium text-gray-700">
-            Nový zápis (po uložení ho nelze změnit ani smazat)
-          </label>
-          <textarea
-            id="remark-text"
-            name="remarkText"
-            rows={3}
-            maxLength={MAX_LENGTH}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="w-full rounded-md border border-gray-300 p-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={busy || text.trim() === "" || (isManager && externalAuthor.trim() === "")}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Přidat zápis
-          </button>
+          {/* A refusal of the server is the text's error: announced at once and tied to the field. */}
+          <Field id="remark-text" label="Nový záznam (po uložení ho nelze změnit ani smazat)" error={saveError || undefined}>
+            <TextArea
+              name="remarkText"
+              rows={3}
+              maxLength={MAX_LENGTH}
+              value={text}
+              onChange={(e) => {
+                setText(e.target.value);
+                setSaveError("");
+              }}
+            />
+          </Field>
+          <Button type="submit" size="sm" disabled={busy || text.trim() === "" || (isManager && externalAuthor.trim() === "")}>
+            Přidat záznam
+          </Button>
         </form>
       )}
-      {error && (
-        <div role="alert" className="text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {/* The list could not be loaded: a notice about the page, not the error of the text field (which is only for a refusal of the text that was sent). */}
+      {loadError && <Banner tone="danger">{loadError}</Banner>}
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api, currentUser, json, ROLE_LABELS } from "../lib/api";
+import { usePageTitle } from "../lib/pageTitle";
 import { useStalled } from "../lib/useStalled";
 import { useUnsavedWork } from "../lib/useUnsavedWork";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -46,6 +47,7 @@ const RoleSelect = ({ id, value, onChange }: { id: string; value: string; onChan
 );
 
 export const AdminUsers: React.FC = () => {
+  usePageTitle("Uživatelé");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -170,8 +172,8 @@ export const AdminUsers: React.FC = () => {
       {/* Title & Actions */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-2xl font-bold text-gray-900">Uživatelé</div>
-          <p className="mt-1 text-sm text-gray-500">Správa uživatelských účtů a oprávnění v systému.</p>
+          <h1 className="text-2xl font-bold text-ink">Uživatelé</h1>
+          <p className="mt-1 text-sm text-ink-muted">Správa uživatelských účtů a oprávnění v systému.</p>
         </div>
         <Button ref={newUserButton} onClick={() => setCreating(true)}>
           Nový uživatel
@@ -231,7 +233,7 @@ export const AdminUsers: React.FC = () => {
                 </td>
                 <td data-label="Role" className="px-6 py-4 text-sm whitespace-nowrap text-gray-500">
                   {ROLE_LABELS[user.role] ?? user.role}
-                  {user.isAdmin && <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">admin</span>}
+                  {user.isAdmin && <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-xs text-indigo-700">administrátor</span>}
                   {user.ckaitNumber && <span className="ml-2 text-xs text-gray-500">ČKAIT {user.ckaitNumber}</span>}
                 </td>
                 <td data-label="Stav" className="px-6 py-4 text-sm whitespace-nowrap">
@@ -334,16 +336,16 @@ function CreateUserDialog({ onCreated, onCancel }: { onCreated: (result: CreateU
       footer={<FormActions formId="create-user-form" submitLabel="Vytvořit" busy={saving} stalled={stalled} />}
     >
       <form id="create-user-form" onSubmit={(e) => void submit(e)} className="space-y-4">
-        <Field id="new-nickname" label="Přihlašovací jméno (nickname)">
+        <Field id="new-nickname" label="Přihlašovací jméno">
           <TextInput name="nickname" type="text" required value={nickname} onChange={(e) => setNickname(e.target.value)} />
         </Field>
-        <Field id="new-displayName" label="Jméno a příjmení (displayName)">
+        <Field id="new-displayName" label="Jméno a příjmení">
           <TextInput name="displayName" type="text" required value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
         </Field>
         <Field id="new-role" label="Role">
           <RoleSelect id="new-role" value={role} onChange={setRole} />
         </Field>
-        <Field id="new-ckait" label="Číslo ČKAIT (vedoucí projektu a podepisující)">
+        <Field id="new-ckait" label="Číslo ČKAIT (stavbyvedoucí a podepisující)">
           <TextInput name="ckaitNumber" type="text" value={ckait} onChange={(e) => setCkait(e.target.value)} />
         </Field>
         {problem && <Banner tone="danger">{problem}</Banner>}
@@ -403,7 +405,7 @@ function EditUserDialog({ user, onSaved, onCancel }: { user: User; onSaved: (upd
         </Field>
         <Field
           id="edit-ckait"
-          label="Číslo ČKAIT (vedoucí projektu a podepisující)"
+          label="Číslo ČKAIT (stavbyvedoucí a podepisující)"
           hint={own ? "Své číslo ČKAIT si administrátor měnit nemůže. Požádejte jiného administrátora." : undefined}
         >
           <TextInput type="text" value={ckait} disabled={own} onChange={(e) => setCkait(e.target.value)} />

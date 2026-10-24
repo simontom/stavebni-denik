@@ -126,8 +126,8 @@ test.describe("a signed entry is a document", () => {
       await expect(page.getByText(site.projectName, { exact: true })).toBeVisible();
       await expect(page.getByText("Záznam č. 1", { exact: true })).toBeVisible();
       await expect(podepsano(page)).toHaveCount(1);
-      await expect(page.getByText("Pozdní zápis", { exact: true })).toBeVisible();
-      await expect(page.getByText("Kontrolní den")).toBeVisible();
+      await expect(page.getByText("Pozdní záznam", { exact: true })).toBeVisible();
+      await expect(page.getByRole("group", { name: "Stav záznamu" }).getByText("Kontrolní den", { exact: true })).toBeVisible();
       await expect(page.getByText("SO: SO-101")).toBeVisible();
       await expect(page.getByText(`Autor: ${ADMIN_NAME}`)).toBeVisible();
 
@@ -157,11 +157,11 @@ test.describe("a signed entry is a document", () => {
       // set apart from the text above it, in the muted small type of a note (a class that is not applied would leave it glued to it)
       await expect(none).toHaveCSS("margin-top", "16px");
       await expect(none).toHaveCSS("font-size", "14px");
-      await expect(none).toContainText("Použité stroje a mechanizace");
+      await expect(none).toContainText("Mechanizace");
       await expect(none).toContainText("Zahájení, přerušení a obnovení prací");
-      await expect(none).not.toContainText("Dodávky a uskladnění materiálu");
+      await expect(none).not.toContainText("Dodávky materiálu");
       await expect(none).not.toContainText("Bezpečnost práce");
-      await expect(page.getByText("Použité stroje a mechanizace", { exact: true })).toHaveCount(0);
+      await expect(page.getByText("Mechanizace", { exact: true })).toHaveCount(0);
 
       // It is not a form: no fields, no way to add a trade, no example text, no way to add a photo.
       await expect(entryFields(page)).toHaveCount(0);
@@ -229,7 +229,7 @@ test.describe("the headings", () => {
       await page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
       await expect(page.getByRole("region", { name: "Podpis záznamu" })).toBeVisible({ timeout: 15_000 });
       // the parts of the document are headings: the description, the trades, the weather, the other fields, the photos, the signature
-      for (const name of ["Popis prací", "Pracovníci podle profesí", "Počasí", "Další zápisy", "Fotodokumentace", "Podpis záznamu"]) {
+      for (const name of ["Popis prací", "Pracovníci podle profesí", "Počasí a stav staveniště", "Další údaje", "Fotodokumentace", "Podpis záznamu"]) {
         await expect(page.getByRole("heading", { level: 2, name })).toBeVisible();
       }
       expectOutline(await headingLevels(page), "a signed entry");
@@ -331,8 +331,13 @@ test.describe("while an entry is written, every field prompts", () => {
 
       await expect(page.locator('textarea[name="workDescription"]')).toBeEditable({ timeout: 15_000 });
       await expect(page.locator('textarea[name^="detail-"]')).toHaveCount(9);
-      // The empty ones are there to be filled in, with their prompt.
-      await expect(page.locator('textarea[name="detail-machinery"]')).toHaveAttribute("placeholder", /Stroje a mechanizace/);
+      // The empty ones are there to be filled in, with their prompt: a hint that is always shown and read with the field (what the decree
+      // asks), or an example in the field. None of the nine is without one.
+      await expect(page.locator('textarea[name="detail-machinery"]')).toHaveAccessibleDescription(/Stroje a mechanizace nasazené v tento den/);
+      const unprompted = await page
+        .locator('textarea[name^="detail-"]')
+        .evaluateAll((fields) => fields.filter((f) => !(f as HTMLTextAreaElement).placeholder && !f.getAttribute("aria-describedby")).map((f) => f.getAttribute("name")));
+      expect(unprompted, "every field has a prompt").toEqual([]);
       await expect(page.getByText("Rozpracováno", { exact: true })).toBeVisible();
       await expect(podepsano(page)).toHaveCount(0);
       await expect(page.getByText(/^Bez záznamu: /)).toHaveCount(0);
@@ -402,7 +407,7 @@ test.describe("the list of entries", () => {
       await expect(signed.getByRole("link", { name: `${A_MONDAY_CZ} · Záznam č. 1` })).toBeVisible();
       await expect(signed.getByText(`Autor: ${ADMIN_NAME}`)).toBeVisible();
       await expect(signed.getByText("Podepsáno", { exact: true })).toBeVisible();
-      await expect(signed.getByText("Pozdní zápis", { exact: true })).toBeVisible();
+      await expect(signed.getByText("Pozdní záznam", { exact: true })).toBeVisible();
       await expect(signed.getByText("Kontrolní den", { exact: true })).toBeVisible();
       await expect(signed).not.toContainText("2026-09-28");
 

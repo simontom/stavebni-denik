@@ -3,12 +3,33 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
+import { usePageTitle } from "../lib/pageTitle";
+import { LABELS } from "../lib/projectFields";
 import { useStalled } from "../lib/useStalled";
 import { useUnsavedWork } from "../lib/useUnsavedWork";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { Handovers } from "../components/Handovers";
-import { Banner, Button, Card, Field, FormActions, Modal, PageState, Select, StalledNotice, StatusBadge, TabLink, TabNav, TextInput, type ModalHandle } from "../components/ui";
+import {
+  Banner,
+  Button,
+  Card,
+  Field,
+  FormActions,
+  Modal,
+  PageState,
+  Select,
+  StalledNotice,
+  StatusBadge,
+  TabLink,
+  TabNav,
+  TextArea,
+  TextInput,
+  type ModalHandle,
+} from "../components/ui";
+
+/** What the tabs are called in the title of the page (the overview has no part of its own: the project's name says it). */
+const TAB_TITLES: Record<string, string> = { reports: "Záznamy", handovers: "Předání staveniště", members: "Členové" };
 
 interface AuthorizedPerson {
   id: string;
@@ -89,6 +110,8 @@ export const ProjectDetail: React.FC = () => {
   const [project, setProject] = useState<ProjectData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // The project's name, and the tab when it is not the overview ("Členové – Hala Brno – Stavební deník").
+  usePageTitle(TAB_TITLES[tab], project?.name ?? "Projekt");
 
   // Reports
   const [reports, setReports] = useState<ReportItem[]>([]);
@@ -347,7 +370,11 @@ export const ProjectDetail: React.FC = () => {
         </div>
       </Card>
 
-      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <Banner tone="danger" className="mb-4">
+          {error}
+        </Banner>
+      )}
 
       {/* Tab 1: Overview */}
       {tab === "overview" && (
@@ -364,84 +391,78 @@ export const ProjectDetail: React.FC = () => {
               )}
               {project.myRole === "BOSS" && siteManagerCandidates.length === 0 && (
                 <p className="mt-1 text-xs text-gray-500">
-                  Stavbyvedoucího lze změnit na jiného vedoucího (BOSS) tohoto projektu s číslem ČKAIT. Nejdřív ho přidejte v záložce Členové.
+                  Hlavního stavbyvedoucího lze změnit na jiného stavbyvedoucího tohoto projektu s číslem ČKAIT. Nejdřív ho přidejte v záložce Členové.
                 </p>
               )}
               {showSiteManager && (
-                <form onSubmit={changeSiteManager} className="mt-2 space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
-                  <label htmlFor="newSiteManager" className="block text-xs text-gray-600">
-                    Nový stavbyvedoucí (vedoucí tohoto projektu s číslem ČKAIT)
-                  </label>
-                  <select
+                <form onSubmit={changeSiteManager} className="mt-2 space-y-3 rounded border border-line bg-page p-3">
+                  {/* A refusal of the server is the select's error: announced at once and tied to the field. */}
+                  <Field
                     id="newSiteManager"
-                    name="newSiteManager"
-                    value={newSiteManagerId}
-                    onChange={(e) => setNewSiteManagerId(e.target.value)}
-                    required
-                    className="w-full rounded-md border border-gray-300 p-2"
+                    label="Nový stavbyvedoucí (člen projektu s číslem ČKAIT)"
+                    error={
+                      siteManagerError ? (
+                        <>
+                          {siteManagerError}
+                          {siteManagerStale && (
+                            <>
+                              {" "}
+                              <button type="button" onClick={reloadForSiteManager} className="font-semibold underline">
+                                Načíst znovu
+                              </button>
+                            </>
+                          )}
+                        </>
+                      ) : undefined
+                    }
                   >
-                    <option value="">Vyberte…</option>
-                    {siteManagerCandidates.map((m) => {
-                      // The list of users says who holds a ČKAIT number: a manager without one is shown, but cannot be chosen.
-                      const withoutNumber = userOptions.some((u) => u.id === m.userId && !u.hasCkait);
-                      return (
-                        <option key={m.userId} value={m.userId} disabled={withoutNumber}>
-                          {m.displayName} ({m.nickname}){withoutNumber ? " – bez čísla ČKAIT" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <label htmlFor="siteManagerReason" className="block text-xs text-gray-600">
-                    Důvod změny (nepovinné, zůstane v záznamu o změnách)
-                  </label>
-                  <textarea
+                    <Select name="newSiteManager" value={newSiteManagerId} onChange={(e) => setNewSiteManagerId(e.target.value)} required>
+                      <option value="">Vyberte…</option>
+                      {siteManagerCandidates.map((m) => {
+                        // The list of users says who holds a ČKAIT number: a manager without one is shown, but cannot be chosen.
+                        const withoutNumber = userOptions.some((u) => u.id === m.userId && !u.hasCkait);
+                        return (
+                          <option key={m.userId} value={m.userId} disabled={withoutNumber}>
+                            {m.displayName} ({m.nickname}){withoutNumber ? " – bez čísla ČKAIT" : ""}
+                          </option>
+                        );
+                      })}
+                    </Select>
+                  </Field>
+                  <Field
                     id="siteManagerReason"
-                    name="siteManagerReason"
-                    value={siteManagerReason}
-                    onChange={(e) => setSiteManagerReason(e.target.value)}
-                    rows={2}
-                    className="w-full rounded-md border border-gray-300 p-2"
-                  />
-                  {siteManagerReason.length > 1000 && <p className="text-xs font-semibold text-red-700">{siteManagerReason.length} / 1000 znaků</p>}
-                  {siteManagerError && (
-                    <div role="alert" className="rounded bg-red-100 p-2 text-sm text-red-700">
-                      <p>{siteManagerError}</p>
-                      {siteManagerStale && (
-                        <button type="button" onClick={reloadForSiteManager} className="mt-1 font-semibold underline">
-                          Načíst znovu
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex gap-3">
-                    <button
-                      type="submit"
-                      disabled={changingSiteManager || !newSiteManagerId || siteManagerReason.length > 1000}
-                      className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
-                    >
+                    label="Důvod změny (nepovinné, zůstane v záznamu o změnách)"
+                    error={siteManagerReason.length > 1000 ? `${siteManagerReason.length} / 1000 znaků: text je příliš dlouhý` : undefined}
+                    errorRole="status"
+                  >
+                    <TextArea name="siteManagerReason" value={siteManagerReason} onChange={(e) => setSiteManagerReason(e.target.value)} rows={2} />
+                  </Field>
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="submit" size="sm" disabled={changingSiteManager || !newSiteManagerId || siteManagerReason.length > 1000}>
                       {changingSiteManager ? "Ukládám..." : "Změnit stavbyvedoucího"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="quiet"
+                      size="sm"
                       onClick={() => {
                         setShowSiteManager(false);
                         setSiteManagerError("");
                         setSiteManagerStale(false);
                       }}
-                      className="text-sm text-gray-600 hover:underline"
                     >
                       Zrušit
-                    </button>
+                    </Button>
                   </div>
                 </form>
               )}
             </div>
             <div>
-              <span className="text-gray-500">Stavebník:</span>
+              <span className="text-gray-500">{LABELS.builder}:</span>
               <p className="font-medium text-gray-900">{project.builder || "Nespecifikován"}</p>
             </div>
             <div>
-              <span className="text-gray-500">Zhotovitel:</span>
+              <span className="text-gray-500">{LABELS.contractor}:</span>
               <p className="font-medium text-gray-900">{project.contractor || "Nespecifikován"}</p>
             </div>
             <div>
@@ -454,7 +475,7 @@ export const ProjectDetail: React.FC = () => {
             </div>
             {project.permitNumber && (
               <div>
-                <span className="text-gray-500">Povolení:</span>
+                <span className="text-gray-500">{LABELS.permitNumber}:</span>
                 <p className="font-medium text-gray-900">
                   {project.permitNumber}
                   {project.permitDate ? ` ze dne ${formatDate(project.permitDate)}` : ""}
@@ -463,13 +484,13 @@ export const ProjectDetail: React.FC = () => {
             )}
             {!project.permitNumber && project.permitDate && (
               <div>
-                <span className="text-gray-500">Datum povolení:</span>
+                <span className="text-gray-500">{LABELS.permitDate}:</span>
                 <p className="font-medium text-gray-900">{formatDate(project.permitDate)}</p>
               </div>
             )}
             {project.designerName && (
               <div>
-                <span className="text-gray-500">Projektant:</span>
+                <span className="text-gray-500">{LABELS.designerName}:</span>
                 <p className="font-medium text-gray-900">{project.designerName}</p>
               </div>
             )}
@@ -507,7 +528,7 @@ export const ProjectDetail: React.FC = () => {
             )}
             {project.subcontractors && (
               <div className="md:col-span-2">
-                <span className="text-gray-500">Poddodavatelé:</span>
+                <span className="text-gray-500">{LABELS.subcontractors}:</span>
                 <p className="font-medium whitespace-pre-line text-gray-900">{project.subcontractors}</p>
               </div>
             )}
@@ -721,7 +742,7 @@ export const ProjectDetail: React.FC = () => {
               </Button>
               {managerNeedsCkait && (
                 <p role="status" className="basis-full text-sm text-amber-800">
-                  {selectedUser?.displayName} nemá číslo ČKAIT, a proto nemůže být vedoucím projektu (podepisuje záznamy). Číslo doplní administrátor v seznamu uživatelů.
+                  {selectedUser?.displayName} nemá číslo ČKAIT, a proto nemůže být stavbyvedoucím (podepisuje záznamy). Číslo doplní administrátor v seznamu uživatelů.
                 </p>
               )}
             </div>

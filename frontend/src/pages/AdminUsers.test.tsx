@@ -74,8 +74,8 @@ describe("the temporary password of a new account", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Nový uživatel" }));
     const form = await screen.findByRole("dialog", { name: "Vytvořit nového uživatele" });
-    fireEvent.change(within(form).getByLabelText("Přihlašovací jméno (nickname)"), { target: { value: "svoboda" } });
-    fireEvent.change(within(form).getByLabelText("Jméno a příjmení (displayName)"), { target: { value: "Petr Svoboda" } });
+    fireEvent.change(within(form).getByLabelText("Přihlašovací jméno"), { target: { value: "svoboda" } });
+    fireEvent.change(within(form).getByLabelText("Jméno a příjmení"), { target: { value: "Petr Svoboda" } });
     fireEvent.submit(form.querySelector("form")!);
 
     const shown = await screen.findByRole("dialog", { name: "Uživatel byl vytvořen" });
@@ -101,12 +101,12 @@ describe("the temporary password of a new account", () => {
     await screen.findByText("Jan Novák");
     fireEvent.click(screen.getByRole("button", { name: "Nový uživatel" }));
     const form = await screen.findByRole("dialog", { name: "Vytvořit nového uživatele" });
-    fireEvent.change(within(form).getByLabelText("Přihlašovací jméno (nickname)"), { target: { value: "rozepsane" } });
+    fireEvent.change(within(form).getByLabelText("Přihlašovací jméno"), { target: { value: "rozepsane" } });
 
     pressEscape(form);
     const ask = await screen.findByRole("dialog", { name: "Zahodit rozepsané?" });
     fireEvent.click(within(ask).getByRole("button", { name: "Psát dál" }));
-    expect((within(form).getByLabelText("Přihlašovací jméno (nickname)") as HTMLInputElement).value).toBe("rozepsane");
+    expect((within(form).getByLabelText("Přihlašovací jméno") as HTMLInputElement).value).toBe("rozepsane");
 
     fireEvent.click(within(form).getByRole("button", { name: "Zrušit" }));
     fireEvent.click(within(await screen.findByRole("dialog", { name: "Zahodit rozepsané?" })).getByRole("button", { name: "Zahodit" }));

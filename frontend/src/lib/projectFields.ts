@@ -35,6 +35,21 @@ export interface FieldSpec {
   hint?: string;
 }
 
+/**
+ * The labels of the identification that příloha 12 A a) and c) words in a certain way: the number of the permit ("číslo jednací"), and the
+ * business name, the seat (or the name and the address) and the IČO of the builder, the contractor, the designer and the subcontractors.
+ * The printed entry says the same (`PdfExportService.PART_A_LABELS`; `partALabels.test.ts` fails when the two drift apart), so the screen
+ * and the print use the same words. The keys of the fields are never touched: they are part of what a signature covers.
+ */
+export const LABELS = {
+  builder: "Stavebník (název a sídlo, IČO)",
+  contractor: "Zhotovitel (název a sídlo, IČO)",
+  designerName: "Projektant (název a sídlo, IČO)",
+  subcontractors: "Poddodavatelé (název, sídlo, IČO)",
+  permitNumber: "Číslo jednací povolení",
+  permitDate: "Datum vydání povolení",
+} as const;
+
 export const LONGEST_NAME = 200;
 export const LONGEST_LONG = 500;
 export const LONGEST_LIST = 5000;
@@ -52,17 +67,17 @@ export const CORE: FieldSpec[] = [
   { key: "address", label: "Místo stavby / Adresa", required: true },
   { key: "cadastralArea", label: "Katastrální území", required: true },
   { key: "parcelNumbers", label: "Parcelní čísla", required: true },
-  { key: "builder", label: "Stavebník (Objednatel)", required: true },
-  { key: "contractor", label: "Zhotovitel", required: true },
+  { key: "builder", label: LABELS.builder, required: true, placeholder: "Obchodní firma nebo jméno, sídlo nebo adresa, IČO" },
+  { key: "contractor", label: LABELS.contractor, required: true, placeholder: "Obchodní firma nebo jméno, sídlo nebo adresa, IČO" },
 ];
 
 export const SECTIONS: { title: string; fields: FieldSpec[] }[] = [
   {
     title: "Povolení a osoby řídící stavbu",
     fields: [
-      { key: "permitNumber", label: "Číslo povolení", placeholder: "např. SZ/2026/123" },
-      { key: "permitDate", label: "Datum povolení", type: "date" },
-      { key: "designerName", label: "Projektant", placeholder: "Jméno nebo firma" },
+      { key: "permitNumber", label: LABELS.permitNumber, placeholder: "např. SZ/2026/123" },
+      { key: "permitDate", label: LABELS.permitDate, type: "date" },
+      { key: "designerName", label: LABELS.designerName, placeholder: "Obchodní firma nebo jméno, sídlo nebo adresa, IČO" },
       { key: "authorSupervisionName", label: "Autorský dozor projektanta", placeholder: "Jméno nebo firma, je-li autorský dozor zřízen" },
       { key: "authorSupervisionAuthorization", label: "Číslo autorizace autorského dozoru", placeholder: "např. ČKA 00 123" },
       { key: "tdsName", label: "Technický dozor stavebníka", placeholder: "Jméno" },
@@ -83,9 +98,9 @@ export const SECTIONS: { title: string; fields: FieldSpec[] }[] = [
     fields: [
       {
         key: "subcontractors",
-        label: "Poddodavatelé",
+        label: LABELS.subcontractors,
         type: "textarea",
-        placeholder: "Jedna firma na řádek (název, IČO, sídlo)",
+        placeholder: "Jedna firma na řádek (název, sídlo, IČO)",
       },
       {
         key: "supportingDocuments",

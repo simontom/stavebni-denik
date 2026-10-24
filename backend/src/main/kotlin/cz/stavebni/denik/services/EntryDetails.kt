@@ -12,23 +12,26 @@ import org.jooq.TableField
  * a frozen list of keys (ReportSignature.FORMAT_2_DETAIL_KEYS, FORMAT_3_DETAIL_KEYS), so a field added here is not signed until
  * a new format covers it (GoldenSignatureTest fails until then).
  *
- * The wording of the labels is **provisional**: it was written from a summary of the annex, not from its official text, and
- * has to be checked against the Sbírka zákonů and confirmed with a lawyer (PROJECT.md, "What an entry says").
+ * The labels are the headings of the printed entry and the labels of the form (the same words, in the same order: the SPA's
+ * `DETAIL_FIELDS`, and `partALabels.test.ts` fails when they differ). Where příloha 12 words an item (B.1 d), B.1 e)) the label is
+ * the words of the decree; the others are this project's wording of the items. The wording was checked on 2026-10-16 against the
+ * consolidated text on zakonyprolidi.cz and the copy on sagit.cz (not the official e-Sbírka) and **still has to be confirmed by
+ * a lawyer before real data** (PROJECT.md, "What an entry says" and the Release gate).
  */
 object EntryDetails {
     class Field(val key: String, val label: String, val column: TableField<DailyReportsRecord, String?>)
 
     /** In the order they are shown. The keys are the API's and are part of what signatures of formats 2 and 3 cover: never rename or remove one. */
     val FIELDS: List<Field> = listOf(
-        Field("materials", "Dodávky a uskladnění materiálu a zařízení", DAILY_REPORTS.MATERIALSIN),
-        Field("machinery", "Použité stroje a mechanizace", DAILY_REPORTS.MACHINERY),
+        Field("materials", "Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování", DAILY_REPORTS.MATERIALSIN),
+        Field("machinery", "Mechanizace", DAILY_REPORTS.MACHINERY),
         Field("testsAndChecks", "Zkoušky, měření a kontroly", DAILY_REPORTS.TESTSANDCHECKS),
         Field("safetyNotes", "Bezpečnost práce, ochrana životního prostředí a poučení", DAILY_REPORTS.SAFETYNOTES),
         Field("dustMeasures", "Opatření proti prašnosti", DAILY_REPORTS.DUSTMEASURES),
         Field("accessibilityMeasures", "Opatření pro zajištění přístupnosti", DAILY_REPORTS.ACCESSIBILITYMEASURES),
         Field("defects", "Závady a jejich odstranění", DAILY_REPORTS.DEFECTS),
         Field("workStateChanges", "Zahájení, přerušení a obnovení prací (data a důvody)", DAILY_REPORTS.WORKSTATECHANGES),
-        Field("otherNotes", "Ostatní zápisy", DAILY_REPORTS.OTHERNOTES),
+        Field("otherNotes", "Ostatní záznamy", DAILY_REPORTS.OTHERNOTES),
     )
 
     private val byKey = FIELDS.associateBy { it.key }

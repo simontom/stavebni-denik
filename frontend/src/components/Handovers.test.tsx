@@ -134,7 +134,7 @@ describe("what the tab offers", () => {
     await screen.findByText("Podepsal zhotovitel, čeká na stavebníka");
     expect(screen.getByText("Podepsáno oběma stranami")).toBeTruthy();
     expect(screen.getAllByText(/Podepsal\(a\) Ing\. Karel Dvořák \(Stavbyvedoucí, ČKAIT 0012345\)/)).toHaveLength(2);
-    expect(screen.getByText(/Podepsal\(a\) Marie Stavebníková \(Investor\),/)).toBeTruthy();
+    expect(screen.getByText(/Podepsal\(a\) Marie Stavebníková \(Stavebník\),/)).toBeTruthy();
     expect(screen.getAllByText("Čeká na podpis"), "the side that has not signed says so").toHaveLength(1);
     expect(screen.getAllByText(/^a{64}$/), "the hash both parties signed is shown under each protocol that has a signature").toHaveLength(2);
   });

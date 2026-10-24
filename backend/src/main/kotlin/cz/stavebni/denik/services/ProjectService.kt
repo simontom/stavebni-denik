@@ -276,7 +276,7 @@ object ProjectService {
             if (newManagerId == previousId) throw ConflictException("Tento člen už je stavbyvedoucím")
             requireActiveUser(tx, newManagerId)
             if (ProjectAccess.roleIn(tx, newManagerId, projectId) != cz.stavebni.denik.domain.Role.BOSS) {
-                throw ConflictException("Stavbyvedoucím může být jen člen tohoto projektu s rolí vedoucího (BOSS)")
+                throw ConflictException("Stavbyvedoucím může být jen člen tohoto projektu s rolí stavbyvedoucího")
             }
             requireCkaitNumber(tx, newManagerId)
             val updated = tx.update(PROJECTS)
@@ -334,7 +334,7 @@ object ProjectService {
             requireActiveUser(tx, siteManagerId)
             requireCkaitNumber(tx, siteManagerId)
             if (!ProjectAccess.hasCkaitNumber(tx, user.id)) {
-                throw ConflictException("Zakladatel projektu se stává jeho vedoucím a musí mít číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
+                throw ConflictException("Zakladatel projektu se stává jeho stavbyvedoucím a musí mít číslo ČKAIT. Požádejte administrátora, aby je doplnil u vašeho účtu.")
             }
             val record = tx.insertInto(PROJECTS)
                 .set(PROJECTS.NAME, fields.name)
