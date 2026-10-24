@@ -362,7 +362,7 @@ test.describe("the pages on a phone", () => {
       page
         .getByRole("listitem")
         .filter({ hasText: czDay(data.lateDay) })
-        .getByText("Pozdní zápis", { exact: true }),
+        .getByText("Pozdní záznam", { exact: true }),
     ).toBeVisible();
     await expect(
       page
@@ -548,8 +548,8 @@ test.describe("the pages on a phone", () => {
     const nickname = oneWord(63, `heslo${runLetters()}`);
     await page.getByRole("button", { name: "Nový uživatel" }).click();
     const form = page.getByRole("dialog", { name: "Vytvořit nového uživatele" });
-    await form.getByLabel("Přihlašovací jméno (nickname)").fill(nickname);
-    await form.getByLabel("Jméno a příjmení (displayName)").fill(oneWord(86, "Jmeno"));
+    await form.getByLabel("Přihlašovací jméno").fill(nickname);
+    await form.getByLabel("Jméno a příjmení").fill(oneWord(86, "Jmeno"));
     await form.getByRole("button", { name: "Vytvořit", exact: true }).click();
     const shown = page.getByRole("dialog", { name: "Uživatel byl vytvořen" });
     await expect(shown).toBeVisible({ timeout: 15_000 });

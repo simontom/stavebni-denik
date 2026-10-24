@@ -66,7 +66,7 @@ test("admin login + create + edit + deactivate + delete user", async ({ page }) 
   await expect(page.locator("tr", { hasText: WORKER_NICKNAME })).toHaveCount(0, { timeout: 15_000 });
 });
 
-test("admin nav links (Uživatelé + Audit log) visible after login", async ({ page }) => {
+test("admin nav links (Uživatelé + Audit) visible after login", async ({ page }) => {
   await page.goto("/login");
   await page.locator('input[name="nickname"]').fill(ADMIN_NICKNAME);
   await page.locator('input[name="password"]').fill(ADMIN_PASSWORD);
@@ -76,5 +76,5 @@ test("admin nav links (Uživatelé + Audit log) visible after login", async ({ p
   // Konkrétně header nav (ne dashboard card).
   const header = page.getByRole("navigation", { name: /hlavní/i });
   await expect(header.getByRole("link", { name: "Uživatelé", exact: true })).toBeVisible();
-  await expect(header.getByRole("link", { name: "Audit log", exact: true })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Audit", exact: true })).toBeVisible();
 });

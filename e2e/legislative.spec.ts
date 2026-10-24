@@ -154,7 +154,7 @@ test.describe("Legislative Compliance", () => {
 
     // 6. Add Investor as project member: two native selects, a person and a role
     await selectByText(page.getByLabel("Uživatel", { exact: true }), INVESTOR_NICKNAME);
-    await page.getByLabel("Role v projektu").selectOption({ label: "Investor" });
+    await page.getByLabel("Role v projektu").selectOption({ label: "Stavebník" });
 
     await page.getByRole("button", { name: /Přidat$/i }).click();
     await expect(page.locator("table").getByText(INVESTOR_NICKNAME)).toBeVisible();
@@ -172,7 +172,7 @@ test.describe("Legislative Compliance", () => {
     await page.getByRole("button", { name: /uložit (záznam|změny)/i }).click();
 
     // Verify badges
-    await expect(page.getByText("Kontrolní den")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Stav záznamu" }).getByText("Kontrolní den", { exact: true })).toBeVisible();
     await expect(page.getByText("SO: SO-101")).toBeVisible();
     const reportUrl = page.url();
 
@@ -201,17 +201,19 @@ test.describe("Legislative Compliance", () => {
     await clientSign.getByLabel("Heslo").fill(INVESTOR_PASSWORD);
     await clientSign.getByRole("button", { name: "Podepsat", exact: true }).click();
     await expect(page.getByText("Podepsáno oběma stranami")).toBeVisible();
-    await expect(page.getByText(/Podepsal\(a\) E2E Investor \(Investor\), /)).toBeVisible();
+    await expect(page.getByText(/Podepsal\(a\) E2E Investor \(Stavebník\), /)).toBeVisible();
     await expect(page.getByRole("button", { name: /Podepsat za/ })).toHaveCount(0);
 
     // Go to report
     await page.goto(reportUrl);
-    await expect(page.getByText("Kontrolní den")).toBeVisible();
+    await expect(page.getByRole("group", { name: "Stav záznamu" }).getByText("Kontrolní den", { exact: true })).toBeVisible();
     await expect(page.getByText("SO: SO-101")).toBeVisible();
 
-    // Verify investor CANNOT edit or sign as boss
-    await expect(page.getByRole("link", { name: /upravit/i })).not.toBeVisible();
-    await expect(page.getByRole("button", { name: /podepsat záznam/i })).not.toBeVisible();
+    // The client cannot edit or sign as the site manager. Every one of these matches something on this very page for the manager (the
+    // field is what step 7 filled in, the buttons are the ones it pressed), so none of them passes only because it names a thing that does not exist.
+    await expect(page.locator('textarea[name="workDescription"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /podepsat a uzamknout/i })).toHaveCount(0);
 
     // Verify investor sees and can click Acknowledge button
     const ackBtn = page.getByRole("button", { name: /potvrdit seznámení/i });

@@ -48,12 +48,12 @@ test("the manager records an entry of an outside party, also after signing, and 
   await signDialog.getByRole("button", { name: "Podepsat", exact: true }).click();
   await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
 
-  const section = page.getByRole("region", { name: "Zápisy dalších osob" });
+  const section = page.getByRole("region", { name: "Záznamy dalších osob" });
   await expect(section).toBeVisible({ timeout: 15_000 });
   await expect(section.getByText(/zatím nikdo další nezapsal/i)).toBeVisible();
 
   // The manager has to name the party the entry is for; nothing can be sent without it.
-  const add = section.getByRole("button", { name: "Přidat zápis" });
+  const add = section.getByRole("button", { name: "Přidat záznam" });
   await section.locator('textarea[name="remarkText"]').fill("Při kontrole nebyly zjištěny nedostatky.");
   await expect(add).toBeDisabled();
   await section.locator('input[name="remarkAuthor"]').fill("Stavební úřad Brno, Ing. Novák");
@@ -67,5 +67,5 @@ test("the manager records an entry of an outside party, also after signing, and 
   await expect(section.getByRole("button", { name: /upravit|smazat|odstranit/i })).toHaveCount(0);
 
   await page.reload();
-  await expect(page.getByRole("region", { name: "Zápisy dalších osob" }).getByText("Při kontrole nebyly zjištěny nedostatky.")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("region", { name: "Záznamy dalších osob" }).getByText("Při kontrole nebyly zjištěny nedostatky.")).toBeVisible({ timeout: 15_000 });
 });

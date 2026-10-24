@@ -172,8 +172,8 @@ export const AdminUsers: React.FC = () => {
       {/* Title & Actions */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-2xl font-bold text-gray-900">Uživatelé</div>
-          <p className="mt-1 text-sm text-gray-500">Správa uživatelských účtů a oprávnění v systému.</p>
+          <h1 className="text-2xl font-bold text-ink">Uživatelé</h1>
+          <p className="mt-1 text-sm text-ink-muted">Správa uživatelských účtů a oprávnění v systému.</p>
         </div>
         <Button ref={newUserButton} onClick={() => setCreating(true)}>
           Nový uživatel

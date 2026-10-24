@@ -111,8 +111,8 @@ test("an entry for an earlier day is a flagged late entry with a reason; a futur
   expect((await saved).ok()).toBeTruthy();
 
   await page.goto(`${projectUrl}/reports/${lateDay}`);
-  await expect(page.getByText("Pozdní zápis", { exact: true })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/Důvod pozdního zápisu:/)).toBeVisible();
+  await expect(page.getByText("Pozdní záznam", { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/Důvod pozdního záznamu:/)).toBeVisible();
   await expect(page.getByText("Deník byl na jiné stavbě")).toBeVisible();
   await expect(page.locator('textarea[name="lateEntryReason"]')).toHaveCount(0);
 
@@ -273,8 +273,8 @@ test("the fields the vyhláška asks for and the names of the people on site are
   await page.locator('input[name="workerTrade"]').first().fill("Betonář");
   await page.locator('input[name="workerCount"]').first().fill("3");
   await page.getByLabel("Jména pracovníků 1").fill("Ing. Jan Novák, Ph.D.; Petr Svoboda");
-  await page.getByLabel("Dodávky a uskladnění materiálu a zařízení").fill("Beton C25/30, 12 m3");
-  await page.getByLabel("Použité stroje a mechanizace").fill("Autodomíchávač, čerpadlo");
+  await page.getByLabel("Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování").fill("Beton C25/30, 12 m3");
+  await page.getByLabel("Mechanizace", { exact: true }).fill("Autodomíchávač, čerpadlo");
   await page.getByLabel("Opatření proti prašnosti").fill("Kropení povrchů");
   await page.getByLabel("Opatření pro zajištění přístupnosti").fill("Obchozí trasa pro chodce");
   await page.getByLabel("Závady a jejich odstranění").fill("Trhlina v omítce, opraveno");
@@ -285,15 +285,15 @@ test("the fields the vyhláška asks for and the names of the people on site are
   // Everything is stored: a reload shows it again.
   await page.goto(`${projectUrl}/reports/${day}`);
   await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Ing. Jan Novák, Ph.D.; Petr Svoboda", { timeout: 15_000 });
-  await expect(page.getByLabel("Dodávky a uskladnění materiálu a zařízení")).toHaveValue("Beton C25/30, 12 m3");
-  await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("Autodomíchávač, čerpadlo");
+  await expect(page.getByLabel("Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování")).toHaveValue("Beton C25/30, 12 m3");
+  await expect(page.getByLabel("Mechanizace", { exact: true })).toHaveValue("Autodomíchávač, čerpadlo");
   await expect(page.getByLabel("Opatření proti prašnosti")).toHaveValue("Kropení povrchů");
   await expect(page.getByLabel("Opatření pro zajištění přístupnosti")).toHaveValue("Obchozí trasa pro chodce");
   await expect(page.getByLabel("Závady a jejich odstranění")).toHaveValue("Trhlina v omítce, opraveno");
   await expect(page.getByLabel("Zkoušky, měření a kontroly")).toHaveValue("");
 
   // A field is cleared by emptying it; more names than workers is refused with a message.
-  await page.getByLabel("Použité stroje a mechanizace").fill("");
+  await page.getByLabel("Mechanizace", { exact: true }).fill("");
   await page.getByLabel("Jména pracovníků 1").fill("A; B; C; D");
   await save().click();
   await expect(page.getByText(/více jmen/i)).toBeVisible({ timeout: 15_000 });
@@ -302,7 +302,7 @@ test("the fields the vyhláška asks for and the names of the people on site are
   await save().click();
   expect((await savedAgain).ok()).toBeTruthy();
   await page.goto(`${projectUrl}/reports/${day}`);
-  await expect(page.getByLabel("Použité stroje a mechanizace")).toHaveValue("", { timeout: 15_000 });
+  await expect(page.getByLabel("Mechanizace", { exact: true })).toHaveValue("", { timeout: 15_000 });
   await expect(page.getByLabel("Jména pracovníků 1")).toHaveValue("Jan Novák");
 });
 
