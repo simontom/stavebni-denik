@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { api, currentUser, json } from "../../lib/api";
 import { passwordRules } from "../../lib/passwordPolicy";
 import { Banner, Button, Field, TextInput } from "../../components/ui";
+import { usePageTitle } from "../../lib/pageTitle";
 
 /** Change one's own password. Shown at once after the first login (temporary password) and reachable from the header. */
 export const ChangePasswordPage: React.FC = () => {
+  usePageTitle("Změna hesla");
   const navigate = useNavigate();
   const forced = currentUser()?.mustChangePwd === true;
   const [currentPassword, setCurrentPassword] = useState("");

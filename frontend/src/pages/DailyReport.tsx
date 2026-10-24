@@ -5,11 +5,12 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
-import { Button, Card, FormActions, Modal, StalledNotice, StatusBadge } from "../components/ui";
+import { Button, Card, Field, FormActions, Modal, StalledNotice, StatusBadge, TextArea, TextInput } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
+import { usePageTitle } from "../lib/pageTitle";
 import { useReportDraft } from "../lib/useReportDraft";
 import { useStalled } from "../lib/useStalled";
 
@@ -28,6 +29,16 @@ async function readError(res: Response, fallback: string): Promise<string> {
     // the body was not JSON
   }
   return fallback;
+}
+
+/** Controls that belong together, named once for a screen reader (`fieldset` and `legend`); the form's own look, no box. */
+function Group({ legend, children }: { legend: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="m-0 min-w-0 border-0 p-0">
+      <legend className="mb-1 p-0 text-sm font-medium text-ink">{legend}</legend>
+      {children}
+    </fieldset>
+  );
 }
 
 /** Suggestions for the weather field; any text is accepted. */
@@ -81,7 +92,7 @@ export const DailyReport: React.FC = () => {
   const [roleTry, setRoleTry] = useState(0);
   // The name of the project, for the head of the page; the same request as the role (empty until it has answered).
   const [projectName, setProjectName] = useState("");
-  const isInvestor = myRole === "INVESTOR" || myRole === "INSPECTOR";
+  const isClientSide = myRole === "INVESTOR" || myRole === "INSPECTOR";
   // Only the manager and the workers of the project write the daily entry (Rbac.kt, ReportCreate): for anybody else a save ends in 403.
   const canWrite = myRole === "BOSS" || myRole === "WORKER";
   useEffect(() => {
@@ -117,6 +128,11 @@ export const DailyReport: React.FC = () => {
     setErrorTick((tick) => tick + 1);
   };
   const [error, setError] = useState("");
+  // A refusal that is about ONE control of the form (a trade without a name, a text that is too long): the control it is about (its `id`)
+  // and what is wrong. It is said under that control (tied to it with `aria-describedby`, announced as an alert), the control has the
+  // focus, and it goes away with the next change of the form (it remembers the form it was about). What is about the whole save (the
+  // server's refusal) is `error`, above the form.
+  const [refusal, setRefusal] = useState<{ id: string; message: string; formKey: string } | null>(null);
 
   // Report state
   // A new entry starts empty: invented defaults would end up in a legal record if nobody noticed them.
@@ -176,6 +192,13 @@ export const DailyReport: React.FC = () => {
     [workDescription, workers, isControlDay, constructionObj, weatherCondition, weatherMin, weatherMax, lateEntryReason, details],
   );
   const formKey = useMemo(() => keyOf(values), [values]);
+  // Whatever the person changes answers the refusal (it said what to change): it is shown only for the form it was about.
+  const fieldError = refusal !== null && refusal.formKey === formKey ? refusal : null;
+  const refuse = (id: string, message: string) => {
+    setRefusal({ id, message, formKey });
+    // after the message is drawn: the control (and its description) are what a screen reader reads next
+    window.setTimeout(() => document.getElementById(id)?.focus(), 0);
+  };
   const [savedKey, setSavedKey] = useState<string | null>(null);
   // The form as the server showed it when the day was opened: what a draft is compared with.
   const [loadedForm, setLoadedForm] = useState<FormValues | null>(null);
@@ -300,12 +323,14 @@ export const DailyReport: React.FC = () => {
     // A trade needs a name and a whole head count (0 is allowed); a row left completely empty is simply not a trade.
     const rows = workers.filter((r) => r.trade.trim() !== "" || r.count.trim() !== "" || r.names.trim() !== "");
     for (const r of rows) {
-      if (r.trade.trim() === "") return showError("Doplňte název profese u zadaného počtu pracovníků");
-      if (!/^\d{1,6}$/.test(r.count.trim())) return showError(`Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
+      // The row's index in the form (not in the rows that say something), because that is what the controls are called.
+      const index = workers.indexOf(r);
+      if (r.trade.trim() === "") return refuse(`worker-trade-${index}`, "Doplňte název profese u zadaného počtu pracovníků");
+      if (!/^\d{1,6}$/.test(r.count.trim())) return refuse(`worker-count-${index}`, `Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
     }
     for (const field of DETAIL_FIELDS) {
       if ((details[field.key] ?? "").length > MAX_DETAIL_CHARS) {
-        return showError(`Pole "${field.label}" může mít nejvýše ${MAX_DETAIL_CHARS} znaků (teď ${details[field.key].length})`);
+        return refuse(`detail-${field.key}`, `Pole "${field.label}" může mít nejvýše ${MAX_DETAIL_CHARS} znaků (teď ${details[field.key].length})`);
       }
     }
     const submittedKey = formKey;
@@ -359,7 +384,7 @@ export const DailyReport: React.FC = () => {
         showError(body?.error || "Záznam se nepodařilo uložit");
       }
     } catch (err) {
-      console.error("Failed to create report:", err);
+      console.error("Záznam se nepodařilo uložit:", err);
       showError("Záznam se nepodařilo uložit");
     } finally {
       savingRef.current = false;
@@ -403,7 +428,7 @@ export const DailyReport: React.FC = () => {
       setPhotos((prev) => [...prev, newPhoto]);
       setSelectedFile(null);
     } catch (err) {
-      console.error("Photo upload error:", err);
+      console.error("Nahrání fotky se nezdařilo:", err);
       showError(err instanceof Error ? err.message : "Nahrání fotky se nezdařilo");
     }
   };
@@ -504,7 +529,7 @@ export const DailyReport: React.FC = () => {
     } catch (err) {
       // The server's own message (or the sign-in that is needed) is said as it is; a network that failed is said in words.
       if (!(err instanceof TypeError)) throw err;
-      console.error("Failed to acknowledge report:", err);
+      console.error("Seznámení se záznamem se nepodařilo uložit:", err);
       throw new Error("Záznam se nepodařilo potvrdit");
     }
   };
@@ -520,6 +545,8 @@ export const DailyReport: React.FC = () => {
   // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
   const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
   const dayLabel = formatDayWithWeekday(entry?.date ?? reportId ?? "", "long");
+  // "Záznam č. 5 / 28. 9. 2026 – Hala Brno – Stavební deník"; a draft has no number yet.
+  usePageTitle(`${sequenceNumber !== null ? entryNumberLabel(sequenceNumber) : "Rozpracovaný záznam"} / ${formatDay(entry?.date ?? reportId ?? "")}`, projectName);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
@@ -532,7 +559,7 @@ export const DailyReport: React.FC = () => {
         <h1 className="mt-1 text-2xl font-bold text-ink tabular-nums">Denní záznam stavby: {dayLabel}</h1>
         {entry?.authorName && <p className="mt-1 text-sm text-ink-muted">Autor: {entry.authorName}</p>}
         {loadState === "ready" && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div role="group" aria-label="Stav záznamu" className="mt-3 flex flex-wrap items-center gap-2">
             <EntryStateBadge state={entryState} />
             {!(isSigned && sequenceNumber === null) && (
               <StatusBadge tone="neutral" className="tabular-nums">
@@ -636,206 +663,168 @@ export const DailyReport: React.FC = () => {
               )}
               {needsLateReason && (
                 <div className="rounded border border-amber-300 bg-amber-50 p-3">
-                  <label htmlFor="lateEntryReason" className="mb-1 block text-sm font-semibold text-amber-900">
-                    Pozdní zápis: uveďte důvod
-                  </label>
-                  <p className="mb-2 text-xs text-amber-900">
-                    Záznam je za den dřívější než předchozí pracovní den. Bude označen jako pozdní zápis a důvod zůstane součástí záznamu.
-                  </p>
-                  <textarea
+                  <Field
                     id="lateEntryReason"
-                    name="lateEntryReason"
-                    value={lateEntryReason}
-                    onChange={(e) => setLateEntryReason(e.target.value)}
-                    rows={2}
-                    required
-                    maxLength={1000}
-                    className="w-full rounded-md border border-amber-300 p-2"
-                  />
+                    label="Pozdní záznam: uveďte důvod"
+                    hint="Záznam je za den dřívější než předchozí pracovní den. Bude označen jako pozdní záznam a důvod zůstane součástí záznamu."
+                  >
+                    <TextArea name="lateEntryReason" value={lateEntryReason} onChange={(e) => setLateEntryReason(e.target.value)} rows={2} required maxLength={1000} />
+                  </Field>
                 </div>
               )}
               {isLateEntry && lateEntryReason && (
                 <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-                  <span className="font-semibold">Důvod pozdního zápisu:</span> {lateEntryReason}
+                  <span className="font-semibold">Důvod pozdního záznamu:</span> {lateEntryReason}
                 </div>
               )}
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Popis prací</label>
-                <textarea
-                  name="workDescription"
-                  value={workDescription}
-                  onChange={(e) => setWorkDescription(e.target.value)}
-                  rows={4}
-                  required
-                  className="w-full rounded-md border border-gray-300 p-2 focus:border-indigo-500 focus:ring-indigo-500"
-                  placeholder="Popište provedené práce za dnešní den..."
-                />
-              </div>
+              <Field id="workDescription" label="Popis prací" hint="Co se udělalo, v jakém rozsahu a v jakém pořadí.">
+                <TextArea name="workDescription" value={workDescription} onChange={(e) => setWorkDescription(e.target.value)} rows={4} required />
+              </Field>
 
               {/* Workers by trade: one row per trade */}
-              <div>
-                <div className="mb-1 block text-sm font-medium text-gray-700">Pracovníci podle profesí</div>
-                <div className="space-y-2">
-                  {workers.map((row, index) => (
-                    <div key={index} className="grid grid-cols-1 items-center gap-2 md:grid-cols-[1fr_9rem_auto]">
-                      <input
-                        name="workerTrade"
-                        type="text"
-                        aria-label={`Profese ${index + 1}`}
-                        value={row.trade}
-                        onChange={(e) => updateWorker(index, { trade: e.target.value })}
-                        className="w-full rounded-md border border-gray-300 p-2"
-                        placeholder="např. Zedník"
-                      />
-                      <input
-                        name="workerCount"
-                        type="number"
-                        min={0}
-                        step={1}
-                        aria-label={`Počet pracovníků ${index + 1}`}
-                        value={row.count}
-                        onChange={(e) => updateWorker(index, { count: e.target.value })}
-                        className="w-full rounded-md border border-gray-300 p-2"
-                        placeholder="počet"
-                      />
-                      {workers.length > 1 ? (
-                        <button type="button" onClick={() => removeWorker(index)} className="text-sm text-red-600 hover:text-red-800">
-                          Odebrat
-                        </button>
-                      ) : (
-                        <span />
-                      )}
-                      <input
-                        name="workerNames"
-                        type="text"
-                        aria-label={`Jména pracovníků ${index + 1}`}
-                        value={row.names}
-                        onChange={(e) => updateWorker(index, { names: e.target.value })}
-                        className="w-full rounded-md border border-gray-300 p-2 text-sm md:col-span-3"
-                        placeholder="Jména pracovníků, oddělená středníkem (volitelné)"
-                      />
-                    </div>
-                  ))}
+              <Group legend="Pracovníci podle profesí">
+                <div className="space-y-3">
+                  {workers.map((row, index) => {
+                    // The one row a refusal is about (a trade without a name, a head count that is not a whole number): its control says so, and is described by it.
+                    const problem = fieldError?.id === `worker-trade-${index}` || fieldError?.id === `worker-count-${index}` ? fieldError : null;
+                    return (
+                      <div key={index} className="grid grid-cols-1 items-center gap-2 md:grid-cols-[1fr_9rem_auto]">
+                        <TextInput
+                          id={`worker-trade-${index}`}
+                          name="workerTrade"
+                          type="text"
+                          aria-label={`Profese ${index + 1}`}
+                          aria-invalid={problem?.id === `worker-trade-${index}` ? true : undefined}
+                          aria-describedby={problem ? `worker-problem-${index}` : undefined}
+                          value={row.trade}
+                          onChange={(e) => updateWorker(index, { trade: e.target.value })}
+                          placeholder="např. Zedník"
+                        />
+                        <TextInput
+                          id={`worker-count-${index}`}
+                          name="workerCount"
+                          type="number"
+                          min={0}
+                          step={1}
+                          aria-label={`Počet pracovníků ${index + 1}`}
+                          aria-invalid={problem?.id === `worker-count-${index}` ? true : undefined}
+                          aria-describedby={problem ? `worker-problem-${index}` : undefined}
+                          value={row.count}
+                          onChange={(e) => updateWorker(index, { count: e.target.value })}
+                          placeholder="počet"
+                        />
+                        {workers.length > 1 ? (
+                          <Button type="button" variant="quiet" size="sm" onClick={() => removeWorker(index)} aria-label={`Odebrat profesi ${index + 1}`}>
+                            Odebrat
+                          </Button>
+                        ) : (
+                          <span />
+                        )}
+                        <TextInput
+                          id={`worker-names-${index}`}
+                          name="workerNames"
+                          type="text"
+                          aria-label={`Jména pracovníků ${index + 1}`}
+                          value={row.names}
+                          onChange={(e) => updateWorker(index, { names: e.target.value })}
+                          className="md:col-span-3"
+                          placeholder="Jména pracovníků, oddělená středníkem (volitelné)"
+                        />
+                        {problem && (
+                          <p id={`worker-problem-${index}`} role="alert" className="text-sm font-medium text-danger-ink md:col-span-3">
+                            {problem.message}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                <button type="button" onClick={addWorker} className="mt-2 text-sm text-indigo-600 hover:underline">
+                <Button type="button" variant="quiet" size="sm" onClick={addWorker} className="mt-2">
                   + Přidat profesi
-                </button>
-              </div>
+                </Button>
+              </Group>
 
               {/* Weather, entered by hand */}
-              <div>
-                <div className="mb-1 block text-sm font-medium text-gray-700">Počasí</div>
+              <Group legend="Počasí a stav staveniště">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <div>
-                    <label htmlFor="weatherCondition" className="mb-1 block text-xs text-gray-600">
-                      Podmínky
-                    </label>
-                    <input
-                      id="weatherCondition"
+                  <Field id="weatherCondition" label="Popis" hint="Počasí a stav staveniště slovy, např. zataženo, staveniště rozmoklé.">
+                    <TextInput
                       name="weatherCondition"
                       type="text"
                       list="weather-conditions"
                       maxLength={200}
                       value={weatherCondition}
                       onChange={(e) => setWeatherCondition(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 p-2"
-                      placeholder="např. zataženo"
                     />
                     <datalist id="weather-conditions">
                       {WEATHER_CONDITIONS.map((c) => (
                         <option key={c} value={c} />
                       ))}
                     </datalist>
-                  </div>
-                  <div>
-                    <label htmlFor="weatherMin" className="mb-1 block text-xs text-gray-600">
-                      Nejnižší teplota (°C)
-                    </label>
-                    <input
-                      id="weatherMin"
-                      name="weatherMin"
-                      type="number"
-                      step="0.5"
-                      min={-60}
-                      max={60}
-                      value={weatherMin}
-                      onChange={(e) => setWeatherMin(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 p-2"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="weatherMax" className="mb-1 block text-xs text-gray-600">
-                      Nejvyšší teplota (°C)
-                    </label>
-                    <input
-                      id="weatherMax"
-                      name="weatherMax"
-                      type="number"
-                      step="0.5"
-                      min={-60}
-                      max={60}
-                      value={weatherMax}
-                      onChange={(e) => setWeatherMax(e.target.value)}
-                      className="w-full rounded-md border border-gray-300 p-2"
-                    />
-                  </div>
+                  </Field>
+                  <Field id="weatherMin" label="Nejnižší teplota (°C)">
+                    <TextInput name="weatherMin" type="number" step="0.5" min={-60} max={60} value={weatherMin} onChange={(e) => setWeatherMin(e.target.value)} />
+                  </Field>
+                  <Field id="weatherMax" label="Nejvyšší teplota (°C)">
+                    <TextInput name="weatherMax" type="number" step="0.5" min={-60} max={60} value={weatherMax} onChange={(e) => setWeatherMax(e.target.value)} />
+                  </Field>
                 </div>
-              </div>
+              </Group>
 
-              {/* The other fields the vyhláška asks a daily entry to say */}
-              <div>
-                <div className="mb-1 block text-sm font-medium text-gray-700">Další zápisy</div>
-                <div className="space-y-3">
-                  {DETAIL_FIELDS.map((field) => (
-                    <div key={field.key}>
-                      <label htmlFor={`detail-${field.key}`} className="mb-1 block text-xs text-gray-600">
-                        {field.label}
-                      </label>
-                      <textarea
-                        id={`detail-${field.key}`}
-                        name={`detail-${field.key}`}
-                        value={details[field.key] ?? ""}
-                        onChange={(e) => updateDetail(field.key, e.target.value)}
-                        rows={2}
-                        className="w-full rounded-md border border-gray-300 p-2 text-sm"
-                        placeholder={field.placeholder}
-                      />
-                      {(details[field.key] ?? "").length > MAX_DETAIL_CHARS * 0.9 && (
-                        <p className={`mt-1 text-xs ${(details[field.key] ?? "").length > MAX_DETAIL_CHARS ? "font-semibold text-red-700" : "text-gray-600"}`}>
-                          {(details[field.key] ?? "").length} / {MAX_DETAIL_CHARS} znaků
-                        </p>
-                      )}
-                    </div>
-                  ))}
+              {/* The other fields the vyhláška asks a daily entry to say: the label is the heading of the part in the printed entry, the hint says what the decree asks */}
+              <Group legend="Další údaje">
+                <div className="space-y-4">
+                  {DETAIL_FIELDS.map((field) => {
+                    const id = `detail-${field.key}`;
+                    const length = (details[field.key] ?? "").length;
+                    const tooLong = length > MAX_DETAIL_CHARS;
+                    const nearLimit = length > MAX_DETAIL_CHARS * 0.9 && !tooLong;
+                    const problem = tooLong ? `Text je příliš dlouhý: ${length} / ${MAX_DETAIL_CHARS} znaků.` : fieldError?.id === id ? fieldError.message : undefined;
+                    return (
+                      <Field key={field.key} id={id} label={field.label} hint={field.hint} error={problem} errorRole={tooLong ? "status" : "alert"}>
+                        <TextArea
+                          name={id}
+                          value={details[field.key] ?? ""}
+                          onChange={(e) => updateDetail(field.key, e.target.value)}
+                          rows={2}
+                          placeholder={field.placeholder}
+                          aria-describedby={nearLimit ? `${id}-count` : undefined}
+                        />
+                        {nearLimit && (
+                          <p id={`${id}-count`} className="mt-1 text-xs text-ink-muted">
+                            {length} / {MAX_DETAIL_CHARS} znaků
+                          </p>
+                        )}
+                      </Field>
+                    );
+                  })}
                 </div>
-              </div>
+              </Group>
 
-              {/* Legislative fields: Control Day & Construction Object */}
+              {/* Control day and construction object */}
               <div className="grid grid-cols-1 gap-4 pt-2 md:grid-cols-2">
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-3">
                   <input
                     name="isControlDay"
                     id="isControlDay"
                     type="checkbox"
                     checked={isControlDay}
                     onChange={(e) => setIsControlDay(e.target.checked)}
-                    className="h-4 w-4 rounded text-indigo-600"
+                    aria-describedby="isControlDay-hint"
+                    className="mt-1 h-4 w-4 rounded text-indigo-600"
                   />
-                  <label htmlFor="isControlDay" className="text-sm font-medium text-gray-700">
-                    Dnes proběhla stavební kontrola
-                  </label>
+                  <div>
+                    <label htmlFor="isControlDay" className="text-sm font-medium text-ink">
+                      Kontrolní den
+                    </label>
+                    <p id="isControlDay-hint" className="text-sm text-ink-muted">
+                      Zaškrtněte, pokud se na stavbě konala kontrola.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-700">Stavební objekt (SO)</label>
-                  <input
-                    name="constructionObj"
-                    type="text"
-                    value={constructionObj}
-                    onChange={(e) => setConstructionObj(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 p-2"
-                    placeholder="např. SO-101"
-                  />
-                </div>
+                <Field id="constructionObj" label="Stavební objekt (SO)">
+                  <TextInput name="constructionObj" type="text" value={constructionObj} onChange={(e) => setConstructionObj(e.target.value)} placeholder="např. SO-101" />
+                </Field>
               </div>
             </fieldset>
 
@@ -865,18 +854,26 @@ export const DailyReport: React.FC = () => {
 
           {showPhotoControls && (
             <div className="mb-6 flex flex-wrap items-center gap-3">
+              <label htmlFor="photo-files" className="text-sm font-medium text-ink">
+                Fotka k nahrání
+              </label>
               <input
                 id="photo-files"
                 type="file"
                 accept="image/*"
                 disabled={!canUploadPhoto}
+                aria-describedby={updatedAt === null ? "photo-files-hint" : undefined}
                 onChange={handleFileChange}
                 className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
               />
               <Button disabled={!selectedFile || !canUploadPhoto} onClick={handleUploadPhoto}>
                 Nahrát fotky
               </Button>
-              {updatedAt === null && <span className="text-xs text-amber-700">Fotky lze přidat po uložení záznamu.</span>}
+              {updatedAt === null && (
+                <span id="photo-files-hint" className="text-xs text-amber-700">
+                  Fotky lze přidat po uložení záznamu.
+                </span>
+              )}
             </div>
           )}
 
@@ -913,8 +910,8 @@ export const DailyReport: React.FC = () => {
             check={signatureCheck}
             onCheck={() => void handleCheckSignature()}
           >
-            {/* Only a signed (locked) entry can be acknowledged, by the investor and the supervision */}
-            {isInvestor && !iAcknowledged && <Button onClick={() => setAskingAcknowledge(true)}>Potvrdit seznámení</Button>}
+            {/* Only a signed (locked) entry can be acknowledged, by the builder (stavebník) and the supervision */}
+            {isClientSide && !iAcknowledged && <Button onClick={() => setAskingAcknowledge(true)}>Potvrdit seznámení</Button>}
           </SignatureCard>
         </div>
       )}
@@ -958,25 +955,10 @@ export const DailyReport: React.FC = () => {
           footer={<FormActions formId="sign-form" submitLabel="Podepsat" submitVariant="danger" busy={signing} stalled={signStalled} canSubmit={signPassword.length > 0} />}
         >
           <form id="sign-form" onSubmit={(e) => void handleConfirmSign(e)} className="space-y-3">
-            <div>
-              <label htmlFor="sign-password" className="mb-1 block text-xs font-medium text-ink">
-                Heslo
-              </label>
-              <input
-                id="sign-password"
-                type="password"
-                autoComplete="current-password"
-                autoFocus
-                value={signPassword}
-                onChange={(e) => setSignPassword(e.target.value)}
-                className="w-full rounded border border-input p-2 text-sm"
-              />
-            </div>
-            {signError && (
-              <div role="alert" className="text-sm text-danger-ink">
-                {signError}
-              </div>
-            )}
+            {/* The server's refusal (a wrong password, a changed entry) is the password field's error: announced at once and tied to it. */}
+            <Field id="sign-password" label="Heslo" error={signError || undefined}>
+              <TextInput type="password" autoComplete="current-password" autoFocus value={signPassword} onChange={(e) => setSignPassword(e.target.value)} />
+            </Field>
             {signStalled && <StalledNotice>Nevíme, jestli se záznam podepsal. Zkontrolujte jeho stav po zavření dialogu, než podpis zopakujete.</StalledNotice>}
           </form>
         </Modal>

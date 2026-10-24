@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../lib/api";
+import { auditActionLabel, auditEntityLabel } from "../lib/auditLabels";
 import { Banner, Button } from "../components/ui";
+import { usePageTitle } from "../lib/pageTitle";
 
 interface AuditEntry {
   id: number;
@@ -22,6 +24,7 @@ interface VerifyResult {
 }
 
 export const AuditLogViewer: React.FC = () => {
+  usePageTitle("Audit");
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,7 +45,7 @@ export const AuditLogViewer: React.FC = () => {
   useEffect(() => {
     api<AuditEntry[]>("/api/audit?limit=200")
       .then((data) => setLogs(data))
-      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Audit log se nepodařilo načíst"))
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : "Audit se nepodařilo načíst"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -50,8 +53,8 @@ export const AuditLogViewer: React.FC = () => {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:py-8">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-ink">Audit log</h1>
-          <p className="mt-1 text-sm text-ink-muted">Neměnný záznam všech změn v systému (posledních 200 událostí).</p>
+          <h1 className="text-2xl font-bold text-ink">Audit</h1>
+          <p className="mt-1 text-sm text-ink-muted">Neměnný přehled všech změn v systému (posledních 200 událostí).</p>
         </div>
         <Button variant="secondary" onClick={() => void handleVerify()} disabled={verifying}>
           {verifying ? "Ověřuji…" : "Ověřit integritu"}
@@ -69,7 +72,11 @@ export const AuditLogViewer: React.FC = () => {
           </Banner>
         ))}
 
-      {error && <div className="mb-4 rounded bg-red-100 p-3 text-sm text-red-700">{error}</div>}
+      {error && (
+        <Banner tone="danger" className="mb-4">
+          {error}
+        </Banner>
+      )}
 
       {/* A list of events on a phone (table-cards, index.css); the table of the desktop scrolls inside its box if it must. */}
       <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -79,8 +86,8 @@ export const AuditLogViewer: React.FC = () => {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Čas</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Uživatel</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Akce</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Entita</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hash</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Objekt</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Otisk</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -105,13 +112,14 @@ export const AuditLogViewer: React.FC = () => {
                   {log.actorNickname ?? log.actorId ?? "systém"}
                 </td>
                 <td data-label="Akce" className="px-4 py-2 font-medium text-gray-900">
-                  {log.action}
+                  {auditActionLabel(log.action)}
+                  <span className="block font-mono text-xs font-normal text-ink-muted">{log.action}</span>
                 </td>
-                <td data-label="Entita" className="px-4 py-2 text-gray-600">
-                  {log.entityType}
-                  {log.entityId ? `: ${log.entityId}` : ""}
+                <td data-label="Objekt" className="px-4 py-2 text-gray-600">
+                  {auditEntityLabel(log.entityType)}
+                  {log.entityId ? <span className="block font-mono text-xs break-all text-ink-muted">{log.entityId}</span> : null}
                 </td>
-                <td data-label="Hash" className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
+                <td data-label="Otisk" className="px-4 py-2 font-mono text-xs text-ink-muted" title={log.rowHash}>
                   {log.rowHash.slice(0, 12)}…
                 </td>
               </tr>

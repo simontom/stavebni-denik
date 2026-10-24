@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiFetch, currentUser } from "../../lib/api";
+import { usePageTitle } from "../../lib/pageTitle";
 import { badgeClassName, buttonClasses, Card, cn, PageState, StatusBadge, type BadgeTone } from "../../components/ui";
 
 /** Today's entry of a project, as the list of projects sends it (the day is the server's "today" in Prague). */
@@ -54,6 +55,7 @@ function TodayEntryLine({ project }: { project: Project }) {
 }
 
 export function ProjectList() {
+  usePageTitle("Projekty");
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { api, currentUser, json, type UserOption } from "../../lib/api";
 import { ProjectFields } from "../../components/ProjectFields";
 import { Button, Field, Select } from "../../components/ui";
+import { usePageTitle } from "../../lib/pageTitle";
 import { emptyProjectFields, projectFieldsProblem, projectPayload, type ProjectFieldValues } from "../../lib/projectFields";
 
 export const NewProject: React.FC = () => {
+  usePageTitle("Nový projekt");
   const navigate = useNavigate();
 
   const [fields, setFields] = useState<ProjectFieldValues>(emptyProjectFields());
@@ -75,8 +77,8 @@ export const NewProject: React.FC = () => {
 
       {myNumberMissing && (
         <div role="status" className="mb-4 rounded bg-amber-100 p-3 text-sm text-amber-900">
-          Váš účet nemá číslo ČKAIT, takže projekt založit nemůžete: zakladatel se stává jeho vedoucím a vedoucí musí mít číslo. Číslo doplňuje administrátor (v seznamu uživatelů);
-          požádejte ho o to.
+          Váš účet nemá číslo ČKAIT, takže projekt založit nemůžete: zakladatel se stává jeho stavbyvedoucím a stavbyvedoucí musí mít číslo. Číslo doplňuje administrátor (v seznamu
+          uživatelů); požádejte ho o to.
         </div>
       )}
 

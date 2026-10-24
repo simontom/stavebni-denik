@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { User } from "lucide-react";
 import { browserStorage, clearDraftsExceptUser } from "../../lib/draftStore";
-import { Banner, Button, Field, TextInput } from "../../components/ui";
+import { Button, Field, TextInput } from "../../components/ui";
+import { usePageTitle } from "../../lib/pageTitle";
 
 export function LoginPage() {
+  usePageTitle("Přihlášení");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -58,16 +60,15 @@ export function LoginPage() {
           <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-ink">Stavební deník</h2>
           <p className="mt-2 text-center text-sm text-ink-muted">Přihlaste se ke svému účtu</p>
         </div>
-        {/* The labels are for screen readers here (the placeholders say the same to the eye); visible labels are backlog B7. */}
+        {/* Visible labels (a placeholder is gone as soon as one types); `autocomplete` tells the browser and the password manager which field is which. */}
         <form className="mt-8 space-y-4" onSubmit={handleLogin}>
-          <Field label="Přihlašovací jméno" labelHidden>
-            <TextInput name="nickname" type="text" required placeholder="Přihlašovací jméno" value={nickname} onChange={(e) => setNickname(e.target.value)} />
+          <Field label="Přihlašovací jméno">
+            <TextInput name="nickname" type="text" autoComplete="username" required value={nickname} onChange={(e) => setNickname(e.target.value)} />
           </Field>
-          <Field label="Heslo" labelHidden>
-            <TextInput name="password" type="password" required placeholder="Heslo" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {/* The refusal is the password field's error: announced at once (`role="alert"`) and tied to the field (`aria-describedby`). */}
+          <Field label="Heslo" error={error || undefined}>
+            <TextInput name="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
-
-          {error && <Banner tone="danger">{error}</Banner>}
 
           <Button type="submit" block>
             <User className="h-5 w-5" aria-hidden="true" />

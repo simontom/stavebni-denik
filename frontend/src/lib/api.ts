@@ -91,7 +91,7 @@ export const ROLE_LABELS: Record<string, string> = {
   BOSS: "Stavbyvedoucí",
   WORKER: "Pracovník",
   INSPECTOR: "Technický dozor",
-  INVESTOR: "Investor",
+  INVESTOR: "Stavebník",
 };
 
 export interface UserOption {

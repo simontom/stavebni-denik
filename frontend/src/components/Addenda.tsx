@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api, json } from "../lib/api";
+import { Banner, Button, Field, TextArea } from "./ui";
 
 interface Addendum {
   id: string;
@@ -76,33 +77,18 @@ export function Addenda({ entryId, canWrite }: { entryId: string; canWrite: bool
         </ul>
       )}
       {canWrite && (
-        <form onSubmit={(e) => void add(e)} className="space-y-2">
-          <label htmlFor="addendum-text" className="block text-xs font-medium text-gray-700">
-            Nový dodatek (oprava nebo doplnění; po uložení ho nelze změnit ani smazat)
-          </label>
-          <textarea
-            id="addendum-text"
-            name="addendumText"
-            rows={3}
-            maxLength={MAX_LENGTH}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="w-full rounded-md border border-gray-300 p-2 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={busy || text.trim() === ""}
-            className="rounded bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
-          >
+        <form onSubmit={(e) => void add(e)} className="space-y-3">
+          {/* A refusal of the server is the text's error: announced at once and tied to the field. */}
+          <Field id="addendum-text" label="Nový dodatek (oprava nebo doplnění; po uložení ho nelze změnit ani smazat)" error={error || undefined}>
+            <TextArea name="addendumText" rows={3} maxLength={MAX_LENGTH} value={text} onChange={(e) => setText(e.target.value)} />
+          </Field>
+          <Button type="submit" size="sm" disabled={busy || text.trim() === ""}>
             Přidat dodatek
-          </button>
+          </Button>
         </form>
       )}
-      {error && (
-        <div role="alert" className="text-sm text-red-600">
-          {error}
-        </div>
-      )}
+      {/* Nobody here can write, so there is no field to tie it to (the list could not be loaded). */}
+      {!canWrite && error && <Banner tone="danger">{error}</Banner>}
     </section>
   );
 }

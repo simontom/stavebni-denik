@@ -38,7 +38,7 @@ export function EntryDocument({ entry }: { entry: DocumentEntry }) {
       {lateReason && (
         <section aria-labelledby="entry-late-reason">
           <h2 id="entry-late-reason" className={sectionTitle}>
-            Důvod pozdního zápisu
+            Důvod pozdního záznamu
           </h2>
           <p className="mt-1 whitespace-pre-wrap text-ink">{lateReason}</p>
         </section>
@@ -96,14 +96,14 @@ export function EntryDocument({ entry }: { entry: DocumentEntry }) {
 
       <section aria-labelledby="entry-weather">
         <h2 id="entry-weather" className={sectionTitle}>
-          Počasí
+          Počasí a stav staveniště
         </h2>
         <p className="mt-1 text-ink">{entry.weatherText?.trim() ? entry.weatherText : <span className="text-ink-muted">Neuvedeno.</span>}</p>
       </section>
 
       <section aria-labelledby="entry-details">
         <h2 id="entry-details" className={sectionTitle}>
-          Další zápisy
+          Další údaje
         </h2>
         {filled.length > 0 && (
           <dl className="mt-2 space-y-4">

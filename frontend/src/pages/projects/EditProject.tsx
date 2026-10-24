@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError, api, json, setUnsavedWork } from "../../lib/api";
 import { ProjectFields } from "../../components/ProjectFields";
 import { Button, PageState } from "../../components/ui";
+import { usePageTitle } from "../../lib/pageTitle";
 import { emptyProjectFields, projectFieldsOf, projectFieldsProblem, projectPayload, type ProjectFieldValues } from "../../lib/projectFields";
 
 interface Loaded {
@@ -17,6 +18,7 @@ interface Loaded {
  * meantime is refused instead of overwritten.
  */
 export const EditProject: React.FC = () => {
+  usePageTitle("Údaje o stavbě");
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -92,7 +94,7 @@ export const EditProject: React.FC = () => {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div role="alert" className="rounded bg-red-100 p-3 text-red-700">
-          Údaje o stavbě může měnit jen vedoucí tohoto projektu.
+          Údaje o stavbě může měnit jen stavbyvedoucí tohoto projektu.
         </div>
         <Link to={`/projects/${id}`} className="mt-4 inline-block text-sm text-indigo-600 hover:underline">
           Zpět na projekt

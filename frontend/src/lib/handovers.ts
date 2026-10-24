@@ -42,7 +42,7 @@ export interface Handover {
   clientSignature?: HandoverSignature | null;
 }
 
-/** The side a person with [role] in the project signs for: a manager for the contractor, an investor or the supervision for the client. */
+/** The side a person with [role] in the project signs for: a manager for the contractor, the builder (stavebník) or the supervision for the client. */
 export function sideOfRole(role?: string | null): HandoverSide | null {
   if (role === "BOSS") return "CONTRACTOR";
   if (role === "INVESTOR" || role === "INSPECTOR") return "CLIENT";
