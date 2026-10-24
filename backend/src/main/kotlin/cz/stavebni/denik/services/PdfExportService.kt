@@ -93,6 +93,21 @@ class ProcessTypstCompiler(
 object PdfExportService {
     private val log = LoggerFactory.getLogger(PdfExportService::class.java)
 
+    /**
+     * The labels of the rows of part A that příloha 12 A a) and c) words in a certain way: the number of the permit ("číslo jednací"),
+     * and the business name, the seat (or the name and the address) and the IČO of the builder, the contractor, the designer and the
+     * subcontractors. The screen says the same (`LABELS` in frontend/src/lib/projectFields.ts; `partALabels.test.ts` fails when the two
+     * drift apart), and so does `report.typ` for the subcontractors. Only labels: the keys of the fields are never touched, because
+     * they are part of what a signature covers.
+     */
+    object PartALabels {
+        const val BUILDER = "Stavebník (název a sídlo, IČO)"
+        const val CONTRACTOR = "Zhotovitel (název a sídlo, IČO)"
+        const val DESIGNER = "Projektant (název a sídlo, IČO)"
+        const val SUBCONTRACTORS = "Poddodavatelé (název, sídlo, IČO)"
+        const val PERMIT = "Číslo jednací povolení"
+    }
+
     @Volatile
     var compiler: TypstCompiler = ProcessTypstCompiler()
 
@@ -189,12 +204,12 @@ object PdfExportService {
         return listOf(
             "Katastrální území" to text("cadastralArea"),
             "Parcelní čísla" to text("parcelNumbers"),
-            "Stavebník" to text("builder"),
-            "Zhotovitel" to text("contractor"),
+            PartALabels.BUILDER to text("builder"),
+            PartALabels.CONTRACTOR to text("contractor"),
             "Stavbyvedoucí" to person(partA.siteManager.name, partA.siteManager.ckaitNumber),
-            "Projektant" to text("designerName"),
+            PartALabels.DESIGNER to text("designerName"),
             "Autorský dozor" to supervision,
-            "Povolení" to numbered(text("permitNumber"), text("permitDate")),
+            PartALabels.PERMIT to numbered(text("permitNumber"), text("permitDate")),
             "Technický dozor stavebníka" to text("tdsName"),
             "Koordinátor BOZP" to text("bozpName"),
             "Smlouva" to numbered(text("contractNumber"), text("contractDate")),

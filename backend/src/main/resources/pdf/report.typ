@@ -130,7 +130,7 @@
   ([Adresa], plain(d.address)),
   // The identification as entered about the project: only rows that have a value.
   ..d.projectInfo.map(x => ([#x.label], plain(x.value))),
-  ..if d.subcontractors != "" { (([Poddodavatelé], plain(d.subcontractors)),) } else { () },
+  ..if d.subcontractors != "" { (([Poddodavatelé (název, sídlo, IČO)], plain(d.subcontractors)),) } else { () },
   ..if d.supportingDocuments != "" { (([Podklady stavby], plain(d.supportingDocuments)),) } else { () },
 ))
 
@@ -190,12 +190,12 @@
   ([Stav záznamu], if d.isSigned [podepsán a uzamčen] else [rozpracovaný, nepodepsáno]),
   ([Autor záznamu], or-none(d.author, wrap: true)),
   // A late entry (written after the previous working day) says so, with the author's reason.
-  ..if d.isLateEntry { (([Pozdní zápis], plain(d.lateEntryReason)),) } else { () },
+  ..if d.isLateEntry { (([Pozdní záznam], plain(d.lateEntryReason)),) } else { () },
   ([Kontrolní den], if d.isControlDay [ano (proběhla stavební kontrola)] else [ne]),
   ([Stavební objekt (SO)], [#or-none(d.constructionObj)#cut-note(d.constructionObjCut)]),
 ))
 
-=== Počasí
+=== Počasí a stav staveniště
 
 #plain(d.weather)
 
@@ -365,11 +365,11 @@
   #if d.isSigned [
     == Připojeno po podpisu záznamu
 
-    #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem; nejsou součástí podpisu záznamu.]
+    #text(size: 9pt, style: "italic", fill: grey)[Následující záznamy vznikly samostatně, s vlastním autorem a časem; nejsou součástí podpisu záznamu.]
   ] else [
-    == Zápisy připojené k záznamu (záznam ještě není podepsán)
+    == Připojeno k záznamu (záznam ještě není podepsán)
 
-    #text(size: 9pt, style: "italic", fill: grey)[Následující zápisy vznikly samostatně, s vlastním autorem a časem.]
+    #text(size: 9pt, style: "italic", fill: grey)[Následující záznamy vznikly samostatně, s vlastním autorem a časem.]
   ]
 
   // Who took note of the signed entry.
@@ -397,7 +397,7 @@
 
   // Entries of other parties (supervision, the client, authorities): each says who wrote it, and for an outside party who recorded it.
   #if d.remarks.len() > 0 [
-    === Zápisy dalších osob
+    === Záznamy dalších osob
 
     #for r in d.remarks [
       #if r.onBehalfOf != "" [

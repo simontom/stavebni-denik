@@ -16,10 +16,18 @@ export interface WorkerRow {
  * The text fields a daily entry has besides the day's work (vyhláška 131/2024 Sb., příloha 12, part B). The keys and the
  * order are those of the server (EntryDetails.kt); the labels are the same.
  */
-export const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[] = [
-  { key: "materials", label: "Dodávky a uskladnění materiálu a zařízení", placeholder: "Co bylo dodáno, uskladněno nebo zabudováno" },
-  { key: "machinery", label: "Použité stroje a mechanizace", placeholder: "Stroje a mechanizace nasazené v tento den" },
-  { key: "testsAndChecks", label: "Zkoušky, měření a kontroly", placeholder: "Provedené zkoušky, měření a kontroly a jejich výsledek" },
+export const DETAIL_FIELDS: { key: string; label: string; hint?: string; placeholder?: string }[] = [
+  {
+    key: "materials",
+    label: "Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování",
+    hint: "Co bylo dodáno, kde je to uskladněno a kde zabudováno (příloha 12, B.1 d).",
+  },
+  { key: "machinery", label: "Mechanizace", hint: "Stroje a mechanizace nasazené v tento den (příloha 12, B.1 e)." },
+  {
+    key: "testsAndChecks",
+    label: "Zkoušky, měření a kontroly",
+    hint: "Provedené zkoušky, měření a kontroly a jejich výsledek. Sem patří i souhlas se zakrytím prací, které budou zakryty: kdo ho dal a které práce se zakryly (příloha 12, B.2 m).",
+  },
   { key: "safetyNotes", label: "Bezpečnost práce, ochrana životního prostředí a poučení", placeholder: "Poučení pracovníků, bezpečnostní a environmentální opatření" },
   { key: "dustMeasures", label: "Opatření proti prašnosti", placeholder: "Např. kropení, zakrytí, čištění komunikací" },
   { key: "accessibilityMeasures", label: "Opatření pro zajištění přístupnosti", placeholder: "Např. zachování přístupu k okolním objektům" },
@@ -29,7 +37,14 @@ export const DETAIL_FIELDS: { key: string; label: string; placeholder: string }[
     label: "Zahájení, přerušení a obnovení prací (data a důvody)",
     placeholder: "Zahájení prací, jejich přerušení (třeba pro počasí nebo technologickou přestávku) a obnovení, s daty a důvody",
   },
-  { key: "otherNotes", label: "Ostatní zápisy", placeholder: "Další skutečnosti rozhodné pro stavbu" },
+  {
+    key: "otherNotes",
+    label: "Ostatní záznamy",
+    hint:
+      "Nástupy, provádění prací a ukončení činností poddodavatelů (příloha 12, B.2 c). " +
+      "Nepředvídané nálezy podle § 266 odst. 1: čas a okolnosti nálezu, datum, kdy byl oznámen stavebnímu úřadu, a přijatá opatření (příloha 12, B.2 w). " +
+      "Další skutečnosti rozhodné pro stavbu.",
+  },
 ];
 
 export type Details = Record<string, string>;

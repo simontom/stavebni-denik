@@ -236,9 +236,9 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         val json = Json.parseToJsonElement(data).jsonObject
         val rows = json["projectInfo"]!!.jsonArray.associate { it.jsonObject["label"]!!.jsonPrimitive.content to it.jsonObject["value"]!!.jsonPrimitive.content }
         assertEquals("Brno-střed", rows["Katastrální území"])
-        assertEquals("Město Brno", rows["Stavebník"])
-        assertEquals("SZ/1 ze dne 1. 3. 2026", rows["Povolení"])
-        assertFalse(rows.containsKey("Projektant"), "a row without a value is left out")
+        assertEquals("Město Brno", rows["Stavebník (název a sídlo, IČO)"])
+        assertEquals("SZ/1 ze dne 1. 3. 2026", rows["Číslo jednací povolení"])
+        assertFalse(rows.containsKey("Projektant (název a sídlo, IČO)"), "a row without a value is left out")
         assertEquals("Elektro #panic(\"x\")", json["subcontractors"]!!.jsonPrimitive.content)
         assertEquals("", json["supportingDocuments"]!!.jsonPrimitive.content)
         assertEquals(PdfExportService.template, typst)
@@ -345,7 +345,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         assertTrue(note.startsWith("Údaje o stavbě platné ke dni podpisu "), note)
         assertTrue(note.contains("jsou součástí podpisu záznamu") && !note.contains("nejsou"), note)
         assertFalse(note.contains("Po podpisu"), "part A cannot change after signing, so nothing is said about changes: $note")
-        val contractor = json["projectInfo"]!!.jsonArray.single { it.jsonObject["label"]!!.jsonPrimitive.content == "Zhotovitel" }.jsonObject["value"]!!.jsonPrimitive.content
+        val contractor = json["projectInfo"]!!.jsonArray.single { it.jsonObject["label"]!!.jsonPrimitive.content == "Zhotovitel (název a sídlo, IČO)" }.jsonObject["value"]!!.jsonPrimitive.content
         assertEquals("Stavitel a.s.", contractor, "the contractor as signed, not the one of the change")
     }
 }

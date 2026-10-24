@@ -236,8 +236,8 @@ object DailyReportService {
         require(!date.isAfter(today)) { "Záznam nelze založit pro budoucí datum ($date)" }
         if (!date.isBefore(Dates.previousWorkingDay(today))) return null
         val text = reason?.trim().orEmpty()
-        require(text.isNotEmpty()) { "Záznam za $date je pozdní zápis (dnes je $today): uveďte důvod pozdního zápisu" }
-        require(text.length <= MAX_LATE_REASON_CHARS) { "Důvod pozdního zápisu může mít nejvýše $MAX_LATE_REASON_CHARS znaků" }
+        require(text.isNotEmpty()) { "Záznam za $date je pozdní záznam (dnes je $today): uveďte důvod pozdního záznamu" }
+        require(text.length <= MAX_LATE_REASON_CHARS) { "Důvod pozdního záznamu může mít nejvýše $MAX_LATE_REASON_CHARS znaků" }
         return text
     }
 
@@ -330,7 +330,7 @@ object DailyReportService {
                 )
             } else {
                 if (input.expectNew) {
-                    throw StaleVersionException("Záznam pro tento den mezitím někdo založil. Načtěte stránku znovu, aby se jeho zápis nepřepsal.")
+                    throw StaleVersionException("Záznam pro tento den mezitím někdo založil. Načtěte stránku znovu, aby se jeho záznam nepřepsal.")
                 }
                 if (mode == WriteMode.CREATE_ONLY) {
                     throw ConflictException("Záznam pro tento den již existuje")

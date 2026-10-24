@@ -75,18 +75,18 @@ class RealTypstPdfTest : RealTypstTestBase() {
             ),
         )
 
-        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(saved.id)).bytes)
+        val text = flatTextOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(saved.id)).bytes)
 
         assertTrue(text.contains("Pracovníci na stavbě"), text)
         assertTrue(text.contains("Betonáři"), text)
         assertTrue(text.contains("Jan Novák; Petr Svoboda"), text)
         assertTrue(Regex("""Celkem\s*5""").containsMatchIn(text), "the total of the workers: $text")
-        assertTrue(text.contains("Dodávky a uskladnění materiálu a zařízení"), text)
+        assertTrue(text.contains("Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování"), text)
         assertTrue(text.contains("Beton C25/30"), text)
         assertTrue(text.contains("#panic(\"X\")"), "markup in a field is printed as it was typed: $text")
         assertTrue(text.contains("Opatření proti prašnosti"), text)
         assertTrue(text.contains("Závady a jejich odstranění"), text)
-        assertTrue(text.contains("Použité stroje a mechanizace"), "a field that was not filled in still has its heading: $text")
+        assertTrue(text.contains("Mechanizace"), "a field that was not filled in still has its heading: $text")
     }
 
     @Test
@@ -104,13 +104,13 @@ class RealTypstPdfTest : RealTypstTestBase() {
         )
         val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Betonáž")
 
-        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
+        val text = flatTextOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
 
         assertTrue(text.contains("Katastrální území"), text)
         assertTrue(text.contains("Brno-střed"), text)
-        assertTrue(text.contains("Stavebník"), text)
+        assertTrue(text.contains("Stavebník (název a sídlo, IČO)"), text)
         assertTrue(text.contains("SZ/2026/123 ze dne 1. 3. 2026"), text)
-        assertTrue(text.contains("Poddodavatelé"), text)
+        assertTrue(text.contains("Poddodavatelé (název, sídlo, IČO)"), text)
         assertTrue(text.contains("Vodoinstalace #panic(\"X\")"), "markup in a field is printed as it was typed: $text")
         assertTrue(text.contains("Podklady stavby"), text)
         assertFalse(text.contains("Projektant"), "a row without a value has no line: $text")
@@ -144,7 +144,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val project = ProjectService.createProject(
             boss,
             ProjectDto(
-                id = "", name = "Pozdní zápis", address = "Address", cadastralArea = "Area",
+                id = "", name = "Pozdní záznam", address = "Address", cadastralArea = "Area",
                 parcelNumbers = "1", builder = "Builder", contractor = "Contractor", siteManagerId = boss.id.toString()
             )
         )
@@ -157,7 +157,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
 
         val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report.id)).bytes)
 
-        assertTrue(text.contains("Pozdní zápis:"), text)
+        assertTrue(text.contains("Pozdní záznam:"), text)
         assertTrue(text.contains("Deník byl na jiné stavbě #panic(\"X\")"), text)
     }
 
@@ -186,7 +186,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
     fun `an entry that is on time has no late-entry line`() = runBlocking {
         val text = exportText("Včas", "Normální zápis")
 
-        assertFalse(text.contains("Pozdní zápis:"), text)
+        assertFalse(text.contains("Pozdní záznam:"), text)
     }
 
     @Test
@@ -291,9 +291,9 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val boss = createTestUser(role = Role.BOSS)
         val report = DailyReportService.createReport(boss, projectOf(boss), "2026-09-28").id
 
-        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+        val text = flatTextOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
 
-        for (heading in listOf("Počasí", "Pracovníci na stavbě", "Popis prací") + EntryDetails.FIELDS.map { it.label }) {
+        for (heading in listOf("Počasí a stav staveniště", "Pracovníci na stavbě", "Popis prací") + EntryDetails.FIELDS.map { it.label }) {
             assertTrue(text.contains(heading), "heading '$heading' of an entry that says nothing: $text")
         }
         // The work description, the workers and the eight fields say nothing; so does the construction object.
@@ -351,16 +351,16 @@ class RealTypstPdfTest : RealTypstTestBase() {
         }
         val report = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id
 
-        val text = textOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
+        val text = flatTextOf(PdfExportService.generateReportPdf(dsl, UUID.fromString(report)).bytes)
 
         val partA = text.indexOf("Část A")
         val partB = text.indexOf("Část B")
         assertTrue(partA in 0 until partB, "both parts, A first: $text")
-        for (inA in listOf("Katastrální území", "Povolení", "Poddodavatelé", "Elektro s.r.o.", "Podklady stavby", "Smlouva o dílo č. SML-1")) {
+        for (inA in listOf("Katastrální území", "Číslo jednací povolení", "Poddodavatelé (název, sídlo, IČO)", "Elektro s.r.o.", "Podklady stavby", "Smlouva o dílo č. SML-1")) {
             val at = text.indexOf(inA)
             assertTrue(at in partA until partB, "'$inA' belongs to part A (at $at, A at $partA, B at $partB): $text")
         }
-        for (inB in listOf("Počasí", "Popis prací", "Betonáž")) {
+        for (inB in listOf("Počasí a stav staveniště", "Popis prací", "Betonáž")) {
             assertTrue(text.indexOf(inB) > partB, "'$inB' belongs to part B: $text")
         }
     }

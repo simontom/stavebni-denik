@@ -20,15 +20,15 @@ object EntryDetails {
 
     /** In the order they are shown. The keys are the API's and are part of what signatures of formats 2 and 3 cover: never rename or remove one. */
     val FIELDS: List<Field> = listOf(
-        Field("materials", "Dodávky a uskladnění materiálu a zařízení", DAILY_REPORTS.MATERIALSIN),
-        Field("machinery", "Použité stroje a mechanizace", DAILY_REPORTS.MACHINERY),
+        Field("materials", "Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování", DAILY_REPORTS.MATERIALSIN),
+        Field("machinery", "Mechanizace", DAILY_REPORTS.MACHINERY),
         Field("testsAndChecks", "Zkoušky, měření a kontroly", DAILY_REPORTS.TESTSANDCHECKS),
         Field("safetyNotes", "Bezpečnost práce, ochrana životního prostředí a poučení", DAILY_REPORTS.SAFETYNOTES),
         Field("dustMeasures", "Opatření proti prašnosti", DAILY_REPORTS.DUSTMEASURES),
         Field("accessibilityMeasures", "Opatření pro zajištění přístupnosti", DAILY_REPORTS.ACCESSIBILITYMEASURES),
         Field("defects", "Závady a jejich odstranění", DAILY_REPORTS.DEFECTS),
         Field("workStateChanges", "Zahájení, přerušení a obnovení prací (data a důvody)", DAILY_REPORTS.WORKSTATECHANGES),
-        Field("otherNotes", "Ostatní zápisy", DAILY_REPORTS.OTHERNOTES),
+        Field("otherNotes", "Ostatní záznamy", DAILY_REPORTS.OTHERNOTES),
     )
 
     private val byKey = FIELDS.associateBy { it.key }

@@ -92,10 +92,10 @@ class PdfSignedPartATest : BaseIntegrationTest() {
 
         assertEquals("Bytový dům Zelená", data.text("projectName"), "the page names the project as it was")
         val rows = data.rows("projectInfo")
-        assertEquals("Zhotovitel s.r.o.", rows["Zhotovitel"])
+        assertEquals("Zhotovitel s.r.o.", rows["Zhotovitel (název a sídlo, IČO)"])
         assertEquals("Ing. arch. Petr Dozor, autorizace ČKA 123", rows["Autorský dozor"])
         assertEquals("Jan Stavbyvedoucí, ČKAIT 0012345", rows["Stavbyvedoucí"])
-        assertEquals("SZ/1 ze dne 15. 3. 2026", rows["Povolení"])
+        assertEquals("SZ/1 ze dne 15. 3. 2026", rows["Číslo jednací povolení"])
         assertEquals("Elektro s.r.o.", data.text("subcontractors"))
         assertEquals("Smlouva o dílo", data.text("supportingDocuments"))
         assertEquals(listOf("Jan Stavbyvedoucí", "Marie Zástupce"), data.names("managers"))
@@ -179,7 +179,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
         // It is read when the PDF is made: a change shows at once.
         val current = ProjectService.getProject(dsl, s.boss, s.projectId)
         ProjectService.updateProject(s.boss, s.projectId, current.copy(contractor = "Jiný zhotovitel"))
-        assertEquals("Jiný zhotovitel", dataOf(report).rows("projectInfo")["Zhotovitel"])
+        assertEquals("Jiný zhotovitel", dataOf(report).rows("projectInfo")["Zhotovitel (název a sídlo, IČO)"])
     }
 
     @Test

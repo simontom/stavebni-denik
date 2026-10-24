@@ -70,6 +70,19 @@ class EntryDetailsTest : BaseIntegrationTest() {
     }
 
     @Test
+    fun `the labels, which are the headings of the printed entry, are the words of priloha 12 and never say zapis`() {
+        val labels = EntryDetails.FIELDS.associate { it.key to it.label }
+        assertEquals("Dodávky materiálu, výrobků, strojů a zařízení, jejich uskladnění a zabudování", labels["materials"], "B.1 d)")
+        assertEquals("Mechanizace", labels["machinery"], "B.1 e)")
+        assertEquals("Ostatní záznamy", labels["otherNotes"], "the glossary says záznam")
+        assertTrue(labels.values.none { it.contains("zápis", ignoreCase = true) }, labels.toString())
+        assertEquals("Číslo jednací povolení", PdfExportService.PartALabels.PERMIT, "A a)")
+        for (label in listOf(PdfExportService.PartALabels.BUILDER, PdfExportService.PartALabels.CONTRACTOR, PdfExportService.PartALabels.DESIGNER, PdfExportService.PartALabels.SUBCONTRACTORS)) {
+            assertTrue(Regex("sídlo.*IČO").containsMatchIn(label), "A c) asks for the seat and the IČO: $label")
+        }
+    }
+
+    @Test
     fun `an unknown field and a text that is too long are refused and nothing is stored`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = project(boss)

@@ -44,6 +44,9 @@ abstract class RealTypstTestBase : BaseIntegrationTest() {
         }
     }
 
+    /** The text of the PDF with every run of white space (a line break where a long label wraps) as one space, to look for a label that may wrap. */
+    protected fun flatTextOf(pdf: ByteArray): String = textOf(pdf).replace(Regex("\\s+"), " ")
+
     /**
      * No white space at all, and no zero-width space (the template puts one into a very long word, so that it can break): a long hash,
      * a watermark or such a word may be broken over several lines of the extracted text.
