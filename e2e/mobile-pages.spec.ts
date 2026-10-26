@@ -57,7 +57,7 @@ const data = {
   project: "",
   signedDay: pragueDay(-1),
   draftDay: pragueDay(0),
-  lateDay: pragueDay(-3),
+  lateDay: pragueDay(-7),
 };
 
 async function post<T = unknown>(api: APIRequestContext, path: string, body: unknown): Promise<T> {
