@@ -5,14 +5,14 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
 import { Remarks } from "../components/Remarks";
-import { Button, Card, Field, FormActions, Modal, StalledNotice, StatusBadge, TextArea, TextInput } from "../components/ui";
+import { SignEntryDialog } from "../components/SignEntryDialog";
+import { Button, Card, Field, StatusBadge, TextArea, TextInput } from "../components/ui";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
 import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { usePageTitle } from "../lib/pageTitle";
 import { useReportDraft } from "../lib/useReportDraft";
-import { useStalled } from "../lib/useStalled";
 
 interface PhotoItem {
   id: string;
@@ -158,11 +158,6 @@ export const DailyReport: React.FC = () => {
   // After signing the entry is read again (the signer, the time and the number are known only to the server). When that fails
   // the signature card says so and offers to try again, instead of saying "loading" for ever.
   const [signatureReloadFailed, setSignatureReloadFailed] = useState(false);
-  const [signPassword, setSignPassword] = useState("");
-  const [signError, setSignError] = useState("");
-  const [signing, setSigning] = useState(false);
-  // The server has not answered the signature for a long time: the dialog says so, and can be closed (nobody knows whether it signed).
-  const signStalled = useStalled(signing);
   const [signatureCheck, setSignatureCheck] = useState<SignatureCheck | null>(null);
   // Each party that took note of the signed entry (technical supervision, author's supervision, the client, ...).
   const [acknowledgements, setAcknowledgements] = useState<Acknowledgement[]>([]);
@@ -439,8 +434,6 @@ export const DailyReport: React.FC = () => {
     if (draft.offer) return showError("Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.");
     if (dirty) return showError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
     if (updatedAt === null) return showError("Záznam ještě není uložen. Nejdřív jej uložte.");
-    setSignPassword("");
-    setSignError("");
     setShowSign(true);
   };
 
@@ -460,41 +453,20 @@ export const DailyReport: React.FC = () => {
     return true;
   };
 
-  const handleConfirmSign = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (signing) return;
-    setSigning(true);
-    setSignError("");
-    try {
-      const res = await apiFetch(`/api/projects/${projectId}/reports/${reportId}/sign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expectedUpdatedAt: updatedAt, password: signPassword }),
-      });
-      if (res.ok) {
-        setShowSign(false);
-        setSignPassword("");
-        setIsSigned(true);
-        setConflict(false);
-        setError("");
-        await reloadSignedEntry();
-      } else {
-        const body = await res.json().catch(() => null);
-        if (res.status === 409 && body?.code === "STALE_VERSION") {
-          // Somebody changed the entry after it was loaded here: what the signer sees is not what would be signed.
-          setShowSign(false);
-          setConflict(true);
-          showError(body?.error || "Záznam se mezitím změnil");
-        } else {
-          // A wrong password, a missing ČKAIT number, too many attempts: said in the dialog, which stays open.
-          setSignError(body?.error || "Záznam se nepodařilo podepsat");
-        }
-      }
-    } catch (err) {
-      setSignError(err instanceof Error ? err.message : "Záznam se nepodařilo podepsat");
-    } finally {
-      setSigning(false);
-    }
+  /** The dialog signed the entry (it has closed itself): the page stops rendering it and reads the entry again. */
+  const handleSigned = () => {
+    setShowSign(false);
+    setIsSigned(true);
+    setConflict(false);
+    setError("");
+    void reloadSignedEntry();
+  };
+
+  /** The entry changed after it was loaded here (the dialog says part A did not): what the signer sees is not what would be signed. */
+  const handleEntryChanged = (message: string) => {
+    setShowSign(false);
+    setConflict(true);
+    showError(message);
   };
 
   const handleCheckSignature = async () => {
@@ -949,23 +921,18 @@ export const DailyReport: React.FC = () => {
         </ConfirmDialog>
       )}
 
-      {/* The dialog is the application's Modal: focus stays inside it and the form behind it is inert, so nothing can be typed there while it is open. */}
-      {showSign && (
-        <Modal
-          title="Podepsat a uzamknout záznam"
-          description={`Podepisujete uloženou verzi záznamu ze dne ${reportId}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
+      {/* The dialog shows part A of the diary before the password and names it in the request (backlog C2b); it is the application's Modal:
+          focus stays inside it and the form behind it is inert, so nothing can be typed there while it is open. */}
+      {showSign && updatedAt !== null && (
+        <SignEntryDialog
+          projectId={projectId ?? ""}
+          reportId={reportId ?? ""}
+          day={entry?.date ?? reportId ?? ""}
+          updatedAt={updatedAt}
           onCancel={() => setShowSign(false)}
-          dismissible={!signing || signStalled}
-          footer={<FormActions formId="sign-form" submitLabel="Podepsat" submitVariant="danger" busy={signing} stalled={signStalled} canSubmit={signPassword.length > 0} />}
-        >
-          <form id="sign-form" onSubmit={(e) => void handleConfirmSign(e)} className="space-y-3">
-            {/* The server's refusal (a wrong password, a changed entry) is the password field's error: announced at once and tied to it. */}
-            <Field id="sign-password" label="Heslo" error={signError || undefined}>
-              <TextInput type="password" autoComplete="current-password" autoFocus value={signPassword} onChange={(e) => setSignPassword(e.target.value)} />
-            </Field>
-            {signStalled && <StalledNotice>Nevíme, jestli se záznam podepsal. Zkontrolujte jeho stav po zavření dialogu, než podpis zopakujete.</StalledNotice>}
-          </form>
-        </Modal>
+          onSigned={handleSigned}
+          onEntryChanged={handleEntryChanged}
+        />
       )}
 
       {/* Sign & lock (the manager of this project signs); a signed entry has its signature card above instead */}
