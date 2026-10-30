@@ -15,7 +15,7 @@ import io.ktor.server.application.*
 import io.ktor.server.plugins.PayloadTooLargeException
 import io.ktor.server.request.*
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readRemaining
+import io.ktor.utils.io.readBuffer
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -143,7 +143,7 @@ internal suspend fun readUpload(call: ApplicationCall, user: SessionUser, gate: 
                 mimeType = headers["Content-Type"]?.toString() ?: "image/jpeg"
                 // Never hold more than the limit (+1 byte, to notice an excess) in memory. The read suspends instead of
                 // blocking a thread, and the time limit of the upload cancels it.
-                val bytes = within { parsing { event.body.readRemaining(PhotoService.MAX_UPLOAD_BYTES + 1L).readByteArray() } }
+                val bytes = within { parsing { event.body.readBuffer(PhotoService.MAX_UPLOAD_BYTES + 1L).readByteArray() } }
                 if (bytes.size > PhotoService.MAX_UPLOAD_BYTES) throw IllegalArgumentException("File size exceeds 5MB limit")
                 fileBytes = bytes
             }
@@ -162,7 +162,7 @@ internal suspend fun readUpload(call: ApplicationCall, user: SessionUser, gate: 
 
 /** A text field, at most [MAX_TEXT_FIELD_CHARS] characters. What follows in a longer one is never read into memory. */
 private suspend fun readText(body: ByteReadChannel, name: String?): String {
-    val bytes = parsing { body.readRemaining(MAX_TEXT_FIELD_BYTES + 1L).readByteArray() }
+    val bytes = parsing { body.readBuffer(MAX_TEXT_FIELD_BYTES + 1L).readByteArray() }
     val text = if (bytes.size > MAX_TEXT_FIELD_BYTES) null else bytes.decodeToString()
     if (text == null || text.length > MAX_TEXT_FIELD_CHARS) throw IllegalArgumentException("Form field '$name' is too long")
     return text
