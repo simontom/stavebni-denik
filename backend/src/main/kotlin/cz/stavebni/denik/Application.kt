@@ -11,6 +11,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.http.content.singlePageApplication
 import cz.stavebni.denik.config.AppConfig
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.services.PasswordService
 import cz.stavebni.denik.routes.authRoutes
 import cz.stavebni.denik.routes.projectRoutes
@@ -25,7 +26,6 @@ import cz.stavebni.denik.plugins.configureSecurity
 import cz.stavebni.denik.plugins.configureRequestContext
 import cz.stavebni.denik.plugins.configureStatusPages
 import cz.stavebni.denik.db.DatabaseFactory
-import kotlinx.serialization.json.Json
 
 fun main(args: Array<String>) = EngineMain.main(args)
 
@@ -82,10 +82,7 @@ fun Application.module() {
     }
 
     install(ContentNegotiation) {
-        json(Json {
-            ignoreUnknownKeys = true
-            encodeDefaults = true
-        })
+        json(AppJson.api)
     }
 
     configureSecurityHeaders()

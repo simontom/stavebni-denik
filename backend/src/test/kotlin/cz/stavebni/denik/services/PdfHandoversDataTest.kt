@@ -178,7 +178,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
         val contractor = protocol.sign("contractor")!!
         assertEquals("Ing. Jan Stavbyvedoucí, stavbyvedoucí, ČKAIT 0012345", contractor.text("signedBy"))
         assertTrue(Regex("""\d{1,2}\. \d{1,2}\. \d{4} \d{2}:\d{2}:\d{2} SE?L?Č \(UTC\+[12]\)""").matches(contractor.text("at")), contractor.text("at"))
-        assertEquals(complete.contractorSignature!!.signatureHash, contractor.text("signatureHash"))
+        assertEquals(complete.contractorSignature.signatureHash, contractor.text("signatureHash"))
         // The client's side: the technical supervision acts for the builder; it has no number stored, and none is printed.
         val client = protocol.sign("client")!!
         assertEquals("Ing. Karel Dozor, technický dozor", client.text("signedBy"))

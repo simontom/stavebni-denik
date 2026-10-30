@@ -8,7 +8,6 @@ import cz.stavebni.denik.services.SessionService
 import cz.stavebni.denik.domain.SessionUser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import io.ktor.server.auth.Principal
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -85,5 +84,3 @@ private const val CHANGE_PASSWORD_PATH = "/api/auth/change-password"
 
 /** Set by token validation when the session is fine but the password is temporary, so the challenge answers 403 instead of 401. */
 private val PasswordChangeRequired = AttributeKey<Boolean>("PasswordChangeRequired")
-
-data class UserPrincipal(val user: SessionUser) : Principal

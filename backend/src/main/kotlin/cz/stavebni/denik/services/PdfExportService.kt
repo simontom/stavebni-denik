@@ -1,5 +1,6 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.domain.HandoverSide
 import cz.stavebni.denik.domain.MeterState
 import cz.stavebni.denik.domain.NotFoundException
@@ -15,7 +16,6 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
@@ -127,7 +127,7 @@ object PdfExportService {
             .use { it.readBytes().toString(StandardCharsets.UTF_8) }
     }
 
-    private val json = Json { encodeDefaults = true }
+    private val json = AppJson.api
 
     suspend fun generateReportPdf(tx: DSLContext, reportId: UUID): PdfDocument {
         val data = loadData(tx, reportId)
@@ -269,7 +269,7 @@ object PdfExportService {
     }
 
     /** One reader for what is stored as JSON text; built once. */
-    private val lenientJson = Json { ignoreUnknownKeys = true }
+    private val lenientJson = AppJson.lenient
 
     private fun weatherOf(report: org.jooq.Record): String = WeatherData.fromStored(report.get(DAILY_REPORTS.WEATHER)?.data())?.describe() ?: "Neuvedeno"
 

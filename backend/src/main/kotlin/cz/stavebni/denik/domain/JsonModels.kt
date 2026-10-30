@@ -49,15 +49,13 @@ data class WeatherData(
     private fun degrees(value: Double): String = java.math.BigDecimal.valueOf(value).stripTrailingZeros().toPlainString().replace('.', ',')
 
     companion object {
-        private val lenientJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-
         /**
          * The weather as it is stored on an entry (`daily_reports.weather`, JSON): null for no weather, for the legacy placeholder
          * `{}`, for a value nothing is stated in and for text that is not a weather. One reader for the form, the audit snapshot,
          * the PDF and the signature, so they all say the same of the same row.
          */
         fun fromStored(raw: String?): WeatherData? =
-            raw?.let { runCatching { lenientJson.decodeFromString(serializer(), it) }.getOrNull() }?.takeUnless { it.isEmpty() }
+            raw?.let { runCatching { AppJson.lenient.decodeFromString(serializer(), it) }.getOrNull() }?.takeUnless { it.isEmpty() }
 
         const val MAX_CONDITION_CHARS = 200
         const val MIN_TEMP = -60.0

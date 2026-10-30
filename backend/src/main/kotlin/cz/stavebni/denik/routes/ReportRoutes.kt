@@ -1,6 +1,7 @@
 package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UnauthenticatedException
@@ -70,7 +71,7 @@ private val SHA_256_HEX = Regex("[0-9a-f]{64}")
  */
 private suspend fun ApplicationCall.receiveSignRequest(): SignRequest {
     val text = receiveText()
-    val payload = if (text.isBlank()) SignPayload() else Json { ignoreUnknownKeys = true }.decodeFromString(SignPayload.serializer(), text)
+    val payload = if (text.isBlank()) SignPayload() else AppJson.lenient.decodeFromString(SignPayload.serializer(), text)
     val version = payload.expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
         try {
             OffsetDateTime.parse(it)

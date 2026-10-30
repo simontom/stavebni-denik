@@ -2,6 +2,7 @@ package cz.stavebni.denik.routes
 
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.HandoverSide
 import cz.stavebni.denik.domain.SessionUser
@@ -25,7 +26,6 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.time.OffsetDateTime
 import java.time.format.DateTimeParseException
 
@@ -43,7 +43,7 @@ private class HandoverSignRequest(val side: HandoverSide?, val password: String?
 /** The body of a sign request, as it was sent. A body that is not valid JSON is a 400, like everywhere else; nothing else is judged here. */
 private suspend fun ApplicationCall.receiveHandoverSignPayload(): SignHandoverPayload {
     val text = receiveText()
-    return if (text.isBlank()) SignHandoverPayload() else Json { ignoreUnknownKeys = true }.decodeFromString(SignHandoverPayload.serializer(), text)
+    return if (text.isBlank()) SignHandoverPayload() else AppJson.lenient.decodeFromString(SignHandoverPayload.serializer(), text)
 }
 
 /**

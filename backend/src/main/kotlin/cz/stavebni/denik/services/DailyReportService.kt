@@ -3,6 +3,7 @@ package cz.stavebni.denik.services
 import cz.stavebni.denik.config.AppConfig
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.NotFoundException
@@ -185,7 +186,7 @@ object DailyReportService {
     private const val MAX_NAME_CHARS = 100
 
     private val workersSerializer = kotlinx.serialization.builtins.ListSerializer(cz.stavebni.denik.domain.WorkerEntry.serializer())
-    private val workersJsonFormat = Json { ignoreUnknownKeys = false }
+    private val workersJsonFormat = AppJson.strict
 
     /**
      * The workers list as stored: a list of {trade, count} with a named trade and a whole, non-negative head count. Nothing is
@@ -648,7 +649,7 @@ object DailyReportService {
             .forUpdate()
             .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
 
-    private val weatherJson = Json { ignoreUnknownKeys = true }
+    private val weatherJson = AppJson.lenient
 
     /** The weather stored on the row; the legacy placeholder `{}` and unreadable values count as "not stated". */
     private fun weatherOf(record: DailyReportsRecord): WeatherData? = WeatherData.fromStored(record.weather?.data())

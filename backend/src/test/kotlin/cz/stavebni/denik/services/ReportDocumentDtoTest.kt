@@ -290,7 +290,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.OK, saveAs(s.worker, "2026-09-28", workers.updatedAt!!).status)
         // An investor is told no, and the save refuses.
         assertEquals("false", read(c.investor, "2026-09-28")["canEdit"]!!.jsonPrimitive.content)
-        assertEquals(HttpStatusCode.Forbidden, saveAs(c.investor, "2026-09-28", workers.updatedAt!!).status)
+        assertEquals(HttpStatusCode.Forbidden, saveAs(c.investor, "2026-09-28", workers.updatedAt).status)
     }
 
     // --- a signature that lacks its signer ---------------------------------------------------------------------
