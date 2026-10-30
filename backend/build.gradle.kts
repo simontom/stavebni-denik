@@ -36,6 +36,12 @@ kotlin {
     sourceSets["main"].kotlin.srcDir(jooqGeneratedDir)
 }
 
+// A warning in the main sources (a deprecation from a dependency bump, a redundant call) fails the build, so it is fixed in the
+// PR that brings it instead of piling up. The tests are left out on purpose: a warning there does not reach production.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
+    compilerOptions.allWarningsAsErrors.set(true)
+}
+
 val codegen: SourceSet by sourceSets.creating
 
 dependencies {
