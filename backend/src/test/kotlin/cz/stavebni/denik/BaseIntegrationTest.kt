@@ -5,6 +5,7 @@ import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.*
 import cz.stavebni.denik.services.JwtService
+import cz.stavebni.denik.services.PartASnapshot
 import cz.stavebni.denik.services.PasswordService
 import cz.stavebni.denik.services.PdfExportService
 import cz.stavebni.denik.services.TypstCompiler
@@ -84,6 +85,50 @@ abstract class BaseIntegrationTest {
             DatabaseFactory.dsl.execute("ALTER TABLE \"audit_log\" ENABLE TRIGGER audit_log_no_truncate")
         }
     }
+
+    /**
+     * The SHA-256 of part A of [projectId] as it stands now: what the sign dialog has just shown, and what a sign request has to
+     * name (`expectedPartASha256`). A test that signs over HTTP names it with [signBody].
+     */
+    fun partADigest(projectId: UUID): String = PartASnapshot.sha256(PartASnapshot.build(dsl, projectId))
+
+    /** [partADigest] of the project that holds the entry [reportId]. */
+    fun partADigestOfEntry(reportId: String): String =
+        partADigest(
+            dsl.select(DAILY_REPORTS.PROJECTID).from(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(reportId)))
+                .fetchOne(DAILY_REPORTS.PROJECTID)!!,
+        )
+
+    /** The body of a request to sign an entry of [projectId]: the password and the part A as it stands now (and the version of the entry, when it is named). */
+    fun signBody(projectId: UUID, password: String = "Password123!", expectedUpdatedAt: String? = null): String =
+        signBodyWith(partADigest(projectId), password, expectedUpdatedAt)
+
+    /** [signBody] for the entry [reportId] (an id). */
+    fun signBodyOfEntry(reportId: String, password: String = "Password123!", expectedUpdatedAt: String? = null): String =
+        signBodyWith(partADigestOfEntry(reportId), password, expectedUpdatedAt)
+
+    /**
+     * [signBody] for a request to [path], either sign route (`/api/projects/{id}/reports/{idOrDate}/sign`, `/api/reports/{id}/sign`): the
+     * project is read from the path or from the entry it names. A path that names no project (a bare date on the entry route, which the
+     * route refuses) gets a digest that matches nothing. Meant for the default body of a test's request helper; it is read **when it
+     * is called**, so a change of the project made before the request is part of what the request names.
+     */
+    fun signBodyFor(path: String, password: String = "Password123!"): String {
+        val uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        val projectId = Regex("/api/projects/($uuid)/").find(path)?.groupValues?.get(1)?.let { UUID.fromString(it) }
+        val digest = when {
+            projectId != null -> partADigest(projectId)
+            else -> Regex("/api/reports/($uuid)/").find(path)?.groupValues?.get(1)?.let { partADigestOfEntry(it) } ?: "0".repeat(64)
+        }
+        return signBodyWith(digest, password, null)
+    }
+
+    private fun signBodyWith(digest: String, password: String, expectedUpdatedAt: String?): String =
+        buildString {
+            append("""{"password":"$password","expectedPartASha256":"$digest"""")
+            if (expectedUpdatedAt != null) append(""","expectedUpdatedAt":"$expectedUpdatedAt"""")
+            append("}")
+        }
 
     /**
      * Makes [user] a member of the project in [role] (by default the role of their account). The role of a membership

@@ -31,6 +31,14 @@ data class PartAMember(val ckaitNumber: String?, val name: String, val role: Str
 data class PartAAuthorizedPerson(val authorization: String?, val company: String?, val id: String, val name: String)
 
 /**
+ * What the sign dialog shows before the password (backlog C2b): part A as signing would freeze it now, and the SHA-256 of its
+ * canonical text, which the sign request names back as `expectedPartASha256`. [partA] is exactly the data of the text that would be
+ * stored, so what is displayed is what is hashed.
+ */
+@Serializable
+data class SignPreview(val partA: PartA, val partASha256: String)
+
+/**
  * Part A of the diary, the identification (vyhláška 131/2024 Sb., příloha 12, part A): the data that signature format 3
  * freezes. The property names are the keys of the stored text and are **frozen with the format**: renaming one, or adding
  * one, is a format 4. A property has no default, so every key is always written (a missing value is `null`).
@@ -171,18 +179,32 @@ object PartASnapshot {
     fun textOf(partA: PartA): String = AuditHash.canonicalJson(Json.encodeToJsonElement(PartA.serializer(), partA))
 
     /**
-     * The text to store with a signature: part A as it stands now, refused with a [ConflictException] (409) when it is larger
-     * than it may be. The counts are checked **before** the persons are read, so a project with an absurd number of them cannot
-     * make a signature read them all.
+     * Part A as the signing would take it **now**: the data, the canonical text that would be stored, and the digest of that text.
+     * What the sign dialog shows is [partA], and [sha256] is what the signer names in the request; the signing transaction takes the
+     * snapshot again and refuses (409 `STALE_VERSION`) when its digest is another. Read-only.
      */
-    fun build(tx: DSLContext, projectId: UUID): String {
+    class Taken(val partA: PartA, val text: String) {
+        /** The SHA-256 of [text] (`partASha256`): what a signature covers of part A. */
+        val sha256: String = sha256(text)
+    }
+
+    /**
+     * Part A as it stands now, refused with a [ConflictException] (409) when the text would be larger than it may be. The counts
+     * are checked **before** the persons are read, so a project with an absurd number of them cannot make a signature (or a
+     * preview) read them all. One rule for the preview and for the signature.
+     */
+    fun take(tx: DSLContext, projectId: UUID): Taken {
         val members = countMembersWithRole(tx, projectId)
         val persons = tx.fetchCount(AUTHORIZED_PERSONS, AUTHORIZED_PERSONS.PROJECTID.eq(projectId).and(AUTHORIZED_PERSONS.REVOKEDAT.isNull))
         if (members > MAX_PERSONS || persons > MAX_PERSONS) throw tooLarge()
-        val text = textOf(read(tx, projectId))
+        val partA = read(tx, projectId)
+        val text = textOf(partA)
         if (text.toByteArray(Charsets.UTF_8).size > MAX_BYTES) throw tooLarge()
-        return text
+        return Taken(partA, text)
     }
+
+    /** The text to store with a signature: [take] without the data (see there for when it is refused). */
+    fun build(tx: DSLContext, projectId: UUID): String = take(tx, projectId).text
 
     private fun tooLarge() = ConflictException(
         "Údaje o stavbě (texty, osoby a pověřené osoby) jsou příliš rozsáhlé, než aby je šlo uložit s podpisem. " +

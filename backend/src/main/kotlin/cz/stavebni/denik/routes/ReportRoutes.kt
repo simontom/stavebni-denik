@@ -53,19 +53,24 @@ data class CreateReportPayload(
 )
 
 /**
- * The body of a sign request: the version of the entry the signer was looking at (optional) and the signer's password
- * (required: signing asks for it again, decision D8).
+ * The body of a sign request: the version of the entry the signer was looking at (optional), **the digest of part A that the sign
+ * dialog showed** (required, backlog C2b: a signature covers what the signer saw, and a part A that is different when the request is
+ * handled is `409 STALE_VERSION`) and the signer's password (required: signing asks for it again, decision D8).
  */
 @Serializable
-private data class SignPayload(val expectedUpdatedAt: String? = null, val password: String? = null)
+private data class SignPayload(val expectedUpdatedAt: String? = null, val expectedPartASha256: String? = null, val password: String? = null)
 
-private class SignRequest(val expectedUpdatedAt: OffsetDateTime?, val password: String?)
+private class SignRequest(val expectedUpdatedAt: OffsetDateTime?, val expectedPartASha256: String, val password: String?)
 
-/** The sign request's body. A body that is not valid JSON is a 400, like everywhere else. */
+private val SHA_256_HEX = Regex("[0-9a-f]{64}")
+
+/**
+ * The sign request's body. A body that is not valid JSON, a version that is not a time, and a missing or malformed digest of part A are
+ * each a 400, like everywhere else. The digest is compared as lower-case hexadecimal, so upper case is the same digest.
+ */
 private suspend fun ApplicationCall.receiveSignRequest(): SignRequest {
     val text = receiveText()
-    if (text.isBlank()) return SignRequest(null, null)
-    val payload = Json { ignoreUnknownKeys = true }.decodeFromString(SignPayload.serializer(), text)
+    val payload = if (text.isBlank()) SignPayload() else Json { ignoreUnknownKeys = true }.decodeFromString(SignPayload.serializer(), text)
     val version = payload.expectedUpdatedAt?.takeIf { it.isNotBlank() }?.let {
         try {
             OffsetDateTime.parse(it)
@@ -73,19 +78,28 @@ private suspend fun ApplicationCall.receiveSignRequest(): SignRequest {
             throw IllegalArgumentException("Neplatná hodnota expectedUpdatedAt")
         }
     }
-    return SignRequest(version, payload.password)
+    val digest = payload.expectedPartASha256?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        ?: throw IllegalArgumentException("Chybí otisk údajů o stavbě, které podepisující viděl (expectedPartASha256). Načtěte údaje o stavbě znovu.")
+    require(SHA_256_HEX.matches(digest)) { "Neplatná hodnota expectedPartASha256: čeká se SHA-256 jako 64 hexadecimálních znaků" }
+    return SignRequest(version, digest, payload.password)
 }
 
 /**
  * Signs entry [reportId] for [user]: first whether they may sign it at all (so that someone who cannot is told so rather than
- * asked for a password), then the password, then the signature in one transaction with the audit row.
+ * asked for a password, and whatever their body says), then the body, then the password, then the signature in one transaction with
+ * the audit row, which refuses it (409 `STALE_VERSION`) when the entry or part A is not the version the request names.
  */
 private suspend fun ApplicationCall.signReport(user: SessionUser, reportId: UUID) {
-    val request = receiveSignRequest()
     DailyReportService.checkMaySign(user, reportId)
+    val request = receiveSignRequest()
     SigningGuard.confirmPassword(user, request.password)
-    DailyReportService.signReport(user, reportId, request.expectedUpdatedAt)
+    DailyReportService.signReport(user, reportId, request.expectedUpdatedAt, request.expectedPartASha256)
     respond(HttpStatusCode.OK, mapOf("status" to "ok"))
+}
+
+/** What the sign dialog shows: part A as signing would freeze it now, and its digest. Only for a person who may sign the entry. */
+private suspend fun ApplicationCall.signPreview(user: SessionUser, reportId: UUID) {
+    respond(DailyReportService.signPreview(user, reportId))
 }
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
@@ -229,6 +243,16 @@ fun Application.reportRoutes() {
                         call.signReport(user, reportId)
                     }
 
+                    // What the signer sees before the password: part A as it would be frozen now, with its digest.
+                    get("/sign-preview") {
+                        val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                        val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
+                        val reportIdOrDate = call.parameters["reportIdOrDate"] ?: throw IllegalArgumentException("Missing reportIdOrDate")
+                        ProjectAccess.requireAccess(DatabaseFactory.dsl, user, projectId)
+                        val reportId = resolveReportId(DatabaseFactory.dsl, reportIdOrDate, projectId)
+                        call.signPreview(user, reportId)
+                    }
+
                     post("/acknowledge") {
                         val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
                         val projectId = ProjectAccess.parseId(call.parameters["projectId"], "projectId")
@@ -257,6 +281,13 @@ fun Application.reportRoutes() {
                     val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
                     ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
                     call.signReport(user, reportId)
+                }
+
+                get("/sign-preview") {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    val reportId = ProjectAccess.parseId(call.parameters["id"], "reportId")
+                    ProjectAccess.requireReportAccess(DatabaseFactory.dsl, user, reportId)
+                    call.signPreview(user, reportId)
                 }
 
                 // Who signed, and whether the entry and its photos are still what was signed.
