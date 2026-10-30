@@ -225,13 +225,14 @@ test.describe("the signer sees part A before signing", () => {
     try {
       const project = await newProject(first.context.request, first.adminId);
       const { page } = first;
-      // The server does not answer the signature until the test lets it (the request has reached it and the entry is signed there).
+      // The request for the signature is held until the test lets it go: for the page that is a server that does not answer, and its answer
+      // (the entry is signed, 200) comes after the person has pressed Zavřít. (`route.continue` keeps the headers of the browser's own
+      // request, which the server's cross-site check reads; a request made by the test itself would be refused.)
       let release: () => void = () => {};
       const gate = new Promise<void>((resolve) => (release = resolve));
       await page.route(/\/api\/projects\/[^/]+\/reports\/[^/]+\/sign$/, async (route) => {
-        const response = await route.fetch();
         await gate;
-        await route.fulfill({ response });
+        await route.continue();
       });
 
       await page.goto(`/projects/${project.id}/reports/${project.day}`);
