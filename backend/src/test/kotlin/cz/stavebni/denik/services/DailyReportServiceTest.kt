@@ -34,7 +34,7 @@ class DailyReportServiceTest : BaseIntegrationTest() {
         assertNull(reportInDb!!.get(DAILY_REPORTS.LOCKEDAT))
 
         // 2. Lock Report
-        DailyReportService.lockReport(boss, reportId)
+        lockUnchecked(boss, reportId)
 
         val lockedReportInDb = dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(reportId)).fetchOne()
         assertNotNull(lockedReportInDb)
@@ -70,7 +70,7 @@ class DailyReportServiceTest : BaseIntegrationTest() {
             // Worker attempts to lock report -> ForbiddenException
             assertThrows<ForbiddenException> {
                 runBlocking {
-                    DailyReportService.lockReport(worker, reportId)
+                    lockUnchecked(worker, reportId)
                 }
             }
         }

@@ -76,7 +76,7 @@ class AuditProjectRowsTest : BaseIntegrationTest() {
         val keptPhoto = PhotoService.uploadPhoto(boss, UUID.fromString(draft.id), jpeg(), "image/jpeg", "a.jpg")
         val removedPhoto = PhotoService.uploadPhoto(boss, UUID.fromString(draft.id), jpeg(), "image/jpeg", "b.jpg")
         PhotoService.deletePhoto(boss, UUID.fromString(removedPhoto.id.toString()))
-        DailyReportService.signReport(boss, UUID.fromString(draft.id))
+        signUnchecked(boss, UUID.fromString(draft.id))
         DailyReportService.acknowledgeReport(inspector, UUID.fromString(draft.id))
         AddendumService.create(boss, UUID.fromString(draft.id), CreateAddendumRequest("Oprava"))
         RemarkService.create(inspector, UUID.fromString(draft.id), CreateRemarkRequest(text = "Bez závad"))

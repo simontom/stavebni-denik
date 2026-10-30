@@ -40,12 +40,13 @@ class ProjectRoleRoutesTest : BaseIntegrationTest() {
         return UUID.fromString(project.id)
     }
 
-    private suspend fun ApplicationTestBuilder.call(method: HttpMethod, path: String, user: SessionUser, body: String = """{"password":"Password123!"}"""): HttpResponse =
+    /** The default body is a sign request's (the password and the part A as it stands now); the other POSTs of this file ignore both fields. */
+    private suspend fun ApplicationTestBuilder.call(method: HttpMethod, path: String, user: SessionUser, body: String? = null): HttpResponse =
         client.request(path) {
             this.method = method
             header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}")
             contentType(ContentType.Application.Json)
-            if (method != HttpMethod.Get && method != HttpMethod.Delete) setBody(body)
+            if (method != HttpMethod.Get && method != HttpMethod.Delete) setBody(body ?: signBodyFor(path))
         }
 
     private fun roleIn(projectId: UUID, user: SessionUser): String? =

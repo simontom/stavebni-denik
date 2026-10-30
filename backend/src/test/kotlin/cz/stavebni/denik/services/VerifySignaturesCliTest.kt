@@ -38,7 +38,7 @@ class VerifySignaturesCliTest : BaseIntegrationTest() {
         val projectId = UUID.fromString(project.id)
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
         val photo = PhotoService.uploadPhoto(boss, report, jpeg(), "image/jpeg", "a.jpg")
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         return report to photo.id
     }
 

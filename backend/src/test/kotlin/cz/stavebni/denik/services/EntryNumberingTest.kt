@@ -44,9 +44,9 @@ class EntryNumberingTest : BaseIntegrationTest() {
         listOf(first, second, third).forEach { assertNull(numberOf(it), "a draft has no number yet") }
 
         // Signed in a different order than created: the numbers follow the signing.
-        DailyReportService.signReport(boss, third)
-        DailyReportService.signReport(boss, first)
-        DailyReportService.signReport(boss, second)
+        signUnchecked(boss, third)
+        signUnchecked(boss, first)
+        signUnchecked(boss, second)
 
         assertEquals(1, numberOf(third))
         assertEquals(2, numberOf(first))
@@ -62,8 +62,8 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val lastOne = draft(boss, projectId, "2026-09-28")
         dsl.execute("""update daily_reports set "deletedAt" = now() where id = ?""", abandoned)
 
-        DailyReportService.signReport(boss, kept)
-        DailyReportService.signReport(boss, lastOne)
+        signUnchecked(boss, kept)
+        signUnchecked(boss, lastOne)
 
         assertEquals(listOf(1, 2), listOf(numberOf(kept), numberOf(lastOne)), "no hole where the abandoned draft was")
     }
@@ -76,8 +76,8 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val a = draft(boss, one, "2026-09-28")
         val b = draft(boss, two, "2026-09-28")
 
-        DailyReportService.signReport(boss, a)
-        DailyReportService.signReport(boss, b)
+        signUnchecked(boss, a)
+        signUnchecked(boss, b)
 
         assertEquals(1, numberOf(a))
         assertEquals(1, numberOf(b))
@@ -89,7 +89,7 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val ids = (1..8).map { draft(boss, projectId, "2026-09-%02d".format(it)) }
 
-        coroutineScope { ids.map { async { DailyReportService.signReport(boss, it) } }.awaitAll() }
+        coroutineScope { ids.map { async { signUnchecked(boss, it) } }.awaitAll() }
 
         assertEquals((1..8).toList(), ids.map { numberOf(it)!! }.sorted())
     }
@@ -99,7 +99,7 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = project(boss)
         val id = draft(boss, projectId, "2026-09-28")
-        DailyReportService.signReport(boss, id)
+        signUnchecked(boss, id)
         assertEquals(true, ReportSignature.check(dsl, id).contentMatches)
 
         // Changing the stored number behind the application's back (the triggers disabled) breaks the signature.
@@ -120,7 +120,7 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val id = draft(boss, projectId, "2026-09-28")
         assertNull(DailyReportService.getReport(projectId, id.toString())!!.sequenceNumber)
 
-        DailyReportService.signReport(boss, id)
+        signUnchecked(boss, id)
 
         assertEquals(1, DailyReportService.getReport(projectId, id.toString())!!.sequenceNumber)
     }
@@ -153,7 +153,7 @@ class EntryNumberingTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val signed = draft(boss, projectId, "2026-09-27")
         draft(boss, projectId, "2026-09-28")
-        DailyReportService.signReport(boss, signed)
+        signUnchecked(boss, signed)
 
         val lines = CsvExportService.exportReportsCsv(dsl, projectId).trim().lines()
 

@@ -99,8 +99,8 @@ class ReportLostUpdateTest : BaseIntegrationTest() {
         // Somebody else changes the entry after the signer loaded it.
         save(token, projectId, """{"workDescription":"Verze 2"}""")
 
-        val stale = postJson(token, "/api/projects/$projectId/reports/2026-09-28/sign", """{"expectedUpdatedAt":"$seenByTheSigner","password":"Password123!"}""")
-        val staleById = postJson(token, "/api/reports/${created.id}/sign", """{"expectedUpdatedAt":"$seenByTheSigner","password":"Password123!"}""")
+        val stale = postJson(token, "/api/projects/$projectId/reports/2026-09-28/sign", signBody(projectId, expectedUpdatedAt = seenByTheSigner.toString()))
+        val staleById = postJson(token, "/api/reports/${created.id}/sign", signBody(projectId, expectedUpdatedAt = seenByTheSigner.toString()))
 
         assertEquals(HttpStatusCode.Conflict, stale.status)
         assertEquals(HttpStatusCode.Conflict, staleById.status)
@@ -108,7 +108,7 @@ class ReportLostUpdateTest : BaseIntegrationTest() {
         assertNull(stored(projectId)!!.lockedat, "nothing was signed")
 
         val current = stored(projectId)!!.updatedat.toString()
-        val signed = postJson(token, "/api/projects/$projectId/reports/2026-09-28/sign", """{"expectedUpdatedAt":"$current","password":"Password123!"}""")
+        val signed = postJson(token, "/api/projects/$projectId/reports/2026-09-28/sign", signBody(projectId, expectedUpdatedAt = current))
         assertEquals(HttpStatusCode.OK, signed.status, signed.bodyAsText())
         assertNotNull(stored(projectId)!!.lockedat)
     }
@@ -122,17 +122,19 @@ class ReportLostUpdateTest : BaseIntegrationTest() {
         val first = DailyReportService.createReport(boss, projectId, "2026-09-28")
         val second = DailyReportService.createReport(boss, projectId, "2026-09-29")
 
+        val digest = partADigest(projectId)
         assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${second.id}/sign", "{not json").status)
-        assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${second.id}/sign", """{"expectedUpdatedAt":"yesterday","password":"Password123!"}""").status)
+        assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${second.id}/sign", signBody(projectId, expectedUpdatedAt = "yesterday")).status)
         assertNull(dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(second.id))).fetchOne()!!.lockedat)
 
         // The password is required (signing asks for it again): an empty body, or one without it, signs nothing.
         assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${first.id}/sign").status)
         assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${first.id}/sign", """{"signed":true}""").status)
+        assertEquals(HttpStatusCode.BadRequest, postJson(token, "/api/reports/${first.id}/sign", """{"expectedPartASha256":"$digest"}""").status, "the digest alone is not enough")
         assertNull(dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(first.id))).fetchOne()!!.lockedat)
-        // With it, the version is optional and unknown fields are ignored.
-        assertEquals(HttpStatusCode.OK, postJson(token, "/api/reports/${first.id}/sign", """{"password":"Password123!"}""").status)
-        assertEquals(HttpStatusCode.OK, postJson(token, "/api/reports/${second.id}/sign", """{"signed":true,"password":"Password123!"}""").status)
+        // With the password and the digest of part A, the version is optional and unknown fields are ignored.
+        assertEquals(HttpStatusCode.OK, postJson(token, "/api/reports/${first.id}/sign", signBody(projectId)).status)
+        assertEquals(HttpStatusCode.OK, postJson(token, "/api/reports/${second.id}/sign", """{"signed":true,"password":"Password123!","expectedPartASha256":"$digest"}""").status)
     }
 
     // --- worker data is never invented or dropped -----------------------------------------------

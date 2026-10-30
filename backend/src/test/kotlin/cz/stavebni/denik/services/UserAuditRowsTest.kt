@@ -311,7 +311,7 @@ class UserAuditRowsTest : BaseIntegrationTest() {
         addMember(projectId, asSession(worker), Role.WORKER)
         val report = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž")
         UserService.updateUser(actor, UUID.fromString(worker.id), UpdateUserRequest(displayName = "Karel Dělník ml."))
-        DailyReportService.lockReport(boss, UUID.fromString(report.id))
+        lockUnchecked(boss, UUID.fromString(report.id))
         UserService.setActive(actor, UUID.fromString(worker.id), active = false)
         UserService.setActive(actor, UUID.fromString(worker.id), active = true)
         UserService.resetPassword(actor, UUID.fromString(worker.id))

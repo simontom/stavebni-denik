@@ -62,7 +62,8 @@ class SignatureRoutesTest : BaseIntegrationTest() {
             client.get("/api/reports/$reportId/signature") { header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}") }.bodyAsText()
         ).jsonObject
 
-    private fun password(p: String = "Password123!") = """{"password":"$p"}"""
+    /** The password, and the digest of part A of the entry's project as it stands now (a sign request names both). */
+    private fun password(reportId: String, p: String = "Password123!") = signBodyOfEntry(reportId, p)
 
     private fun jpeg(): ByteArray {
         val out = ByteArrayOutputStream()
@@ -80,14 +81,20 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val report = DailyReportService.createReport(boss, project(boss), "2026-09-28")
 
-        for (body in listOf(null, "{}", """{"password":""}""", password("Wrong-Password-1!"))) {
+        // The digest of part A is there in the last three, so what is refused is the password itself: missing, empty, or wrong.
+        val digest = partADigestOfEntry(report.id)
+        val bodies = listOf(
+            null, "{}", """{"password":""}""",
+            """{"expectedPartASha256":"$digest"}""", """{"password":"","expectedPartASha256":"$digest"}""", password(report.id, "Wrong-Password-1!"),
+        )
+        for (body in bodies) {
             val response = sign(boss, report.id, body)
             assertEquals(HttpStatusCode.BadRequest, response.status, "body: $body -> ${response.bodyAsText()}")
         }
         assertNull(row(report.id).lockedat, "nothing was signed")
         assertNull(row(report.id).get(DAILY_REPORTS.SIGNATUREHASH))
 
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
         assertNotNull(row(report.id).lockedat)
     }
 
@@ -98,16 +105,16 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val report = DailyReportService.createReport(boss, project(boss), "2026-09-28")
 
         repeat(5) {
-            val response = sign(boss, report.id, password("Wrong-Password-$it!"))
+            val response = sign(boss, report.id, password(report.id, "Wrong-Password-$it!"))
             assertEquals(HttpStatusCode.BadRequest, response.status, "a client error, never 401: that would open the sign-in dialog")
         }
-        val locked = sign(boss, report.id, password())
+        val locked = sign(boss, report.id, password(report.id))
         assertEquals(HttpStatusCode.TooManyRequests, locked.status, "even the right password is refused for now")
         assertNotNull(locked.headers[HttpHeaders.RetryAfter])
         assertNull(row(report.id).lockedat)
 
         dsl.deleteFrom(RATE_LIMIT_ATTEMPTS).execute()
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
     }
 
     @Test
@@ -117,7 +124,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val p = project(boss)
         val reports = (20..28).map { DailyReportService.createReport(boss, p, "2026-09-$it") }
 
-        for (r in reports) assertEquals(HttpStatusCode.OK, sign(boss, r.id, password()).status)
+        for (r in reports) assertEquals(HttpStatusCode.OK, sign(boss, r.id, password(r.id)).status)
 
         assertEquals(0, dsl.fetchCount(RATE_LIMIT_ATTEMPTS, RATE_LIMIT_ATTEMPTS.BUCKET.eq("signpw:user")))
     }
@@ -133,7 +140,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
 
         // A worker, with no password and with a wrong one: both are 403, neither tells anything about passwords.
         assertEquals(HttpStatusCode.Forbidden, sign(worker, report.id, null).status)
-        assertEquals(HttpStatusCode.Forbidden, sign(worker, report.id, password("Wrong-Password-1!")).status)
+        assertEquals(HttpStatusCode.Forbidden, sign(worker, report.id, password(report.id, "Wrong-Password-1!")).status)
         assertEquals(0, dsl.fetchCount(RATE_LIMIT_ATTEMPTS), "no guess was counted")
     }
 
@@ -146,7 +153,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val report = DailyReportService.createReport(boss, project(boss), "2026-09-28")
         dsl.update(USERS).set(USERS.CKAITNUMBER, null as String?).where(USERS.ID.eq(boss.id)).execute()
 
-        val response = sign(boss, report.id, password())
+        val response = sign(boss, report.id, password(report.id))
 
         assertEquals(HttpStatusCode.Forbidden, response.status)
         assertTrue(response.bodyAsText().contains("SIGNER_NOT_QUALIFIED"), response.bodyAsText())
@@ -154,7 +161,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         assertNull(row(report.id).lockedat)
 
         dsl.update(USERS).set(USERS.CKAITNUMBER, "0099999").where(USERS.ID.eq(boss.id)).execute()
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
     }
 
     @Test
@@ -208,7 +215,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         assertEquals(false, before["signed"]!!.jsonPrimitive.boolean)
         assertNull(before["signatureHash"]?.jsonPrimitive?.contentOrNullSafe())
 
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
 
         val stored = row(report.id)
         val hash = stored.get(DAILY_REPORTS.SIGNATUREHASH)
@@ -227,7 +234,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         application { module() }
         val boss = createTestUser(role = Role.BOSS, nickname = "signer", displayName = "Jan Stavbyvedoucí")
         val report = DailyReportService.createReport(boss, project(boss), "2026-09-28", workDescription = "Betonáž stropu")
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
 
         // The account is renamed and loses its number.
         dsl.execute("""update users set "displayName" = 'Úplně Jiné Jméno', "ckaitNumber" = null where id = ?""", boss.id)
@@ -245,7 +252,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         application { module() }
         val boss = createTestUser(role = Role.BOSS)
         val report = DailyReportService.createReport(boss, project(boss), "2026-09-28", workDescription = "Původní text")
-        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, report.id, password(report.id)).status)
         assertTrue(check(boss, report.id)["contentMatches"]!!.jsonPrimitive.boolean)
 
         // Somebody with the table owner's rights switches the guard off and edits the text.
@@ -266,7 +273,7 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val reportId = DailyReportService.createReport(boss, project(boss), "2026-09-28").id
         val photo = PhotoService.uploadPhoto(boss, UUID.fromString(reportId), jpeg(), "image/jpeg", "site.jpg")
-        assertEquals(HttpStatusCode.OK, sign(boss, reportId, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, reportId, password(reportId)).status)
 
         val matching = check(boss, reportId)
         assertTrue(matching["contentMatches"]!!.jsonPrimitive.boolean)
@@ -289,8 +296,8 @@ class SignatureRoutesTest : BaseIntegrationTest() {
         val p = project(boss)
         val a = DailyReportService.createReport(boss, p, "2026-09-28", workDescription = "Text A")
         val b = DailyReportService.createReport(boss, p, "2026-09-29", workDescription = "Text A")
-        assertEquals(HttpStatusCode.OK, sign(boss, a.id, password()).status)
-        assertEquals(HttpStatusCode.OK, sign(boss, b.id, password()).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, a.id, password(a.id)).status)
+        assertEquals(HttpStatusCode.OK, sign(boss, b.id, password(b.id)).status)
 
         assertNotEquals(row(a.id).get(DAILY_REPORTS.SIGNATUREHASH), row(b.id).get(DAILY_REPORTS.SIGNATUREHASH), "the date, the id and the time are covered")
     }

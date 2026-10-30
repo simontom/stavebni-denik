@@ -106,7 +106,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
     fun `a signed entry says who signed it, with the number and the time, without a request for the signature check`() = runBlocking<Unit> {
         val s = site()
         val saved = save(s, s.worker, "2026-09-28")
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
 
         val check = ReportSignature.check(dsl, UUID.fromString(saved.id))
         for (dto in listOf(DailyReportService.getReport(s.projectId, saved.id)!!, DailyReportService.getReports(s.projectId).reports.single())) {
@@ -126,7 +126,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         val deputy = createTestUser(nickname = "deputy", displayName = "Marie Zástupce", role = Role.BOSS, ckaitNumber = "0099999")
         addMember(s.projectId, deputy, Role.BOSS)
         val saved = save(s, s.boss, "2026-09-28")
-        DailyReportService.signReport(deputy, UUID.fromString(saved.id))
+        signUnchecked(deputy, UUID.fromString(saved.id))
 
         val dto = DailyReportService.getReport(s.projectId, saved.id)!!
         assertEquals("Marie Zástupce", dto.signerName)
@@ -137,7 +137,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
     fun `the signer shown is the one stored at signing, whatever happens to the account afterwards`() = runBlocking<Unit> {
         val s = site()
         val saved = save(s, s.boss, "2026-09-28")
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
 
         dsl.update(USERS).set(USERS.DISPLAYNAME, "Úplně Jiné Jméno").set(USERS.CKAITNUMBER, "7777777").where(USERS.ID.eq(s.boss.id)).execute()
         val renamed = DailyReportService.getReport(s.projectId, saved.id)!!
@@ -175,7 +175,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         )
         val otherId = UUID.fromString(other.id)
         val saved = DailyReportService.saveReport(s.boss, otherId, "2026-09-28", DailyReportService.ReportInput(workDescription = "x", lateEntryReason = "pozdě"))
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
 
         assertNull(DailyReportService.getReport(s.projectId, saved.id), "the id of another project's entry finds nothing here")
         assertEquals(emptyList<DailyReportDto>(), DailyReportService.getReports(s.projectId).reports)
@@ -244,7 +244,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         val c = cast()
         val s = c.site
         val saved = save(s, s.worker, "2026-09-28")
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
 
         for (viewer in listOf(s.boss, s.worker, c.otherWorker, c.inspector, c.investor, c.admin)) {
             assertFalse(canEditSeenBy(c, viewer, "2026-09-28"), viewer.nickname)
@@ -301,7 +301,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         val whole = save(s, s.boss, "2026-09-28")
         val noName = save(s, s.boss, "2026-09-29")
         val noNumber = save(s, s.boss, "2026-09-30")
-        for (e in listOf(whole, noName, noNumber)) DailyReportService.signReport(s.boss, UUID.fromString(e.id))
+        for (e in listOf(whole, noName, noNumber)) signUnchecked(s.boss, UUID.fromString(e.id))
         // The database refuses such a row; whoever owns the table can switch the constraint and the triggers off.
         dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
             dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
@@ -344,7 +344,7 @@ class ReportDocumentDtoTest : BaseIntegrationTest() {
         val stranger = createTestUser(nickname = "stranger", displayName = "Cizí Člověk", role = Role.INVESTOR)
         addMember(s.projectId, investor, Role.INVESTOR)
         val signed = runBlocking { save(s, s.worker, "2026-09-28") }
-        runBlocking { DailyReportService.signReport(s.boss, UUID.fromString(signed.id)) }
+        runBlocking { signUnchecked(s.boss, UUID.fromString(signed.id)) }
         runBlocking { save(s, s.worker, "2026-09-29") }
 
         suspend fun get(path: String, user: SessionUser) = client.get(path) { header(HttpHeaders.Authorization, "Bearer ${generateJwtToken(user)}") }

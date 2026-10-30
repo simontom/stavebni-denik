@@ -154,6 +154,30 @@ internal data class ReportSnapshot(
     val details: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Marks the one way to sign without naming the part A that the signer saw ([PartACheck.Unchecked], backlog C2b). It is for tests and for
+ * tools that sign without a dialog; code that uses it has to opt in (`@OptIn(SignsWithoutPartACheck::class)`), so it cannot be used by
+ * accident, and `SignPartADigestTest` fails when a file of the application mentions it.
+ */
+@RequiresOptIn(level = RequiresOptIn.Level.ERROR, message = "Signing without the part A the signer saw is for tests and tools only: name the digest (PartACheck.Seen).")
+@Retention(AnnotationRetention.BINARY)
+annotation class SignsWithoutPartACheck
+
+/**
+ * What a signature says about the part A the signer saw: the digest they were shown ([Seen]), or nothing ([Unchecked]). There is no
+ * default anywhere, so a caller of the signing cannot leave the check out by forgetting it.
+ */
+sealed interface PartACheck {
+    /** The SHA-256 of the part A the signer was shown. The hex is normalised here (trimmed, lower case), so a caller does not need to. */
+    class Seen(sha256: String) : PartACheck {
+        val sha256: String = sha256.trim().lowercase()
+    }
+
+    /** No check: for the tests and the tools that sign without a dialog. The routes never pass it. */
+    @SignsWithoutPartACheck
+    data object Unchecked : PartACheck
+}
+
 object DailyReportService {
 
     /** What a save request mentions. A value that is `null` was not mentioned and leaves what is stored unchanged. */
@@ -452,8 +476,14 @@ object DailyReportService {
      * Signs and locks a report. A report is signed exactly once: the state is read
      * under a row lock inside the transaction, and the update only matches an unlocked
      * row, so a second signature can neither overwrite the first signer nor the time.
+     *
+     * A signature covers what the signer saw: [expectedUpdatedAt] names the version of the entry and [partACheck] the digest of part A
+     * that the sign dialog showed ([signPreview]); when either is not what is stored when the request is handled the answer is
+     * `409 STALE_VERSION` and nothing is signed or recorded. [partACheck] has no default, so a caller cannot skip the check by leaving
+     * something out: it is [PartACheck.Seen] with the digest, or [PartACheck.Unchecked], which only a test or a tool that signs
+     * without a dialog may use (using it is a compile error without an opt-in).
      */
-    suspend fun lockReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) {
+    suspend fun lockReport(user: SessionUser, reportId: UUID, partACheck: PartACheck, expectedUpdatedAt: OffsetDateTime? = null) {
         AuditService.auditedWrite(user, "report") { tx ->
             val report = loadForUpdate(tx, reportId)
             val role = ProjectAccess.roleIn(tx, user.id, report.projectid!!)
@@ -470,7 +500,11 @@ object DailyReportService {
             val signer = requireQualifiedSigner(tx, user)
             // The identification of the diary as it stands at this moment. Nothing can change it while the audit lock is held:
             // every change of the project, its members, its authorised persons and the users goes through the same lock.
-            val partA = PartASnapshot.build(tx, report.projectid!!)
+            val partA = PartASnapshot.take(tx, report.projectid!!)
+            // The signer signs what they saw (backlog C2b): the digest of part A in the dialog is the digest of the text that is stored
+            // below, or nothing is signed. Compared here, in the transaction that stores it, so a change that lands between the dialog
+            // and this statement is refused and never frozen under somebody's ČKAIT number without their knowing.
+            if (partACheck is PartACheck.Seen && partA.sha256 != partACheck.sha256) throw StaleVersionException(PART_A_CHANGED)
 
             val before = report.toSnapshot()
 
@@ -487,7 +521,7 @@ object DailyReportService {
             report.set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
             report.set(DAILY_REPORTS.SIGNERNAME, signer.name)
             report.set(DAILY_REPORTS.SIGNERCKAITNUMBER, signer.ckaitNumber)
-            report.set(DAILY_REPORTS.PARTASNAPSHOT, partA)
+            report.set(DAILY_REPORTS.PARTASNAPSHOT, partA.text)
 
             // Milliseconds: what the hash covers is exactly what is stored and read back.
             val now = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS)
@@ -497,7 +531,7 @@ object DailyReportService {
                 .set(DAILY_REPORTS.SIGNATUREFORMAT, ReportSignature.CURRENT_FORMAT.toShort())
                 .set(DAILY_REPORTS.SIGNERNAME, signer.name)
                 .set(DAILY_REPORTS.SIGNERCKAITNUMBER, signer.ckaitNumber)
-                .set(DAILY_REPORTS.PARTASNAPSHOT, partA)
+                .set(DAILY_REPORTS.PARTASNAPSHOT, partA.text)
                 .set(DAILY_REPORTS.LOCKEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDAT, now)
                 .set(DAILY_REPORTS.SIGNEDBYID, user.id)
@@ -516,15 +550,15 @@ object DailyReportService {
         }
     }
 
-    suspend fun signReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) =
-        lockReport(user, reportId, expectedUpdatedAt)
+    suspend fun signReport(user: SessionUser, reportId: UUID, partACheck: PartACheck, expectedUpdatedAt: OffsetDateTime? = null) =
+        lockReport(user, reportId, partACheck, expectedUpdatedAt)
 
     /**
      * Whether [user] may sign this entry at all (role in its project, not yet signed, qualified), without locking or changing
      * anything. The routes ask this before they ask for the password, so a person who cannot sign is told so instead of
      * being asked to prove who they are.
      */
-    fun checkMaySign(user: SessionUser, reportId: UUID) {
+    fun checkMaySign(user: SessionUser, reportId: UUID): UUID {
         val tx = DatabaseFactory.dsl
         val report = tx.selectFrom(DAILY_REPORTS)
             .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
@@ -533,7 +567,29 @@ object DailyReportService {
         if (!can(user, Action.ReportSign, Resource(role = role))) throw ForbiddenException(Action.ReportSign)
         if (report.lockedat != null) throw ConflictException("Záznam je již podepsán a uzamčen")
         requireQualifiedSigner(tx, user)
+        return report.projectid!!
     }
+
+    /**
+     * What the sign dialog shows before the password (backlog C2b): part A of the diary **as signing would freeze it now** (the same
+     * [PartASnapshot.take] the signing transaction uses) and its SHA-256, which the sign request names back (`expectedPartASha256`).
+     * Read only, and only for a person who may sign this entry (the checks of [checkMaySign]: a worker is `403`, a signed entry `409`),
+     * so a person is told before they type a password what they could not do anyway. The reads share one snapshot of the database, so
+     * the digest is that of a state the project really was in; a part A too large to be stored is refused here, as at signing.
+     */
+    fun signPreview(user: SessionUser, reportId: UUID): SignPreview {
+        val projectId = checkMaySign(user, reportId)
+        val taken = DatabaseFactory.dsl.transactionResult { cfg ->
+            val tx = cfg.dsl()
+            tx.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            PartASnapshot.take(tx, projectId)
+        }
+        return SignPreview(partA = taken.partA, partASha256 = taken.sha256)
+    }
+
+    /** What the signer is told when the part A they saw is not the one that would be frozen now. The SPA words its own sentence for the dialog; this is the server's. */
+    private const val PART_A_CHANGED =
+        "Údaje o stavbě, osoby nebo pověřené osoby se od zobrazení změnily. Zkontrolujte je znovu, než záznam podepíšete."
 
     /** Who signs, as the account says it: the name and the ČKAIT number that are stored with the signature (format 3). */
     private class Signer(val name: String, val ckaitNumber: String)

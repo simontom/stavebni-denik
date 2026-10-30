@@ -55,7 +55,7 @@ class SignatureFormat3Test : BaseIntegrationTest() {
                 lateEntryReason = null,
             ),
         )
-        DailyReportService.signReport(signer, UUID.fromString(saved.id))
+        signUnchecked(signer, UUID.fromString(saved.id))
         return UUID.fromString(saved.id)
     }
 
@@ -231,7 +231,7 @@ class SignatureFormat3Test : BaseIntegrationTest() {
     fun `an entry without a weather is signed as no weather`() = runBlocking<Unit> {
         val s = site()
         val saved = DailyReportService.saveReport(s.boss, s.projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Bez počasí"))
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
 
         val content = ReportSignature.content(dsl, record(UUID.fromString(saved.id)), OffsetDateTime.parse("2026-09-28T10:00:00Z"), s.boss.id)
 
@@ -379,7 +379,7 @@ class SignatureFormat3Test : BaseIntegrationTest() {
         val saved = DailyReportService.saveReport(s.boss, s.projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Betonáž"))
         dsl.update(PROJECTS).set(PROJECTS.SUPPORTINGDOCUMENTS, "x".repeat(PartASnapshot.MAX_BYTES + 1)).where(PROJECTS.ID.eq(s.projectId)).execute()
 
-        val refused = assertThrows<ConflictException> { DailyReportService.signReport(s.boss, UUID.fromString(saved.id)) }
+        val refused = assertThrows<ConflictException> { signUnchecked(s.boss, UUID.fromString(saved.id)) }
 
         assertTrue(refused.message!!.contains("příliš rozsáhlé"), refused.message)
         val row = record(UUID.fromString(saved.id))

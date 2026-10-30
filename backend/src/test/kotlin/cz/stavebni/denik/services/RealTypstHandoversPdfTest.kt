@@ -64,7 +64,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
         val complete = signHandover(s.investor, byContractor)
         Thread.sleep(5)
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         AddendumService.create(s.boss, report, CreateAddendumRequest("Oprava množství betonu"))
 
         val text = textOf(pdfOf(report))
@@ -113,7 +113,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
     fun `an entry of a project with no protocol has the heading, and says bez záznamu`() = runBlocking<Unit> {
         val s = site()
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val text = textOf(pdfOf(report))
 
@@ -129,7 +129,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
         val first = signHandover(s.boss, SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(type = "Předání staveniště")))
         Thread.sleep(5)
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         Thread.sleep(5)
         signHandover(s.investor, first)
         signHandover(s.boss, SiteHandoverService.createHandover(s.boss, s.projectId, handoverInput(type = "Pozdější předání", date = "2026-10-01")))
@@ -156,7 +156,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
         )
         signHandover(s.boss, created)
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val text = textOf(pdfOf(report))
 
@@ -173,7 +173,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
         val s = site()
         val report = UUID.fromString(DailyReportService.createReport(s.worker, s.projectId, "2026-09-28", workDescription = "Betonáž").id)
         PhotoService.uploadPhoto(s.boss, report, jpeg(), "image/jpeg", "a.jpg")
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         AddendumService.create(s.boss, report, CreateAddendumRequest("Oprava množství betonu"))
         RemarkService.create(s.inspector, report, CreateRemarkRequest(text = "Bez závad."))
         RemarkService.create(s.investor, report, CreateRemarkRequest(text = "Beru na vědomí."))
@@ -434,7 +434,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
             storeProtocol(s, n + 1, type = repeated(100, "typ"), participants = "u" + "\n".repeat(1000) + "u", notes = "n" + "\n".repeat(2500) + "n", meters = huge)
         }
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val measured = measure(report)
 
@@ -463,7 +463,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
             signHandover(s.investor, signHandover(s.boss, created))
         }
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val measured = measure(report)
 
@@ -488,7 +488,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
             """update daily_reports set "workersByTrade" = ?::jsonb where id = ?""",
             """[{"trade":"Betonáři","count":131,"names":[${(1..131).joinToString(",") { "\"Jan${"\\n".repeat(98)}$it\"" }}]}]""", report,
         )
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         repeat(30) { n ->
             dsl.execute(
                 """insert into addenda ("reportId", "authorId", "authorName", text) values (?, ?, 'Pavel Dělník', ?)""",

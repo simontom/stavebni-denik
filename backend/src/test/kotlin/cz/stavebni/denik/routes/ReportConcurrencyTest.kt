@@ -162,7 +162,7 @@ class ReportConcurrencyTest : BaseIntegrationTest() {
         val token = generateJwtToken(boss)
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Podepsaný")
-        DailyReportService.lockReport(boss, UUID.fromString(created.id))
+        lockUnchecked(boss, UUID.fromString(created.id))
         val current = stored(projectId).updatedat.toString()
 
         val response = save(token, projectId, """{"workDescription":"Přepis","expectedUpdatedAt":"$current"}""")

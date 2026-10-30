@@ -201,7 +201,7 @@ class PdfPrintBudgetDataTest : BaseIntegrationTest() {
     fun `addenda and entries of other parties are cut to their budget, and the records that do not fit are counted`() = runBlocking<Unit> {
         val s = site()
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         repeat(30) { n ->
             dsl.execute(
                 """insert into addenda ("reportId", "authorId", "authorName", text) values (?, ?, 'Pavel Dělník', ?)""",

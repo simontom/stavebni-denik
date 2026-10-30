@@ -80,7 +80,7 @@ class PdfFrozenAuthorsDataTest : BaseIntegrationTest() {
         assertEquals("Pavel Dělník", draft.text("author"))
         assertEquals("Ing. Jan Stavbyvedoucí", draft.list("photos").single().text("uploadedBy"))
 
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         val signed = dataOf(report)
         assertEquals("Pavel Dělník", signed.text("author"))
         assertEquals("Ing. Jan Stavbyvedoucí", signed.list("photos").single().text("uploadedBy"))
@@ -90,7 +90,7 @@ class PdfFrozenAuthorsDataTest : BaseIntegrationTest() {
     fun `an addendum is printed with the name and the ČKAIT number its author had, and a person without a number has none`() = runBlocking<Unit> {
         val s = site()
         val report = UUID.fromString(DailyReportService.createReport(s.boss, s.projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         AddendumService.create(s.boss, report, CreateAddendumRequest("Oprava množství"))
         AddendumService.create(s.worker, report, CreateAddendumRequest("Doplnění"))
         renameEveryone()
@@ -104,7 +104,7 @@ class PdfFrozenAuthorsDataTest : BaseIntegrationTest() {
     fun `an entry of another party is printed with its author's number, and an entry recorded for an outside party with the manager who recorded it`() = runBlocking<Unit> {
         val s = site()
         val report = UUID.fromString(DailyReportService.createReport(s.boss, s.projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         RemarkService.create(s.inspector, report, CreateRemarkRequest(text = "Bez závad."))
         RemarkService.create(s.investor, report, CreateRemarkRequest(text = "Beru na vědomí."))
         RemarkService.create(s.boss, report, CreateRemarkRequest(text = "Kontrola.", externalAuthor = "Stavební úřad"))
@@ -123,7 +123,7 @@ class PdfFrozenAuthorsDataTest : BaseIntegrationTest() {
     fun `an acknowledgement is printed with the name and the number of who took note, and the role`() = runBlocking<Unit> {
         val s = site()
         val report = UUID.fromString(DailyReportService.createReport(s.boss, s.projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         DailyReportService.acknowledgeReport(s.inspector, report)
         DailyReportService.acknowledgeReport(s.investor, report)
         renameEveryone()

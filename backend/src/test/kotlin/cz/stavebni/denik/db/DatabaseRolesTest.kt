@@ -111,7 +111,7 @@ class DatabaseRolesTest : BaseIntegrationTest() {
                         ),
                     )
                     val report = DailyReportService.createReport(boss, UUID.fromString(project.id), "2026-09-28", workDescription = "Betonáž")
-                    DailyReportService.signReport(boss, UUID.fromString(report.id))
+                    signUnchecked(boss, UUID.fromString(report.id))
                     assertTrue(AuditService.verifyChain(app).ok, "the chain written by the unprivileged role verifies")
                     // The guards still bind it: the signed report cannot be changed, not even by this role.
                     assertTrue(runCatching { app.execute("""update daily_reports set "workDescription" = 'x' where id = ?""", UUID.fromString(report.id)) }.isFailure)

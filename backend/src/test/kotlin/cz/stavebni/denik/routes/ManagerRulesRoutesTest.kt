@@ -206,7 +206,8 @@ class ManagerRulesRoutesTest : BaseIntegrationTest() {
         val projectId = UUID.fromString(created.id)
         addMember(projectId, worker, Role.WORKER)
         val report = DailyReportService.createReport(boss, projectId, "2026-09-29", workDescription = "Betonáž")
-        val password = """{"password":"Password123!"}"""
+        // the body of a sign request is made when it is sent: it names the part A of that moment
+        fun password() = signBody(projectId)
         val bossToken = generateJwtToken(boss)
 
         assertEquals(HttpStatusCode.OK, send(admin, HttpMethod.Post, "/api/users/${boss.id}/deactivate").status)
@@ -215,15 +216,15 @@ class ManagerRulesRoutesTest : BaseIntegrationTest() {
         val old = client.post("/api/reports/${report.id}/sign") {
             header(HttpHeaders.Authorization, "Bearer $bossToken")
             contentType(ContentType.Application.Json)
-            setBody(password)
+            setBody(password())
         }
         assertEquals(HttpStatusCode.Unauthorized, old.status, old.bodyAsText())
-        assertEquals(HttpStatusCode.Forbidden, send(worker, HttpMethod.Post, "/api/reports/${report.id}/sign", password).status)
+        assertEquals(HttpStatusCode.Forbidden, send(worker, HttpMethod.Post, "/api/reports/${report.id}/sign", password()).status)
         assertNull(dsl.selectFrom(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(report.id))).fetchSingle().lockedat, "nothing was signed")
 
         // Signing needs an active manager of the project who holds a ČKAIT number, not specifically the site manager:
         // the administrator adds one (decision D1) and that person signs.
         assertEquals(HttpStatusCode.OK, send(admin, HttpMethod.Post, "/api/projects/$projectId/members", """{"userId":"${successor.id}","role":"BOSS"}""").status)
-        assertEquals(HttpStatusCode.OK, send(successor, HttpMethod.Post, "/api/reports/${report.id}/sign", password).status)
+        assertEquals(HttpStatusCode.OK, send(successor, HttpMethod.Post, "/api/reports/${report.id}/sign", password()).status)
     }
 }

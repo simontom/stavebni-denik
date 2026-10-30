@@ -171,7 +171,7 @@ class PhotoServiceTest : BaseIntegrationTest() {
             val reportId = UUID.fromString(report.id)
 
             // Sign / lock report
-            DailyReportService.lockReport(boss, reportId)
+            lockUnchecked(boss, reportId)
 
             val imageBytes = createTestImageBytes(200, 150, "png")
             assertThrows<ForbiddenException> {
