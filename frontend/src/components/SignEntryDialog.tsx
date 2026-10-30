@@ -8,6 +8,10 @@ import { Banner, Button, Field, FormActions, Modal, StalledNotice, TextInput, ty
 /** What the dialog says when the part A it showed is not the one that would be signed now. */
 const PART_A_CHANGED = "Údaje o stavbě se mezi tím změnily; zkontrolujte je znovu.";
 const PART_A_NOT_LOADED = "Údaje o stavbě se nepodařilo načíst.";
+/** What the dialog says when the server refused for a changed version and the dialog could not find out what changed: it does not guess. */
+const NOT_VERIFIED = "Nepodařilo se ověřit, co se změnilo; zavřete okno a otevřete ho znovu.";
+/** Said (not seen) when part A has arrived: the focus is on the block, which was empty a moment ago. */
+const PART_A_ARRIVED = "Údaje o stavbě jsou načteny; přečtěte si je před podpisem.";
 
 /** How many of the changes the notice lists; the rest is "a další změny" (the block below shows all of it). */
 const MAX_CHANGES_LISTED = 6;
@@ -28,6 +32,18 @@ async function loadPreview(path: string): Promise<Load> {
   }
 }
 
+/** The version (`updatedAt`) the entry has now, or null when it could not be read. */
+async function loadEntryVersion(path: string): Promise<string | null> {
+  try {
+    const res = await apiFetch(path);
+    if (!res.ok) return null;
+    const body: unknown = await res.json().catch(() => null);
+    return typeof body === "object" && body !== null && "updatedAt" in body && typeof body.updatedAt === "string" ? body.updatedAt : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The dialog that signs an entry (backlog C2b). A signature freezes part A of the diary (the identification, the persons with their
  * scope, the authorised persons) under the signer's ČKAIT number, so **the signer sees it first**: the dialog loads part A as the
@@ -35,10 +51,17 @@ async function loadPreview(path: string): Promise<Load> {
  * (`expectedPartASha256`). When somebody changed it in between the server refuses (`409 STALE_VERSION`, nothing signed); the dialog then
  * loads part A again, says that it changed and what, and drops the password, so the person signs what they have read.
  *
- * A 409 can also mean that the entry itself changed (`expectedUpdatedAt`): when part A is as it was shown, that is what it is, and the
- * page is told ([onEntryChanged]) like before. The dialog follows the rules of the application's dialogs: the server's refusals are said
- * inside it, it cannot be dismissed while a request runs (and says that the server is silent after a while), a session that ends leaves
- * it where it is, and an answer closes it through its own handle so that the focus goes back.
+ * A 409 can also mean that the entry itself changed (`expectedUpdatedAt`). After a 409 the dialog therefore reads both, part A and the
+ * version of the entry: when the entry has another version the page is told ([onEntryChanged]) and the dialog is gone, whatever happened
+ * to part A (staying open with the old version would make the next attempt a certain second 409 and a second password); when only part A
+ * differs the dialog stays and says what changed; when it cannot find out it says so neutrally and offers nothing to sign on.
+ *
+ * The dialog follows the rules of the application's dialogs: the server's refusals are said inside it, it cannot be dismissed while a
+ * request runs (and says that the server is silent after a while), a session that ends leaves it where it is, and an answer closes it
+ * through its own handle so that the focus goes back. **An answer that comes after the dialog was closed** (the server did not answer
+ * for 20 s, the person pressed "Zavřít", the page took the dialog away and React cleared its handle) still reaches the page: the entry
+ * is signed whether or not anybody is looking, so [onSigned] and [onEntryChanged] are called directly, and nothing of the dialog is
+ * touched.
  *
  * The focus starts on the block that holds part A, not on the password: on a phone the keyboard of a focused password field would cover
  * what is to be read.
@@ -70,7 +93,9 @@ export function SignEntryDialog({
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState<{ changes: string[] } | null>(null);
+  const [notice, setNotice] = useState<{ text: string; changes: string[] } | null>(null);
+  // The dialog could not find out what changed after a refusal: it cannot be used any more (a retry would sign on a version that may be stale).
+  const [reopen, setReopen] = useState(false);
   const [busy, setBusy] = useState(false);
   const stalled = useStalled(busy);
   // Counts the times part A was shown again after a change: the block is read from the top and has the focus again.
@@ -104,11 +129,18 @@ export function SignEntryDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (busy || load.state !== "ready" || password.length === 0) return;
+    if (busy || reopen || load.state !== "ready" || password.length === 0) return;
     const shown = load.preview;
     setBusy(true);
     setError("");
     setNotice(null);
+    // What the page does with an answer is done whether or not this dialog is still on the screen. While it is, the answer closes it
+    // through its handle (the focus goes back); when it is not (the person pressed "Zavřít" after 20 s without an answer, the page took
+    // the dialog away and React cleared the handle) the page is told directly, and nothing of the dialog is touched.
+    const finish = (after: () => void) => {
+      if (mounted.current && modal.current) modal.current.close(after, { restoreFocus: true });
+      else after();
+    };
     try {
       const res = await apiFetch(`${base}/sign`, {
         method: "POST",
@@ -116,35 +148,44 @@ export function SignEntryDialog({
         body: JSON.stringify({ expectedUpdatedAt: updatedAt, expectedPartASha256: shown.partASha256, password }),
       });
       if (res.ok) {
-        setPassword("");
-        modal.current?.close(onSigned, { restoreFocus: true });
+        if (mounted.current) setPassword("");
+        finish(onSigned);
         return;
       }
       const body: { error?: unknown; code?: unknown } | null = await res.json().catch(() => null);
       const message = typeof body?.error === "string" ? body.error : null;
       if (res.status === 409 && body?.code === "STALE_VERSION") {
-        // Something changed after it was loaded here. The password is never kept; part A is looked at again, and the answer says which it was.
+        const entryChanged = () => finish(() => onEntryChanged(message ?? "Záznam se mezitím změnil"));
+        // Nobody is looking: there is nothing to show part A in. The page says what the server said and loads the entry again.
+        if (!mounted.current) return entryChanged();
+        // Something changed after it was loaded here. The password is never kept. Both are looked at again: the version of the entry
+        // and part A, because the refusal says only that one of them changed (or both: the entry is checked first).
         setPassword("");
-        const fresh = await loadPreview(previewPath);
-        if (!mounted.current) return;
-        if (fresh.state === "ready" && fresh.preview.partASha256 !== shown.partASha256) {
+        const [fresh, version] = await Promise.all([loadPreview(previewPath), loadEntryVersion(base)]);
+        if (!mounted.current) return entryChanged();
+        if (version !== null && version !== updatedAt) {
+          // The entry changed (and perhaps part A too: the next dialog shows it): the page loads the entry, so the next attempt has its version.
+          entryChanged();
+        } else if (version !== null && fresh.state === "ready" && fresh.preview.partASha256 !== shown.partASha256) {
           setLoad(fresh);
-          setNotice({ changes: describeChanges(shown.partA, fresh.preview.partA) });
+          setNotice({ text: PART_A_CHANGED, changes: describeChanges(shown.partA, fresh.preview.partA) });
           setShownAgain((n) => n + 1);
-        } else if (fresh.state === "ready") {
-          // Part A is what was shown: it is the entry that changed, which the page says (and loads again).
-          modal.current?.close(() => onEntryChanged(message ?? "Záznam se mezitím změnil"), { restoreFocus: true });
+        } else if (version !== null && fresh.state === "ready") {
+          // Refused, and nothing differs (a change that was undone): the page loads the entry again.
+          entryChanged();
         } else {
+          // It could not look (the entry, or part A): it does not say that part A changed, and it does not offer to try again.
           setLoad(fresh);
-          setNotice({ changes: [] });
+          setNotice({ text: NOT_VERIFIED, changes: [] });
+          setReopen(true);
           setShownAgain((n) => n + 1);
         }
-      } else {
+      } else if (mounted.current) {
         // A wrong password, a missing ČKAIT number, too many attempts: said at the password, in the dialog, which stays open.
         setError(message ?? "Záznam se nepodařilo podepsat");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Záznam se nepodařilo podepsat");
+      if (mounted.current) setError(err instanceof Error ? err.message : "Záznam se nepodařilo podepsat");
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -154,18 +195,18 @@ export function SignEntryDialog({
   return (
     <Modal
       title="Podepsat a uzamknout záznam"
-      description={`Podepisujete uloženou verzi záznamu ze dne ${formatDay(day)}. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
+      description={`Podepisujete uloženou verzi záznamu ze dne ${formatDay(day)}. Než podepíšete, přečtěte si údaje o stavbě níže: podpisem se uloží s ním. Po podpisu už záznam nejde změnit; opravy se vedou dodatky. K podpisu zadejte své heslo.`}
       size="lg"
       handleRef={modal}
       initialFocus={region}
       onCancel={onCancel}
       dismissible={!busy || stalled}
-      footer={<FormActions formId="sign-form" submitLabel="Podepsat" submitVariant="danger" busy={busy} stalled={stalled} canSubmit={ready && password.length > 0} />}
+      footer={<FormActions formId="sign-form" submitLabel="Podepsat" submitVariant="danger" busy={busy} stalled={stalled} canSubmit={ready && !reopen && password.length > 0} />}
     >
       <form id="sign-form" onSubmit={(e) => void submit(e)} className="space-y-3">
         {notice && (
           <Banner tone="warning" role="alert">
-            <p className="font-semibold">{PART_A_CHANGED}</p>
+            <p className="font-semibold">{notice.text}</p>
             {notice.changes.length > 0 && (
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 {notice.changes.slice(0, MAX_CHANGES_LISTED).map((change) => (
@@ -176,7 +217,11 @@ export function SignEntryDialog({
             )}
           </Banner>
         )}
-        <PartABlock load={load} regionRef={region} onRetry={retry} />
+        {/* Said, not seen: the focus is on the block, which was empty a moment ago. The element is there before it has anything to say. */}
+        <p role="status" className="sr-only">
+          {ready ? PART_A_ARRIVED : ""}
+        </p>
+        <PartABlock load={load} regionRef={region} onRetry={reopen ? undefined : retry} />
         {/* The server's refusal (a wrong password, a lapsed session) is the password field's error: announced at once and tied to it. */}
         <Field id="sign-password" label="Heslo" error={error || undefined}>
           <TextInput type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -192,7 +237,7 @@ export function SignEntryDialog({
  * digest and the sentence that these data become part of the signature under it. While part A is on its way, or could not be loaded, the
  * block says so, and the dialog has nothing to sign on.
  */
-function PartABlock({ load, regionRef, onRetry }: { load: Load; regionRef: React.RefObject<HTMLDivElement | null>; onRetry: () => void }) {
+function PartABlock({ load, regionRef, onRetry }: { load: Load; regionRef: React.RefObject<HTMLDivElement | null>; onRetry?: () => void }) {
   const headingId = useId();
   return (
     <div className="space-y-2">
@@ -213,9 +258,11 @@ function PartABlock({ load, regionRef, onRetry }: { load: Load; regionRef: React
             <p role="alert" className="font-medium text-danger-ink">
               {load.message}
             </p>
-            <Button variant="secondary" size="sm" onClick={onRetry}>
-              Načíst údaje o stavbě znovu
-            </Button>
+            {onRetry && (
+              <Button variant="secondary" size="sm" onClick={onRetry}>
+                Načíst údaje o stavbě znovu
+              </Button>
+            )}
           </div>
         )}
         {load.state === "ready" && <PartAContent view={viewOf(load.preview.partA)} />}
