@@ -173,4 +173,88 @@ test.describe("the signer sees part A before signing", () => {
       await second.context.close();
     }
   });
+
+  test("when the entry AND part A changed, the dialog does not keep a stale version: the page loads the entry, and the next dialog signs with one password", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(120_000);
+    const first = await session(browser, baseURL);
+    const second = await session(browser, baseURL);
+    try {
+      const project = await newProject(first.context.request, first.adminId);
+      const { page } = first;
+      await page.goto(`/projects/${project.id}/reports/${project.day}`);
+      const open = page.getByRole("button", { name: /podepsat a uzamknout/i });
+      await expect(open).toBeEnabled({ timeout: 15_000 });
+      await open.click();
+      const dialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+      await expect(dialog.getByRole("region", { name: /údaje o stavbě, které podepisujete/i }).getByText(project.name)).toBeVisible({ timeout: 15_000 });
+
+      // A second session changes the entry and the scope of the manager.
+      await post(second.context.request, `/api/projects/${project.id}/reports/${project.day}`, { workDescription: "Betonáž stropní desky, doplněno" });
+      await post(second.context.request, `/api/projects/${project.id}/members`, { userId: second.adminId, role: "BOSS", scope: NEW_SCOPE });
+
+      await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+      await dialog.getByRole("button", { name: "Podepsat", exact: true }).click();
+
+      // The page has the entry's refusal and the dialog is gone: a dialog that stayed would send the old version again and be refused again.
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+      await expect(page.getByRole("alert").filter({ hasText: /Záznam se od načtení změnil/ })).toBeVisible();
+      await page.getByRole("button", { name: "Načíst aktuální verzi" }).click();
+      await expect(page.locator('textarea[name="workDescription"]')).toHaveValue("Betonáž stropní desky, doplněno", { timeout: 15_000 });
+
+      // The next dialog shows the new part A, and one password signs.
+      await expect(open).toBeEnabled();
+      await open.click();
+      const again = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+      await expect(again.getByRole("region", { name: /údaje o stavbě, které podepisujete/i })).toContainText(NEW_SCOPE, { timeout: 15_000 });
+      await again.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+      await again.getByRole("button", { name: "Podepsat", exact: true }).click();
+      await expect(again).toBeHidden({ timeout: 15_000 });
+      await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
+    } finally {
+      await first.context.close();
+      await second.context.close();
+    }
+  });
+
+  test("a signature that the server answers after the person pressed Zavřít still shows the signed entry", async ({ browser, baseURL }) => {
+    test.setTimeout(120_000);
+    const first = await session(browser, baseURL);
+    try {
+      const project = await newProject(first.context.request, first.adminId);
+      const { page } = first;
+      // The server does not answer the signature until the test lets it (the request has reached it and the entry is signed there).
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      await page.route(/\/api\/projects\/[^/]+\/reports\/[^/]+\/sign$/, async (route) => {
+        const response = await route.fetch();
+        await gate;
+        await route.fulfill({ response });
+      });
+
+      await page.goto(`/projects/${project.id}/reports/${project.day}`);
+      const open = page.getByRole("button", { name: /podepsat a uzamknout/i });
+      await expect(open).toBeEnabled({ timeout: 15_000 });
+      await open.click();
+      const dialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+      await expect(dialog.getByRole("region", { name: /údaje o stavbě, které podepisujete/i }).getByText(project.name)).toBeVisible({ timeout: 15_000 });
+      await dialog.getByLabel("Heslo").fill(ADMIN_PASSWORD);
+      await dialog.getByRole("button", { name: "Podepsat", exact: true }).click();
+
+      // 20 s without an answer: the dialog says so and can be closed, and the page shows an entry that nobody knows to be signed.
+      await expect(dialog.getByText("Server neodpovídá.")).toBeVisible({ timeout: 40_000 });
+      await dialog.getByRole("button", { name: "Zavřít" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByText("Podepsáno", { exact: true })).toHaveCount(0);
+
+      // The answer comes (200): the page shows the signed entry, and the button that signs is gone.
+      release();
+      await expect(page.getByText("Podepsáno", { exact: true })).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("button", { name: /podepsat a uzamknout/i })).toHaveCount(0);
+    } finally {
+      await first.context.close();
+    }
+  });
 });
