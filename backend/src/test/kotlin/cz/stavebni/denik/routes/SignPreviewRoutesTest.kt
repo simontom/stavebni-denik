@@ -94,6 +94,7 @@ class SignPreviewRoutesTest : BaseIntegrationTest() {
         assertEquals(preview, json(byEntry.bodyAsText()), "both routes answer the same")
         assertEquals(preview, json(byDate.bodyAsText()), "a date names the entry as well")
         assertEquals(setOf("partA", "partASha256"), preview.keys)
+        assertEquals("private, no-store", byProject.headers[HttpHeaders.CacheControl], "a copy of an earlier answer is part A as it was")
 
         // It is part A as it stands now: the digest is that of the text signing would store.
         val digest = preview["partASha256"]!!.jsonPrimitive.content

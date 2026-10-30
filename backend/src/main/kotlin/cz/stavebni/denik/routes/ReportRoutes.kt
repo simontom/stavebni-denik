@@ -97,9 +97,14 @@ private suspend fun ApplicationCall.signReport(user: SessionUser, reportId: UUID
     respond(HttpStatusCode.OK, mapOf("status" to "ok"))
 }
 
-/** What the sign dialog shows: part A as signing would freeze it now, and its digest. Only for a person who may sign the entry. */
+/**
+ * What the sign dialog shows: part A as signing would freeze it now, and its digest. Only for a person who may sign the entry.
+ * Never cached: a copy of an earlier answer would be part A as it was, not as it is.
+ */
 private suspend fun ApplicationCall.signPreview(user: SessionUser, reportId: UUID) {
-    respond(DailyReportService.signPreview(user, reportId))
+    val preview = DailyReportService.signPreview(user, reportId)
+    response.header(HttpHeaders.CacheControl, "private, no-store")
+    respond(preview)
 }
 
 private fun CreateReportPayload.expectedInstant(): OffsetDateTime? =
