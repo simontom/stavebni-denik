@@ -2,6 +2,7 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Action
+import cz.stavebni.denik.domain.AppJson
 import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.ForbiddenException
 import cz.stavebni.denik.domain.HandoverSide
@@ -26,7 +27,6 @@ import cz.stavebni.denik.util.Text
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.encodeToJsonElement
@@ -151,10 +151,7 @@ object SiteHandoverService {
     const val MAX_PARTICIPANTS_LINES = 100
     const val MAX_NOTES_LINES = 200
 
-    private val json = Json {
-        encodeDefaults = true
-        ignoreUnknownKeys = true
-    }
+    private val json = AppJson.api
 
     // --- reading ------------------------------------------------------------------------------
 

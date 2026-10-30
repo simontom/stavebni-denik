@@ -104,7 +104,7 @@ class AuditGuardTest : BaseIntegrationTest() {
         val result = AuditService.verifyChain(dsl, anchor = anchor)
         assertFalse(result.ok)
         assertTrue(result.reason!!.contains("anchor row id=5 is missing"), result.reason)
-        assertTrue(result.reason!!.contains("up to id=3"), result.reason)
+        assertTrue(result.reason.contains("up to id=3"), result.reason)
     }
 
     @Test

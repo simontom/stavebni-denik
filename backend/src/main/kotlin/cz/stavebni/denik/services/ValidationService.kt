@@ -4,6 +4,10 @@ import cz.stavebni.denik.jooq.tables.references.*
 import org.jooq.DSLContext
 import java.util.UUID
 
+/**
+ * A check that an entry has a weather and a work description. **No route calls it**; only `ValidationServiceTest` does. Kept for
+ * the owner's decision: route it, or remove it together with its test (backlog A8).
+ */
 object ValidationService {
     fun validateReport(tx: DSLContext, reportId: UUID): List<String> {
         val errors = mutableListOf<String>()

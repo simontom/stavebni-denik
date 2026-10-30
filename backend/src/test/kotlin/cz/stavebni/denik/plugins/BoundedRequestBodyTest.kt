@@ -34,7 +34,7 @@ class BoundedRequestBodyTest {
         install(BoundedRequestBody) { bodyLimit { limit } }
         routing {
             post("/size") {
-                call.respondText("read ${call.receiveChannel().readRemaining().readByteArray().size}")
+                call.respondText("read ${call.receiveChannel().readBuffer().readByteArray().size}")
             }
         }
     }.start(wait = false)

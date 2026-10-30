@@ -87,7 +87,7 @@ class RealTypstHandoversPdfTest : RealTypstTestBase() {
         assertTrue(Regex("""\d{1,2}\. \d{1,2}\. \d{4} \d{2}:\d{2}:\d{2} SE?L?Č \(UTC\+[12]\)""").containsMatchIn(text.substring(section, after)), "Prague time with the zone: $text")
         // The hashes: of each signature, and of the content that both signed.
         val squeezedSection = squeezed(text.substring(section, after))
-        for (hash in listOf(complete.contractorSignature!!.signatureHash, complete.clientSignature!!.signatureHash, complete.contractorSignature!!.contentHash)) {
+        for (hash in listOf(complete.contractorSignature!!.signatureHash, complete.clientSignature!!.signatureHash, complete.contractorSignature.contentHash)) {
             assertTrue(squeezedSection.contains(hash), "the hash $hash is printed: $text")
         }
         // The note says that the protocols are not part of the signature of the entry.

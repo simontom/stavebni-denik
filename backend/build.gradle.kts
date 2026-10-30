@@ -36,6 +36,12 @@ kotlin {
     sourceSets["main"].kotlin.srcDir(jooqGeneratedDir)
 }
 
+// A warning in the main sources (a deprecation from a dependency bump, a redundant call) fails the build, so it is fixed in the
+// PR that brings it instead of piling up. The tests are left out on purpose: a warning there does not reach production.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileKotlin") {
+    compilerOptions.allWarningsAsErrors.set(true)
+}
+
 val codegen: SourceSet by sourceSets.creating
 
 dependencies {
@@ -47,9 +53,6 @@ dependencies {
     implementation("io.ktor:ktor-server-auth:$ktorVersion")
     implementation("io.ktor:ktor-server-auth-jwt:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
-    implementation("io.ktor:ktor-server-rate-limit:$ktorVersion")
-    implementation("io.ktor:ktor-server-sessions:$ktorVersion")
-    implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
 
     implementation("io.ktor:ktor-client-core:$ktorVersion")
     implementation("io.ktor:ktor-client-cio:$ktorVersion")
@@ -69,13 +72,11 @@ dependencies {
     implementation("de.mkammerer:argon2-jvm:2.12")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
-    implementation("io.konform:konform:0.11.1")
     implementation("net.coobird:thumbnailator:0.4.21")
 
     implementation("ch.qos.logback:logback-classic:1.6.5")
 
     testImplementation("io.ktor:ktor-server-test-host:$ktorVersion")
-    testImplementation("io.ktor:ktor-client-mock:$ktorVersion")
     testImplementation("org.jetbrains.kotlin:kotlin-test")
     testImplementation("org.testcontainers:testcontainers:$testcontainersVersion")
     testImplementation("org.testcontainers:postgresql:$testcontainersVersion")
