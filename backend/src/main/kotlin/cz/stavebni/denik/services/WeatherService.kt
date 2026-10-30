@@ -1,12 +1,12 @@
 package cz.stavebni.denik.services
 
+import cz.stavebni.denik.domain.AppJson
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -27,7 +27,7 @@ object WeatherService {
 
     var client: HttpClient = HttpClient(CIO) {
         install(ContentNegotiation) {
-            json(Json { ignoreUnknownKeys = true })
+            json(AppJson.lenient)
         }
     }
 
