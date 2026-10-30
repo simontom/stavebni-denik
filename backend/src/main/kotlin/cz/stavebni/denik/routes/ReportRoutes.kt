@@ -10,6 +10,7 @@ import cz.stavebni.denik.services.AddendumService
 import cz.stavebni.denik.services.CreateAddendumRequest
 import cz.stavebni.denik.services.CreateRemarkRequest
 import cz.stavebni.denik.services.DailyReportService
+import cz.stavebni.denik.services.PartACheck
 import cz.stavebni.denik.services.ProjectAccess
 import cz.stavebni.denik.services.RemarkService
 import cz.stavebni.denik.services.ReportSignature
@@ -94,7 +95,7 @@ private suspend fun ApplicationCall.signReport(user: SessionUser, reportId: UUID
     DailyReportService.checkMaySign(user, reportId)
     val request = receiveSignRequest()
     SigningGuard.confirmPassword(user, request.password)
-    DailyReportService.signReport(user, reportId, request.expectedUpdatedAt, request.expectedPartASha256)
+    DailyReportService.signReport(user, reportId, PartACheck.Seen(request.expectedPartASha256), request.expectedUpdatedAt)
     respond(HttpStatusCode.OK, mapOf("status" to "ok"))
 }
 

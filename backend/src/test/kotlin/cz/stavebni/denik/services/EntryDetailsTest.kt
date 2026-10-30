@@ -134,7 +134,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = project(boss)
         val saved = save(boss, projectId, details = mapOf("materials" to "Cement"))
-        DailyReportService.signReport(boss, UUID.fromString(saved.id))
+        signUnchecked(boss, UUID.fromString(saved.id))
 
         assertThrows<cz.stavebni.denik.domain.ConflictException> { save(boss, projectId, details = mapOf("materials" to "Jiný")) }
         assertEquals("Cement", record(saved.id).get(DAILY_REPORTS.MATERIALSIN))
@@ -159,7 +159,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val id = UUID.fromString(saved.id)
         // The format is a property of the signature, not of the row: a draft is in format 1 until it is signed ...
         assertEquals(1.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
-        DailyReportService.signReport(boss, id)
+        signUnchecked(boss, id)
 
         // ... and signing moves it to the current one, before the hash is made.
         assertEquals(ReportSignature.CURRENT_FORMAT.toShort(), record(saved.id).get(DAILY_REPORTS.SIGNATUREFORMAT))
@@ -182,7 +182,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val saved = save(boss, projectId, details = mapOf("materials" to "Cement"))
         val id = UUID.fromString(saved.id)
-        DailyReportService.signReport(boss, id)
+        signUnchecked(boss, id)
 
         // Make it look like an entry from before V14: format 1 and the hash that format covers (and no signer or part A of its
         // own: only a signature in format 3 stores them, which the constraint of V14 insists on).
@@ -265,7 +265,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val saved = save(boss, projectId, details = mapOf("dustMeasures" to "Kropení"))
         val id = UUID.fromString(saved.id)
-        DailyReportService.signReport(boss, id)
+        signUnchecked(boss, id)
 
         for (statement in listOf(
             """update daily_reports set "dustMeasures" = 'Jiné' where id = ?""",
@@ -285,7 +285,7 @@ class EntryDetailsTest : BaseIntegrationTest() {
         val projectId = project(boss)
         val saved = save(boss, projectId, details = mapOf("materials" to "Cement"))
         save(boss, projectId, details = mapOf("materials" to "Písek"))
-        DailyReportService.signReport(boss, UUID.fromString(saved.id))
+        signUnchecked(boss, UUID.fromString(saved.id))
 
         fun json(action: String, part: String) = dsl.auditPartOf(action, part)!!
 

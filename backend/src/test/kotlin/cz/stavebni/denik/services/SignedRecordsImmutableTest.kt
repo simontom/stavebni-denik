@@ -78,7 +78,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
 
         // Before signing everything is allowed.
         dsl.update(DAILY_REPORTS).set(DAILY_REPORTS.WORKDESCRIPTION, "Upraveno").where(DAILY_REPORTS.ID.eq(reportId)).execute()
-        DailyReportService.lockReport(s.boss, reportId)
+        lockUnchecked(s.boss, reportId)
 
         assertThrows<DataAccessException> {
             dsl.update(DAILY_REPORTS).set(DAILY_REPORTS.WORKDESCRIPTION, "Přepsáno").where(DAILY_REPORTS.ID.eq(reportId)).execute()
@@ -139,7 +139,7 @@ class SignedRecordsImmutableTest : BaseIntegrationTest() {
         val outcomes = coroutineScope {
             val upload = async(Dispatchers.IO) { runCatching { PhotoService.uploadPhoto(s.worker, reportId, big, "image/jpeg", "big.jpg") } }
             delay(150)
-            val sign = async(Dispatchers.IO) { runCatching { DailyReportService.lockReport(s.boss, reportId) } }
+            val sign = async(Dispatchers.IO) { runCatching { lockUnchecked(s.boss, reportId) } }
             listOf(upload, sign).awaitAll()
         }
         val upload = outcomes[0]

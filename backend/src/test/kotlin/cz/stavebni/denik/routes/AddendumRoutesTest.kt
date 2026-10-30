@@ -47,7 +47,7 @@ class AddendumRoutesTest : BaseIntegrationTest() {
         )
         val projectId = UUID.fromString(project.id)
         val report = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž")
-        if (sign) DailyReportService.signReport(boss, UUID.fromString(report.id))
+        if (sign) signUnchecked(boss, UUID.fromString(report.id))
         return Site(boss, projectId, report.id)
     }
 
@@ -167,7 +167,7 @@ class AddendumRoutesTest : BaseIntegrationTest() {
         application { module() }
         val s = site()
         val second = DailyReportService.createReport(s.boss, s.projectId, "2026-09-29")
-        DailyReportService.signReport(s.boss, UUID.fromString(second.id))
+        signUnchecked(s.boss, UUID.fromString(second.id))
         post(s.boss, s.reportId, text("K prvnímu"))
         post(s.boss, second.id, text("Ke druhému"))
 

@@ -39,7 +39,7 @@ class SignatureAuditRowTest : BaseIntegrationTest() {
             s.boss, s.projectId, day,
             DailyReportService.ReportInput(workDescription = "Betonáž", weather = WeatherData(8.5, 15.0, "zataženo")),
         )
-        DailyReportService.signReport(s.boss, UUID.fromString(saved.id))
+        signUnchecked(s.boss, UUID.fromString(saved.id))
         return UUID.fromString(saved.id)
     }
 

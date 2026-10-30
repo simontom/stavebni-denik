@@ -69,7 +69,7 @@ class FrozenAuthorsTest : BaseIntegrationTest() {
         UUID.fromString(DailyReportService.createReport(author, s.projectId, day, workDescription = "Betonáž").id)
 
     private suspend fun signedEntry(s: Site, day: String = "2026-09-28"): UUID =
-        draft(s, s.boss, day).also { DailyReportService.signReport(s.boss, it) }
+        draft(s, s.boss, day).also { signUnchecked(s.boss, it) }
 
     /** What happens to people afterwards: renamed, their number corrected or cleared. */
     private fun afterwards(user: SessionUser, name: String = "Přejmenovaný ${user.displayName}", ckait: String? = null) {
@@ -175,7 +175,7 @@ class FrozenAuthorsTest : BaseIntegrationTest() {
         assertEquals("Pavel Dělník", DailyReportService.getReport(s.projectId, report.toString(), s.boss)!!.authorName)
         assertEquals("Pavel Dělník", DailyReportService.getReports(s.projectId, user = s.boss).reports.single().authorName)
         assertEquals("Pavel Dělník", auditAfter("report.update").text("authorName"))
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         assertEquals("Pavel Dělník", DailyReportService.getReport(s.projectId, report.toString(), s.boss)!!.authorName, "and after signing")
     }
 
@@ -241,7 +241,7 @@ class FrozenAuthorsTest : BaseIntegrationTest() {
         val onDraft = PhotoService.uploadPhoto(s.worker, draft, jpeg(), "image/jpeg", "a.jpg")
         val signedReport = draft(s, s.boss, "2026-09-29")
         val onSigned = PhotoService.uploadPhoto(s.worker, signedReport, jpeg(), "image/jpeg", "b.jpg")
-        DailyReportService.signReport(s.boss, signedReport)
+        signUnchecked(s.boss, signedReport)
 
         val first = assertThrows<DataAccessException> { dsl.execute("""update photos set "uploadedByName" = 'Jiné' where id = ?""", onDraft.id) }
         assertTrue(first.message!!.contains("uploader"), first.message)

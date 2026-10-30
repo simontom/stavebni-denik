@@ -97,7 +97,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
             draft.map { it.text("state") },
         )
 
-        DailyReportService.signReport(s.boss, report); tick()
+        signUnchecked(s.boss, report); tick()
         // Afterwards: the other party signs the second protocol, a protocol is made and signed, another one is made and not signed.
         signHandover(s.inspector, SiteHandoverService.getHandover(dsl, s.boss, oneSide.uuid)!!); tick()
         val later = handover(s, "Pozdější protokol", date = "2026-10-01")
@@ -123,7 +123,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
         val s = site()
         val report = entry(s)
         assertTrue(dataOf(report).handovers().isEmpty())
-        DailyReportService.signReport(s.boss, report); tick()
+        signUnchecked(s.boss, report); tick()
         // A protocol signed later does not exist on the day of the entry.
         signHandover(s.boss, handover(s, "Pozdější"))
 
@@ -142,7 +142,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
         assertTrue(draft.contains("ještě není podepsán"), draft)
         assertTrue(draft.contains("vlastní podpisy"), draft)
 
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         val signed = dataOf(report).text("handoversNote")
         assertTrue(signed.contains("nejsou součástí podpisu tohoto záznamu"), signed)
         assertTrue(signed.contains("ke dni podpisu záznamu"), signed)
@@ -159,7 +159,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
         val byContractor = signHandover(s.boss, created); tick()
         val complete = signHandover(s.inspector, byContractor)
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val protocol = dataOf(report).handovers().single()
 
@@ -192,7 +192,7 @@ class PdfHandoversDataTest : BaseIntegrationTest() {
         signHandover(s.investor, signed)
         dsl.execute("""update users set "displayName" = 'Změněné Jméno', "ckaitNumber" = '7777777'""")
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val protocol = dataOf(report).handovers().single()
 

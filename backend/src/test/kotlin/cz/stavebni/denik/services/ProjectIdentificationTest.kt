@@ -305,7 +305,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         assertTrue(draft.startsWith("Údaje o stavbě platné ke dni "), draft)
         assertFalse(draft.contains("nejsou součástí podpisu"), "a draft is not signed: $draft")
 
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         // Make it an entry signed before format 3 (test data only): it kept no copy of the identification.
         dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
         try {
@@ -329,7 +329,7 @@ class ProjectIdentificationTest : BaseIntegrationTest() {
         val created = create(boss)
         val projectId = UUID.fromString(created.id)
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         // The manager changes the contractor after the entry was signed.
         ProjectService.updateProject(boss, projectId, ProjectService.getProject(dsl, boss, projectId).copy(contractor = "Jiný stavitel s.r.o."))

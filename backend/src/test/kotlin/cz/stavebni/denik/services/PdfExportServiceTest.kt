@@ -97,7 +97,7 @@ class PdfExportServiceTest : BaseIntegrationTest() {
     fun `typst is given times in Prague time with the zone, and the hash of the row of the signature`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val reportId = createReport(boss)
-        DailyReportService.signReport(boss, reportId)
+        signUnchecked(boss, reportId)
         val lockRowHash = dsl.fetchValue("""select row_hash from audit_log where action = 'report.lock' and entity_id = ?""", reportId.toString()) as String
         var data = ""
         PdfExportService.compiler = TypstCompiler { dir, _, pdfFile ->

@@ -80,7 +80,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
         val s = site()
         withPersons(s)
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         // Afterwards: the project is renamed and its contractor changed, the persons are revoked, removed and rewritten.
         val current = ProjectService.getProject(dsl, s.boss, s.projectId)
@@ -114,7 +114,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
     fun `the note says that part A is the one of the day of signing and part of the signature, and the hash of it is given`() = runBlocking<Unit> {
         val s = site()
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         val stored = dsl.select(DAILY_REPORTS.PARTASNAPSHOT).from(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(report)).fetchSingle().value1()!!
 
         val data = dataOf(report)
@@ -132,7 +132,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
     fun `the signer is the stored name and number, not those of the account`() = runBlocking<Unit> {
         val s = site(bossName = "Ing. Jan Stavbyvedoucí")
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         dsl.update(USERS).set(USERS.DISPLAYNAME, "Změněné Jméno").set(USERS.CKAITNUMBER, "7777777").where(USERS.ID.eq(s.boss.id)).execute()
 
         val data = dataOf(report)
@@ -148,7 +148,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
     fun `an enormous signer is cut in the signature block, as before`() = runBlocking<Unit> {
         val s = site(bossName = "Jan Novák ".repeat(400))
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
 
         val signedBy = dataOf(report).text("signedBy")
 
@@ -226,7 +226,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
     fun `a format 3 entry without its snapshot says that it cannot be verified, and does not print the project as if it were the signed one`() = runBlocking<Unit> {
         val s = site()
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
             dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
             try {
@@ -249,7 +249,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
     fun `a format 3 entry without its signer says that it cannot be verified`() = runBlocking<Unit> {
         val s = site()
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
             dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
             try {
@@ -272,7 +272,7 @@ class PdfSignedPartATest : BaseIntegrationTest() {
         ProjectMemberService.addMember(s.boss, s.projectId, AddMemberRequest(intern.id.toString(), "INSPECTOR", "= nadpis\n#include \"main.typ\""))
         AuthorizedPersonService.create(s.boss, s.projectId, CreateAuthorizedPersonRequest("\$ x \$", "#panic()", "*tučně*"))
         val report = entry(s)
-        DailyReportService.signReport(s.boss, report)
+        signUnchecked(s.boss, report)
         var typst = ""
         PdfExportService.compiler = TypstCompiler { dir, typstFile, pdfFile ->
             typst = typstFile.readText()

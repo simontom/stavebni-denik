@@ -132,7 +132,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         assertTrue(draft.contains("zatím bez čísla"), draft)
 
         // The number is given at signing (decision D11).
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
         assertTrue(signed.contains("č. 1"), signed)
         assertFalse(signed.contains("zatím bez čísla"), signed)
@@ -261,7 +261,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
     fun `a signed entry has no watermark and ends with its number`() = runBlocking<Unit> {
         val boss = createTestUser(role = Role.BOSS)
         val report = UUID.fromString(DailyReportService.createReport(boss, projectOf(boss), "2026-09-28", workDescription = "Zápis").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
 
@@ -317,7 +317,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val report = UUID.fromString(
             DailyReportService.createReport(boss, projectOf(boss, "Bytový dům Zelená"), "2026-09-28", workDescription = long).id
         )
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
 
@@ -370,7 +370,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val boss = createTestUser(role = Role.BOSS, displayName = "Ing. Podepsaný Stavbyvedoucí")
         val projectId = projectOf(boss)
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         // Something else is audited afterwards: the head of the chain is now another row than the one of the signature.
         projectOf(boss, "Jiná stavba")
         val lockRowHash = dsl.select(AUDIT_LOG.ROW_HASH).from(AUDIT_LOG)
@@ -422,7 +422,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
                values (gen_random_uuid(), ?, 'photos/x.jpg', 'photos/x-thumb.jpg', 800, 600, 1000, ?, ?, ?)""",
             report, boss.id, hostile, "a".repeat(64),
         )
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
 
@@ -458,7 +458,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val worker = createTestUser(nickname = "worker", displayName = "Pavel Dělník", role = Role.WORKER)
         addMember(projectId, worker, Role.WORKER)
         val report = UUID.fromString(DailyReportService.createReport(worker, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         val snapshot = dsl.fetchValue("""select "partASnapshot" from daily_reports where id = ?""", report) as String
 
         // Afterwards the project is changed, a person is revoked and the signer is renamed.
@@ -511,7 +511,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
             ),
         )
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val pdf = PdfExportService.generateReportPdf(dsl, report).bytes
         val text = squeezed(textOf(pdf))
@@ -550,7 +550,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         ProjectMemberService.addMember(boss, projectId, AddMemberRequest(other.id.toString(), "INSPECTOR", "= nadpis \$ x \$ #include \"main.typ\""))
         AuthorizedPersonService.create(boss, projectId, CreateAuthorizedPersonRequest("#panic(\"P\")", "*firma*", "#panic(\"F\")"))
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val text = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
 
@@ -565,7 +565,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = projectWithPersons(boss)
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         dsl.withoutConstraint("daily_reports_signature_format_3_check", table = "daily_reports") {
             dsl.execute("""ALTER TABLE "daily_reports" DISABLE TRIGGER USER""")
             try {
@@ -600,7 +600,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
             dsl.execute("""insert into authorized_persons ("projectId", name, company, "authorization") values (?, ?, 'Firma', ?)""", projectId, "Osoba $n", scope)
         }
         val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
 
         val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
 
@@ -731,7 +731,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
             val boss = createTestUser(role = Role.BOSS, displayName = name, ckaitNumber = ckait)
             val projectId = projectOf(boss, "Dlouhé jméno $label")
             val report = UUID.fromString(DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž").id)
-            DailyReportService.signReport(boss, report)
+            signUnchecked(boss, report)
             val signedHash = dsl.fetchValue("""select "signatureHash" from daily_reports where id = ?""", report) as String
 
             val pages = pagesOf(PdfExportService.generateReportPdf(dsl, report).bytes)
@@ -759,7 +759,7 @@ class RealTypstPdfTest : RealTypstTestBase() {
         assertFalse(text.contains("Připojeno po podpisu"), "a draft has no signature to come after: $text")
         assertFalse(text.contains("nejsou součástí podpisu záznamu"), text)
         // A signed entry keeps its wording.
-        DailyReportService.signReport(boss, report)
+        signUnchecked(boss, report)
         val signed = textOf(PdfExportService.generateReportPdf(dsl, report).bytes)
         assertTrue(signed.contains("Připojeno po podpisu záznamu"), signed)
         assertTrue(signed.contains("nejsou součástí podpisu záznamu"), signed)

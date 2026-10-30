@@ -154,6 +154,30 @@ internal data class ReportSnapshot(
     val details: Map<String, String> = emptyMap(),
 )
 
+/**
+ * Marks the one way to sign without naming the part A that the signer saw ([PartACheck.Unchecked], backlog C2b). It is for tests and for
+ * tools that sign without a dialog; code that uses it has to opt in (`@OptIn(SignsWithoutPartACheck::class)`), so it cannot be used by
+ * accident, and `SignPartADigestTest` fails when a file of the application mentions it.
+ */
+@RequiresOptIn(level = RequiresOptIn.Level.ERROR, message = "Signing without the part A the signer saw is for tests and tools only: name the digest (PartACheck.Seen).")
+@Retention(AnnotationRetention.BINARY)
+annotation class SignsWithoutPartACheck
+
+/**
+ * What a signature says about the part A the signer saw: the digest they were shown ([Seen]), or nothing ([Unchecked]). There is no
+ * default anywhere, so a caller of the signing cannot leave the check out by forgetting it.
+ */
+sealed interface PartACheck {
+    /** The SHA-256 of the part A the signer was shown. The hex is normalised here (trimmed, lower case), so a caller does not need to. */
+    class Seen(sha256: String) : PartACheck {
+        val sha256: String = sha256.trim().lowercase()
+    }
+
+    /** No check: for the tests and the tools that sign without a dialog. The routes never pass it. */
+    @SignsWithoutPartACheck
+    data object Unchecked : PartACheck
+}
+
 object DailyReportService {
 
     /** What a save request mentions. A value that is `null` was not mentioned and leaves what is stored unchanged. */
@@ -453,12 +477,13 @@ object DailyReportService {
      * under a row lock inside the transaction, and the update only matches an unlocked
      * row, so a second signature can neither overwrite the first signer nor the time.
      *
-     * A signature covers what the signer saw: [expectedUpdatedAt] names the version of the entry and [expectedPartASha256] the digest of
-     * part A that the sign dialog showed ([signPreview]); when either is not what is stored when the request is handled the answer is
-     * `409 STALE_VERSION` and nothing is signed or recorded. The routes require the digest; `null` here means "no check" and is for the
-     * callers that sign without a dialog (tests, tools).
+     * A signature covers what the signer saw: [expectedUpdatedAt] names the version of the entry and [partACheck] the digest of part A
+     * that the sign dialog showed ([signPreview]); when either is not what is stored when the request is handled the answer is
+     * `409 STALE_VERSION` and nothing is signed or recorded. [partACheck] has no default, so a caller cannot skip the check by leaving
+     * something out: it is [PartACheck.Seen] with the digest, or [PartACheck.Unchecked], which only a test or a tool that signs
+     * without a dialog may use (using it is a compile error without an opt-in).
      */
-    suspend fun lockReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null, expectedPartASha256: String? = null) {
+    suspend fun lockReport(user: SessionUser, reportId: UUID, partACheck: PartACheck, expectedUpdatedAt: OffsetDateTime? = null) {
         AuditService.auditedWrite(user, "report") { tx ->
             val report = loadForUpdate(tx, reportId)
             val role = ProjectAccess.roleIn(tx, user.id, report.projectid!!)
@@ -479,7 +504,7 @@ object DailyReportService {
             // The signer signs what they saw (backlog C2b): the digest of part A in the dialog is the digest of the text that is stored
             // below, or nothing is signed. Compared here, in the transaction that stores it, so a change that lands between the dialog
             // and this statement is refused and never frozen under somebody's ČKAIT number without their knowing.
-            if (expectedPartASha256 != null && partA.sha256 != expectedPartASha256) throw StaleVersionException(PART_A_CHANGED)
+            if (partACheck is PartACheck.Seen && partA.sha256 != partACheck.sha256) throw StaleVersionException(PART_A_CHANGED)
 
             val before = report.toSnapshot()
 
@@ -525,8 +550,8 @@ object DailyReportService {
         }
     }
 
-    suspend fun signReport(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null, expectedPartASha256: String? = null) =
-        lockReport(user, reportId, expectedUpdatedAt, expectedPartASha256)
+    suspend fun signReport(user: SessionUser, reportId: UUID, partACheck: PartACheck, expectedUpdatedAt: OffsetDateTime? = null) =
+        lockReport(user, reportId, partACheck, expectedUpdatedAt)
 
     /**
      * Whether [user] may sign this entry at all (role in its project, not yet signed, qualified), without locking or changing

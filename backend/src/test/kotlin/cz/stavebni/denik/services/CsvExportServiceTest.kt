@@ -26,7 +26,7 @@ class CsvExportServiceTest : BaseIntegrationTest() {
             .set(DAILY_REPORTS.WORKDESCRIPTION, "Vykopove prace pro kanalizaci \"usek A\"")
             .where(DAILY_REPORTS.ID.eq(UUID.fromString(r1.id)))
             .execute()
-        DailyReportService.signReport(boss, UUID.fromString(r1.id))
+        signUnchecked(boss, UUID.fromString(r1.id))
 
         val r2Id = UUID.randomUUID()
         dsl.insertInto(DAILY_REPORTS)

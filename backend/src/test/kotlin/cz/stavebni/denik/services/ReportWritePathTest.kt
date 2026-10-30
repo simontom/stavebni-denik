@@ -59,7 +59,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž")
 
-        DailyReportService.lockReport(boss, UUID.fromString(created.id))
+        lockUnchecked(boss, UUID.fromString(created.id))
 
         val signed = report(created.id)
         assertNotNull(signed.signedat)
@@ -87,10 +87,10 @@ class ReportWritePathTest : BaseIntegrationTest() {
         addMember(projectId, secondBoss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28")
         val reportId = UUID.fromString(created.id)
-        DailyReportService.lockReport(boss, reportId)
+        lockUnchecked(boss, reportId)
         val first = report(created.id)
 
-        assertThrows<ConflictException> { DailyReportService.lockReport(secondBoss, reportId) }
+        assertThrows<ConflictException> { lockUnchecked(secondBoss, reportId) }
 
         val after = report(created.id)
         assertEquals(boss.id, after.get(DAILY_REPORTS.SIGNEDBYID), "the first signer must stay")
@@ -109,7 +109,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
 
         val outcomes = coroutineScope {
             listOf(boss, secondBoss)
-                .map { signer -> async(Dispatchers.Default) { runCatching { DailyReportService.lockReport(signer, reportId) } } }
+                .map { signer -> async(Dispatchers.Default) { runCatching { lockUnchecked(signer, reportId) } } }
                 .awaitAll()
         }
 
@@ -125,7 +125,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28")
 
-        assertThrows<ForbiddenException> { DailyReportService.lockReport(outsider, UUID.fromString(created.id)) }
+        assertThrows<ForbiddenException> { lockUnchecked(outsider, UUID.fromString(created.id)) }
 
         assertNull(report(created.id).lockedat)
     }
@@ -137,7 +137,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28")
 
-        assertThrows<ForbiddenException> { DailyReportService.lockReport(adminBoss, UUID.fromString(created.id)) }
+        assertThrows<ForbiddenException> { lockUnchecked(adminBoss, UUID.fromString(created.id)) }
 
         assertNull(report(created.id).lockedat, "being an admin must not grant the right to sign")
     }
@@ -146,7 +146,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
     fun `signing an unknown report is a not-found error`() {
         runBlocking {
             val boss = createTestUser(role = Role.BOSS)
-            assertThrows<NotFoundException> { DailyReportService.lockReport(boss, UUID.randomUUID()) }
+            assertThrows<NotFoundException> { lockUnchecked(boss, UUID.randomUUID()) }
         }
     }
 
@@ -172,7 +172,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         assertThrows<ConflictException> { DailyReportService.acknowledgeReport(inspector, reportId) }
         assertTrue(acknowledgedBy(created.id).isEmpty(), "an unsigned report must not be acknowledgeable")
 
-        DailyReportService.lockReport(boss, reportId)
+        lockUnchecked(boss, reportId)
         DailyReportService.acknowledgeReport(inspector, reportId)
         assertEquals(listOf(inspector.id), acknowledgedBy(created.id))
 
@@ -195,7 +195,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28")
         val reportId = UUID.fromString(created.id)
-        DailyReportService.lockReport(boss, reportId)
+        lockUnchecked(boss, reportId)
 
         assertThrows<ForbiddenException> { DailyReportService.acknowledgeReport(adminInspector, reportId) }
 
@@ -236,7 +236,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val boss = createTestUser(role = Role.BOSS)
         val projectId = createProject(boss)
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Podepsaný text")
-        DailyReportService.lockReport(boss, UUID.fromString(created.id))
+        lockUnchecked(boss, UUID.fromString(created.id))
 
         assertThrows<ConflictException> {
             DailyReportService.saveReport(boss, projectId, "2026-09-28", DailyReportService.ReportInput(workDescription = "Jiný text"))
@@ -273,7 +273,7 @@ class ReportWritePathTest : BaseIntegrationTest() {
         val created = DailyReportService.createReport(boss, projectId, "2026-09-28")
         val rowsBefore = dsl.fetchCount(AUDIT_LOG)
 
-        assertThrows<ForbiddenException> { DailyReportService.lockReport(outsider, UUID.fromString(created.id)) }
+        assertThrows<ForbiddenException> { lockUnchecked(outsider, UUID.fromString(created.id)) }
 
         assertEquals(rowsBefore, dsl.fetchCount(AUDIT_LOG))
     }

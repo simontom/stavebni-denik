@@ -4,8 +4,11 @@ import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.jooq.tables.references.*
+import cz.stavebni.denik.services.DailyReportService
 import cz.stavebni.denik.services.JwtService
+import cz.stavebni.denik.services.PartACheck
 import cz.stavebni.denik.services.PartASnapshot
+import cz.stavebni.denik.services.SignsWithoutPartACheck
 import cz.stavebni.denik.services.PasswordService
 import cz.stavebni.denik.services.PdfExportService
 import cz.stavebni.denik.services.TypstCompiler
@@ -98,6 +101,20 @@ abstract class BaseIntegrationTest {
             dsl.select(DAILY_REPORTS.PROJECTID).from(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(UUID.fromString(reportId)))
                 .fetchOne(DAILY_REPORTS.PROJECTID)!!,
         )
+
+    /**
+     * Signs [reportId] as [user] **without naming a part A** (`PartACheck.Unchecked`), the way a test that only needs a signed entry does.
+     * The application's own code cannot do this (the routes always name the digest, and using `Unchecked` is a compile error without the
+     * opt-in below); a test of the check itself calls `DailyReportService.signReport` with [PartACheck.Seen].
+     */
+    @OptIn(SignsWithoutPartACheck::class)
+    suspend fun signUnchecked(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) =
+        DailyReportService.signReport(user, reportId, PartACheck.Unchecked, expectedUpdatedAt)
+
+    /** [signUnchecked] under its other name (`lockReport` is what the service calls the act, `signReport` is its alias). */
+    @OptIn(SignsWithoutPartACheck::class)
+    suspend fun lockUnchecked(user: SessionUser, reportId: UUID, expectedUpdatedAt: OffsetDateTime? = null) =
+        DailyReportService.lockReport(user, reportId, PartACheck.Unchecked, expectedUpdatedAt)
 
     /** The body of a request to sign an entry of [projectId]: the password and the part A as it stands now (and the version of the entry, when it is named). */
     fun signBody(projectId: UUID, password: String = "Password123!", expectedUpdatedAt: String? = null): String =

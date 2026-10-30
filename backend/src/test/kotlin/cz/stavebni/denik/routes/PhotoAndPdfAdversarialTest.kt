@@ -275,7 +275,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         val (_, reportId) = createProjectAndReport(boss)
 
         // Lock report
-        DailyReportService.lockReport(boss, UUID.fromString(reportId))
+        lockUnchecked(boss, UUID.fromString(reportId))
 
         val jpegBytes = createTestImageBytes(200, 150, "jpeg")
         val response = client.submitFormWithBinaryData(
@@ -348,7 +348,7 @@ class PhotoAndPdfAdversarialTest : BaseIntegrationTest() {
         val (_, reportId) = createProjectAndReport(boss)
 
         // Lock report first
-        DailyReportService.lockReport(boss, UUID.fromString(reportId))
+        lockUnchecked(boss, UUID.fromString(reportId))
 
         val response = client.get("/api/reports/$reportId/pdf") {
             header(HttpHeaders.Authorization, "Bearer $token")

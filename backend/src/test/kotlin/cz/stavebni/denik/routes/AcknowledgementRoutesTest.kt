@@ -50,7 +50,7 @@ class AcknowledgementRoutesTest : BaseIntegrationTest() {
         val projectId = UUID.fromString(project.id)
         listOf(tds, author, client).forEach { addMember(projectId, it) }
         val report = DailyReportService.createReport(boss, projectId, "2026-09-28")
-        if (sign) DailyReportService.signReport(boss, UUID.fromString(report.id))
+        if (sign) signUnchecked(boss, UUID.fromString(report.id))
         return Site(boss, tds, author, client, projectId, report.id)
     }
 

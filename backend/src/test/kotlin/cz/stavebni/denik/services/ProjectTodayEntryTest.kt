@@ -59,7 +59,7 @@ class ProjectTodayEntryTest : BaseIntegrationTest() {
 
     private suspend fun entry(owner: SessionUser, projectId: UUID, day: String, sign: Boolean = false): DailyReportDto {
         val saved = DailyReportService.saveReport(owner, projectId, day, DailyReportService.ReportInput(workDescription = "Práce", lateEntryReason = "pozdě"))
-        if (sign) DailyReportService.signReport(owner, UUID.fromString(saved.id))
+        if (sign) signUnchecked(owner, UUID.fromString(saved.id))
         return saved
     }
 

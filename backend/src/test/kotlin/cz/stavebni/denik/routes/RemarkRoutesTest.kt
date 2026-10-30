@@ -54,7 +54,7 @@ class RemarkRoutesTest : BaseIntegrationTest() {
         val projectId = UUID.fromString(project.id)
         listOf(worker, inspector, investor).forEach { addMember(projectId, it) }
         val report = DailyReportService.createReport(boss, projectId, "2026-09-28", workDescription = "Betonáž")
-        if (sign) DailyReportService.signReport(boss, UUID.fromString(report.id))
+        if (sign) signUnchecked(boss, UUID.fromString(report.id))
         return Site(boss, worker, inspector, investor, projectId, report.id)
     }
 
