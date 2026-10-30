@@ -202,7 +202,7 @@ function PartABlock({ load, regionRef, onRetry }: { load: Load; regionRef: React
         aria-labelledby={headingId}
         aria-busy={load.state === "loading"}
         tabIndex={0}
-        className="max-h-[min(18rem,45dvh)] overflow-y-auto rounded-md border border-line bg-page p-3 text-sm"
+        className="max-h-[min(22rem,45dvh)] overflow-y-auto rounded-md border border-line bg-page p-3 text-sm"
       >
         <h3 id={headingId} className="mb-2 font-bold text-ink">
           Údaje o stavbě, které podepisujete
@@ -221,13 +221,15 @@ function PartABlock({ load, regionRef, onRetry }: { load: Load; regionRef: React
         {load.state === "ready" && <PartAContent view={viewOf(load.preview.partA)} />}
       </div>
       {load.state === "ready" && (
-        <p className="text-sm text-ink-muted">
-          Otisk údajů o stavbě:{" "}
-          <code className="font-mono text-ink" title={load.preview.partASha256}>
-            {shortDigest(load.preview.partASha256)}
-          </code>
-          . Tyto údaje se podpisem uloží se záznamem a stanou se součástí podpisu; pozdější změna údajů o stavbě je nezmění.
-        </p>
+        <div className="space-y-1 text-sm text-ink-muted">
+          <p>
+            Otisk údajů o stavbě:{" "}
+            <code className="font-mono text-ink" title={load.preview.partASha256}>
+              {shortDigest(load.preview.partASha256)}
+            </code>
+          </p>
+          <p>Tyto údaje se podpisem uloží se záznamem a stanou se součástí podpisu; pozdější změna údajů o stavbě je nezmění.</p>
+        </div>
       )}
     </div>
   );
