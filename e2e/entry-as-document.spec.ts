@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD, INVESTOR_NICKNAME, INVESTOR_PASSWORD } from "./global-setup";
+import { signEntry } from "./helpers";
 
 /**
  * The entry as a document, and the lists (backlog B4): a signed entry, and every entry seen by somebody who cannot write it, is a
@@ -95,7 +96,7 @@ async function newSite(browser: Browser, baseURL: string | undefined, extra: Rec
 /** An entry made and (when [sign]) signed by the administrator; returns it. */
 async function makeEntry(site: Site, date: string, extra: Record<string, unknown> = {}, sign = false) {
   const saved = await post<{ id: string; updatedAt: string }>(site.api, `/api/projects/${site.projectId}/reports/${date}`, entryBody(date, extra));
-  if (sign) await post(site.api, `/api/projects/${site.projectId}/reports/${date}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: saved.updatedAt });
+  if (sign) await signEntry(site.api, site.projectId, date, ADMIN_PASSWORD, saved.updatedAt);
   return saved;
 }
 
@@ -187,7 +188,7 @@ test.describe("a signed entry is a document", () => {
     try {
       // The worker writes the entry; the manager signs it.
       await post(worker.context.request, `/api/projects/${site.projectId}/reports/${A_MONDAY}`, entryBody(A_MONDAY, { isControlDay: false }));
-      await post(site.api, `/api/projects/${site.projectId}/reports/${A_MONDAY}/sign`, { password: ADMIN_PASSWORD });
+      await signEntry(site.api, site.projectId, A_MONDAY, ADMIN_PASSWORD);
 
       await site.page.goto(`/projects/${site.projectId}/reports/${A_MONDAY}`);
       await expect(site.page.getByText(`Autor: ${WORKER_NAME}`)).toBeVisible({ timeout: 15_000 });
@@ -474,7 +475,7 @@ test.describe("the list of projects", () => {
       await expect(card().getByRole("link", { name: "Dnes: rozpracováno" })).toHaveAttribute("href", `/projects/${site.projectId}/reports/${today}`);
 
       // Signed.
-      await post(site.api, `/api/projects/${site.projectId}/reports/${today}/sign`, { password: ADMIN_PASSWORD });
+      await signEntry(site.api, site.projectId, today, ADMIN_PASSWORD);
       await page.goto("/projects");
       const signedLink = card().getByRole("link", { name: "Dnes: podepsáno" });
       await expect(signedLink).toBeVisible({ timeout: 15_000 });

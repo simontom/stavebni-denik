@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type BrowserContext, type Locator, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD, INVESTOR_NICKNAME, INVESTOR_PASSWORD } from "./global-setup";
+import { signEntry } from "./helpers";
 
 /**
  * The phone projects (`playwright.config.ts`: 360 x 780 held upright, and 780 x 360 held sideways, both with a touch screen): every
@@ -159,7 +160,7 @@ test.beforeAll(async ({ browser }) => {
   await post(api, `/api/projects/${data.project}/reports/${data.draftDay}`, entryBody(data.draftDay));
   await post(api, `/api/projects/${data.project}/reports/${data.lateDay}`, entryBody(data.lateDay, { lateEntryReason: "Doplněno po návratu z nemoci, zápis nebyl možný dříve." }));
   const signed = await post<{ updatedAt: string }>(api, `/api/projects/${data.project}/reports/${data.signedDay}`, entryBody(data.signedDay));
-  await post(api, `/api/projects/${data.project}/reports/${data.signedDay}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: signed.updatedAt });
+  await signEntry(api, data.project, data.signedDay, ADMIN_PASSWORD, signed.updatedAt);
 });
 
 // The account made for the run is deleted again (its project stays: every run gives its project a name of its own).
@@ -511,6 +512,50 @@ test.describe("the pages on a phone", () => {
     await expectInputsAtLeast16px(page, what);
     await expectControlsAtLeast44px(page, what);
   }
+
+  test("the sign dialog shows part A of the diary above the password and fits the screen (backlog C2b)", async ({ page }) => {
+    await signIn(page);
+    await page.goto(`/projects/${data.project}/reports/${data.draftDay}`);
+    const open = page.getByRole("button", { name: /podepsat a uzamknout/i });
+    await expect(open).toBeEnabled({ timeout: 15_000 });
+    await open.click();
+
+    const dialog = page.getByRole("dialog", { name: "Podepsat a uzamknout záznam" });
+    // The project of the run has a name, an address and an authorised person of 63, 70 and 120 letters that have no place to break a line,
+    // 30 parcels, long firms and two lists: the worst a part A looks like. It is read in a block that scrolls inside the dialog.
+    const region = dialog.getByRole("region", { name: "Údaje o stavbě, které podepisujete" });
+    await expect(region.getByText(data.projectName)).toBeVisible({ timeout: 15_000 });
+    await expect(region).toContainText(data.address);
+    await expect(region).toContainText(data.authorizedPerson);
+    await expectDialogFits(page, dialog, "the sign dialog");
+
+    // The block is reached and scrolled from the keyboard, is no taller than the screen allows, and has its own scrolling when part A is longer.
+    await expect(region).toBeFocused();
+    const block = await region.evaluate((el) => ({
+      scrolls: el.scrollHeight > el.clientHeight,
+      height: el.getBoundingClientRect().height,
+      overflowX: el.scrollWidth - el.clientWidth,
+      tab: el.getAttribute("tabindex"),
+    }));
+    expect(block.tab, "the block can be reached from the keyboard").toBe("0");
+    expect(block.scrolls, "part A of this project does not fit the block: it scrolls inside it").toBe(true);
+    expect(block.height, "the block leaves room for the password and the buttons").toBeLessThan(page.viewportSize()!.height * 0.5);
+    expect(block.overflowX, "the block does not scroll sideways").toBeLessThanOrEqual(1);
+
+    // The password and the two buttons are reachable (the dialog scrolls when the screen is low): scrolled to, whole, and a thumb high.
+    for (const [control, what] of [
+      [dialog.getByLabel("Heslo"), "the password field"],
+      [dialog.getByRole("button", { name: "Zrušit" }), "the button that cancels"],
+      [dialog.getByRole("button", { name: "Podepsat", exact: true }), "the button that signs"],
+    ] as const) {
+      await control.scrollIntoViewIfNeeded();
+      await expectReachable(page, control, what);
+    }
+    // Nothing is signed by looking at it: "Zrušit" closes the dialog and the entry is still a draft.
+    await dialog.getByRole("button", { name: "Zrušit" }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText("Podepsáno", { exact: true })).toHaveCount(0);
+  });
 
   test("the questions, the question about typed text and the temporary password fit the screen", async ({ page }) => {
     test.setTimeout(90_000);

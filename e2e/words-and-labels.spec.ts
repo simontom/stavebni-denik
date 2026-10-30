@@ -1,5 +1,6 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 import { ADMIN_NICKNAME, ADMIN_PASSWORD } from "./global-setup";
+import { signEntry } from "./helpers";
 
 /**
  * The words of the interface and the accessibility of the forms (backlog B7, C1): one glossary applied everywhere, a `<title>` for every
@@ -50,7 +51,7 @@ async function newSite(page: Page) {
     lateEntryReason: "Doplněno dodatečně.",
     expectNew: true,
   });
-  await post(page.request, `/api/projects/${project.id}/reports/${DAY}/sign`, { password: ADMIN_PASSWORD, expectedUpdatedAt: saved.updatedAt });
+  await signEntry(page.request, project.id, DAY, ADMIN_PASSWORD, saved.updatedAt);
   return { projectId: project.id, projectName };
 }
 
