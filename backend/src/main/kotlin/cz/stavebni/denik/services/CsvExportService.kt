@@ -4,6 +4,10 @@ import cz.stavebni.denik.jooq.tables.references.*
 import org.jooq.DSLContext
 import java.util.UUID
 
+/**
+ * The entries of a project as CSV. **No route calls it**; only `CsvExportServiceTest` does. Kept for the owner's decision: route it,
+ * or remove it together with its test (backlog A8).
+ */
 object CsvExportService {
     fun exportReportsCsv(tx: DSLContext, projectId: UUID): String {
         val reports = tx.select(

@@ -12,6 +12,10 @@ data class DashboardStatsDto(
     val pendingUnacknowledgedReports: Int
 )
 
+/**
+ * Counts for a start page. **No route calls it** (the SPA's invented dashboard was removed); only `DashboardServiceTest` does.
+ * Kept for the owner's decision: route it, or remove it together with its test (backlog A8).
+ */
 object DashboardService {
     fun getDashboardStats(user: SessionUser): DashboardStatsDto {
         val tx = DatabaseFactory.dsl

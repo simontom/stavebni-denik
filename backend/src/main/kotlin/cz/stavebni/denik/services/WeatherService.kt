@@ -22,6 +22,11 @@ data class CurrentWeather(
     val time: String
 )
 
+/**
+ * A client for the Open-Meteo forecast API. **No route calls it** and nothing in the application reaches Open-Meteo: the weather
+ * is typed by hand (decision D12). Kept on purpose for a prefill that needs a commercial Open-Meteo key (the free API is
+ * non-commercial); it is used only by `WeatherServiceTest` until then.
+ */
 object WeatherService {
     var baseUrl: String = System.getenv("OPEN_METEO_BASE_URL") ?: "https://api.open-meteo.com/v1/forecast"
 
