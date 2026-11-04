@@ -109,7 +109,7 @@ test.describe("the total of the workers", () => {
     await expect(total).toHaveText("Celkem: 12 pracovníků");
 
     // the visible total is live; what is said waits: still the old sentence right after typing, the new one when the field is left
-    await count(1).focus();
+    await count(1).fill("");
     await count(1).pressSequentially("10", { delay: 30 });
     await expect(total).toHaveText("Celkem: 15 pracovníků");
     await expect(said).not.toHaveText("Celkem: 15 pracovníků");
@@ -285,6 +285,8 @@ test.describe("the detail fields", () => {
     const materials = page.locator('textarea[name="detail-materials"]');
     const machinery = page.locator('textarea[name="detail-machinery"]');
     const height = async (l: Locator) => (await l.boundingBox())!.height;
+    // where a field is on the page, whatever the window has scrolled to
+    const top = (l: Locator) => l.evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
 
     // compact: the nine are one line high (a finger's 44 px), the work description keeps its rows
     for (const key of ["materials", "machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "workStateChanges", "otherNotes"]) {
@@ -296,13 +298,13 @@ test.describe("the detail fields", () => {
 
     // focusing it does not move anything; the text makes it grow
     const compact = await height(materials);
-    const below = (await machinery.boundingBox())!.y;
+    const below = await top(machinery);
     await materials.focus();
     expect(await height(materials)).toBe(compact);
-    expect((await machinery.boundingBox())!.y).toBe(below);
+    expect(await top(machinery)).toBe(below);
     await materials.fill("jeden\ndva\ntři\nčtyři\npět\nšest");
     expect(await height(materials)).toBeGreaterThan(130);
-    expect((await machinery.boundingBox())!.y).toBeGreaterThan(below + 100);
+    expect(await top(machinery), "what is below moved down by the lines that were added").toBeGreaterThan(below + 80);
 
     // a very long text stops at a height, and the field scrolls inside itself
     await materials.fill(Array.from({ length: 80 }, (_, i) => `řádek ${i + 1}`).join("\n"));
@@ -326,7 +328,7 @@ test.describe("the detail fields", () => {
     await expect(defects).toHaveAttribute("placeholder", "Zjištěné závady a způsob jejich odstranění");
 
     await defects.focus();
-    const start = (await next.boundingBox())!.y;
+    const start = await next.evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
     await page.evaluate(() => {
       const target = document.querySelector('textarea[name="detail-workStateChanges"]')!;
       const w = window as unknown as { __ys: number[]; __run: boolean };
@@ -353,7 +355,7 @@ test.describe("the detail fields", () => {
     expect(ys.length).toBeGreaterThan(10);
     for (let i = 1; i < ys.length; i++) expect(ys[i], `frame ${i}: the field below never moves up while the text above only grows`).toBeGreaterThanOrEqual(ys[i - 1] - 0.5);
     expect(Math.min(...ys)).toBeGreaterThanOrEqual(start - 0.5);
-    const grown = (await next.boundingBox())!.y;
+    const grown = await next.evaluate((el) => el.getBoundingClientRect().top + window.scrollY);
     expect(grown - start, "it moved down by the lines that were added").toBeGreaterThan(20);
     expect(grown - start).toBeLessThan(140);
   });

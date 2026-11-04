@@ -3,16 +3,26 @@ import { useParams, Link } from "react-router-dom";
 import { Addenda } from "../components/Addenda";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { ControlDayBadge, EntryStateBadge, LateEntryBadge } from "../components/EntryBadges";
+import { EntryActionBar } from "../components/EntryActionBar";
 import { EntryDocument, SignatureCard, type SignatureCheck } from "../components/EntryDocument";
+import { GrowingTextArea } from "../components/GrowingTextArea";
+import { PhotoUploader } from "../components/PhotoUploader";
 import { Remarks } from "../components/Remarks";
 import { SignEntryDialog } from "../components/SignEntryDialog";
-import { Button, Card, Field, StatusBadge, TextArea, TextInput } from "../components/ui";
+import { Button, Card, Field, StatusBadge, TextArea, TextInput, buttonClasses } from "../components/ui";
+import { WeatherChips } from "../components/WeatherChips";
 import { ApiError, api, apiFetch, currentUser, unsavedWorkIsKeptAsDraft } from "../lib/api";
-import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate } from "../lib/dates";
+import { formatDay, formatDayWithWeekday, isFutureDate, isLateEntryDate, nextDay, previousDay } from "../lib/dates";
+import { entryBar } from "../lib/entryBar";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
+import { downloadReportPdf } from "../lib/reportPdf";
 import { usePageTitle } from "../lib/pageTitle";
+import { usePhotoUploads } from "../lib/usePhotoUploads";
 import { useReportDraft } from "../lib/useReportDraft";
+import { useSettledValue } from "../lib/useSettledValue";
+import { WEATHER_CONDITIONS } from "../lib/weatherChips";
+import { workerTotal, workerTotalText } from "../lib/workerTotal";
 
 interface PhotoItem {
   id: string;
@@ -40,9 +50,6 @@ function Group({ legend, children }: { legend: string; children: React.ReactNode
     </fieldset>
   );
 }
-
-/** Suggestions for the weather field; any text is accepted. */
-const WEATHER_CONDITIONS = ["jasno", "polojasno", "oblačno", "zataženo", "mlha", "přeháňky", "déšť", "bouřka", "sněžení", "silný vítr"];
 
 /** The longest text of one field, as the server accepts it (EntryDetails.MAX_CHARS). */
 const MAX_DETAIL_CHARS = 5000;
@@ -139,6 +146,9 @@ export const DailyReport: React.FC = () => {
   const [workDescription, setWorkDescription] = useState<string>("");
   // One row per trade. The head count is entered, never defaulted: an invented number would end up in a legal record.
   const [workers, setWorkers] = useState<WorkerRow[]>([{ trade: "", count: "", names: "" }]);
+  // The total of the head counts is on the screen at once; what a screen reader is told settles first (a pause in the typing, or the field being left).
+  const totalText = workerTotalText(workerTotal(workers));
+  const [spokenTotal, settleTotal] = useSettledValue(totalText, 900);
   const [details, setDetails] = useState<Details>(emptyDetails());
   // Saving is only possible once it is known whether the day already has an entry: an unloaded form
   // must never be saved over an entry that exists.
@@ -238,7 +248,13 @@ export const DailyReport: React.FC = () => {
 
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Several photos at once: one request each, two at a time, with progress (the queue and its rules are `lib/uploadQueue.ts`). A photo is put into
+  // the list above as it arrives. While any is on its way the page holds unsaved work and the entry cannot be signed.
+  const uploads = usePhotoUploads({
+    projectId: projectId ?? "",
+    reportId: reportId ?? "",
+    onPhoto: (photo) => setPhotos((prev) => (prev.some((p) => p.id === photo.id) ? prev : [...prev, { id: photo.id, url: photo.url, name: photo.name }])),
+  });
 
   /** Puts [v] into the form (an entry as loaded from the server, or a draft the person took back). */
   const applyValues = (v: FormValues) => {
@@ -387,54 +403,29 @@ export const DailyReport: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-    }
-  };
-
-  const handleUploadPhoto = async () => {
-    if (!selectedFile) return;
-
-    try {
-      const formData = new FormData();
-      // The fields that say where the photo belongs come before the file, so the server knows before it reads the file.
-      if (reportId) formData.append("reportId", reportId);
-      if (projectId) formData.append("projectId", projectId);
-      formData.append("photo", selectedFile);
-
-      const res = await apiFetch("/api/photos/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.error || "Nahrání fotky se nezdařilo");
-      }
-
-      const data = await res.json();
-      const newPhoto: PhotoItem = {
-        id: data.id || Date.now().toString(),
-        url: data.url || URL.createObjectURL(selectedFile),
-        name: selectedFile.name,
-      };
-
-      setPhotos((prev) => [...prev, newPhoto]);
-      setSelectedFile(null);
-    } catch (err) {
-      console.error("Nahrání fotky se nezdařilo:", err);
-      showError(err instanceof Error ? err.message : "Nahrání fotky se nezdařilo");
-    }
-  };
-
   /** Opens the signing dialog. A signature covers the stored version, so unsaved text must be saved first. */
   const handleSignAndLock = () => {
     // Unsaved text on the screen would not be part of the signature, and the page would say "signed" above words that were never signed.
     if (draft.offer) return showError("Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.");
     if (dirty) return showError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
     if (updatedAt === null) return showError("Záznam ještě není uložen. Nejdřív jej uložte.");
+    // A signature covers the photos the entry has when it is made: the ones on their way would be refused after it.
+    if (uploads.snapshot.running) return showError("Počkejte, až se nahrají všechny fotky: podpis zahrnuje fotky, které záznam má.");
     setShowSign(true);
+  };
+
+  /** The PDF of the entry as it is stored (the bar's "Stáhnout PDF"); a refusal is said in the alert at the top, like every failure of the page. */
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const handleDownloadPdf = async () => {
+    if (!entryId || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      await downloadReportPdf({ id: entryId, date: entry?.date ?? reportId ?? "" });
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Chyba při stahování PDF");
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   /** Reads the signed entry again: the signer, the time, the number and the fingerprint are known to the server. False (and the card says so) when it fails. */
@@ -516,6 +507,25 @@ export const DailyReport: React.FC = () => {
   const signatureLoaded = entry?.isSigned === true;
   // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
   const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
+  // The bar of actions at the foot of the page (backlog B5): which buttons it has follows the state of the entry (`lib/entryBar.ts`).
+  const bar = entryBar({
+    settled,
+    canWrite,
+    isBoss: myRole === "BOSS",
+    signed: isSigned,
+    hasEntry: updatedAt !== null,
+    mayEdit: mayEditEntry,
+    editable,
+    dirty,
+    saving,
+    saved: savedAt !== null,
+    future: isFuture,
+    draftOffer: draft.offer !== null,
+    uploading: uploads.snapshot.running,
+  });
+  // The days on either side of this one: a real calendar day, never one that has not come yet (the page is mounted afresh for each day).
+  const dayBefore = reportId ? previousDay(reportId) : null;
+  const dayAfter = reportId ? nextDay(reportId) : null;
   const dayLabel = formatDayWithWeekday(entry?.date ?? reportId ?? "", "long");
   // "Záznam č. 5 / 28. 9. 2026 – Hala Brno – Stavební deník". The number is known once the entry is signed and read again; until then a signed entry is just "Záznam", a draft
   // is "Rozpracovaný záznam" and a day nobody has written is "Záznam" too: the title never says more than the page knows.
@@ -523,7 +533,8 @@ export const DailyReport: React.FC = () => {
   usePageTitle(`${entryTitle} / ${formatDay(entry?.date ?? reportId ?? "")}`, projectName);
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6 sm:py-8">
+    // With the bar of actions the page ends in the bar (it lies after the last card), so it has no bottom padding of its own.
+    <div className={`mx-auto max-w-4xl px-4 pt-6 sm:pt-8 ${bar.visible ? "" : "pb-6 sm:pb-8"}`}>
       {/* The head: where this is (project, day), what it is (the number, the state) and what is noted on it */}
       <Card className="mb-6">
         <Link to={`/projects/${projectId}?tab=reports`} className="-ml-2 inline-flex min-h-11 items-center px-2 text-sm text-primary-ink hover:underline">
@@ -532,6 +543,35 @@ export const DailyReport: React.FC = () => {
         {projectName && <p className="mt-1 text-sm font-medium text-ink-muted">{projectName}</p>}
         <h1 className="mt-1 text-2xl font-bold text-ink tabular-nums">Denní záznam stavby: {dayLabel}</h1>
         {entry?.authorName && <p className="mt-1 text-sm text-ink-muted">Autor: {entry.authorName}</p>}
+        {/* The day before and the day after: real links (through the router, so unsaved text is asked about first); there is no day after today */}
+        {(dayBefore || dayAfter) && (
+          <nav aria-label="Dny záznamů" className="mt-3 flex items-stretch justify-between gap-2">
+            {dayBefore ? (
+              <Link
+                to={`/projects/${projectId}/reports/${dayBefore}`}
+                className={buttonClasses({ variant: "secondary", size: "sm", className: "flex-col items-start gap-0 text-left leading-tight" })}
+              >
+                <span>
+                  <span aria-hidden="true">← </span>Předchozí den
+                </span>
+                <span className="text-xs font-normal text-ink-muted tabular-nums">{formatDayWithWeekday(dayBefore)}</span>
+              </Link>
+            ) : (
+              <span />
+            )}
+            {dayAfter && (
+              <Link
+                to={`/projects/${projectId}/reports/${dayAfter}`}
+                className={buttonClasses({ variant: "secondary", size: "sm", className: "flex-col items-end gap-0 text-right leading-tight" })}
+              >
+                <span>
+                  Následující den<span aria-hidden="true"> →</span>
+                </span>
+                <span className="text-xs font-normal text-ink-muted tabular-nums">{formatDayWithWeekday(dayAfter)}</span>
+              </Link>
+            )}
+          </nav>
+        )}
         {loadState === "ready" && (
           <div role="group" aria-label="Stav záznamu" className="mt-3 flex flex-wrap items-center gap-2">
             <EntryStateBadge state={entryState} />
@@ -628,7 +668,7 @@ export const DailyReport: React.FC = () => {
           </div>
         )}
         {!showDocument && !showNoEntry && (
-          <form onSubmit={handleCreateReport} hidden={loadState === "loading" || !roleKnown}>
+          <form id="entry-form" onSubmit={handleCreateReport} hidden={loadState === "loading" || !roleKnown}>
             <fieldset disabled={!editable} className="m-0 min-w-0 space-y-6 border-0 p-0">
               {isFuture && (
                 <div role="alert" className="rounded bg-red-100 p-3 text-sm text-red-700">
@@ -657,7 +697,7 @@ export const DailyReport: React.FC = () => {
 
               {/* Workers by trade: one row per trade */}
               <Group legend="Pracovníci podle profesí">
-                <div className="space-y-3">
+                <div className="space-y-3" onBlur={settleTotal}>
                   {workers.map((row, index) => {
                     // The one row a refusal is about (a trade without a name, a head count that is not a whole number): its control says so, and is described by it.
                     const problem = fieldError?.id === `worker-trade-${index}` || fieldError?.id === `worker-count-${index}` ? fieldError : null;
@@ -713,6 +753,13 @@ export const DailyReport: React.FC = () => {
                     );
                   })}
                 </div>
+                {/* The total of the head counts: on the screen as it is typed; a screen reader is told once the person has paused or left the field */}
+                <p id="worker-total" aria-hidden="true" className="mt-3 text-sm font-semibold text-ink tabular-nums">
+                  {totalText}
+                </p>
+                <span role="status" className="sr-only">
+                  {spokenTotal}
+                </span>
                 <Button type="button" variant="quiet" size="sm" onClick={addWorker} className="mt-2">
                   + Přidat profesi
                 </Button>
@@ -721,7 +768,7 @@ export const DailyReport: React.FC = () => {
               {/* Weather, entered by hand */}
               <Group legend="Počasí a stav staveniště">
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <Field id="weatherCondition" label="Popis" hint="Počasí a stav staveniště slovy, např. zataženo, staveniště rozmoklé.">
+                  <Field id="weatherCondition" label="Popis" hint="Počasí a stav staveniště slovy, např. zataženo, staveniště rozmoklé." className="md:col-span-3">
                     <TextInput
                       name="weatherCondition"
                       type="text"
@@ -735,6 +782,8 @@ export const DailyReport: React.FC = () => {
                         <option key={c} value={c} />
                       ))}
                     </datalist>
+                    {/* A tap puts a condition into the text above (or takes it out); the text stays what is stored */}
+                    <WeatherChips value={weatherCondition} onChange={setWeatherCondition} />
                   </Field>
                   <Field id="weatherMin" label="Nejnižší teplota (°C)">
                     <TextInput name="weatherMin" type="number" step="0.5" min={-60} max={60} value={weatherMin} onChange={(e) => setWeatherMin(e.target.value)} />
@@ -758,11 +807,10 @@ export const DailyReport: React.FC = () => {
                     const live = tooLong ? `Text je příliš dlouhý: ${length} / ${MAX_DETAIL_CHARS} znaků.` : undefined;
                     return (
                       <Field key={field.key} id={id} label={field.label} hint={field.hint} error={refused ?? live} errorRole={refused ? "alert" : "status"}>
-                        <TextArea
+                        <GrowingTextArea
                           name={id}
                           value={details[field.key] ?? ""}
                           onChange={(e) => updateDetail(field.key, e.target.value)}
-                          rows={2}
                           placeholder={field.placeholder}
                           aria-describedby={nearLimit ? `${id}-count` : undefined}
                         />
@@ -804,20 +852,9 @@ export const DailyReport: React.FC = () => {
               </div>
             </fieldset>
 
-            {roleKnown && !canWrite ? (
+            {/* Saving, signing and the PDF are in the bar of actions at the foot of the page (`EntryActionBar`): its save button belongs to this form */}
+            {roleKnown && !canWrite && (
               <p className="mt-6 border-t border-gray-200 pt-4 text-sm text-gray-600">Záznam můžete jen číst; zapisují do něj stavbyvedoucí a pracovníci zhotovitele.</p>
-            ) : (
-              <div className="mt-6 flex flex-wrap items-center justify-end gap-3 border-t border-gray-200 pt-4">
-                {dirty && <span className="text-xs text-amber-700">Neuložené změny</span>}
-                {!dirty && !saving && savedAt && (
-                  <span role="status" className="text-xs text-green-700">
-                    Uloženo {savedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                )}
-                <Button type="submit" disabled={!editable || isFuture || saving}>
-                  {saving ? "Ukládám…" : updatedAt === null ? "Uložit záznam" : "Uložit změny"}
-                </Button>
-              </div>
             )}
           </form>
         )}
@@ -828,30 +865,7 @@ export const DailyReport: React.FC = () => {
         <Card className="mb-6">
           <h2 className="mb-4 text-lg font-bold text-ink">Fotodokumentace</h2>
 
-          {showPhotoControls && (
-            <div className="mb-6 flex flex-wrap items-center gap-3">
-              <label htmlFor="photo-files" className="text-sm font-medium text-ink">
-                Fotka k nahrání
-              </label>
-              <input
-                id="photo-files"
-                type="file"
-                accept="image/*"
-                disabled={!canUploadPhoto}
-                aria-describedby={updatedAt === null ? "photo-files-hint" : undefined}
-                onChange={handleFileChange}
-                className="text-sm text-gray-500 file:mr-4 file:rounded-md file:border-0 file:bg-indigo-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-indigo-700 hover:file:bg-indigo-100"
-              />
-              <Button disabled={!selectedFile || !canUploadPhoto} onClick={handleUploadPhoto}>
-                Nahrát fotky
-              </Button>
-              {updatedAt === null && (
-                <span id="photo-files-hint" className="text-xs text-amber-700">
-                  Fotky lze přidat po uložení záznamu.
-                </span>
-              )}
-            </div>
-          )}
+          {showPhotoControls && <PhotoUploader uploads={uploads} enabled={canUploadPhoto} needsSavedEntry={updatedAt === null} />}
 
           {photos.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -935,25 +949,33 @@ export const DailyReport: React.FC = () => {
         />
       )}
 
-      {/* Sign & lock (the manager of this project signs); a signed entry has its signature card above instead */}
+      {/* What signing means (the manager of this project signs; the button is in the bar of actions below) and, while it is off, why. A signed entry has its signature card above instead. */}
       {myRole === "BOSS" && !isSigned && (
-        <Card className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="font-semibold text-ink">Uzamčení a podpis denního záznamu</h2>
-            <p className="text-xs text-ink-muted">Po podepsání a uzamčení již záznam nelze dále editovat.</p>
-          </div>
-          <div className="text-right">
-            <Button variant="danger" onClick={handleSignAndLock} disabled={dirty || updatedAt === null || draft.offer !== null}>
-              Podepsat a uzamknout
-            </Button>
-            {draft.offer ? (
-              <p className="mt-1 text-xs text-amber-700">Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit.</p>
-            ) : (
-              (dirty || updatedAt === null) && <p className="mt-1 text-xs text-amber-700">Nejdřív záznam uložte, podepíše se uložená verze.</p>
-            )}
-          </div>
+        <Card className="mb-6">
+          <h2 className="font-semibold text-ink">Uzamčení a podpis denního záznamu</h2>
+          <p className="text-xs text-ink-muted">Po podepsání a uzamčení již záznam nelze dále editovat.</p>
+          {bar.hint && (
+            <p id="entry-sign-hint" className="mt-2 text-xs font-medium text-warning-ink">
+              {bar.hint === "decide-draft"
+                ? "Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit."
+                : bar.hint === "photos-uploading"
+                  ? "Počkejte, až se nahrají všechny fotky: podpis zahrnuje fotky, které záznam má."
+                  : "Nejdřív záznam uložte, podepíše se uložená verze."}
+            </p>
+          )}
         </Card>
       )}
+
+      {/* The one bar of actions, at the foot of the window: save, sign and the PDF, as the state of the entry allows (backlog B5) */}
+      <EntryActionBar
+        model={bar}
+        formId="entry-form"
+        savedAt={savedAt}
+        signHintId="entry-sign-hint"
+        onSign={handleSignAndLock}
+        onPdf={() => void handleDownloadPdf()}
+        pdfBusy={pdfBusy}
+      />
     </div>
   );
 };
