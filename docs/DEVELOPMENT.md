@@ -81,6 +81,8 @@ Lokální databáze, která už aplikovala starší verzi migrace, se zahodí a 
 
 Ukládají se do `UPLOADS_DIR` (výchozí `./uploads`, v adresáři `photos`). Server je při nahrání znovu zakóduje, takže se do úložiště nikdy nedostane původní soubor.
 
+Fotku lze odebrat jen z nepodepsaného záznamu (`DELETE /api/photos/{id}`: stavbyvedoucí kteroukoli, pracovník tu, kterou nahrál). Smaže se řádek v databázi a po potvrzení transakce oba soubory; soubor, který se smazat nepodaří, zůstane jako osiřelý a server to zapíše do logu (`restore.sh` ani `verify-signatures` osiřelé soubory neřeší, záloha je obsahuje). Podrobnosti jsou v `PROJECT.md`, „Request and upload limits“.
+
 ## Git
 
 Každá změna na vlastní větvi, pull request do `main`, merge commit. Husky před commitem přeformátuje změněné soubory (prettier).
