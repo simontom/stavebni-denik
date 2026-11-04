@@ -255,6 +255,84 @@ test.describe("removing a photo from an entry that is not signed", () => {
     }
   });
 
+  test("a removal whose answer is lost is said so, and the second try, which finds nothing, is taken as removed: the status and the focus are those of a removal", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(120_000);
+    const site = await newSite(browser, baseURL, "Photo lost answer");
+    const worker = await person(browser, baseURL, WORKER_NICKNAME, ADMIN_PASSWORD);
+    try {
+      const first = await addPhoto(worker, site, "a.jpg");
+      const second = await addPhoto(worker, site, "b.jpg");
+      await open(site.admin, site, 2);
+      const page = site.admin.page;
+      expect(await serverPhotos(site)).toEqual([first, second]);
+      // The first request reaches the server and removes the photo, and its answer is lost on the way (the connection is reset).
+      let lose = true;
+      await page.route("**/api/photos/*", async (route) => {
+        if (route.request().method() === "DELETE" && lose) {
+          lose = false;
+          const done = await site.admin.request.delete(route.request().url());
+          expect(done.status(), "the server removed it").toBe(204);
+          return route.abort("connectionreset");
+        }
+        return route.continue();
+      });
+
+      await page.getByRole("button", { name: "Odebrat fotografii 1" }).click();
+      const dialog = question(page);
+      await dialog.getByRole("button", { name: "Odebrat", exact: true }).click();
+      await expect(dialog.getByRole("alert")).toContainText("Spojení se serverem se přerušilo");
+      await expect(dialog, "the dialog stays open for another try").toBeVisible();
+      await expect(pictures(page)).toHaveCount(2);
+      expect(await serverPhotos(site), "the photo is gone on the server all the same").toEqual([second]);
+
+      // Again: the server finds no such photo, and that is what the first request had done.
+      await dialog.getByRole("button", { name: "Odebrat", exact: true }).click();
+      await expect(dialog).toHaveCount(0);
+      await expect(pictures(page)).toHaveCount(1);
+      await expect(removedStatus(page), "said as a removal, not as a refusal").toBeVisible();
+      await expect(page.locator(`#remove-photo-${second}`), "the next photo's button has the focus").toBeFocused();
+      expect(await serverPhotos(site)).toEqual([second]);
+    } finally {
+      await worker.context.close();
+      await site.admin.context.close();
+    }
+  });
+
+  test("a photo that somebody else has removed already is a refusal with the server's words, off the list, and Escape puts the focus on the heading of the photos", async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(120_000);
+    const site = await newSite(browser, baseURL, "Photo gone already");
+    const worker = await person(browser, baseURL, WORKER_NICKNAME, ADMIN_PASSWORD);
+    try {
+      const gone = await addPhoto(worker, site, "a.jpg");
+      await open(site.admin, site, 1);
+      const page = site.admin.page;
+      // Somebody else removes it while this page still shows it with its button.
+      expect((await site.admin.request.delete(`/api/photos/${gone}`)).status()).toBe(204);
+
+      await page.getByRole("button", { name: "Odebrat fotografii 1" }).click();
+      const dialog = question(page);
+      await dialog.getByRole("button", { name: "Odebrat", exact: true }).click();
+      await expect(dialog.getByRole("alert")).toHaveText("Fotografie nenalezena");
+      await expect(dialog).toBeVisible();
+      await expect(pictures(page), "the page has read the entry again: the photo is off the list").toHaveCount(0);
+      await expect(removedStatus(page), "a refusal says no removal was made").toHaveCount(0);
+
+      // Escape is "no". The button that asked is gone with the photo: the focus is on the heading of the photos, not on the top of the page.
+      await page.keyboard.press("Escape");
+      await expect(dialog).toHaveCount(0);
+      await expect(photosHeading(page)).toBeFocused();
+    } finally {
+      await worker.context.close();
+      await site.admin.context.close();
+    }
+  });
+
   test("an entry that was signed meanwhile: the server answers 409, the dialog says why and where a correction goes, and the page reads the entry again", async ({
     browser,
     baseURL,

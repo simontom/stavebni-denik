@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { REMOVED_STATUS, photosFromServer, removalFocusTarget, removeButtonId, removeButtonLabel, showsRemove, type PhotoItem } from "./photoRemoval";
+import {
+  REMOVED_STATUS,
+  mergeServerPhotos,
+  photosFromServer,
+  removalFocusTarget,
+  removeButtonId,
+  removeButtonLabel,
+  removePhotoOnServer,
+  showsRemove,
+  type PhotoItem,
+} from "./photoRemoval";
 
 const photo = (id: string, canDelete: boolean, name?: string): PhotoItem => ({ id, url: `/api/photos/${id}`, canDelete, ...(name ? { name } : {}) });
 
@@ -98,5 +108,123 @@ describe("photosFromServer (the list as the server shows it, with the names the 
     expect(photosFromServer([{ id: "a", canDelete: true }, null, 3, { canDelete: true }, { id: 5 }], []).map((p) => p.id)).toEqual(["a"]);
     expect(photosFromServer(undefined, [])).toEqual([]);
     expect(photosFromServer({ id: "a" }, [])).toEqual([]);
+  });
+});
+
+describe("mergeServerPhotos (a list read earlier must not take back a photo that is gone, nor lose one that arrived meanwhile)", () => {
+  it("takes the server's photos in its order and keeps what the page shows that the answer lacks (a photo that arrived while the answer was on its way)", () => {
+    const merged = mergeServerPhotos(
+      [
+        { id: "a", canDelete: true },
+        { id: "b", canDelete: false },
+      ],
+      [photo("b", true, "b.jpg"), photo("new", true, "new.jpg")],
+      new Set(),
+    );
+    expect(merged.map((p) => p.id)).toEqual(["a", "b", "new"]);
+    expect(merged[1]).toMatchObject({ name: "b.jpg", canDelete: false });
+    expect(merged[2]).toMatchObject({ name: "new.jpg", canDelete: true });
+  });
+
+  it("leaves out a photo that is known to be gone, in the answer (a read that began before the removal) and on the page alike", () => {
+    const merged = mergeServerPhotos(
+      [
+        { id: "a", canDelete: true },
+        { id: "gone", canDelete: true },
+      ],
+      [photo("a", true), photo("gone", true), photo("kept", true)],
+      new Set(["gone"]),
+    );
+    expect(merged.map((p) => p.id)).toEqual(["a", "kept"]);
+  });
+
+  it("is the list of the server when the page knew nothing and nothing is gone", () => {
+    expect(mergeServerPhotos([{ id: "a", canDelete: true }], [], new Set()).map((p) => p.id)).toEqual(["a"]);
+    expect(
+      mergeServerPhotos(undefined, [photo("a", true)], new Set()).map((p) => p.id),
+      "an answer that is not a list changes nothing the page holds",
+    ).toEqual(["a"]);
+  });
+});
+
+describe("removePhotoOnServer (what the question's yes does)", () => {
+  const answer = (status: number, body: unknown = {}) => new Response(status === 204 ? null : JSON.stringify(body), { status });
+  const readError = async (res: Response, fallback: string) => ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? fallback;
+  function setup(...results: (Response | Error)[]) {
+    let outOfDate = 0;
+    const deps = {
+      send: async () => {
+        const next = results.shift();
+        if (next instanceof Error) throw next;
+        return next ?? answer(204);
+      },
+      noAnswer: new Set<string>(),
+      gone: new Set<string>(),
+      onOutOfDate: () => {
+        outOfDate++;
+      },
+      readError,
+    };
+    return { deps, outOfDate: () => outOfDate };
+  }
+
+  it("is done when the server says so: the photo is gone, and the page need not read the entry again", async () => {
+    const { deps, outOfDate } = setup(answer(204));
+    await expect(removePhotoOnServer("a", deps)).resolves.toBeUndefined();
+    expect(deps.gone.has("a")).toBe(true);
+    expect(outOfDate()).toBe(0);
+  });
+
+  it("says in words that the connection failed, and that the photo may be gone all the same", async () => {
+    const { deps } = setup(new TypeError("Failed to fetch"));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow(/Spojení se serverem se přerušilo/);
+    expect(deps.noAnswer.has("a"), "it is remembered that this removal got no answer").toBe(true);
+    expect(deps.gone.has("a"), "the photo is not taken for gone: nobody knows").toBe(false);
+  });
+
+  it("takes a 404 for success when the removal of THAT photo had got no answer: the server did remove it, only its answer was lost", async () => {
+    const { deps, outOfDate } = setup(new TypeError("Failed to fetch"), answer(404, { error: "Fotografie nenalezena" }));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow(/Spojení/);
+    await expect(removePhotoOnServer("a", deps), "the second try finds nothing, and that is the answer").resolves.toBeUndefined();
+    expect(deps.gone.has("a")).toBe(true);
+    expect(deps.noAnswer.has("a"), "and the doubt is over").toBe(false);
+    expect(outOfDate(), "nothing to read again: the page knows what happened").toBe(0);
+  });
+
+  it("keeps a plain 404 a refusal with the server's words, reads the entry again, and drops the photo it is about from every later list", async () => {
+    const { deps, outOfDate } = setup(answer(404, { error: "Fotografie nenalezena" }));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow("Fotografie nenalezena");
+    expect(outOfDate()).toBe(1);
+    expect(deps.gone.has("a")).toBe(true);
+  });
+
+  it("does not take a 404 for success when the lost answer was another photo's", async () => {
+    const { deps, outOfDate } = setup(new TypeError("Failed to fetch"), answer(404, { error: "Fotografie nenalezena" }));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow(/Spojení/);
+    await expect(removePhotoOnServer("b", deps)).rejects.toThrow("Fotografie nenalezena");
+    expect(outOfDate()).toBe(1);
+    expect(deps.noAnswer.has("a"), "photo a is still in doubt").toBe(true);
+  });
+
+  it("keeps a 409 (the entry was signed) and a 403 refusals even after a lost answer, and reads the entry again", async () => {
+    for (const status of [409, 403]) {
+      const { deps, outOfDate } = setup(new TypeError("Failed to fetch"), answer(status, { error: "Z podepsaného záznamu nelze fotografii odebrat." }));
+      await expect(removePhotoOnServer("a", deps)).rejects.toThrow(/Spojení/);
+      await expect(removePhotoOnServer("a", deps)).rejects.toThrow(/podepsaného/);
+      expect(outOfDate(), `status ${status}`).toBe(1);
+      expect(deps.gone.has("a"), "a photo that is still there is not gone").toBe(false);
+    }
+  });
+
+  it("gives the page's own words when the server sends none, and does not read the entry again for a failure that says nothing of its state", async () => {
+    const { deps, outOfDate } = setup(new Response("<html>oops</html>", { status: 500 }));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow("Fotografii se nepodařilo odebrat");
+    expect(outOfDate()).toBe(0);
+  });
+
+  it("lets an error that is not a lost connection through as it is (an ended session says so itself)", async () => {
+    const { deps } = setup(new Error("Přihlášení vypršelo."));
+    await expect(removePhotoOnServer("a", deps)).rejects.toThrow("Přihlášení vypršelo.");
+    expect(deps.noAnswer.has("a"), "the request did not go out as far as anybody knows").toBe(false);
   });
 });

@@ -18,7 +18,17 @@ import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { downloadReportPdf } from "../lib/reportPdf";
 import { usePageTitle } from "../lib/pageTitle";
-import { REMOVED_STATUS, photosFromServer, removalFocusTarget, removeButtonId, removeButtonLabel, showsRemove, type PhotoItem } from "../lib/photoRemoval";
+import {
+  REMOVED_STATUS,
+  mergeServerPhotos,
+  photosFromServer,
+  removalFocusTarget,
+  removeButtonId,
+  removeButtonLabel,
+  removePhotoOnServer,
+  showsRemove,
+  type PhotoItem,
+} from "../lib/photoRemoval";
 import { usePhotoUploads } from "../lib/usePhotoUploads";
 import { useReportDraft } from "../lib/useReportDraft";
 import { useSettledValue } from "../lib/useSettledValue";
@@ -248,6 +258,10 @@ export const DailyReport: React.FC = () => {
   // once it is gone. The question is the application's own dialog, rendered only while it is open.
   const [removing, setRemoving] = useState<{ id: string; position: number } | null>(null);
   const [removedNotice, setRemovedNotice] = useState("");
+  // What the page knows of removals that the list may not show yet (lib/photoRemoval.ts): the photos whose removal got no answer (the server may have done it), and the
+  // photos known to be gone, which a list that was read before their removal must not bring back.
+  const removalNoAnswer = useRef(new Set<string>());
+  const gonePhotos = useRef(new Set<string>());
   // Several photos at once: one request each, two at a time, with progress (the queue and its rules are `lib/uploadQueue.ts`). A photo is put into
   // the list above as it arrives. While any is on its way the page holds unsaved work and the entry cannot be signed.
   const uploads = usePhotoUploads({
@@ -270,10 +284,7 @@ export const DailyReport: React.FC = () => {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data || !Array.isArray(data.photos)) return;
-        setPhotos((current) => {
-          const onServer = photosFromServer(data.photos, current);
-          return [...onServer, ...current.filter((c) => !onServer.some((s) => s.id === c.id))];
-        });
+        setPhotos((current) => mergeServerPhotos(data.photos, current, gonePhotos.current));
       })
       .catch(() => undefined)
       .finally(() => {
@@ -285,21 +296,17 @@ export const DailyReport: React.FC = () => {
    * Removes the photo (the question is answered yes; it stays open while this runs). A refusal throws a message that the question says inside
    * itself, where the person is looking. When the refusal means the page was out of date (the entry was signed meanwhile: 409; the photo is
    * gone already, or the right to it was: 404, 403) the entry is read again, so the page shows what is true: no button where there is none.
+   * A removal whose answer was lost (the connection broke) may have been made: the second try then finds nothing, and that `404` is "removed"
+   * (`removePhotoOnServer`, which has the rules and the tests).
    */
-  const removePhoto = async (photoId: string) => {
-    let res: Response;
-    try {
-      res = await apiFetch(`/api/photos/${photoId}`, { method: "DELETE" });
-    } catch (err) {
-      // The sign-in that is needed is said as it is; a network that failed is said in words (the photo may be gone all the same: the list is the truth).
-      if (!(err instanceof TypeError)) throw err;
-      console.error("Fotografii se nepodařilo odebrat:", err);
-      throw new Error("Spojení se serverem se přerušilo, fotografie se možná neodebrala. Zkuste to znovu; až ji server nenajde, je odebrána.");
-    }
-    if (res.ok) return;
-    if (res.status === 403 || res.status === 404 || res.status === 409) void reloadAfterRefusal();
-    throw new Error(await readError(res, "Fotografii se nepodařilo odebrat"));
-  };
+  const removePhoto = (photoId: string) =>
+    removePhotoOnServer(photoId, {
+      send: (id) => apiFetch(`/api/photos/${id}`, { method: "DELETE" }),
+      noAnswer: removalNoAnswer.current,
+      gone: gonePhotos.current,
+      onOutOfDate: () => void reloadAfterRefusal(),
+      readError,
+    });
 
   /** The entry as the server shows it now, after a refusal of a removal: the photos with what may be done to them, and the lock when the entry was signed meanwhile. */
   const reloadAfterRefusal = async () => {
@@ -307,7 +314,7 @@ export const DailyReport: React.FC = () => {
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
     if (!data) return;
-    setPhotos((current) => photosFromServer(data.photos, current));
+    setPhotos((current) => mergeServerPhotos(data.photos, current, gonePhotos.current));
     if (data.isSigned || data.isLocked) {
       setEntryId(typeof data.id === "string" ? data.id : entryId);
       setEntry(data as EntryView);

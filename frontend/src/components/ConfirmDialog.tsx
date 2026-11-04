@@ -84,6 +84,7 @@ export function ConfirmDialog<T = void>({
       onCancel={no}
       dismissible={!busy || stalled}
       initialFocus={cancelButton}
+      focusFallback={focusFallback}
       footer={<Answers {...{ confirmLabel, cancelLabel, destructive, no, cancelButton, busy, stalled, wasAbandoned, setBusy, setProblem, focusFallback, yes }} />}
     >
       {problem && <Banner tone="danger">{problem}</Banner>}
