@@ -27,10 +27,22 @@ export { discardUnsavedWork, hasUnsavedWork, registerUnsavedWork, setUnsavedWork
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const res = await fetch(path, init);
   if (res.status === 401) {
-    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { method: (init.method ?? "GET").toUpperCase() } }));
-    throw new ApiError(401, "Přihlášení vypršelo. Přihlaste se znovu a zkuste to ještě jednou.");
+    notifySessionExpired(init.method ?? "GET");
+    throw new ApiError(401, SESSION_EXPIRED_MESSAGE);
   }
   return res;
+}
+
+/** What a page says when the server answered a request with 401. */
+export const SESSION_EXPIRED_MESSAGE = "Přihlášení vypršelo. Přihlaste se znovu a zkuste to ještě jednou.";
+
+/**
+ * Raises [SESSION_EXPIRED_EVENT] for a request of [method] that the server refused with 401. `apiFetch` does it for every call; a request
+ * that cannot go through it (an upload that reports its progress needs `XMLHttpRequest`) calls this itself, so that the session is handled in
+ * one way: the dialog that signs in again in place.
+ */
+export function notifySessionExpired(method: string): void {
+  window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT, { detail: { method: method.toUpperCase() } }));
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
