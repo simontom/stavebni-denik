@@ -29,6 +29,17 @@ function serverMessage(body: string): string | null {
   return null;
 }
 
+/** The `code` the server sent ({ "code": "UPLOAD_BUSY" }), if the body is that. */
+function serverCode(body: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object" && "code" in parsed && typeof parsed.code === "string") return parsed.code;
+  } catch {
+    // not JSON
+  }
+  return null;
+}
+
 /** `Retry-After` in seconds (the server sends a whole number); anything else, and 0, is "no time given". */
 function retryAfterSeconds(header: string | null): number | null {
   if (header === null || !/^\d{1,6}$/.test(header.trim())) return null;
@@ -39,8 +50,12 @@ function retryAfterSeconds(header: string | null): number | null {
 export function createPhotoSender(target: { projectId: string; reportId: string }): Sender<PhotoUploaded> {
   return (file, onProgress, signal) =>
     new Promise<SendOutcome<PhotoUploaded>>((resolve) => {
-      if (signal.aborted) return resolve({ kind: "lost" });
+      if (signal.aborted) return resolve({ kind: "unsent" });
       const xhr = new XMLHttpRequest();
+      // Whether the whole body has gone out (the upload has ended). Only then can the server have a photo: a connection that fails before that
+      // leaves it nothing to store, so a second try is safe; one that fails after it may have lost only the answer.
+      let bodySent = false;
+      const failed = (): SendOutcome<PhotoUploaded> => (bodySent ? { kind: "lost", reason: "connection" } : { kind: "unsent" });
       const stop = () => xhr.abort();
       const settle = (outcome: SendOutcome<PhotoUploaded>) => {
         signal.removeEventListener("abort", stop);
@@ -50,9 +65,12 @@ export function createPhotoSender(target: { projectId: string; reportId: string 
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && event.total > 0) onProgress(event.loaded / event.total);
       };
-      xhr.onerror = () => settle({ kind: "lost" });
-      xhr.ontimeout = () => settle({ kind: "lost" });
-      xhr.onabort = () => settle({ kind: "lost" });
+      xhr.upload.onload = () => {
+        bodySent = true;
+      };
+      xhr.onerror = () => settle(failed());
+      xhr.ontimeout = () => settle(failed());
+      xhr.onabort = () => settle(failed());
       xhr.onload = () => {
         const status = xhr.status;
         if (status >= 200 && status < 300) {
@@ -67,16 +85,20 @@ export function createPhotoSender(target: { projectId: string; reportId: string 
           } catch {
             // fall through
           }
-          return settle({ kind: "lost" });
+          return settle({ kind: "lost", reason: "gateway" });
         }
         if (status === 401) {
           notifySessionExpired("POST");
           return settle({ kind: "expired", message: SESSION_EXPIRED_MESSAGE });
         }
         const message = serverMessage(xhr.responseText);
-        if (status === 429 || status === 503) {
-          return settle({ kind: "busy", status, message: message ?? BUSY_MESSAGE, retryAfterSeconds: retryAfterSeconds(xhr.getResponseHeader("Retry-After")) });
+        // Busy is what OUR server says: 429, or 503 with a wait or with UPLOAD_BUSY (it took nothing). A 503 that asks for no wait, a 502 and a 504 come
+        // from a gateway in front of it, and the photo may be stored all the same: that is not "busy", it is "no answer".
+        const retryHeader = xhr.getResponseHeader("Retry-After");
+        if (status === 429 || (status === 503 && (retryHeader !== null || serverCode(xhr.responseText) === "UPLOAD_BUSY"))) {
+          return settle({ kind: "busy", status, message: message ?? BUSY_MESSAGE, retryAfterSeconds: retryAfterSeconds(retryHeader) });
         }
+        if (status === 502 || status === 503 || status === 504) return settle({ kind: "lost", reason: "gateway" });
         settle({ kind: "rejected", status, message: message ?? `Nahrání fotky se nezdařilo (${status}).` });
       };
       // The fields that say where the photo belongs come before the file, so the server knows before it reads the file.

@@ -41,6 +41,8 @@ export interface EntryBarInput {
   draftOffer: boolean;
   /** Photos are still on their way to the entry (a signature covers the photos it has when it is made). */
   uploading: boolean;
+  /** How many photos failed and are still on the list of the photos that are sent: signing would drop them for good, so it waits until they are sent again or discarded. */
+  photosFailed: number;
 }
 
 export type EntryBarState = "hidden" | "none" | "dirty" | "saved" | "signed" | "view";
@@ -56,7 +58,7 @@ export interface EntryBarModel {
   /** The button that is the point of the bar in this state (the one that is drawn as the main one). */
   primary: "save" | "sign" | "pdf" | null;
   /** Why the signing is off, when it is: a draft waits for an answer, photos are on their way, or there is nothing saved to sign. */
-  hint: "save-first" | "decide-draft" | "photos-uploading" | null;
+  hint: "save-first" | "decide-draft" | "photos-uploading" | "photos-failed" | null;
   /** What the person is told next to the buttons: unsaved changes, or when it was saved. */
   status: "unsaved" | "saved" | null;
 }
@@ -70,11 +72,21 @@ export function entryBar(input: EntryBarInput): EntryBarModel {
 
   const state: EntryBarState = !input.hasEntry ? "none" : input.dirty || input.saving ? "dirty" : "saved";
   const status = input.dirty ? "unsaved" : input.saved && !input.saving ? "saved" : null;
-  // The signing is on only for a saved entry with nothing changed, no save on its way, no draft waiting and no photo on its way: a signature
-  // covers the saved text and the photos the entry has.
-  const signOff = input.dirty || input.saving || !input.hasEntry || input.draftOffer || input.uploading;
+  // The signing is on only for a saved entry with nothing changed, no save on its way, no draft waiting and no photo on its way or failed and
+  // still on the list: a signature covers the saved text and the photos the entry has, and signing takes the uploader off the page.
+  const signOff = input.dirty || input.saving || !input.hasEntry || input.draftOffer || input.uploading || input.photosFailed > 0;
   const sign = input.isBoss ? { disabled: signOff } : null;
-  const hint = !sign?.disabled ? null : input.draftOffer ? "decide-draft" : input.uploading && input.hasEntry && !input.dirty ? "photos-uploading" : "save-first";
+  const hint = !sign?.disabled
+    ? null
+    : input.draftOffer
+      ? "decide-draft"
+      : input.dirty || !input.hasEntry
+        ? "save-first"
+        : input.uploading
+          ? "photos-uploading"
+          : input.photosFailed > 0
+            ? "photos-failed"
+            : "save-first";
 
   const label = input.saving ? "Ukládám…" : input.hasEntry ? "Uložit změny" : "Uložit záznam";
   const save = { label, disabled: !input.editable || input.future || input.saving } as const;

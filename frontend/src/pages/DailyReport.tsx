@@ -22,7 +22,8 @@ import { usePhotoUploads } from "../lib/usePhotoUploads";
 import { useReportDraft } from "../lib/useReportDraft";
 import { useSettledValue } from "../lib/useSettledValue";
 import { WEATHER_CONDITIONS } from "../lib/weatherChips";
-import { workerTotal, workerTotalText } from "../lib/workerTotal";
+import { failedPhotosSentence } from "../lib/uploadQueue";
+import { MAX_HEAD_COUNT, isHeadCount, workerTotal, workerTotalText } from "../lib/workerTotal";
 
 interface PhotoItem {
   id: string;
@@ -254,7 +255,30 @@ export const DailyReport: React.FC = () => {
     projectId: projectId ?? "",
     reportId: reportId ?? "",
     onPhoto: (photo) => setPhotos((prev) => (prev.some((p) => p.id === photo.id) ? prev : [...prev, { id: photo.id, url: photo.url, name: photo.name }])),
+    onLost: () => refreshPhotos(),
   });
+  // After a photo whose body had gone out got no answer (a lost connection, a gateway that did not answer) the photos of the entry are read again and shown as
+  // they are on the server, so a photo that did arrive is there to be seen before the person decides to send it again. Photos can only be added, so what the page
+  // already shows is kept (a photo that arrived while the answer was on its way is not lost from the list).
+  const refreshingPhotos = useRef(false);
+  const refreshPhotos = () => {
+    if (!projectId || !reportId || refreshingPhotos.current) return;
+    refreshingPhotos.current = true;
+    apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data || !Array.isArray(data.photos)) return;
+        const onServer = (data.photos as { id: string }[]).map((p) => p.id);
+        setPhotos((current) => [
+          ...onServer.map((id, index) => ({ id, url: `/api/photos/${id}`, name: current.find((c) => c.id === id)?.name ?? `Fotka ${index + 1}` })),
+          ...current.filter((c) => !onServer.includes(c.id)),
+        ]);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        refreshingPhotos.current = false;
+      });
+  };
 
   /** Puts [v] into the form (an entry as loaded from the server, or a draft the person took back). */
   const applyValues = (v: FormValues) => {
@@ -337,7 +361,8 @@ export const DailyReport: React.FC = () => {
       // The row's index in the form (not in the rows that say something), because that is what the controls are called.
       const index = workers.indexOf(r);
       if (r.trade.trim() === "") return refuse(`worker-trade-${index}`, "Doplňte název profese u zadaného počtu pracovníků");
-      if (!/^\d{1,6}$/.test(r.count.trim())) return refuse(`worker-count-${index}`, `Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0)`);
+      if (!isHeadCount(r.count))
+        return refuse(`worker-count-${index}`, `Zadejte počet pracovníků u profese "${r.trade.trim()}" (celé číslo od 0 do ${MAX_HEAD_COUNT.toLocaleString("cs-CZ")})`);
     }
     for (const field of DETAIL_FIELDS) {
       if ((details[field.key] ?? "").length > MAX_DETAIL_CHARS) {
@@ -410,7 +435,9 @@ export const DailyReport: React.FC = () => {
     if (dirty) return showError("Záznam má neuložené změny. Nejdřív jej uložte, aby se podepsalo to, co vidíte.");
     if (updatedAt === null) return showError("Záznam ještě není uložen. Nejdřív jej uložte.");
     // A signature covers the photos the entry has when it is made: the ones on their way would be refused after it.
-    if (uploads.snapshot.running) return showError("Počkejte, až se nahrají všechny fotky: podpis zahrnuje fotky, které záznam má.");
+    if (uploads.summary.running) return showError("Počkejte, až se nahrají všechny fotky: podpis zahrnuje fotky, které záznam má.");
+    // Signing takes the list of the photos that are sent off the page: what failed would be gone without a word. The person sends it again or puts it away first.
+    if (uploads.summary.failed > 0) return showError(`${failedPhotosSentence(uploads.summary.failed)} Záznam se podepíše až potom.`);
     setShowSign(true);
   };
 
@@ -522,7 +549,8 @@ export const DailyReport: React.FC = () => {
     saved: savedAt !== null,
     future: isFuture,
     draftOffer: draft.offer !== null,
-    uploading: uploads.snapshot.running,
+    uploading: uploads.summary.running,
+    photosFailed: uploads.summary.failed,
   });
   // The days on either side of this one: a real calendar day, never one that has not come yet (the page is mounted afresh for each day).
   const dayBefore = reportId ? previousDay(reportId) : null;
@@ -866,7 +894,7 @@ export const DailyReport: React.FC = () => {
         <Card className="mb-6">
           <h2 className="mb-4 text-lg font-bold text-ink">Fotodokumentace</h2>
 
-          {showPhotoControls && <PhotoUploader uploads={uploads} enabled={canUploadPhoto} needsSavedEntry={updatedAt === null} />}
+          {showPhotoControls && <PhotoUploader queue={uploads.queue} enabled={canUploadPhoto} needsSavedEntry={updatedAt === null} />}
 
           {photos.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -961,7 +989,9 @@ export const DailyReport: React.FC = () => {
                 ? "Nejdřív se rozhodněte, zda rozepsaný koncept obnovit, nebo zahodit."
                 : bar.hint === "photos-uploading"
                   ? "Počkejte, až se nahrají všechny fotky: podpis zahrnuje fotky, které záznam má."
-                  : "Nejdřív záznam uložte, podepíše se uložená verze."}
+                  : bar.hint === "photos-failed"
+                    ? `${failedPhotosSentence(uploads.summary.failed)} Podpis je odstraní z přehledu.`
+                    : "Nejdřív záznam uložte, podepíše se uložená verze."}
             </p>
           )}
         </Card>

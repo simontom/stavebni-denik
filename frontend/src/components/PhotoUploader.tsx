@@ -1,9 +1,8 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { czechPlural } from "../lib/czech";
 import { checkPhotoFiles } from "../lib/photoFiles";
-import type { PhotoUploads } from "../lib/usePhotoUploads";
-import { uploadSummary, type UploadEntry } from "../lib/uploadQueue";
 import type { PhotoUploaded } from "../lib/photoUpload";
+import { failedPhotosSentence, uploadSummary, type UploadEntry, type UploadQueue } from "../lib/uploadQueue";
 import { Button } from "./ui";
 
 /** What the row of a photo says about where it is. */
@@ -17,7 +16,7 @@ function statusText(entry: UploadEntry<PhotoUploaded>): string {
     case "retrying":
       return `Server je zaneprázdněný, další pokus za ${entry.retryInSeconds ?? 0} s`;
     case "failed":
-      return "Nenahráno";
+      return entry.maybeStored ? "Možná nahráno" : "Nenahráno";
     case "done":
       return "Nahráno";
   }
@@ -26,12 +25,16 @@ function statusText(entry: UploadEntry<PhotoUploaded>): string {
 /**
  * Several photos at once (backlog B5): the person chooses any number of files, sees which ones the page would refuse and why (a file that is
  * over 5 MB or is not an image is refused here, before anything is sent: the server checks again), and sends the rest. They go one by one,
- * two requests at a time (`uploadQueue.ts`), each with a bar; "Nahráno 3 z 5" is said politely as they arrive; a photo that fails never holds the
- * others back, and "Zkusit znovu" sends those that may pass the next time. The list is of what is on its way or has failed: a photo that has
- * arrived is in the photographs of the entry above it. Removing a photo is not here (backlog A4 is the owner's decision).
+ * two requests at a time (`uploadQueue.ts`), each with a bar; "Nahráno 3 z 5" is said politely as they arrive. A photo that fails never holds
+ * the others back, and stays on the list with what is wrong: "Zkusit znovu" sends it again (or all that may pass), "Zahodit" takes it off the
+ * list (nothing is deleted anywhere: it is only not sent). **While a photo is on the list as failed the entry cannot be signed**, which the line
+ * above the list says: signing takes this list off the page. A photo that has arrived is in the photographs of the entry above it. Removing a photo
+ * that is on the server is not here (backlog A4 is the owner's decision).
+ *
+ * The component reads the whole state of the queue itself (the progress), so the page that holds it, which reads only a summary, is not drawn again for it.
  */
-export function PhotoUploader({ uploads, enabled, needsSavedEntry }: { uploads: PhotoUploads; enabled: boolean; needsSavedEntry: boolean }) {
-  const { queue, snapshot } = uploads;
+export function PhotoUploader({ queue, enabled, needsSavedEntry }: { queue: UploadQueue<PhotoUploaded>; enabled: boolean; needsSavedEntry: boolean }) {
+  const snapshot = useSyncExternalStore(queue.subscribe, queue.getSnapshot);
   const input = useRef<HTMLInputElement | null>(null);
   const [selected, setSelected] = useState<File[]>([]);
   const [refused, setRefused] = useState<{ name: string; message: string }[]>([]);
@@ -47,12 +50,12 @@ export function PhotoUploader({ uploads, enabled, needsSavedEntry }: { uploads: 
     queue.add(selected);
     setSelected([]);
     setRefused([]);
-    // the choice has been taken over: the field is empty again, so the same file can be chosen once more
+    // The queue holds the files now, with their names: what failed is sent again from the list, without choosing it once more. The field is empty again.
     if (input.current) input.current.value = "";
   };
 
   const listed = snapshot.entries.filter((e) => e.status !== "done");
-  const canRetry = snapshot.entries.some((e) => e.status === "failed" && e.retryable);
+  const retryable = snapshot.entries.filter((e) => e.status === "failed" && e.retryable);
 
   return (
     <div className="mb-6 space-y-3">
@@ -102,6 +105,13 @@ export function PhotoUploader({ uploads, enabled, needsSavedEntry }: { uploads: 
         {uploadSummary(snapshot)}
       </p>
 
+      {/* Why the entry cannot be signed yet: a failed photo is on the list, and signing would take the list away */}
+      {snapshot.failed > 0 && (
+        <p id="photos-failed-line" className="text-sm font-medium text-warning-ink">
+          {failedPhotosSentence(snapshot.failed)}
+        </p>
+      )}
+
       {listed.length > 0 && (
         <ul aria-label="Nahrávané fotky" className="space-y-2">
           {listed.map((entry) => {
@@ -124,10 +134,24 @@ export function PhotoUploader({ uploads, enabled, needsSavedEntry }: { uploads: 
                     <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
                   </div>
                 )}
-                {entry.status === "failed" && entry.error && (
-                  <p role="alert" className="mt-2 text-sm font-medium text-danger-ink">
-                    {entry.error}
-                  </p>
+                {entry.status === "failed" && (
+                  <>
+                    {entry.error && (
+                      <p role="alert" className="mt-2 text-sm font-medium text-danger-ink">
+                        {entry.error}
+                      </p>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {entry.retryable && (
+                        <Button size="sm" variant="secondary" aria-label={`Zkusit znovu nahrát ${entry.name}`} onClick={() => queue.retry(entry.id)}>
+                          Zkusit znovu
+                        </Button>
+                      )}
+                      <Button size="sm" variant="quiet" aria-label={`Zahodit ${entry.name}`} onClick={() => queue.discard(entry.id)}>
+                        Zahodit
+                      </Button>
+                    </div>
+                  </>
                 )}
               </li>
             );
@@ -135,14 +159,14 @@ export function PhotoUploader({ uploads, enabled, needsSavedEntry }: { uploads: 
         </ul>
       )}
 
-      {(canRetry || (!snapshot.running && snapshot.total > 0)) && (
+      {(retryable.length > 1 || (!snapshot.running && snapshot.total > 0 && snapshot.failed === 0)) && (
         <div className="flex flex-wrap gap-2">
-          {canRetry && (
+          {retryable.length > 1 && (
             <Button variant="secondary" onClick={() => queue.retryFailed()}>
-              Zkusit znovu
+              Zkusit znovu všechny
             </Button>
           )}
-          {!snapshot.running && snapshot.total > 0 && (
+          {!snapshot.running && snapshot.total > 0 && snapshot.failed === 0 && (
             <Button variant="quiet" onClick={() => queue.clearFinished()}>
               Skrýt přehled
             </Button>

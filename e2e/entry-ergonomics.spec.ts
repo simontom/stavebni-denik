@@ -86,6 +86,40 @@ test.describe("the weather chips", () => {
   });
 });
 
+test.describe("the weather chips leave what was typed alone", () => {
+  test("a tap does not tidy the commas, the spaces or the case of the text, and at 200 characters it says that nothing more fits", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openNewDay(page, "Chips minimal");
+    const text = page.locator('input[name="weatherCondition"]');
+    const chips = page.getByRole("group", { name: "Rychlý výběr počasí" });
+    const chip = (name: string) => chips.getByRole("button", { name, exact: true });
+
+    // untidy text stays as it is, and the word goes at the end
+    await text.fill("  ,,Zataženo ,   mlha ,");
+    await chip("jasno").click();
+    await expect(text).toHaveValue("  ,,Zataženo ,   mlha , jasno");
+    // only that word goes, with one comma
+    await chip("mlha").click();
+    await expect(text).toHaveValue("  ,,Zataženo ,   jasno");
+    await expect(chip("zataženo")).toHaveAttribute("aria-pressed", "true"); // "Zataženo" is the word, in the case it was typed
+    await chip("zataženo").click();
+    await expect(text).not.toHaveValue(/Zataženo/);
+
+    // at the limit nothing is added, and the person is told in words (a status that is there all the time, so it is announced)
+    const note = page.getByRole("status").filter({ hasText: "Nejvýše 200 znaků" });
+    await text.fill("x".repeat(197));
+    await chip("déšť").click();
+    await expect(text).toHaveValue("x".repeat(197));
+    await expect(note).toBeVisible();
+    // the message goes with the next change of the text, and a word can still be taken out at the limit
+    await text.fill(`${"x".repeat(194)}, déšť`);
+    await expect(note).toHaveCount(0);
+    await expect(chip("déšť")).toHaveAttribute("aria-pressed", "true");
+    await chip("déšť").click();
+    await expect(text).toHaveValue("x".repeat(194));
+  });
+});
+
 test.describe("the total of the workers", () => {
   test("is under the trades, follows the head counts as they are typed, speaks Czech, and is said to a screen reader once the typist has stopped", async ({ page }) => {
     test.setTimeout(90_000);
@@ -129,6 +163,15 @@ test.describe("the total of the workers", () => {
     await expect(total).toContainText("(u 1 profese chybí");
     await page.getByRole("button", { name: "Odebrat profesi 2" }).click();
     await expect(total).toHaveText("Celkem: 5 pracovníků");
+
+    // what the server takes is 0 to 100 000 for a trade: 100 000 is counted, 100 001 is not (it would end in a 400), and the save says so before it sends anything
+    await count(0).fill("100000");
+    await expect(total).toHaveText("Celkem: 100000 pracovníků");
+    await count(0).fill("100001");
+    await expect(total).toHaveText("Celkem: 0 pracovníků (u 1 profese chybí název nebo platný počet)");
+    await page.locator('textarea[name="workDescription"]').fill("Práce");
+    await bar(page).getByRole("button", { name: "Uložit záznam", exact: true }).click();
+    await expect(page.getByRole("alert").filter({ hasText: /Zadejte počet pracovníků/ })).toContainText(/od 0 do 100\s000/);
   });
 });
 
@@ -413,6 +456,19 @@ class HeldUploads {
     held.released = true;
     await held.route.abort("connectionreset");
   }
+  /**
+   * The server takes the photo (it is stored), and the page is answered like a gateway that timed out: nothing says the photo is there. The photo is
+   * stored by a request of the test itself (`route.fetch` replays the page's request without its `Sec-Fetch-Site`, which the cross-site check refuses).
+   */
+  async gatewayTimeout(name: string, entry: { projectId: string; day: string }, status = 504) {
+    const held = this.find(name);
+    held.released = true;
+    const stored = await this.page.request.post("/api/photos/upload", {
+      multipart: { reportId: entry.day, projectId: entry.projectId, photo: { name, mimeType: "image/jpeg", buffer: JPEG } },
+    });
+    expect(stored.ok(), `the photo is stored: ${stored.status()} ${await stored.text()}`).toBeTruthy();
+    await held.route.fulfill({ status, contentType: "text/html", body: "<html>Gateway Timeout</html>" });
+  }
 }
 
 const photoFile = (name: string) => ({ name, mimeType: "image/jpeg", buffer: JPEG });
@@ -496,20 +552,30 @@ test.describe("several photos at once", () => {
     await expect(page.locator('img[alt^="Fotka"]')).toHaveCount(2);
     const alerts = page.getByRole("alert");
     await expect(alerts.filter({ hasText: "Soubor není platný obrázek" })).toBeVisible();
-    await expect(alerts.filter({ hasText: /Spojení se přerušilo/ })).toBeVisible();
+    // the connection failed before the photo had gone out: nothing arrived, and the row says so plainly (no "may have arrived")
+    const lostRow = list.getByRole("listitem").filter({ hasText: "lost.jpg" });
+    await expect(lostRow).toContainText("Nenahráno");
+    await expect(lostRow.getByRole("alert")).toContainText("Spojení se přerušilo, než se fotka odeslala. Nic se nenahrálo");
+    await expect(lostRow).not.toContainText("Možná nahráno");
 
-    // only the lost one may be sent again, and that is the person's decision; it arrives
-    await expect(page.getByRole("button", { name: "Zkusit znovu" })).toHaveCount(1);
-    await page.getByRole("button", { name: "Zkusit znovu" }).click();
+    // only that one may be sent again, from its own row (the files are not chosen again), and that is the person's decision; it arrives
+    await expect(page.getByRole("button", { name: /Zkusit znovu nahrát/ })).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Zkusit znovu všechny" })).toHaveCount(0);
+    await lostRow.getByRole("button", { name: "Zkusit znovu nahrát lost.jpg" }).click();
     await expect.poll(() => held.inFlight).toEqual(["lost.jpg"]);
     await held.pass("lost.jpg");
     await expect(status).toHaveText("Nahráno 3 z 4 (nepodařilo se 1)", { timeout: 15_000 });
-    await expect(page.getByRole("button", { name: "Zkusit znovu" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Zkusit znovu/ })).toHaveCount(0);
     await expect(page.locator('img[alt^="Fotka"]')).toHaveCount(3);
 
-    // the person reads the failure and puts the list away
-    await page.getByRole("button", { name: "Skrýt přehled" }).click();
+    // the one the server refused is put away by the person (nothing is deleted anywhere); then the list can be hidden
+    await expect(list.getByRole("listitem")).toHaveCount(1);
+    await expect(page.getByRole("button", { name: "Skrýt přehled" })).toHaveCount(0);
+    await page.getByRole("button", { name: "Zahodit bad.jpg" }).click();
     await expect(list).toHaveCount(0);
+    await expect(status).toHaveText("Nahráno 3 z 3");
+    await page.getByRole("button", { name: "Skrýt přehled" }).click();
+    await expect(status).toHaveCount(0); // the summary is empty: there is nothing to say
   });
 
   test("a file that is too big or not an image is refused in Czech before anything is sent", async ({ page }) => {
@@ -583,7 +649,7 @@ test.describe("several photos at once", () => {
     await expect(dialog).toBeHidden({ timeout: 15_000 });
     await expect(page.getByRole("alert").filter({ hasText: /Přihlášení vypršelo/ })).toHaveCount(3);
 
-    await page.getByRole("button", { name: "Zkusit znovu" }).click();
+    await page.getByRole("button", { name: "Zkusit znovu všechny" }).click();
     await expect.poll(() => held.inFlight).toEqual(["a.jpg", "b.jpg"]);
     await held.pass("a.jpg");
     await held.pass("b.jpg");
@@ -591,4 +657,139 @@ test.describe("several photos at once", () => {
     await held.pass("c.jpg");
     await expect(page.getByRole("status").filter({ hasText: "Nahráno 3 z 3" })).toBeVisible({ timeout: 15_000 });
   });
+
+  test("the entry cannot be signed while a photo that failed is on the list: the person sends it again or puts it away, and then signs", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openSavedEntry(page, "Photos sign");
+    const held = new HeldUploads(page);
+    await held.start();
+    const sign = page.getByRole("region", { name: "Akce záznamu" }).getByRole("button", { name: /podepsat a uzamknout/i });
+    await expect(sign).toBeEnabled();
+
+    await page.locator("input#photo-files").setInputFiles([photoFile("a.jpg")]);
+    await page.getByRole("button", { name: "Nahrát fotky" }).click();
+    // while it is on its way: off, and why
+    await expect.poll(() => held.inFlight).toEqual(["a.jpg"]);
+    await expect(sign).toBeDisabled();
+    await expect(sign).toHaveAttribute("aria-disabled", "true");
+    await expect(page.locator("#entry-sign-hint")).toContainText("Počkejte, až se nahrají všechny fotky");
+    await held.drop("a.jpg");
+
+    // failed and still on the list: off, a visible line says what to do, the button is described by it, and pressing it says it too
+    const line = page.locator("#photos-failed-line");
+    await expect(line).toHaveText("1 fotka se nenahrála: nahrajte ji znovu, nebo ji zahoďte.");
+    await expect(sign).toBeDisabled();
+    await expect(sign).toHaveAttribute("aria-describedby", "entry-sign-hint");
+    await expect(page.locator("#entry-sign-hint")).toContainText("1 fotka se nenahrála");
+    await sign.click({ force: true }); // it is off for the keyboard and a screen reader too, but it is there to be pressed, and says why
+    await expect(page.getByRole("alert").filter({ hasText: "Záznam se podepíše až potom" })).toBeVisible();
+    await expect(page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i })).toHaveCount(0);
+
+    // put away on purpose ("Zahodit" takes it off the list; nothing is deleted on the server): the signing is on again and opens its dialog
+    await page.getByRole("button", { name: "Zahodit a.jpg" }).click();
+    await expect(line).toHaveCount(0);
+    await expect(sign).toBeEnabled();
+    await sign.click();
+    const dialog = page.getByRole("dialog", { name: /podepsat a uzamknout záznam/i });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button", { name: "Zrušit" }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("a gateway that does not answer after the server took the photo: only that photo may have arrived, the photos of the entry are read again and it is there to see", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const { projectId, day } = await openSavedEntry(page, "Photos gateway");
+    const entryReads: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "GET" && r.url().endsWith(`/api/projects/${projectId}/reports/${day}`)) entryReads.push(r.url());
+    });
+    const held = new HeldUploads(page);
+    await held.start();
+    await page.locator("input#photo-files").setInputFiles([photoFile("sent.jpg"), photoFile("never.jpg"), photoFile("after.jpg")]);
+    await page.getByRole("button", { name: "Nahrát fotky" }).click();
+    await expect.poll(() => held.inFlight).toEqual(["sent.jpg", "never.jpg"]);
+
+    // a photo that never went out: nothing arrived, so the page has nothing to look for
+    await held.drop("never.jpg");
+    const list = page.getByRole("list", { name: "Nahrávané fotky" });
+    await expect(list.getByRole("listitem").filter({ hasText: "never.jpg" })).toContainText("Nenahráno");
+    expect(entryReads, "the entry was not read again for a photo that never went").toHaveLength(0);
+    expect(await entryPhotos(page, projectId, day)).toBe(0);
+
+    // a photo that the server took and the gateway did not answer for: the server has it, the page says "Možná nahráno", and shows it
+    await held.gatewayTimeout("sent.jpg", { projectId, day });
+    const sentRow = list.getByRole("listitem").filter({ hasText: "sent.jpg" });
+    await expect(sentRow).toContainText("Možná nahráno");
+    await expect(sentRow.getByRole("alert")).toContainText("Server neodpověděl, jak má. Fotka se mohla uložit");
+    await expect(page.locator('img[alt^="Fotka"]'), "the photo that did arrive is in the photographs of the entry, so the person can see it is there").toHaveCount(1, {
+      timeout: 15_000,
+    });
+    expect(entryReads.length).toBeGreaterThan(0);
+    expect(await entryPhotos(page, projectId, day)).toBe(1);
+
+    // the one that was not sent is not sent again by itself, and the one that may have arrived is not either
+    await expect.poll(() => held.inFlight).toEqual(["after.jpg"]);
+    await held.pass("after.jpg");
+    await page.waitForTimeout(400);
+    expect(held.all.filter((u) => u.name === "sent.jpg")).toHaveLength(1);
+    expect(held.all.filter((u) => u.name === "never.jpg")).toHaveLength(1);
+
+    // both can be sent again from their own rows; the person decides (the one that may have arrived is put away instead)
+    await page.getByRole("button", { name: "Zahodit sent.jpg" }).click();
+    await list.getByRole("listitem").filter({ hasText: "never.jpg" }).getByRole("button", { name: "Zkusit znovu nahrát never.jpg" }).click();
+    await expect.poll(() => held.inFlight).toEqual(["never.jpg"]);
+    await held.pass("never.jpg");
+    await expect(page.locator('img[alt^="Fotka"]')).toHaveCount(3, { timeout: 15_000 });
+    expect(await entryPhotos(page, projectId, day)).toBe(3);
+  });
+
+  test("a 408 (the server took nothing) is offered again and not sent by itself; two failed photos are sent together with one button", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openSavedEntry(page, "Photos 408");
+    const held = new HeldUploads(page);
+    await held.start();
+    await page.locator("input#photo-files").setInputFiles([photoFile("a.jpg"), photoFile("b.jpg")]);
+    await page.getByRole("button", { name: "Nahrát fotky" }).click();
+    await expect.poll(() => held.inFlight).toEqual(["a.jpg", "b.jpg"]);
+    const slow = { error: "Nahrávání fotografie trvalo příliš dlouho, zkuste to znovu" };
+    await held.answer("a.jpg", 408, slow);
+    await held.answer("b.jpg", 408, slow);
+
+    const list = page.getByRole("list", { name: "Nahrávané fotky" });
+    await expect(list.getByRole("listitem").filter({ hasText: "a.jpg" }).getByRole("alert")).toHaveText(slow.error);
+    await page.waitForTimeout(500);
+    expect(held.all, "a photo that waited too long is not sent again by itself").toHaveLength(2);
+    await expect(page.getByRole("button", { name: /Zkusit znovu nahrát/ })).toHaveCount(2);
+
+    // one button for all of them
+    await page.getByRole("button", { name: "Zkusit znovu všechny" }).click();
+    await expect.poll(() => held.inFlight).toEqual(["a.jpg", "b.jpg"]);
+    await held.pass("a.jpg");
+    await held.pass("b.jpg");
+    await expect(page.getByRole("status").filter({ hasText: "Nahráno 2 z 2" })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test("says the server's words once when the limit of uploads is reached, not twice", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openSavedEntry(page, "Photos limit");
+    const held = new HeldUploads(page);
+    await held.start();
+    await page.locator("input#photo-files").setInputFiles([photoFile("a.jpg")]);
+    await page.getByRole("button", { name: "Nahrát fotky" }).click();
+    await expect.poll(() => held.inFlight).toEqual(["a.jpg"]);
+    // what RateLimiter says for the 61st upload in five minutes: its Retry-After is 4 minutes and the message already says so
+    await held.answer("a.jpg", 429, { error: "Příliš mnoho nahrávání fotografií. Zkuste to znovu za 4 minuty." }, { "Retry-After": "240" });
+    const row = page.getByRole("list", { name: "Nahrávané fotky" }).getByRole("listitem").filter({ hasText: "a.jpg" });
+    await expect(row.getByRole("alert")).toHaveText("Příliš mnoho nahrávání fotografií. Zkuste to znovu za 4 minuty.");
+    await expect(page.getByRole("button", { name: "Zkusit znovu nahrát a.jpg" })).toBeVisible();
+  });
 });
+
+/** How many photos the server has on the entry of [day] (not what the page shows). */
+async function entryPhotos(page: Page, projectId: string, day: string): Promise<number> {
+  const res = await page.request.get(`/api/projects/${projectId}/reports/${day}`);
+  expect(res.ok()).toBeTruthy();
+  return ((await res.json()) as { photos: unknown[] }).photos.length;
+}

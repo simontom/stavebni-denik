@@ -13,7 +13,7 @@ class FakeXhr {
   status = 0;
   responseText = "";
   responseHeaders: Record<string, string> = {};
-  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null } = { onprogress: null };
+  upload: { onprogress: ((e: { lengthComputable: boolean; loaded: number; total: number }) => void) | null; onload: (() => void) | null } = { onprogress: null, onload: null };
   onload: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onabort: (() => void) | null = null;
@@ -129,36 +129,77 @@ describe("createPhotoSender: one photo, one request to the upload endpoint", () 
     }
   });
 
-  it("calls a connection that was lost, or an answer that came with a photo that cannot be read, 'lost': it is not known what the server did", async () => {
+  it("says that nothing arrived when the connection failed before the body had gone out: the server took nothing, and a second try is safe", async () => {
     const dropped = send();
     FakeXhr.last.onerror!();
-    expect(await dropped).toEqual({ kind: "lost" });
+    expect(await dropped).toEqual({ kind: "unsent" });
     const timedOut = send();
     FakeXhr.last.ontimeout!();
-    expect(await timedOut).toEqual({ kind: "lost" });
-    // the server said 200 and the answer cannot be read: the photo is stored, but nothing says which
-    const garbled = send();
-    FakeXhr.last.answer(200, "not json");
-    expect(await garbled).toEqual({ kind: "lost" });
-    const noId = send();
-    FakeXhr.last.answer(200, { status: "ok" });
-    expect(await noId).toEqual({ kind: "lost" });
+    expect(await timedOut).toEqual({ kind: "unsent" });
+    // part of the body went out and the connection failed: the server cannot have a whole photo
+    const partly = send();
+    FakeXhr.last.upload.onprogress!({ lengthComputable: true, loaded: 500, total: 1000 });
+    FakeXhr.last.onerror!();
+    expect(await partly).toEqual({ kind: "unsent" });
   });
 
-  it("stops the request when the queue says so, and answers 'lost' (the person left)", async () => {
+  it("says that the photo may have arrived when the body had gone out (the upload had ended) and no answer came", async () => {
+    const dropped = send();
+    FakeXhr.last.upload.onload!();
+    FakeXhr.last.onerror!();
+    expect(await dropped).toEqual({ kind: "lost", reason: "connection" });
+    const timedOut = send();
+    FakeXhr.last.upload.onload!();
+    FakeXhr.last.ontimeout!();
+    expect(await timedOut).toEqual({ kind: "lost", reason: "connection" });
+  });
+
+  it("says that the photo may have arrived when the server said 200 and the answer cannot be read: it is stored, but nothing says which", async () => {
+    const garbled = send();
+    FakeXhr.last.answer(200, "not json");
+    expect(await garbled).toEqual({ kind: "lost", reason: "gateway" });
+    const noId = send();
+    FakeXhr.last.answer(200, { status: "ok" });
+    expect(await noId).toEqual({ kind: "lost", reason: "gateway" });
+  });
+
+  it("takes a gateway that did not answer (502, 504, a 503 that asks for no wait) for a photo that may have been saved, not for a busy server", async () => {
+    for (const status of [502, 504, 503]) {
+      const result = send();
+      FakeXhr.last.answer(status, "<html>Bad gateway</html>");
+      expect(await result, String(status)).toEqual({ kind: "lost", reason: "gateway" });
+    }
+  });
+
+  it("takes a 503 of our own server (it asks for a wait, or says UPLOAD_BUSY) for what it is: busy, the photo was not taken", async () => {
+    const waiting = send();
+    FakeXhr.last.answer(503, {}, { "retry-after": "5" });
+    expect(await waiting).toMatchObject({ kind: "busy", status: 503, retryAfterSeconds: 5 });
+    const coded = send();
+    FakeXhr.last.answer(503, { error: "Server právě přijímá mnoho fotografií, zkuste to za chvíli", code: "UPLOAD_BUSY" });
+    expect(await coded).toMatchObject({ kind: "busy", status: 503, retryAfterSeconds: null, message: "Server právě přijímá mnoho fotografií, zkuste to za chvíli" });
+  });
+
+  it("gives a 408 as a refusal in the server's words (it took nothing: it waited too long for the file)", async () => {
+    const result = send();
+    FakeXhr.last.answer(408, { error: "Nahrávání fotografie trvalo příliš dlouho, zkuste to znovu" });
+    expect(await result).toEqual({ kind: "rejected", status: 408, message: "Nahrávání fotografie trvalo příliš dlouho, zkuste to znovu" });
+  });
+
+  it("stops the request when the queue says so; before the body had gone out nothing arrived", async () => {
     const controller = new AbortController();
     const result = send(controller.signal);
     const xhr = FakeXhr.last;
     controller.abort();
     expect(xhr.aborted).toBe(true);
-    expect(await result).toEqual({ kind: "lost" });
+    expect(await result).toEqual({ kind: "unsent" });
   });
 
   it("does not send anything when the queue was stopped before the request began", async () => {
     const controller = new AbortController();
     controller.abort();
     FakeXhr.last = undefined as unknown as FakeXhr;
-    expect(await send(controller.signal)).toEqual({ kind: "lost" });
+    expect(await send(controller.signal)).toEqual({ kind: "unsent" });
     expect(FakeXhr.last?.body ?? null).toBeNull();
   });
 });
