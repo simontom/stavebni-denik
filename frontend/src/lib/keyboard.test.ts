@@ -121,12 +121,24 @@ class FakeVisualViewport extends EventTarget {
 describe("useKeyboardOpen", () => {
   const original = Object.getOwnPropertyDescriptor(window, "visualViewport");
   const sizes = { innerWidth: window.innerWidth, innerHeight: window.innerHeight };
+  const originalMatchMedia = window.matchMedia;
+  /** The pointer of the device: a finger (the default of these tests, a phone) or a mouse. */
+  const pointer = (coarse: boolean) => {
+    window.matchMedia = ((query: string) => ({
+      matches: coarse && query === "(pointer: coarse)",
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof window.matchMedia;
+  };
   beforeEach(() => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 360 });
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 780 });
+    pointer(true);
   });
   afterEach(() => {
     cleanup();
+    window.matchMedia = originalMatchMedia;
     if (original) Object.defineProperty(window, "visualViewport", original);
     else Reflect.deleteProperty(window, "visualViewport");
     Object.defineProperty(window, "innerWidth", { configurable: true, value: sizes.innerWidth });
@@ -164,45 +176,37 @@ describe("useKeyboardOpen", () => {
     expect(result.current).toBe(false);
   });
 
-  it("without a visual viewport, a coarse pointer with the focus in a text field counts as an open keyboard", () => {
+  it("is not fooled by a window dragged lower or a docked developer tools panel: with a mouse a shortened viewport is no keyboard", () => {
+    pointer(false);
+    const vv = withViewport();
+    const { result } = renderHook(() => useKeyboardOpen());
+    act(() => vv.resizeTo(480));
+    expect(result.current).toBe(false);
+  });
+
+  it("without a visual viewport, a finger with the focus in a text field counts as an open keyboard", () => {
     Reflect.deleteProperty(window, "visualViewport");
-    const original = window.matchMedia;
-    window.matchMedia = ((query: string) => ({
-      matches: query === "(pointer: coarse)",
-      media: query,
-      addEventListener() {},
-      removeEventListener() {},
-    })) as unknown as typeof window.matchMedia;
-    try {
-      const field = document.createElement("input");
-      const button = document.createElement("button");
-      document.body.append(field, button);
-      const { result } = renderHook(() => useKeyboardOpen());
-      expect(result.current).toBe(false);
-      act(() => field.focus());
-      expect(result.current).toBe(true);
-      act(() => button.focus());
-      expect(result.current).toBe(false);
-      field.remove();
-      button.remove();
-    } finally {
-      window.matchMedia = original;
-    }
+    const field = document.createElement("input");
+    const button = document.createElement("button");
+    document.body.append(field, button);
+    const { result } = renderHook(() => useKeyboardOpen());
+    expect(result.current).toBe(false);
+    act(() => field.focus());
+    expect(result.current).toBe(true);
+    act(() => button.focus());
+    expect(result.current).toBe(false);
+    field.remove();
+    button.remove();
   });
 
   it("without a visual viewport and with a mouse, focusing a field is not an open keyboard", () => {
     Reflect.deleteProperty(window, "visualViewport");
-    const original = window.matchMedia;
-    window.matchMedia = ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
-    try {
-      const field = document.createElement("input");
-      document.body.append(field);
-      const { result } = renderHook(() => useKeyboardOpen());
-      act(() => field.focus());
-      expect(result.current).toBe(false);
-      field.remove();
-    } finally {
-      window.matchMedia = original;
-    }
+    pointer(false);
+    const field = document.createElement("input");
+    document.body.append(field);
+    const { result } = renderHook(() => useKeyboardOpen());
+    act(() => field.focus());
+    expect(result.current).toBe(false);
+    field.remove();
   });
 });
