@@ -97,9 +97,10 @@
   }
 
   /* The bar of actions at the foot of the entry page (EntryActionBar) lies over the bottom of the window while the page is longer than it: a control that gets the
-     focus (Tab, a tap into a field) is scrolled to above it, not left under it. A little over the bar's height at its tallest (two rows of buttons and a line of text). */
+     focus (Tab, a tap into a field) is scrolled to above it, not left under it. The bar measures itself and puts its height in --entry-bar-height (a
+     little more is kept for the line of the focus ring); 9rem is what is used until that has happened (two rows of buttons and a line of text). */
   html:has([data-entry-bar]) {
-    scroll-padding-bottom: 9rem;
+    scroll-padding-bottom: calc(var(--entry-bar-height, 9rem) + 1rem);
   }
 
   /* Dates and numbers keep their width, so columns of them line up and a counter does not jitter. */

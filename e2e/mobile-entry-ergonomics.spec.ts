@@ -228,5 +228,59 @@ test.describe("the entry on a phone", () => {
     await expectReachable(page, page.getByRole("button", { name: "Zkusit znovu" }), "the button that sends the photos again");
     await expectNoSidewaysScroll(page, "the photos that failed");
     await expectTouchReady(page, "the photos that failed");
+    // and the failed photo can be put away from its row, a thumb high
+    await expectReachable(page, page.getByRole("button", { name: /^Zahodit / }), "the button that discards a photo that failed");
+  });
+
+  test("the buttons of the bar stay where they are in every state, so a second tap on the save button cannot land on another one", async ({ page }) => {
+    test.setTimeout(90_000);
+    await signInAdmin(page);
+    const { projectPath } = await makeProject(page, "Phone bar steady");
+    await page.goto(`${projectPath}/reports/${pragueDay(0)}`);
+    await expect(description(page)).toBeEditable({ timeout: 15_000 });
+    const region = bar(page);
+    await expect(region).toBeVisible();
+    const save = region.getByRole("button", { name: /uložit (záznam|změny)/i });
+    const sign = region.getByRole("button", { name: /podepsat a uzamknout/i });
+    const slot = region.locator('button[aria-hidden="true"]'); // the place of the PDF while there is nothing to download
+    type Box = { x: number; y: number; width: number; height: number };
+    const rect = (l: Locator): Promise<Box> =>
+      l.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      });
+    const boxes = async () => ({ save: await rect(save), sign: await rect(sign), bar: await rect(region), pdf: (await slot.count()) === 1 ? await rect(slot) : null });
+
+    const none = await boxes(); // no entry yet: "Uložit záznam", the signing off
+    await description(page).fill("První verze");
+    await expect(region.getByText("Neuložené změny")).toBeVisible();
+    const dirty = await boxes();
+    await save.click();
+    await expect(region.getByRole("status")).toHaveText(/Uloženo \d{1,2}:\d{2}/);
+    const pdf = region.getByRole("button", { name: "Stáhnout PDF" });
+    await expect(pdf).toBeVisible();
+    const saved = { ...(await boxes()), pdf: await rect(pdf) }; // saved: the PDF is there, in the place that was kept for it
+    await description(page).fill("Druhá verze");
+    await expect(region.getByText("Neuložené změny")).toBeVisible();
+    const again = await boxes();
+
+    const same = (what: string, a: Box | null, b: Box | null) => {
+      expect(a, `${what}: a box`).not.toBeNull();
+      expect(b, `${what}: a box`).not.toBeNull();
+      for (const key of ["x", "y", "width", "height"] as const) expect(Math.abs(a![key] - b![key]), `${what}: ${key} (${a![key]} against ${b![key]})`).toBeLessThanOrEqual(0.5);
+    };
+    for (const [state, now] of [
+      ["unsaved changes", dirty],
+      ["saved", saved],
+      ["unsaved changes again", again],
+    ] as const) {
+      same(`the save button, ${state}`, none.save, now.save);
+      same(`the signing, ${state}`, none.sign, now.sign);
+      same(`the bar, ${state}`, none.bar, now.bar);
+      same(`the PDF, ${state}`, none.pdf, now.pdf);
+    }
+    // the page keeps its scroll padding at least as large as the bar, whatever the bar's height is
+    const padding = await page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom));
+    expect(padding, "the scroll padding of the page covers the bar").toBeGreaterThanOrEqual(none.bar.height);
   });
 });
