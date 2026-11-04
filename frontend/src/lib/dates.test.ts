@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { formatDay, formatDayWithWeekday, formatPragueDateTime, weekdayOf } from "./dates";
+import { formatDay, formatDayWithWeekday, formatPragueDateTime, nextDay, previousDay, shiftDay, weekdayOf } from "./dates";
 
 describe("formatDay", () => {
   it("writes a day as a Czech document does, without leading zeros", () => {
@@ -97,5 +97,47 @@ describe("formatPragueDateTime", () => {
   it("gives back what is not a moment, unchanged", () => {
     expect(formatPragueDateTime("nonsense")).toBe("nonsense");
     expect(formatPragueDateTime("")).toBe("");
+  });
+});
+
+describe("the neighbouring days of an entry", () => {
+  it("shifts a calendar day over a month, a year and a leap day, without any time zone", () => {
+    expect(shiftDay("2026-09-28", -1)).toBe("2026-09-27");
+    expect(shiftDay("2026-10-01", -1)).toBe("2026-09-30");
+    expect(shiftDay("2026-01-01", -1)).toBe("2025-12-31");
+    expect(shiftDay("2024-03-01", -1)).toBe("2024-02-29");
+    expect(shiftDay("2025-03-01", -1)).toBe("2025-02-28");
+    expect(shiftDay("2026-12-31", 1)).toBe("2027-01-01");
+    expect(shiftDay("2026-10-25", 1)).toBe("2026-10-26"); // the clocks went back that night: a day is still a day
+    expect(shiftDay("2026-03-29", 1)).toBe("2026-03-30");
+    expect(shiftDay("2026-03-29", -1)).toBe("2026-03-28");
+  });
+
+  it("gives nothing for what is not a real day", () => {
+    for (const bad of ["", "new", "2026-02-30", "2026-9-28", "2026-09-28T10:00:00Z", "0099-01-01"]) {
+      expect(shiftDay(bad, 1), bad).toBeNull();
+      expect(previousDay(bad), bad).toBeNull();
+      expect(nextDay(bad, "2026-10-05"), bad).toBeNull();
+    }
+  });
+
+  it("goes back one day without a limit", () => {
+    expect(previousDay("2026-10-05")).toBe("2026-10-04");
+    expect(previousDay("2026-10-04")).toBe("2026-10-03"); // a Sunday: the day before is the day before, not the previous working day
+    expect(previousDay("2030-01-01")).toBe("2029-12-31"); // also from a day that has not come yet
+  });
+
+  it("goes forward one day, but never to a day that has not come yet", () => {
+    expect(nextDay("2026-10-03", "2026-10-05")).toBe("2026-10-04");
+    expect(nextDay("2026-10-04", "2026-10-05")).toBe("2026-10-05"); // today is the last day there is
+    expect(nextDay("2026-10-05", "2026-10-05")).toBeNull(); // on today there is no next day
+    expect(nextDay("2026-10-06", "2026-10-05")).toBeNull(); // nor from a day in the future
+    expect(nextDay("2026-12-31", "2027-01-01")).toBe("2027-01-01");
+  });
+
+  it("takes today in Prague when it is not given", () => {
+    const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Prague" }).format(new Date());
+    expect(nextDay(today)).toBeNull();
+    expect(nextDay(previousDay(today)!)).toBe(today);
   });
 });

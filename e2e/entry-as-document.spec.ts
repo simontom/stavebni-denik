@@ -266,6 +266,8 @@ test.describe("somebody who cannot write sees a document", () => {
       await expect(entryFields(page)).toHaveCount(0);
       await expect(page.locator('input[type="file"]')).toHaveCount(0);
       await expect(page.getByRole("button", { name: /uložit (záznam|změny)/i })).toHaveCount(0);
+      // a reader has no bar of actions (B5): it belongs to the people who write the diary
+      await expect(page.getByRole("region", { name: "Akce záznamu" })).toHaveCount(0);
 
       await page.getByRole("button", { name: "Potvrdit seznámení" }).click();
       await page.getByRole("dialog", { name: "Potvrdit seznámení?" }).getByRole("button", { name: "Potvrdit seznámení", exact: true }).click();
@@ -747,6 +749,10 @@ test.describe("who may change an entry is decided by the server", () => {
       await expect(page.getByText("Rozpracováno", { exact: true })).toBeVisible();
       // What a worker may do to the manager's entry is still allowed: add a photo.
       await expect(page.locator('input[type="file"]')).toBeVisible();
+      // and download it: the bar (B5) offers the PDF of somebody else's unsigned entry and nothing else (no save, no signing)
+      const bar = page.getByRole("region", { name: "Akce záznamu" });
+      await expect(bar.getByRole("button")).toHaveCount(1);
+      await expect(bar.getByRole("button", { name: "Stáhnout PDF", exact: true })).toBeEnabled();
 
       // Their own: the form, and a save that goes through.
       await page.goto(`/projects/${site.projectId}/reports/2026-09-29`);
