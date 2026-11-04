@@ -69,9 +69,10 @@ class PhotoServiceTest : BaseIntegrationTest() {
         val photosAfterDelete = PhotoService.listPhotos(dsl, reportId)
         assertEquals(0, photosAfterDelete.size)
 
-        val inDb = dsl.selectFrom(PHOTOS).where(PHOTOS.ID.eq(result.id)).fetchOne()
-        assertNotNull(inDb)
-        assertNotNull(inDb!!.get(PHOTOS.DELETEDAT))
+        // A removal is a removal: the row is gone (what it was is in the audit row), and so are both files
+        assertNull(dsl.selectFrom(PHOTOS).where(PHOTOS.ID.eq(result.id)).fetchOne())
+        assertFalse(Files.exists(originalFile), "the original is removed with the photo")
+        assertFalse(Files.exists(thumbFile!!), "the thumbnail is removed with the photo")
     }
 
     @Test

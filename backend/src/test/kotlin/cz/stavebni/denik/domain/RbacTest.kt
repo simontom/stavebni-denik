@@ -147,15 +147,34 @@ class RbacTest {
         assertFalse(can(someone, Action.PhotoUpload, Resource(role = inspector)))
     }
 
+    /** Backlog A4 (owner's decision of 2026-11-04): the manager removes any photo, a worker only the one they uploaded, nobody on a signed entry. */
     @Test
     fun `photo delete permissions`() {
         val someone = testUser()
+        val other = UUID.randomUUID()
 
+        // The manager: any photo of an unsigned entry, whoever uploaded it.
         assertTrue(can(someone, Action.PhotoDelete, Resource(role = boss)))
+        assertTrue(can(someone, Action.PhotoDelete, Resource(role = boss, authorId = other)))
+        assertTrue(can(someone, Action.PhotoDelete, Resource(role = boss, authorId = someone.id)))
 
+        // A worker: the photo they uploaded (the resource's author is the uploader), not another worker's, not one of unknown origin.
+        assertTrue(can(someone, Action.PhotoDelete, Resource(role = worker, authorId = someone.id)))
+        assertFalse(can(someone, Action.PhotoDelete, Resource(role = worker, authorId = other)))
+        assertFalse(can(someone, Action.PhotoDelete, Resource(role = worker)), "a photo that names no uploader is nobody's own")
+
+        // A signed entry never loses a photo, whoever asks.
         assertFalse(can(someone, Action.PhotoDelete, Resource(role = boss, isLocked = true)))
-        assertFalse(can(someone, Action.PhotoDelete, Resource(role = null)))
-        assertFalse(can(someone, Action.PhotoDelete, Resource(role = worker)))
+        assertFalse(can(someone, Action.PhotoDelete, Resource(role = boss, isLocked = true, authorId = someone.id)))
+        assertFalse(can(someone, Action.PhotoDelete, Resource(role = worker, isLocked = true, authorId = someone.id)))
+
+        // Nobody else: an inspector and an investor do not write, somebody who is not a member (an administrator included) has no role here.
+        val admin = testUser(isAdmin = true)
+        for (who in listOf(someone, admin)) {
+            assertFalse(can(who, Action.PhotoDelete, Resource(role = null, authorId = who.id)))
+            assertFalse(can(who, Action.PhotoDelete, Resource(role = inspector, authorId = who.id)))
+            assertFalse(can(who, Action.PhotoDelete, Resource(role = investor, authorId = who.id)))
+        }
     }
 
     @Test
@@ -206,6 +225,8 @@ class RbacTest {
         assertEquals("YY---", row(Action.ReportAddendumCreate))
         assertEquals("YY---", row(Action.PhotoUpload))
         assertEquals("Y----", row(Action.PhotoDelete))
+        assertEquals("YY---", row(Action.PhotoDelete, authored = true), "a worker removes the photo they uploaded")
+        assertEquals("-----", row(Action.PhotoDelete, locked = true, authored = true), "a signed entry never loses a photo")
         assertEquals("Y-YY-", row(Action.RemarkCreate))
         assertEquals("Y-YY-", row(Action.RemarkCreate, locked = true), "entries of other parties are also made on a signed entry")
         assertEquals("YY---", row(Action.SiteHandoverCreate))

@@ -27,6 +27,7 @@ sealed interface Action {
     
     // Photos and entries of other parties
     data object PhotoUpload : Action
+    /** Removing a photo from an entry that is not signed: the manager any, a worker the one they uploaded (the resource's author is the uploader). */
     data object PhotoDelete : Action
     /** An entry of another party (technical supervision, the client, an authority via the manager). Entries are never changed or deleted. */
     data object RemarkCreate : Action

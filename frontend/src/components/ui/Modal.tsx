@@ -50,6 +50,9 @@ function settleFocus(opener: HTMLElement | null, fallback?: () => HTMLElement | 
  *   opened again: a closed dialog that is still mounted would be dead weight that nothing reopens.
  * - [initialFocus] is what gets the focus when it opens: for a question that throws something away, the safe answer. Without
  *   it the browser focuses the first control inside.
+ * - [focusFallback] is where the focus goes when what had it before the dialog opened is gone once the dialog has been cancelled (Escape, the
+ *   cancel button, "Zahodit" on the question about typed text: a page that took the row that asked away while the dialog was open). It is
+ *   what an answer names in `useModal().close(..., { fallback })`, kept for the cancel too. Called then, never earlier; it may return null.
  * - [handleRef] gives the component that renders the Modal the same handle `useModal()` gives what is inside it (`close`, `cancel`),
  *   so a dialog that keeps its state in one component can close itself once its request has been answered
  *   (`modal.current?.close(() => onSaved(saved), { restoreFocus: true })`) without a child component of its own.
@@ -63,6 +66,7 @@ export function Modal({
   dismissible = true,
   unsaved = false,
   initialFocus,
+  focusFallback,
   handleRef,
   size = "md",
 }: {
@@ -74,6 +78,7 @@ export function Modal({
   dismissible?: boolean;
   unsaved?: boolean;
   initialFocus?: RefObject<HTMLElement | null>;
+  focusFallback?: () => HTMLElement | null;
   handleRef?: Ref<ModalHandle>;
   size?: keyof typeof sizes;
 }) {
@@ -121,8 +126,11 @@ export function Modal({
     if (!dismissible) return;
     if (unsaved) return setAsking(true);
     if (onCancel() === false) return;
-    close(undefined, { restoreFocus: true });
-  }, [dismissible, unsaved, onCancel, close]);
+    // What the page did in [onCancel] (took the question off its screen, perhaps the row that asked with it) is drawn before the focus is settled, as for
+    // an answer (`after` makes `close` draw the page now): until the dialog is out of the document the browser still counts what had the focus inside it as
+    // the active element, and a focus that "somebody has already put somewhere" is left alone (`settleFocus`), so the fallback would never be used.
+    close(() => undefined, { restoreFocus: true, fallback: focusFallback });
+  }, [dismissible, unsaved, onCancel, close, focusFallback]);
 
   const handle = useMemo<ModalHandle>(() => ({ close, cancel }), [close, cancel]);
   useImperativeHandle(handleRef, () => handle, [handle]);
@@ -166,7 +174,7 @@ export function Modal({
           onKeep={() => setAsking(false)}
           onDiscard={() => {
             setAsking(false);
-            close(onCancel, { restoreFocus: true });
+            close(onCancel, { restoreFocus: true, fallback: focusFallback });
           }}
         />
       )}

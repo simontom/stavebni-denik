@@ -8,6 +8,9 @@ import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
 import cz.stavebni.denik.jooq.tables.references.SITE_HANDOVERS
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.awt.image.BufferedImage
@@ -38,6 +41,12 @@ class AuditProjectRowsTest : BaseIntegrationTest() {
         builder = "Stavebník", contractor = "Zhotovitel", siteManagerId = manager.id.toString(),
     )
 
+    /** The entry a photo that has been removed belonged to, as the audit row of its upload says. */
+    private fun reportOfRemovedPhoto(photoId: String): String {
+        val upload = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq("photo.upload").and(AUDIT_LOG.ENTITY_ID.eq(photoId))).fetchSingle()
+        return Json.parseToJsonElement(upload.auditAfterText()!!).jsonObject["reportId"]!!.jsonPrimitive.content
+    }
+
     /** The project that the record an audit row is about belongs to, from the tables themselves. */
     private fun projectOfTheRecord(entityType: String, entityId: String): UUID? {
         val id = UUID.fromString(entityId)
@@ -45,7 +54,11 @@ class AuditProjectRowsTest : BaseIntegrationTest() {
             "project" -> id
             "report" -> dsl.select(DAILY_REPORTS.PROJECTID).from(DAILY_REPORTS).where(DAILY_REPORTS.ID.eq(id)).fetchSingle().value1()
             "photo" -> dsl.select(DAILY_REPORTS.PROJECTID).from(PHOTOS).join(DAILY_REPORTS).on(DAILY_REPORTS.ID.eq(PHOTOS.REPORTID))
-                .where(PHOTOS.ID.eq(id)).fetchSingle().value1()
+                .where(PHOTOS.ID.eq(id)).fetchOne()?.value1()
+                // A removed photo (backlog A4) has no row any more: the entry it belonged to is named by the audit row of its upload,
+                // and the project is that entry's, from its table.
+                ?: dsl.select(DAILY_REPORTS.PROJECTID).from(DAILY_REPORTS)
+                    .where(DAILY_REPORTS.ID.eq(UUID.fromString(reportOfRemovedPhoto(entityId)))).fetchSingle().value1()
             "siteHandover" -> dsl.select(SITE_HANDOVERS.PROJECTID).from(SITE_HANDOVERS).where(SITE_HANDOVERS.ID.eq(id)).fetchSingle().value1()
             "authorizedPerson" -> dsl.select(AUTHORIZED_PERSONS.PROJECTID).from(AUTHORIZED_PERSONS).where(AUTHORIZED_PERSONS.ID.eq(id)).fetchSingle().value1()
             else -> fail("an audit row of the type '$entityType' that this test does not know")

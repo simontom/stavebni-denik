@@ -114,7 +114,8 @@ class NonMemberAdminWritesTest : BaseIntegrationTest() {
         }
 
         assertEquals(1, dsl.fetchCount(PHOTOS), "no photo was added")
-        assertNull(dsl.selectFrom(PHOTOS).fetchOne()!!.deletedat, "the photo was not removed")
+        assertEquals(photo.id, dsl.selectFrom(PHOTOS).fetchOne()!!.id, "the photo was not removed")
+        assertNull(dsl.selectFrom(PHOTOS).fetchOne()!!.deletedat)
         assertEquals(filesBefore, photoFiles(), "a refused upload must not even be decoded or written")
     }
 

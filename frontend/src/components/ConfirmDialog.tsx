@@ -29,8 +29,8 @@ const DEFAULT_LEAVE_MESSAGE = "Právě se provádí akce. Když odejdete, nedozv
  * - **Yes, as an action that can fail:** [action] runs while the dialog stays open: the buttons are off (`aria-disabled`, not `disabled`:
  *   the one that was pressed keeps the focus, so after a refusal the same key can be pressed again) and Escape does nothing, and when the
  *   action fails its message is said *inside* the dialog (`role="alert"`), which stays open for another try or a "no". When it succeeds the
- *   dialog closes, with the focus back on the button that asked (or, when that button is gone with the answer, on the main heading of the
- *   page: see `Modal`), and [onDone] gets the result (the page takes the question off its screen there, and shows what the action made).
+ *   dialog closes, with the focus back on the button that asked (or, when that button is gone with the answer, on the place [focusFallback]
+ *   names, else on the main heading of the page: see `Modal`), and [onDone] gets the result (the page takes the question off its screen there, and shows what the action made).
  *   A session that ended meanwhile opens the sign-in dialog above this one; the message says so, and after signing in the same answer is given again.
  * - **While the action runs the page counts as holding unsaved work** (`useUnsavedWork`): a link or the Back button asks first, and the
  *   browser asks before the tab is closed. [leaveMessage] says in words what leaving loses (for a new password: that it will not be shown).
@@ -46,6 +46,7 @@ export function ConfirmDialog<T = void>({
   destructive = true,
   leaveMessage,
   stalledNote,
+  focusFallback,
   onCancel,
   ...yes
 }: {
@@ -56,6 +57,11 @@ export function ConfirmDialog<T = void>({
   destructive?: boolean;
   leaveMessage?: string;
   stalledNote?: React.ReactNode;
+  /**
+   * Where the focus goes when the button that asked is gone once the answer has been given (a removed row: the answer takes its button away
+   * and the page is drawn again before this is asked), else the main heading of the page. Called then, never earlier. It may return null.
+   */
+  focusFallback?: () => HTMLElement | null;
   onCancel: () => void;
 } & Yes<T>) {
   const cancelButton = useRef<HTMLButtonElement>(null);
@@ -78,7 +84,8 @@ export function ConfirmDialog<T = void>({
       onCancel={no}
       dismissible={!busy || stalled}
       initialFocus={cancelButton}
-      footer={<Answers {...{ confirmLabel, cancelLabel, destructive, no, cancelButton, busy, stalled, wasAbandoned, setBusy, setProblem, yes }} />}
+      focusFallback={focusFallback}
+      footer={<Answers {...{ confirmLabel, cancelLabel, destructive, no, cancelButton, busy, stalled, wasAbandoned, setBusy, setProblem, focusFallback, yes }} />}
     >
       {problem && <Banner tone="danger">{problem}</Banner>}
       {stalled && <StalledNotice>{stalledNote}</StalledNotice>}
@@ -98,6 +105,7 @@ function Answers<T>({
   wasAbandoned,
   setBusy,
   setProblem,
+  focusFallback,
   yes,
 }: {
   confirmLabel: string;
@@ -110,6 +118,7 @@ function Answers<T>({
   wasAbandoned: () => boolean;
   setBusy: (busy: boolean) => void;
   setProblem: (problem: string) => void;
+  focusFallback?: () => HTMLElement | null;
   yes: Yes<T>;
 }) {
   const modal = useModal();
@@ -121,7 +130,7 @@ function Answers<T>({
     setProblem("");
     try {
       const result = await yes.action();
-      modal.close(() => yes.onDone?.(result), { restoreFocus: !wasAbandoned() });
+      modal.close(() => yes.onDone?.(result), { restoreFocus: !wasAbandoned(), fallback: focusFallback });
     } catch (err) {
       if (wasAbandoned()) return;
       setProblem(err instanceof Error ? err.message : "Akce se nezdařila");
@@ -143,7 +152,7 @@ function Answers<T>({
         aria-disabled={cancelOff || undefined}
         onClick={() => {
           if (cancelOff) return;
-          modal.close(no, { restoreFocus: true });
+          modal.close(no, { restoreFocus: true, fallback: focusFallback });
         }}
       >
         {stalled ? "Zavřít" : cancelLabel}

@@ -25,6 +25,8 @@ describe("the words of the audit viewer", () => {
 
   it("show a code that is not in the list as it is, and a known one in words", () => {
     expect(auditActionLabel("report.lock")).toBe("Podpis záznamu");
+    // A removal is called what the page calls it ("Odebrat fotografii"), and the question promises that it stays in this record: not "Smazání".
+    expect(auditActionLabel("photo.delete")).toBe("Odebrání fotografie");
     expect(auditActionLabel("something.new")).toBe("something.new");
     expect(auditEntityLabel("siteHandover")).toBe("Protokol o předání");
     expect(auditEntityLabel("other")).toBe("other");

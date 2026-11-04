@@ -400,7 +400,8 @@ class PhotoUploadLimitsTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.OK, response.status, response.bodyAsText())
         val body = response.bodyAsText()
         val photo = Json.parseToJsonElement(body).jsonObject["photo"]!!.jsonObject
-        assertEquals(setOf("id", "reportId", "width", "height", "bytes", "uploadedById"), photo.keys)
+        // (`canDelete` is whether the uploader may remove the photo again, backlog A4: a yes or a no, never a path)
+        assertEquals(setOf("id", "reportId", "width", "height", "bytes", "uploadedById", "canDelete"), photo.keys)
         assertFalse(body.contains(AppConfig.uploadsDir.toAbsolutePath().toString().replace("\\", "\\\\")), "no server path in the response")
         assertFalse(body.contains("_orig") || body.contains("_thumb"), "no storage key in the response")
 

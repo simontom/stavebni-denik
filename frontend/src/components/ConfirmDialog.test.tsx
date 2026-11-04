@@ -18,6 +18,8 @@ beforeAll(() => {
   };
   HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
     if (!this.hasAttribute("open")) return;
+    // (Like a real browser, this does not move the focus out of the dialog at once: what has the focus inside a dialog that has just been closed keeps it
+    // until the dialog is taken out of the document, or the browser's next frame. Chrome was measured to do so, by e2e/photo-removal.spec.ts.)
     this.removeAttribute("open");
     setTimeout(() => this.dispatchEvent(new Event("close")), 0);
   };
@@ -245,6 +247,124 @@ describe("an answer that is an action that can fail", () => {
     pressEscape(dialog());
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("an answer that takes away the button that asked", () => {
+  /** Two rows with a button each; removing a row is the answer. The page names where the focus goes (`focusFallback`): the other row's button. */
+  function Rows({ action = () => Promise.resolve("ok"), fallback }: { action?: () => Promise<string>; fallback: (() => HTMLElement | null) | undefined }) {
+    const [rows, setRows] = useState(["a", "b"]);
+    const [asking, setAsking] = useState<string | null>(null);
+    return (
+      <main>
+        <h1>Stránka</h1>
+        {rows.map((r) => (
+          <button key={r} id={`row-${r}`} onClick={() => setAsking(r)}>
+            smazat {r}
+          </button>
+        ))}
+        {asking && (
+          <ConfirmDialog
+            title="Smazat uživatele?"
+            confirmLabel="Smazat"
+            cancelLabel="Zrušit"
+            focusFallback={fallback}
+            action={action}
+            onDone={() => {
+              setRows((current) => current.filter((r) => r !== asking));
+              setAsking(null);
+            }}
+            onCancel={() => setAsking(null)}
+          >
+            Otázka
+          </ConfirmDialog>
+        )}
+      </main>
+    );
+  }
+
+  it("puts the focus where the page says when the row that asked is gone with the answer", async () => {
+    render(<Rows fallback={() => document.getElementById("row-b")} />);
+    const asker = screen.getByText("smazat a");
+    asker.focus();
+    fireEvent.click(asker);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("smazat a")).toBeNull();
+    expect(document.activeElement, "the place the page named").toBe(screen.getByText("smazat b"));
+  });
+
+  it("falls back to the main heading when the page names nothing, or names a place that is not there", async () => {
+    for (const fallback of [undefined, () => null]) {
+      cleanup();
+      render(<Rows fallback={fallback} />);
+      const asker = screen.getByText("smazat a");
+      asker.focus();
+      fireEvent.click(asker);
+      fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Stránka" }));
+    }
+  });
+
+  it("names the same place on Escape and on the safe button, when a refusal took the row that asked away while the question was open", async () => {
+    function Refusing() {
+      const [rows, setRows] = useState(["a", "b"]);
+      const [asking, setAsking] = useState<string | null>(null);
+      return (
+        <main>
+          <h1>Stránka</h1>
+          {rows.map((r) => (
+            <button key={r} id={`row-${r}`} onClick={() => setAsking(r)}>
+              smazat {r}
+            </button>
+          ))}
+          {asking && (
+            <ConfirmDialog
+              title="Smazat uživatele?"
+              confirmLabel="Smazat"
+              cancelLabel="Zrušit"
+              focusFallback={() => document.getElementById("row-b")}
+              action={() => {
+                // the refusal is "there is no such row": the page reads its list again and the row that asked is gone
+                setRows((current) => current.filter((r) => r !== asking));
+                return Promise.reject(new Error("Fotografie nenalezena"));
+              }}
+              onDone={() => setAsking(null)}
+              onCancel={() => setAsking(null)}
+            >
+              Otázka
+            </ConfirmDialog>
+          )}
+        </main>
+      );
+    }
+    for (const way of ["Escape", "Zrušit"]) {
+      cleanup();
+      render(<Refusing />);
+      const asker = screen.getByText("smazat a");
+      asker.focus();
+      fireEvent.click(asker);
+      fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+      await within(dialog()).findByRole("alert");
+      expect(screen.queryByText("smazat a"), "the row that asked is gone while the question is open").toBeNull();
+
+      if (way === "Escape") pressEscape(dialog());
+      else fireEvent.click(within(dialog()).getByRole("button", { name: "Zrušit" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement, `answered with ${way}: the place the page named, not the top of the page`).toBe(screen.getByText("smazat b"));
+    }
+  });
+
+  it("leaves the focus on the button that asked when the answer is no (the fallback is for a button that is gone)", () => {
+    const fallback = vi.fn(() => document.getElementById("row-b"));
+    render(<Rows fallback={fallback} />);
+    const asker = screen.getByText("smazat a");
+    asker.focus();
+    fireEvent.click(asker);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Zrušit" }));
+    expect(document.activeElement).toBe(asker);
+    expect(fallback).not.toHaveBeenCalled();
   });
 });
 

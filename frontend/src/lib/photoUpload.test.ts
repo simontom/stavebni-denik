@@ -66,7 +66,17 @@ describe("createPhotoSender: one photo, one request to the upload endpoint", () 
     expect(xhr.body!.get("projectId")).toBe("proj-1");
     expect((xhr.body!.get("photo") as File).name).toBe("strop.jpg");
     xhr.answer(200, { status: "ok", id: "abc-1", url: "/api/photos/abc-1", name: "strop.jpg" });
-    expect(await result).toEqual({ kind: "ok", value: { id: "abc-1", url: "/api/photos/abc-1", name: "strop.jpg" } });
+    expect(await result).toEqual({ kind: "ok", value: { id: "abc-1", url: "/api/photos/abc-1", name: "strop.jpg", canDelete: false } });
+  });
+
+  it("takes from the answer whether the person who uploaded the photo may remove it (only an explicit yes)", async () => {
+    const yes = send();
+    FakeXhr.last.answer(200, { status: "ok", id: "abc-1", url: "/api/photos/abc-1", name: "strop.jpg", photo: { id: "abc-1", canDelete: true } });
+    expect(await yes).toEqual({ kind: "ok", value: { id: "abc-1", url: "/api/photos/abc-1", name: "strop.jpg", canDelete: true } });
+
+    const no = send();
+    FakeXhr.last.answer(200, { status: "ok", id: "abc-2", url: "/api/photos/abc-2", name: "strop.jpg", photo: { id: "abc-2", canDelete: "true" } });
+    expect(await no).toMatchObject({ kind: "ok", value: { canDelete: false } });
   });
 
   it("reports how much of the file has gone out", async () => {
