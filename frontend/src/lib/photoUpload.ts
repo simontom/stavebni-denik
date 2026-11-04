@@ -14,6 +14,14 @@ export interface PhotoUploaded {
   id: string;
   url: string;
   name: string;
+  /** Whether the person who uploaded it may remove it (the server says so in `photo.canDelete`: the one who uploads may, until the entry is signed). */
+  canDelete: boolean;
+}
+
+/** `photo.canDelete` of the answer: only an explicit yes counts (a button that is not offered is safe, one that is refused is not). */
+function canDeleteOf(body: object): boolean {
+  const photo: unknown = "photo" in body ? body.photo : null;
+  return typeof photo === "object" && photo !== null && "canDelete" in photo && photo.canDelete === true;
 }
 
 const BUSY_MESSAGE = "Server je právě zaneprázdněný, zkuste to za chvíli.";
@@ -80,7 +88,7 @@ export function createPhotoSender(target: { projectId: string; reportId: string 
             if (body && typeof body === "object" && "id" in body && typeof body.id === "string") {
               const url = "url" in body && typeof body.url === "string" ? body.url : `/api/photos/${body.id}`;
               const name = "name" in body && typeof body.name === "string" ? body.name : file.name;
-              return settle({ kind: "ok", value: { id: body.id, url, name } });
+              return settle({ kind: "ok", value: { id: body.id, url, name, canDelete: canDeleteOf(body) } });
             }
           } catch {
             // fall through

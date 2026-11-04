@@ -26,7 +26,7 @@ function handSender() {
   return { send, calls };
 }
 
-const stored = (name: string): SendOutcome<PhotoUploaded> => ({ kind: "ok", value: { id: `id-${name}`, url: `/api/photos/id-${name}`, name } });
+const stored = (name: string): SendOutcome<PhotoUploaded> => ({ kind: "ok", value: { id: `id-${name}`, url: `/api/photos/id-${name}`, name, canDelete: true } });
 
 describe("usePhotoUploads: the page reads a summary, not the progress", () => {
   it("does not draw the page again for the progress of a photo, only for what the page shows: that something is going, and how many failed", async () => {

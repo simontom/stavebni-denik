@@ -248,6 +248,75 @@ describe("an answer that is an action that can fail", () => {
   });
 });
 
+describe("an answer that takes away the button that asked", () => {
+  /** Two rows with a button each; removing a row is the answer. The page names where the focus goes (`focusFallback`): the other row's button. */
+  function Rows({ action = () => Promise.resolve("ok"), fallback }: { action?: () => Promise<string>; fallback: (() => HTMLElement | null) | undefined }) {
+    const [rows, setRows] = useState(["a", "b"]);
+    const [asking, setAsking] = useState<string | null>(null);
+    return (
+      <main>
+        <h1>Stránka</h1>
+        {rows.map((r) => (
+          <button key={r} id={`row-${r}`} onClick={() => setAsking(r)}>
+            smazat {r}
+          </button>
+        ))}
+        {asking && (
+          <ConfirmDialog
+            title="Smazat uživatele?"
+            confirmLabel="Smazat"
+            cancelLabel="Zrušit"
+            focusFallback={fallback}
+            action={action}
+            onDone={() => {
+              setRows((current) => current.filter((r) => r !== asking));
+              setAsking(null);
+            }}
+            onCancel={() => setAsking(null)}
+          >
+            Otázka
+          </ConfirmDialog>
+        )}
+      </main>
+    );
+  }
+
+  it("puts the focus where the page says when the row that asked is gone with the answer", async () => {
+    render(<Rows fallback={() => document.getElementById("row-b")} />);
+    const asker = screen.getByText("smazat a");
+    asker.focus();
+    fireEvent.click(asker);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("smazat a")).toBeNull();
+    expect(document.activeElement, "the place the page named").toBe(screen.getByText("smazat b"));
+  });
+
+  it("falls back to the main heading when the page names nothing, or names a place that is not there", async () => {
+    for (const fallback of [undefined, () => null]) {
+      cleanup();
+      render(<Rows fallback={fallback} />);
+      const asker = screen.getByText("smazat a");
+      asker.focus();
+      fireEvent.click(asker);
+      fireEvent.click(within(dialog()).getByRole("button", { name: "Smazat" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Stránka" }));
+    }
+  });
+
+  it("leaves the focus on the button that asked when the answer is no (the fallback is for a button that is gone)", () => {
+    const fallback = vi.fn(() => document.getElementById("row-b"));
+    render(<Rows fallback={fallback} />);
+    const asker = screen.getByText("smazat a");
+    asker.focus();
+    fireEvent.click(asker);
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Zrušit" }));
+    expect(document.activeElement).toBe(asker);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+});
+
 describe("a server that does not answer", () => {
   beforeEach(() => {
     vi.useFakeTimers();

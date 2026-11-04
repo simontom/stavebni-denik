@@ -18,18 +18,13 @@ import { entryNumberLabel } from "../lib/entryDocument";
 import { DETAIL_FIELDS, emptyDetails, emptyForm, formFromEntry, keyOf, namesOf, temperatureOf, type Details, type FormValues, type WorkerRow } from "../lib/reportForm";
 import { downloadReportPdf } from "../lib/reportPdf";
 import { usePageTitle } from "../lib/pageTitle";
+import { REMOVED_STATUS, photosFromServer, removalFocusTarget, removeButtonId, removeButtonLabel, showsRemove, type PhotoItem } from "../lib/photoRemoval";
 import { usePhotoUploads } from "../lib/usePhotoUploads";
 import { useReportDraft } from "../lib/useReportDraft";
 import { useSettledValue } from "../lib/useSettledValue";
 import { WEATHER_CONDITIONS } from "../lib/weatherChips";
 import { failedPhotosSentence } from "../lib/uploadQueue";
 import { MAX_HEAD_COUNT, isHeadCount, workerTotal, workerTotalText } from "../lib/workerTotal";
-
-interface PhotoItem {
-  id: string;
-  url: string;
-  name: string;
-}
 
 /** The message the server sent for a failed request ({ "error": "..." }), or a fallback. */
 async function readError(res: Response, fallback: string): Promise<string> {
@@ -249,17 +244,24 @@ export const DailyReport: React.FC = () => {
 
   // Photos
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  // Removing a photo (backlog A4): the one the question is about (its place in the list is what the button is called by), and what the polite status says
+  // once it is gone. The question is the application's own dialog, rendered only while it is open.
+  const [removing, setRemoving] = useState<{ id: string; position: number } | null>(null);
+  const [removedNotice, setRemovedNotice] = useState("");
   // Several photos at once: one request each, two at a time, with progress (the queue and its rules are `lib/uploadQueue.ts`). A photo is put into
   // the list above as it arrives. While any is on its way the page holds unsaved work and the entry cannot be signed.
   const uploads = usePhotoUploads({
     projectId: projectId ?? "",
     reportId: reportId ?? "",
-    onPhoto: (photo) => setPhotos((prev) => (prev.some((p) => p.id === photo.id) ? prev : [...prev, { id: photo.id, url: photo.url, name: photo.name }])),
+    onPhoto: (photo) => {
+      setRemovedNotice("");
+      setPhotos((prev) => (prev.some((p) => p.id === photo.id) ? prev : [...prev, { id: photo.id, url: photo.url, name: photo.name, canDelete: photo.canDelete }]));
+    },
     onLost: () => refreshPhotos(),
   });
   // After a photo whose body had gone out got no answer (a lost connection, a gateway that did not answer) the photos of the entry are read again and shown as
-  // they are on the server, so a photo that did arrive is there to be seen before the person decides to send it again. Photos can only be added, so what the page
-  // already shows is kept (a photo that arrived while the answer was on its way is not lost from the list).
+  // they are on the server, so a photo that did arrive is there to be seen before the person decides to send it again. What the page already shows is kept (a
+  // photo that arrived while the answer was on its way is not lost from the list); what the server says of each photo (the right to remove it) is taken from it.
   const refreshingPhotos = useRef(false);
   const refreshPhotos = () => {
     if (!projectId || !reportId || refreshingPhotos.current) return;
@@ -268,16 +270,65 @@ export const DailyReport: React.FC = () => {
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!data || !Array.isArray(data.photos)) return;
-        const onServer = (data.photos as { id: string }[]).map((p) => p.id);
-        setPhotos((current) => [
-          ...onServer.map((id, index) => ({ id, url: `/api/photos/${id}`, name: current.find((c) => c.id === id)?.name ?? `Fotka ${index + 1}` })),
-          ...current.filter((c) => !onServer.includes(c.id)),
-        ]);
+        setPhotos((current) => {
+          const onServer = photosFromServer(data.photos, current);
+          return [...onServer, ...current.filter((c) => !onServer.some((s) => s.id === c.id))];
+        });
       })
       .catch(() => undefined)
       .finally(() => {
         refreshingPhotos.current = false;
       });
+  };
+
+  /**
+   * Removes the photo (the question is answered yes; it stays open while this runs). A refusal throws a message that the question says inside
+   * itself, where the person is looking. When the refusal means the page was out of date (the entry was signed meanwhile: 409; the photo is
+   * gone already, or the right to it was: 404, 403) the entry is read again, so the page shows what is true: no button where there is none.
+   */
+  const removePhoto = async (photoId: string) => {
+    let res: Response;
+    try {
+      res = await apiFetch(`/api/photos/${photoId}`, { method: "DELETE" });
+    } catch (err) {
+      // The sign-in that is needed is said as it is; a network that failed is said in words (the photo may be gone all the same: the list is the truth).
+      if (!(err instanceof TypeError)) throw err;
+      console.error("Fotografii se nepodařilo odebrat:", err);
+      throw new Error("Spojení se serverem se přerušilo, fotografie se možná neodebrala. Zkuste to znovu; až ji server nenajde, je odebrána.");
+    }
+    if (res.ok) return;
+    if (res.status === 403 || res.status === 404 || res.status === 409) void reloadAfterRefusal();
+    throw new Error(await readError(res, "Fotografii se nepodařilo odebrat"));
+  };
+
+  /** The entry as the server shows it now, after a refusal of a removal: the photos with what may be done to them, and the lock when the entry was signed meanwhile. */
+  const reloadAfterRefusal = async () => {
+    const data = await apiFetch(`/api/projects/${projectId}/reports/${reportId}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (!data) return;
+    setPhotos((current) => photosFromServer(data.photos, current));
+    if (data.isSigned || data.isLocked) {
+      setEntryId(typeof data.id === "string" ? data.id : entryId);
+      setEntry(data as EntryView);
+      setSequenceNumber(typeof data.sequenceNumber === "number" ? data.sequenceNumber : null);
+      setConflict(false);
+      setIsSigned(true);
+    }
+  };
+
+  /** The photo is gone from the server: off the list, said politely; the focus has been put by the dialog (`removalFocus`). */
+  const photoRemoved = (photoId: string) => {
+    setPhotos((current) => current.filter((p) => p.id !== photoId));
+    setRemoving(null);
+    setRemovedNotice(REMOVED_STATUS);
+  };
+
+  /** Where the focus goes when the button that asked is gone with the photo: the next photo's button, else the heading of the photos. */
+  const removalFocus = (): HTMLElement | null => {
+    const target = removing ? removalFocusTarget(photos, removing.id, isSigned) : { kind: "heading" as const };
+    const button = target.kind === "photo" ? document.getElementById(removeButtonId(target.id)) : null;
+    return button ?? document.getElementById("photos-heading");
   };
 
   /** Puts [v] into the form (an entry as loaded from the server, or a draft the person took back). */
@@ -325,15 +376,7 @@ export const DailyReport: React.FC = () => {
           setIsSigned(Boolean(data.isSigned || data.isLocked));
           setAcknowledgements(Array.isArray(data.acknowledgements) ? (data.acknowledgements as Acknowledgement[]) : []);
           setSavedKey(keyOf(loaded));
-          if (Array.isArray(data.photos) && data.photos.length > 0) {
-            setPhotos(
-              data.photos.map((p: { id: string }, index: number) => ({
-                id: p.id,
-                url: `/api/photos/${p.id}`,
-                name: `Fotka ${index + 1}`,
-              })),
-            );
-          }
+          if (Array.isArray(data.photos) && data.photos.length > 0) setPhotos(photosFromServer(data.photos, []));
         })
         .catch((err: unknown) => {
           if (ignore) return;
@@ -892,16 +935,40 @@ export const DailyReport: React.FC = () => {
       {/* Photos: what the entry holds; the way to add one only while it is being written */}
       {!showNoEntry && (
         <Card className="mb-6">
-          <h2 className="mb-4 text-lg font-bold text-ink">Fotodokumentace</h2>
+          {/* The heading takes the focus (it is not in the Tab order) when the last photo that had a button is removed */}
+          <h2 id="photos-heading" tabIndex={-1} className="mb-4 text-lg font-bold text-ink focus:outline-none">
+            Fotodokumentace
+          </h2>
 
           {showPhotoControls && <PhotoUploader queue={uploads.queue} enabled={canUploadPhoto} needsSavedEntry={updatedAt === null} />}
+
+          {/* What happened to a photo that was removed, said politely (the region is always there, so a change in it is announced) */}
+          <p role="status" className={removedNotice ? "mb-3 text-sm font-medium text-ink" : undefined}>
+            {removedNotice}
+          </p>
 
           {photos.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
               {photos.map((p, idx) => (
                 <div key={p.id} className="rounded border bg-gray-50 p-2 text-center">
                   <img src={p.url} alt={`Fotka ${idx + 1}`} className="mb-2 h-32 w-full rounded object-cover" />
-                  <span className="block truncate text-xs text-gray-600">{p.name}</span>
+                  <span className="block truncate text-xs text-gray-600">{p.name ?? `Fotka ${idx + 1}`}</span>
+                  {/* Only where the server says the removal would be accepted (the manager any photo, a worker their own), never on a signed entry */}
+                  {showsRemove(p, isSigned) && (
+                    <Button
+                      id={removeButtonId(p.id)}
+                      size="sm"
+                      variant="danger-quiet"
+                      className="mt-2"
+                      aria-label={removeButtonLabel(idx + 1)}
+                      onClick={() => {
+                        setRemovedNotice("");
+                        setRemoving({ id: p.id, position: idx + 1 });
+                      }}
+                    >
+                      Odebrat
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -947,6 +1014,24 @@ export const DailyReport: React.FC = () => {
         <div className="mb-6 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6">
           <Addenda entryId={entryId} canWrite={myRole === "BOSS" || myRole === "WORKER"} />
         </div>
+      )}
+
+      {/* Removing a photo cannot be taken back (what it was stays in the audit record, the picture does not): asked in a dialog of the application's own, with
+          the safe answer in focus, and a refusal of the server said inside it. The photo that asked is gone with the answer: the focus goes to the next photo's button. */}
+      {removing && (
+        <ConfirmDialog
+          title="Odebrat fotografii?"
+          confirmLabel="Odebrat"
+          cancelLabel="Ponechat"
+          leaveMessage="Fotografie se právě odebírá. Když odejdete, nedozvíte se, jak to dopadlo."
+          stalledNote="Nevíme, jestli se fotografie odebrala. Po zavření okna se podívejte do seznamu fotografií."
+          focusFallback={removalFocus}
+          action={() => removePhoto(removing.id)}
+          onDone={() => photoRemoved(removing.id)}
+          onCancel={() => setRemoving(null)}
+        >
+          Fotografie {removing.position} se odebere ze záznamu a nejde ji vrátit. Odebrání zůstane v záznamu o změnách (v auditu).
+        </ConfirmDialog>
       )}
 
       {/* Acknowledging is binding (it is written with the person's name and the time, and cannot be taken back): it is asked in a dialog of the application's own. */}
