@@ -85,6 +85,14 @@ fun Application.photoRoutes() {
             route("/api/photos/{id}") {
                 get { call.respondPhoto(thumbnail = false) }
                 get("/thumb") { call.respondPhoto(thumbnail = true) }
+
+                // Removing a photo from an entry that is not signed (backlog A4): the manager of the project any photo, a worker their own.
+                // Who may, on which entry, and what the answer is for everyone else is decided inside the audited write (`deletePhoto`).
+                delete {
+                    val user = call.principal<SessionUser>() ?: throw UnauthenticatedException()
+                    PhotoService.deletePhoto(user, ProjectAccess.parseId(call.parameters["id"], "photo id"))
+                    call.respond(HttpStatusCode.NoContent)
+                }
             }
         }
     }

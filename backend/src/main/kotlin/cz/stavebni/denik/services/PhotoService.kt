@@ -2,21 +2,26 @@ package cz.stavebni.denik.services
 
 import cz.stavebni.denik.db.DatabaseFactory
 import cz.stavebni.denik.services.AuditService.Audited
+import cz.stavebni.denik.domain.ConflictException
 import cz.stavebni.denik.domain.NotFoundException
 import cz.stavebni.denik.domain.Action
 import cz.stavebni.denik.domain.Resource
+import cz.stavebni.denik.domain.Role
 import cz.stavebni.denik.domain.SessionUser
 import cz.stavebni.denik.domain.UUIDSerializer
 import cz.stavebni.denik.domain.assertCan
+import cz.stavebni.denik.domain.can
 import cz.stavebni.denik.jooq.tables.records.PhotosRecord
 import cz.stavebni.denik.jooq.tables.references.DAILY_REPORTS
 import cz.stavebni.denik.jooq.tables.references.PHOTOS
+import cz.stavebni.denik.jooq.tables.references.PROJECTS
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import net.coobird.thumbnailator.Thumbnails
 import org.jooq.DSLContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
@@ -25,8 +30,8 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.MessageDigest
+import org.slf4j.LoggerFactory
 import java.time.Duration
-import java.time.OffsetDateTime
 import java.util.UUID
 import kotlin.math.ceil
 import kotlin.math.sqrt
@@ -41,7 +46,14 @@ data class PhotoDto(
     val width: Int,
     val height: Int,
     val bytes: Int,
-    @Serializable(with = UUIDSerializer::class) val uploadedById: UUID
+    @Serializable(with = UUIDSerializer::class) val uploadedById: UUID,
+    /**
+     * Whether the person who asks may remove this photo right now: **the decision [PhotoService.deletePhoto] makes** (`PhotoDelete` in
+     * `Rbac.kt`: the manager of the project any photo of an unsigned entry, a worker the one they uploaded, nobody on a signed entry,
+     * nobody who is no member), so the page offers the button exactly when the removal would be accepted. False where the caller is
+     * not known (an internal read).
+     */
+    val canDelete: Boolean = false,
 )
 
 /** What the audit log keeps of a photo: ids, sizes and the hashes of the two stored files (text and whole numbers only). */
@@ -343,10 +355,8 @@ object PhotoService {
                     .forUpdate()
                     .fetchOne() ?: throw NotFoundException("Záznam nenalezen")
                 val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
-                assertCan(
-                    user, Action.PhotoUpload,
-                    Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
-                )
+                val role = ProjectAccess.roleIn(tx, user.id, projectId)
+                assertCan(user, Action.PhotoUpload, Resource(role = role, isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null))
 
                 // Who uploads, as the account says it now: stored with the photo, never changed (backlog B9).
                 val uploader = AccountIdentity.of(tx, user.id)
@@ -369,7 +379,8 @@ object PhotoService {
                 // The audit row names the photo and the report, and holds the hashes of both stored files: a swapped file
                 // on the volume no longer matches the chain.
                 Audited(
-                    result = toDto(record),
+                    // The uploader may remove it again (until the entry is signed): the page shows the button at once.
+                    result = toDto(record).copy(canDelete = mayDelete(user, role, isLocked = false, uploadedById = user.id)),
                     action = "photo.upload",
                     entityId = photoId.toString(),
                     after = Json.encodeToJsonElement(
@@ -392,36 +403,88 @@ object PhotoService {
         }
     }
 
+    private val log = LoggerFactory.getLogger(PhotoService::class.java)
+
+    private const val PHOTO_NOT_FOUND = "Fotka nenalezena"
+
+    /**
+     * Whether [user], who holds [role] in the project (null: no member), may remove a photo that [uploadedById] uploaded to an entry that is
+     * [isLocked] (signed): **the one decision**, made by [deletePhoto] on the locked entry and shown to the page as `canDelete` of every photo.
+     */
+    fun mayDelete(user: SessionUser, role: Role?, isLocked: Boolean, uploadedById: UUID): Boolean =
+        can(user, Action.PhotoDelete, Resource(role = role, isLocked = isLocked, authorId = uploadedById))
+
+    /** [photos] of an entry that [user] reads, each saying whether they may remove it ([mayDelete]); unchanged when the reader is not known. */
+    fun withRights(photos: List<PhotoDto>, user: SessionUser?, role: Role?, isLocked: Boolean): List<PhotoDto> =
+        if (user == null) photos else photos.map { it.copy(canDelete = mayDelete(user, role, isLocked, it.uploadedById)) }
+
+    /**
+     * Removes a photo from an entry that is not signed (backlog A4, the owner's decision of 2026-11-04): the manager of the project may remove
+     * any photo, a worker the one they uploaded, nobody else. A signed entry never loses a photo (the database refuses it too, migration V5).
+     *
+     * Decided inside the transaction, on the **entry row locked FOR UPDATE** (as an upload and a signature do, so a removal and a signature
+     * that arrive together are served one after the other: the entry is signed without the photo, or the removal is refused, never a
+     * signed entry that loses a photo), and on the caller's role in **that** project:
+     *  - a photo that does not exist, belongs to a deleted project, or to a project the caller is no member of (an administrator, who may
+     *    read every project, is told "no" instead): 404, the same answer for each, so that photo ids cannot be probed;
+     *  - a member who may not remove it (the supervision, the client, a worker and somebody else's photo): 403;
+     *  - the entry is signed: 409, in words that say where a correction goes (an addendum).
+     *
+     * The row is deleted and the audit row (`photo.delete`: the photo as it was stored, with the hashes of both files, and nothing after) is
+     * written in the same transaction. **The two files are deleted after it has committed**, only through [PhotoStorage.delete] (a key of the
+     * exact shape that resolves inside the uploads directory): a file that cannot be deleted is logged (the key, not a path) and left, an
+     * orphan that nothing refers to, and does not undo a removal that has been made.
+     */
     suspend fun deletePhoto(user: SessionUser, photoId: UUID) {
-        AuditService.auditedWrite(user, "photo") { tx ->
+        val keys = AuditService.auditedWrite(user, "photo") { tx ->
+            // The entry is locked before the photo is judged (the order of an upload: the entry first), whatever else is going on.
+            val reportId = tx.select(PHOTOS.REPORTID).from(PHOTOS).where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
+                .fetchOne(PHOTOS.REPORTID) ?: throw NotFoundException(PHOTO_NOT_FOUND)
+            val report = tx.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
+                .from(DAILY_REPORTS)
+                .where(DAILY_REPORTS.ID.eq(reportId).and(DAILY_REPORTS.DELETEDAT.isNull))
+                .forUpdate()
+                .fetchOne() ?: throw NotFoundException(PHOTO_NOT_FOUND)
+            // The photo again, now that nothing can add or remove one of this entry: it may have gone while the entry was being waited for.
             val photo = tx.selectFrom(PHOTOS)
                 .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
                 .forUpdate()
-                .fetchOne() ?: throw IllegalArgumentException("Photo not found")
-            val report = tx.select(DAILY_REPORTS.PROJECTID, DAILY_REPORTS.LOCKEDAT)
-                .from(DAILY_REPORTS)
-                .where(DAILY_REPORTS.ID.eq(photo.get(PHOTOS.REPORTID)))
-                .forUpdate()
-                .fetchOne() ?: throw IllegalArgumentException("Report not found")
+                .fetchOne() ?: throw NotFoundException(PHOTO_NOT_FOUND)
             val projectId = report.get(DAILY_REPORTS.PROJECTID)!!
-            assertCan(
-                user, Action.PhotoDelete,
-                Resource(role = ProjectAccess.roleIn(tx, user.id, projectId), isLocked = report.get(DAILY_REPORTS.LOCKEDAT) != null)
-            )
+            if (!tx.fetchExists(PROJECTS, PROJECTS.ID.eq(projectId).and(PROJECTS.DELETEDAT.isNull))) throw NotFoundException(PHOTO_NOT_FOUND)
+            val role = ProjectAccess.roleIn(tx, user.id, projectId)
+            if (role == null && !user.isAdmin) throw NotFoundException(PHOTO_NOT_FOUND)
+            // Who could never remove it is told that first; only a person who could have removed it learns that the entry is signed.
+            assertCan(user, Action.PhotoDelete, Resource(role = role, isLocked = false, authorId = photo.get(PHOTOS.UPLOADEDBYID)))
+            if (report.get(DAILY_REPORTS.LOCKEDAT) != null) {
+                throw ConflictException("Z podepsaného záznamu nelze fotografii odebrat. Opravu proveďte dodatkem.")
+            }
 
-            val now = OffsetDateTime.now()
-            tx.update(PHOTOS).set(PHOTOS.DELETEDAT, now).where(PHOTOS.ID.eq(photoId)).execute()
-            fun snapshot(deletedAt: String?) = Json.encodeToJsonElement(
+            // What the audit row keeps: the photo as it was stored, hashes of both files included (so the file can still be recognised if a
+            // copy of it turns up), and no storage key.
+            val before = Json.encodeToJsonElement(
                 PhotoSnapshot.serializer(),
                 PhotoSnapshot(
-                    id = photoId.toString(), reportId = photo.get(PHOTOS.REPORTID).toString(), projectId = projectId.toString(),
+                    id = photoId.toString(), reportId = reportId.toString(), projectId = projectId.toString(),
                     width = photo.get(PHOTOS.WIDTH)!!, height = photo.get(PHOTOS.HEIGHT)!!, bytes = photo.get(PHOTOS.BYTES)!!,
                     uploadedById = photo.get(PHOTOS.UPLOADEDBYID).toString(), uploadedByName = photo.get(PHOTOS.UPLOADEDBYNAME),
-                    sha256Original = null, sha256Thumbnail = null,
-                    deletedAt = deletedAt,
+                    sha256Original = photo.get(PHOTOS.SHA256), sha256Thumbnail = photo.get(PHOTOS.THUMBSHA256),
+                    deletedAt = null,
                 )
             )
-            Audited(result = Unit, action = "photo.delete", entityId = photoId.toString(), before = snapshot(null), after = snapshot(now.toString()))
+            tx.deleteFrom(PHOTOS).where(PHOTOS.ID.eq(photoId)).execute()
+            Audited(
+                result = listOf(photo.get(PHOTOS.PATHORIGINAL)!!, photo.get(PHOTOS.PATHTHUMB)!!),
+                action = "photo.delete", entityId = photoId.toString(), before = before, after = null,
+            )
+        }
+        // The removal is made and on the record. The files go now, whatever becomes of the request (a client that went away must not leave them).
+        withContext(NonCancellable + Dispatchers.IO) {
+            for (key in keys) {
+                if (!PhotoStorage.delete(key)) {
+                    log.warn("A file of a removed photo could not be deleted and is left as an orphan (key {}, photo {})", key, photoId)
+                }
+            }
         }
     }
 

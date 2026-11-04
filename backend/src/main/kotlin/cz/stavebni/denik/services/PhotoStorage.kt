@@ -30,12 +30,23 @@ object PhotoStorage {
 
     /** Removes a file that was written but whose database row was never created. Never throws. */
     fun deleteQuietly(key: String) {
+        delete(key)
+    }
+
+    /**
+     * Deletes the file behind [key], **only** when the key has exactly the shape [keyFor] makes and resolves inside the uploads
+     * directory (the same rule as for reading and writing: a row that was changed behind the application cannot make it delete any other
+     * file). Returns whether the file is gone: one that was not there counts as gone. A key of the wrong shape or one that escapes the
+     * directory, a file the system refuses to delete, anything else that goes wrong: `false`, never an exception, so that a failure here
+     * cannot undo what the caller has already done (the removal of a photo is decided by its database row, and the file is cleaned up after).
+     */
+    fun delete(key: String): Boolean =
         try {
             Files.deleteIfExists(resolveForWrite(key))
+            true
         } catch (e: Exception) {
-            // best effort: an orphaned file is harmless, a failing cleanup must not hide the real error
+            false // an orphaned file is harmless, a failing cleanup must not hide the real error
         }
-    }
 
     /** The file behind a stored key, or null when the key is not valid, escapes the uploads directory, or the file is gone. */
     fun resolve(key: String): Path? {

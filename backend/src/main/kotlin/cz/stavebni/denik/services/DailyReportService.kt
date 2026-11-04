@@ -387,7 +387,7 @@ object DailyReportService {
 
                 Audited(
                     result = toDto(
-                        updated, PhotoService.listPhotos(tx, updated.id!!), whoOf(tx, updated),
+                        updated, photosFor(user, role, updated, PhotoService.listPhotos(tx, updated.id!!)), whoOf(tx, updated),
                         acknowledgementsOf(tx, listOf(updated.id!!))[updated.id!!].orEmpty(), canEdit = mayEdit(user, role, updated),
                     ),
                     action = "report.update",
@@ -431,7 +431,7 @@ object DailyReportService {
             reports = rows.mapNotNull { row ->
                 val record = row.into(DAILY_REPORTS)
                 val reportId = record.id ?: return@mapNotNull null
-                toDto(record, photos[reportId].orEmpty(), whoOf(row), acknowledgements[reportId].orEmpty(), canEdit = mayEdit(user, role, record))
+                toDto(record, photosFor(user, role, record, photos[reportId].orEmpty()), whoOf(row), acknowledgements[reportId].orEmpty(), canEdit = mayEdit(user, role, record))
             },
             total = total,
         )
@@ -467,7 +467,7 @@ object DailyReportService {
         val reportId = record.id ?: return null
         val role = user?.let { ProjectAccess.roleIn(tx, it.id, projectId) }
         return toDto(
-            record, PhotoService.listPhotos(tx, reportId), whoOf(row),
+            record, photosFor(user, role, record, PhotoService.listPhotos(tx, reportId)), whoOf(row),
             acknowledgementsOf(tx, listOf(reportId))[reportId].orEmpty(), canEdit = mayEdit(user, role, record),
         )
     }
@@ -706,6 +706,13 @@ object DailyReportService {
      */
     private fun mayEdit(user: SessionUser?, role: Role?, record: DailyReportsRecord): Boolean =
         user != null && record.lockedat == null && can(user, Action.ReportUpdate, Resource(role = role, authorId = record.authorid))
+
+    /**
+     * The photos of the entry [record] as [user], who holds [role] in its project, reads them: each says whether the person may remove it
+     * (`canDelete`, **the decision the removal makes**: [PhotoService.mayDelete]). Unchanged when the caller is not known.
+     */
+    private fun photosFor(user: SessionUser?, role: Role?, record: DailyReportsRecord, photos: List<PhotoDto>): List<PhotoDto> =
+        PhotoService.withRights(photos, user, role, record.lockedat != null)
 
     private fun toDto(
         record: DailyReportsRecord,
