@@ -96,6 +96,12 @@
     scrollbar-gutter: stable;
   }
 
+  /* The bar of actions at the foot of the entry page (EntryActionBar) lies over the bottom of the window while the page is longer than it: a control that gets the
+     focus (Tab, a tap into a field) is scrolled to above it, not left under it. A little over the bar's height at its tallest (two rows of buttons and a line of text). */
+  html:has([data-entry-bar]) {
+    scroll-padding-bottom: 9rem;
+  }
+
   /* Dates and numbers keep their width, so columns of them line up and a counter does not jitter. */
   input[type="number"],
   input[type="date"],

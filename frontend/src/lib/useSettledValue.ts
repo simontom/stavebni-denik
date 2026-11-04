@@ -8,7 +8,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export function useSettledValue<T>(value: T, delayMs: number): [T, () => void] {
   const [settled, setSettled] = useState(value);
   const latest = useRef(value);
-  latest.current = value;
+  useEffect(() => {
+    latest.current = value;
+  });
   useEffect(() => {
     const timer = window.setTimeout(() => setSettled(value), delayMs);
     return () => window.clearTimeout(timer);

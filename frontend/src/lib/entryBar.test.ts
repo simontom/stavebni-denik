@@ -15,6 +15,7 @@ const saved: EntryBarInput = {
   saved: false,
   future: false,
   draftOffer: false,
+  uploading: false,
 };
 const with_ = (patch: Partial<EntryBarInput>): EntryBarInput => ({ ...saved, ...patch });
 
@@ -89,6 +90,15 @@ describe("the bar that follows the state of the entry", () => {
     expect(entryBar(with_({ hasEntry: false, draftOffer: true, editable: false }))).toMatchObject({ save: { label: "Uložit záznam", disabled: true }, hint: "decide-draft" });
   });
 
+  it("keeps the signing off while photos are still on their way: a signature covers the photos the entry has", () => {
+    const bar = entryBar(with_({ uploading: true }));
+    expect(bar).toMatchObject({ state: "saved", sign: { disabled: true }, hint: "photos-uploading", pdf: true });
+    // a draft that waits is the more pressing reason, a save that is needed is the one that comes first
+    expect(entryBar(with_({ uploading: true, draftOffer: true })).hint).toBe("decide-draft");
+    expect(entryBar(with_({ uploading: true, dirty: true })).hint).toBe("save-first");
+    expect(entryBar(with_({ uploading: true, isBoss: false })).sign).toBeNull();
+  });
+
   it("switches the save off when the form cannot be saved: a future day, a form that is still locked", () => {
     expect(entryBar(with_({ hasEntry: false, future: true })).save).toEqual({ label: "Uložit záznam", disabled: true });
     expect(entryBar(with_({ hasEntry: false, editable: false })).save).toEqual({ label: "Uložit záznam", disabled: true });
@@ -115,40 +125,45 @@ describe("the bar that follows the state of the entry", () => {
               for (const mayEdit of bools)
                 for (const dirty of bools)
                   for (const saving of bools)
-                    for (const draftOffer of bools) {
-                      // an entry that somebody else wrote, or a signed one, exists
-                      const bar = entryBar({
-                        settled,
-                        canWrite,
-                        isBoss: isBoss && canWrite,
-                        signed,
-                        hasEntry: hasEntry || signed || !mayEdit,
-                        mayEdit,
-                        editable: mayEdit && !draftOffer,
-                        dirty,
-                        saving,
-                        saved: false,
-                        future: false,
-                        draftOffer,
-                      });
-                      if (!bar.visible) {
-                        expect(bar).toMatchObject({ state: "hidden", save: null, sign: null, pdf: false, primary: null, hint: null, status: null });
-                        continue;
+                    for (const draftOffer of bools)
+                      for (const uploading of bools) {
+                        // an entry that somebody else wrote, or a signed one, exists
+                        const bar = entryBar({
+                          settled,
+                          canWrite,
+                          isBoss: isBoss && canWrite,
+                          signed,
+                          hasEntry: hasEntry || signed || !mayEdit,
+                          mayEdit,
+                          editable: mayEdit && !draftOffer,
+                          dirty,
+                          saving,
+                          saved: false,
+                          future: false,
+                          draftOffer,
+                          uploading,
+                        });
+                        if (!bar.visible) {
+                          expect(bar).toMatchObject({ state: "hidden", save: null, sign: null, pdf: false, primary: null, hint: null, status: null });
+                          continue;
+                        }
+                        seen.add(bar.state);
+                        // exactly the buttons of the state
+                        if (bar.state === "signed" || bar.state === "view") expect([bar.save, bar.sign]).toEqual([null, null]);
+                        if (bar.state === "none" || bar.state === "dirty" || bar.state === "saved") expect(bar.save).not.toBeNull();
+                        // the PDF is of a saved entry, and only when what is on the screen is that entry
+                        expect(bar.pdf).toBe(bar.state === "saved" || bar.state === "signed" || bar.state === "view");
+                        // a worker is never offered the signing; the signing is never on while there are unsaved changes or no entry
+                        if (!isBoss) expect(bar.sign).toBeNull();
+                        if (bar.sign && !bar.sign.disabled) {
+                          expect(bar.state).toBe("saved");
+                          expect([draftOffer, uploading]).toEqual([false, false]);
+                        }
+                        // the main button is one of the buttons that are there
+                        if (bar.primary === "save") expect(bar.save).not.toBeNull();
+                        if (bar.primary === "sign") expect(bar.sign).not.toBeNull();
+                        if (bar.primary === "pdf") expect(bar.pdf).toBe(true);
                       }
-                      seen.add(bar.state);
-                      // exactly the buttons of the state
-                      if (bar.state === "signed" || bar.state === "view") expect([bar.save, bar.sign]).toEqual([null, null]);
-                      if (bar.state === "none" || bar.state === "dirty" || bar.state === "saved") expect(bar.save).not.toBeNull();
-                      // the PDF is of a saved entry, and only when what is on the screen is that entry
-                      expect(bar.pdf).toBe(bar.state === "saved" || bar.state === "signed" || bar.state === "view");
-                      // a worker is never offered the signing; the signing is never on while there are unsaved changes or no entry
-                      if (!isBoss) expect(bar.sign).toBeNull();
-                      if (bar.sign && !bar.sign.disabled) expect(bar.state).toBe("saved");
-                      // the main button is one of the buttons that are there
-                      if (bar.primary === "save") expect(bar.save).not.toBeNull();
-                      if (bar.primary === "sign") expect(bar.sign).not.toBeNull();
-                      if (bar.primary === "pdf") expect(bar.pdf).toBe(true);
-                    }
     expect([...seen].sort()).toEqual(["dirty", "none", "saved", "signed", "view"]);
   });
 });

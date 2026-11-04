@@ -120,7 +120,7 @@ export class UploadQueue<V> {
   private readonly maxAttempts: number;
   private readonly maxAutoWaitSeconds: number;
   private readonly sleep: (milliseconds: number, signal: AbortSignal) => Promise<void>;
-  private readonly onDone?: (entry: UploadEntry<V>, value: V) => void;
+  private onDone?: (entry: UploadEntry<V>, value: V) => void;
   private readonly send: Sender<V>;
 
   constructor(send: Sender<V>, options: QueueOptions<V> = {}) {
@@ -131,6 +131,11 @@ export class UploadQueue<V> {
     this.sleep = options.sleep ?? wait;
     this.onDone = options.onDone;
     this.snapshot = this.build();
+  }
+
+  /** Replaces what is told of every photo that arrives (a page gives the function of its latest render). */
+  setOnDone(onDone: ((entry: UploadEntry<V>, value: V) => void) | undefined): void {
+    this.onDone = onDone;
   }
 
   getSnapshot = (): UploadSnapshot<V> => this.snapshot;

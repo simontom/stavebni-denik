@@ -39,6 +39,8 @@ export interface EntryBarInput {
   future: boolean;
   /** A draft kept on the device waits for the person to take it or throw it away. */
   draftOffer: boolean;
+  /** Photos are still on their way to the entry (a signature covers the photos it has when it is made). */
+  uploading: boolean;
 }
 
 export type EntryBarState = "hidden" | "none" | "dirty" | "saved" | "signed" | "view";
@@ -53,8 +55,8 @@ export interface EntryBarModel {
   pdf: boolean;
   /** The button that is the point of the bar in this state (the one that is drawn as the main one). */
   primary: "save" | "sign" | "pdf" | null;
-  /** Why the signing is off, when it is: a draft waits for an answer, or there is nothing saved to sign. */
-  hint: "save-first" | "decide-draft" | null;
+  /** Why the signing is off, when it is: a draft waits for an answer, photos are on their way, or there is nothing saved to sign. */
+  hint: "save-first" | "decide-draft" | "photos-uploading" | null;
   /** What the person is told next to the buttons: unsaved changes, or when it was saved. */
   status: "unsaved" | "saved" | null;
 }
@@ -68,10 +70,11 @@ export function entryBar(input: EntryBarInput): EntryBarModel {
 
   const state: EntryBarState = !input.hasEntry ? "none" : input.dirty || input.saving ? "dirty" : "saved";
   const status = input.dirty ? "unsaved" : input.saved && !input.saving ? "saved" : null;
-  // The signing is on only for a saved entry with nothing changed, no save on its way and no draft waiting: a signature covers the saved text.
-  const signOff = input.dirty || input.saving || !input.hasEntry || input.draftOffer;
+  // The signing is on only for a saved entry with nothing changed, no save on its way, no draft waiting and no photo on its way: a signature
+  // covers the saved text and the photos the entry has.
+  const signOff = input.dirty || input.saving || !input.hasEntry || input.draftOffer || input.uploading;
   const sign = input.isBoss ? { disabled: signOff } : null;
-  const hint = sign?.disabled ? (input.draftOffer ? "decide-draft" : "save-first") : null;
+  const hint = !sign?.disabled ? null : input.draftOffer ? "decide-draft" : input.uploading && input.hasEntry && !input.dirty ? "photos-uploading" : "save-first";
 
   const label = input.saving ? "Ukládám…" : input.hasEntry ? "Uložit změny" : "Uložit záznam";
   const save = { label, disabled: !input.editable || input.future || input.saving } as const;
