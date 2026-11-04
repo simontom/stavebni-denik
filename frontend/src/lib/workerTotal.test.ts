@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { czechPlural } from "./czech";
-import { pluralWorkers, workerTotal, workerTotalText } from "./workerTotal";
+import { MAX_HEAD_COUNT, isHeadCount, pluralWorkers, workerTotal, workerTotalText } from "./workerTotal";
 
 const row = (trade: string, count: string, names = "") => ({ trade, count, names });
 
@@ -59,6 +59,21 @@ describe("workerTotal", () => {
     expect(workerTotal([row("Zedník", "5"), row("Tesař", "1e2")])).toEqual({ total: 5, incomplete: 1 });
     expect(workerTotal([row("Zedník", "5"), row("Tesař", "1234567")])).toEqual({ total: 5, incomplete: 1 });
     expect(workerTotal([row("Betonář", "3"), row("Tesař", "x")])).toEqual({ total: 3, incomplete: 1 });
+  });
+
+  it("counts what the server takes, 0 to 100 000 for a trade, and not a head count above it (the save would end in a 400)", () => {
+    expect(MAX_HEAD_COUNT).toBe(100_000);
+    expect(workerTotal([row("Zedník", "100000")])).toEqual({ total: 100_000, incomplete: 0 });
+    expect(workerTotal([row("Zedník", "0100000")])).toEqual({ total: 100_000, incomplete: 0 });
+    expect(workerTotal([row("Zedník", "100001")])).toEqual({ total: 0, incomplete: 1 });
+    expect(workerTotal([row("Zedník", "150000"), row("Tesař", "4")])).toEqual({ total: 4, incomplete: 1 });
+    expect(workerTotal([row("Zedník", "999999")])).toEqual({ total: 0, incomplete: 1 });
+    expect(workerTotalText(workerTotal([row("Zedník", "150000")]))).toBe("Celkem: 0 pracovníků (u 1 profese chybí název nebo platný počet)");
+  });
+
+  it("is isHeadCount that the form's own check uses, so the save and the total agree", () => {
+    for (const ok of ["0", "7", " 12 ", "007", "100000"]) expect(isHeadCount(ok), ok).toBe(true);
+    for (const bad of ["", " ", "-1", "2.5", "1e2", "100001", "1000000", "x", "٣"]) expect(isHeadCount(bad), bad).toBe(false);
   });
 
   it("does not count a head count that has no trade, nor a row that has only names: the save refuses both", () => {
