@@ -109,17 +109,17 @@ private suspend fun ApplicationCall.respondPhoto(thumbnail: Boolean) {
     val tx = DatabaseFactory.dsl
     val record = tx.selectFrom(PHOTOS)
         .where(PHOTOS.ID.eq(photoId).and(PHOTOS.DELETEDAT.isNull))
-        .fetchOne() ?: throw NotFoundException("Fotka nenalezena")
+        .fetchOne() ?: throw NotFoundException("Fotografie nenalezena")
 
     try {
         ProjectAccess.requireReportAccess(tx, user, record.get(PHOTOS.REPORTID)!!)
     } catch (e: ForbiddenException) {
-        throw NotFoundException("Fotka nenalezena")
+        throw NotFoundException("Fotografie nenalezena")
     }
 
     // The database holds a storage key; it is only followed when it is well-formed and stays inside the uploads directory.
     val file = PhotoStorage.resolve(record.get(if (thumbnail) PHOTOS.PATHTHUMB else PHOTOS.PATHORIGINAL)!!)
-        ?: throw NotFoundException("Fotka nenalezena")
+        ?: throw NotFoundException("Fotografie nenalezena")
 
     response.header(HttpHeaders.ContentType, "image/jpeg")
     // Evidence photos: the browser may keep one but has to ask again, so a logout or a lost membership takes effect.

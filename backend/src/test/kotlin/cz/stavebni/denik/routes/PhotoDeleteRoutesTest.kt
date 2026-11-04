@@ -195,6 +195,8 @@ class PhotoDeleteRoutesTest : BaseIntegrationTest() {
         assertEquals(HttpStatusCode.NotFound, outsiders.status)
         assertEquals(HttpStatusCode.NotFound, unknown.status)
         assertEquals(errorOf(unknown.bodyAsText()), errorOf(outsiders.bodyAsText()), "the answer does not say which of the two it was")
+        // One word for a photo in the whole dialog and the list that sits under it ("fotografie", as "Odebrat fotografii" says), not "fotka".
+        assertEquals("Fotografie nenalezena", errorOf(unknown.bodyAsText()))
         assertEquals(1, photoCount())
         assertTrue(auditRows("photo.delete").isEmpty())
     }

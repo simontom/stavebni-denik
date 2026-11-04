@@ -405,7 +405,8 @@ object PhotoService {
 
     private val log = LoggerFactory.getLogger(PhotoService::class.java)
 
-    private const val PHOTO_NOT_FOUND = "Fotka nenalezena"
+    /** The one answer for a photo that is not there, is not the caller's to see, or belongs to a deleted project. "Fotografie", as the dialog that shows it says ("Odebrat fotografii"). */
+    private const val PHOTO_NOT_FOUND = "Fotografie nenalezena"
 
     /**
      * Whether [user], who holds [role] in the project (null: no member), may remove a photo that [uploadedById] uploaded to an entry that is

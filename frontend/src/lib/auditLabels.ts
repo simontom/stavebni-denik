@@ -25,7 +25,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "report.addendum.add": "Dodatek k záznamu",
   "report.remark.add": "Záznam další osoby",
   "photo.upload": "Nahrání fotky",
-  "photo.delete": "Smazání fotky",
+  "photo.delete": "Odebrání fotografie",
   "authorizedPerson.create": "Pověření osoby",
   "authorizedPerson.revoke": "Zrušení pověření",
   "siteHandover.create": "Založení protokolu o předání",
