@@ -56,13 +56,21 @@ class PhotoRemovalTest : BaseIntegrationTest() {
 
     private fun auditRows(action: String) = dsl.selectFrom(AUDIT_LOG).where(AUDIT_LOG.ACTION.eq(action)).orderBy(AUDIT_LOG.ID.asc()).fetch()
 
+    /**
+     * What this test proves, and what it does not: **every outcome is sound, whichever order wins** (a signed entry never loses a photo, a signature
+     * always covers exactly the photos the entry has, the audit chain verifies). It does **not** prove that both orders were seen: the two writes meet
+     * at the audit lock first and the entry row second, so they are served strictly one after the other, and which one goes first is the scheduler's
+     * choice, which a test cannot force and must not assert (a count of both orders would be a flaky test). Each order is covered on its own, with
+     * no timing, by the two tests that follow: `signed first then removal is refused with a conflict and nothing changes` and
+     * `removed first then signed the signature covers the photos that are left and the check says so`.
+     */
     @Test
     fun `a removal and a signature that arrive together end as removed then signed or signed and refused, never a signed entry that loses a photo`() = runBlocking<Unit> {
         val s = site()
         var removedFirst = 0
         var signedFirst = 0
 
-        // Neither order can be forced from outside, so the pair is started together several times; whichever order comes up must be a sound one.
+        // The pair is started together several times; whichever order comes up must be a sound one (the counts below are only in the failure message).
         for (day in 1..8) {
             val report = DailyReportService.createReport(s.boss, s.projectId, "2026-09-%02d".format(day), workDescription = "Betonáž $day")
             val reportId = UUID.fromString(report.id)
