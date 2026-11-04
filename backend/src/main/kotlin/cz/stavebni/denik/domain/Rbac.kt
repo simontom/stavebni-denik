@@ -53,7 +53,14 @@ fun can(user: SessionUser, action: Action, resource: Resource = Resource()): Boo
 
         // Photos
         Action.PhotoUpload -> isBossOrWorker && !resource.isLocked
-        Action.PhotoDelete -> isBoss && !resource.isLocked
+        // Removing one (backlog A4, the owner's decision of 2026-11-04): from an entry that is not signed yet, by the manager of the
+        // project (any photo) or by the person who uploaded that photo, when that is a worker ([Resource.authorId] is the uploader).
+        // Nobody else: not the supervision, not the client, not an administrator who is no member; a signed entry never loses a photo.
+        Action.PhotoDelete -> {
+            if (resource.isLocked) return false
+            if (isBoss) return true
+            role == Role.WORKER && resource.authorId == user.id
+        }
 
         // Entries of other parties are made also after the day's entry was signed (insert-only): the lock does not matter.
         // A worker's place is the daily entry; the manager records for outside parties (authorities, people without an account).
