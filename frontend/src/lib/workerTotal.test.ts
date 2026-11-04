@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { czechPlural, pluralWorkers, workerTotal, workerTotalText } from "./workerTotal";
+import { czechPlural } from "./czech";
+import { pluralWorkers, workerTotal, workerTotalText } from "./workerTotal";
 
 const row = (trade: string, count: string, names = "") => ({ trade, count, names });
 

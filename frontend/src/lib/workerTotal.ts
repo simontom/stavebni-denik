@@ -3,6 +3,7 @@
  * when the save would accept it (a whole number of at most six digits, the same rule as the server's and the form's); what the
  * save would refuse is left out of the sum and said in words, so the total never claims more than the entry will say.
  */
+import { czechPlural } from "./czech";
 import type { WorkerRow } from "./reportForm";
 
 /** The same rule as the form's check before it saves: a whole, non-negative number of at most six digits (0 is a head count). */
@@ -13,13 +14,6 @@ export interface WorkerTotal {
   total: number;
   /** Rows that say something (a trade, a count or names) but lack a trade or a head count that the save would accept: not in the sum. */
   incomplete: number;
-}
-
-/** The form of a Czech noun that goes with [n]: one (1 pracovník), few (2 to 4 pracovníci) or many (0 and 5 or more pracovníků). */
-export function czechPlural(n: number, one: string, few: string, many: string): string {
-  if (n === 1) return one;
-  if (n >= 2 && n <= 4) return few;
-  return many;
 }
 
 /** `pracovník`, `pracovníci` or `pracovníků`, as the number says. */
