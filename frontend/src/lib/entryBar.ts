@@ -4,7 +4,9 @@
  *
  *  - no entry saved yet: "Uložit záznam" (the signing waits, switched off);
  *  - unsaved changes: "Uložit změny" (the signing waits; a PDF of the stored text is not offered next to text that is not stored);
- *  - saved, nothing changed, not signed: "Podepsat a uzamknout" (the stavbyvedoucí only) and "Stáhnout PDF"; nothing is left to save;
+ *  - saved, nothing changed, not signed: "Podepsat a uzamknout" (the stavbyvedoucí only) is the main button, with "Stáhnout PDF"; "Uložit změny"
+ *    stays beside them, quiet (nothing is unsaved, but the button was always there, is enabled, and the specs of the form and of the phone
+ *    pages look for it on a saved entry: nothing silently goes);
  *  - signed: "Stáhnout PDF" only (the entry is a document);
  *  - somebody else's unsigned entry (a worker sees it as a document): "Stáhnout PDF" only.
  *
@@ -71,8 +73,8 @@ export function entryBar(input: EntryBarInput): EntryBarModel {
   const sign = input.isBoss ? { disabled: signOff } : null;
   const hint = sign?.disabled ? (input.draftOffer ? "decide-draft" : "save-first") : null;
 
-  if (state === "saved") return { visible: true, state, save: null, sign, pdf: true, primary: sign ? "sign" : "pdf", hint, status };
   const label = input.saving ? "Ukládám…" : input.hasEntry ? "Uložit změny" : "Uložit záznam";
   const save = { label, disabled: !input.editable || input.future || input.saving } as const;
+  if (state === "saved") return { visible: true, state, save, sign, pdf: true, primary: sign ? "sign" : null, hint, status };
   return { visible: true, state, save, sign, pdf: false, primary: "save", hint, status };
 }

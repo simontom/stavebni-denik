@@ -57,9 +57,17 @@ describe("the bar that follows the state of the entry", () => {
     expect(entryBar(with_({ hasEntry: false, dirty: true, saving: true })).save).toEqual({ label: "Ukládám…", disabled: true });
   });
 
-  it("offers signing and the PDF for a saved entry without changes, and no save: there is nothing to save", () => {
+  it("offers signing and the PDF for a saved entry without changes; the save stays beside them, quiet, as it always was", () => {
     const bar = entryBar(saved);
-    expect(bar).toMatchObject({ state: "saved", primary: "sign", save: null, sign: { disabled: false }, pdf: true, hint: null, status: null });
+    expect(bar).toMatchObject({
+      state: "saved",
+      primary: "sign",
+      save: { label: "Uložit změny", disabled: false },
+      sign: { disabled: false },
+      pdf: true,
+      hint: null,
+      status: null,
+    });
   });
 
   it("shows when the entry was saved, until the next change", () => {
@@ -70,7 +78,7 @@ describe("the bar that follows the state of the entry", () => {
 
   it("offers the PDF but not the signing to a worker with a saved entry of their own", () => {
     const bar = entryBar(with_({ isBoss: false }));
-    expect(bar).toMatchObject({ state: "saved", primary: "pdf", save: null, sign: null, pdf: true });
+    expect(bar).toMatchObject({ state: "saved", primary: null, save: { label: "Uložit změny", disabled: false }, sign: null, pdf: true });
     expect(entryBar(with_({ isBoss: false, dirty: true })).sign, "a worker is never offered the signing, not even a disabled one").toBeNull();
   });
 
@@ -130,8 +138,7 @@ describe("the bar that follows the state of the entry", () => {
                       seen.add(bar.state);
                       // exactly the buttons of the state
                       if (bar.state === "signed" || bar.state === "view") expect([bar.save, bar.sign]).toEqual([null, null]);
-                      if (bar.state === "saved") expect(bar.save).toBeNull();
-                      if (bar.state === "none" || bar.state === "dirty") expect(bar.save).not.toBeNull();
+                      if (bar.state === "none" || bar.state === "dirty" || bar.state === "saved") expect(bar.save).not.toBeNull();
                       // the PDF is of a saved entry, and only when what is on the screen is that entry
                       expect(bar.pdf).toBe(bar.state === "saved" || bar.state === "signed" || bar.state === "view");
                       // a worker is never offered the signing; the signing is never on while there are unsaved changes or no entry
