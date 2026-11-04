@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, apiFetch, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
+import { api, ApiError, currentUser, json, ROLE_LABELS, type UserOption } from "../lib/api";
 import { formatDay, formatDayWithWeekday, pragueToday } from "../lib/dates";
 import { entryNumberLabel } from "../lib/entryDocument";
 import { usePageTitle } from "../lib/pageTitle";
+import { downloadReportPdf } from "../lib/reportPdf";
 import { LABELS } from "../lib/projectFields";
 import { useStalled } from "../lib/useStalled";
 import { useUnsavedWork } from "../lib/useUnsavedWork";
@@ -203,27 +204,7 @@ export const ProjectDetail: React.FC = () => {
       return;
     }
     try {
-      const res = await apiFetch(`/api/reports/${target.id}/pdf`);
-      if (!res.ok) {
-        // Show the server's own explanation (for example "Export do PDF není na serveru dostupný").
-        let message = "Chyba při stahování PDF";
-        try {
-          const body = await res.json();
-          if (body && typeof body.error === "string") message = body.error;
-        } catch {
-          // the body was not JSON
-        }
-        throw new Error(message);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `stavebni-denik-${target.date}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      await downloadReportPdf(target);
     } catch (err) {
       fail(err, "Chyba při stahování PDF");
     }
