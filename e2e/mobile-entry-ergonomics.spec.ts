@@ -140,20 +140,26 @@ test.describe("the entry on a phone", () => {
     await page.evaluate(() => window.scrollTo(0, 0));
     await description(page).focus();
     const hidden: string[] = [];
-    for (let i = 0; i < 48; i++) {
+    let reachedBar = false;
+    // Tab through the page to the bar. A control may be partly under the bar, but never so far that its first 40 px (or all of it, when it is
+    // lower) are not on the screen: the person has to see where the focus is.
+    for (let i = 0; i < 80 && !reachedBar; i++) {
       await page.keyboard.press("Tab");
-      const covered = await page.evaluate(() => {
+      const state = await page.evaluate(() => {
         const active = document.activeElement as HTMLElement | null;
         const region = document.querySelector<HTMLElement>('[aria-label="Akce záznamu"]');
-        if (!active || !region || region.contains(active) || active === document.body) return null;
+        if (!active || !region || active === document.body) return { bar: false, covered: null };
+        if (region.contains(active)) return { bar: true, covered: null };
         const a = active.getBoundingClientRect();
         const b = region.getBoundingClientRect();
-        const overlap = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-        const inView = a.bottom > 0 && a.top < window.innerHeight;
-        return inView && overlap > 1 ? `${active.getAttribute("name") ?? active.id ?? active.tagName} (${Math.round(overlap)}px under the bar)` : null;
+        const shown = Math.min(a.bottom, b.top, window.innerHeight) - Math.max(a.top, 0);
+        const wanted = Math.min(a.height, 40);
+        return { bar: false, covered: shown < wanted - 0.5 ? `${active.getAttribute("name") ?? active.id ?? active.tagName} (${Math.round(shown)}px of it above the bar)` : null };
       });
-      if (covered) hidden.push(covered);
+      if (state.covered) hidden.push(state.covered);
+      reachedBar = state.bar;
     }
+    expect(reachedBar, "Tab reaches the bar after the last control of the page").toBe(true);
     expect(hidden, "controls focused with Tab and left under the bar").toEqual([]);
   });
 
@@ -165,8 +171,11 @@ test.describe("the entry on a phone", () => {
     for (const name of ["jasno", "déšť", "silný vítr", "mráz"]) await expectReachable(page, chips.getByRole("button", { name, exact: true }), `the chip ${name}`);
     await expectReachable(page, page.getByRole("navigation", { name: "Dny záznamů" }).getByRole("link", { name: /Předchozí den/ }), "the link to the previous day");
     // the empty detail fields are one line, which is a thumb high; the one with text is as tall as its text
-    expect((await page.locator('textarea[name="detail-defects"]').boundingBox())!.height).toBeGreaterThanOrEqual(MIN_TARGET);
-    expect((await page.locator('textarea[name="detail-defects"]').boundingBox())!.height).toBeLessThanOrEqual(MIN_TARGET + 4);
+    for (const key of ["machinery", "testsAndChecks", "safetyNotes", "dustMeasures", "accessibilityMeasures", "defects", "workStateChanges", "otherNotes"]) {
+      const h = (await page.locator(`textarea[name="detail-${key}"]`).boundingBox())!.height;
+      expect(h, `the empty field ${key} is one line, which is a thumb high (${Math.round(h)}px)`).toBeGreaterThanOrEqual(MIN_TARGET);
+      expect(h, `the empty field ${key} is one line, even with an example that is longer than the line (${Math.round(h)}px)`).toBeLessThanOrEqual(MIN_TARGET + 4);
+    }
     await expect(page.locator("#worker-total")).toBeVisible();
     await expectNoSidewaysScroll(page, "the entry form");
     await expectTouchReady(page, "the entry form");

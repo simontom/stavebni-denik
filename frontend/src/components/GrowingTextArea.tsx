@@ -14,6 +14,12 @@ export function GrowingTextArea({ className, value, ...rest }: TextAreaProps) {
   const fit = useCallback(() => {
     const el = ref.current;
     if (!el) return;
+    // Empty: one line, whatever the placeholder says (an example that wraps at 360 px would make the field two lines high: `scrollHeight` counts it).
+    if (el.value === "") {
+      el.style.height = "";
+      el.style.overflowY = "hidden";
+      return;
+    }
     const scrolled = window.scrollY;
     el.style.height = "auto";
     const borders = el.offsetHeight - el.clientHeight;
@@ -39,5 +45,14 @@ export function GrowingTextArea({ className, value, ...rest }: TextAreaProps) {
     return () => watcher.disconnect();
   }, [fit]);
 
-  return <TextArea ref={ref} rows={1} value={value} className={cn("max-h-64 min-h-11 resize-none overflow-hidden", className)} {...rest} />;
+  // The example text (placeholder) of an empty field is cut with an ellipsis where the browser can do that, and clipped to the first line where not.
+  return (
+    <TextArea
+      ref={ref}
+      rows={1}
+      value={value}
+      className={cn("max-h-64 min-h-11 resize-none overflow-hidden placeholder:overflow-hidden placeholder:text-ellipsis placeholder:whitespace-nowrap", className)}
+      {...rest}
+    />
+  );
 }

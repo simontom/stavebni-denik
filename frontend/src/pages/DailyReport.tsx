@@ -508,8 +508,9 @@ export const DailyReport: React.FC = () => {
   // Who may add a photo follows the role (Rbac `PhotoUpload`), not the author: a worker may add one to the manager's entry too.
   const showPhotoControls = !isSigned && !(roleKnown && !canWrite);
   // The bar of actions at the foot of the page (backlog B5): which buttons it has follows the state of the entry (`lib/entryBar.ts`).
+  // (An entry that could not be loaded keeps its bar, with the save switched off, as it kept its form: an empty form must not be saved over it.)
   const bar = entryBar({
-    settled,
+    settled: roleKnown && loadState !== "loading",
     canWrite,
     isBoss: myRole === "BOSS",
     signed: isSigned,
