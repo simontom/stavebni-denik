@@ -49,6 +49,27 @@ export function formatDay(day: string): string {
   return parts ? `${parts.day}. ${parts.month}. ${parts.year}` : day;
 }
 
+/**
+ * The calendar day [delta] days after (or, negative, before) [day], written `YYYY-MM-DD`; null for anything that is not a real day.
+ * The arithmetic is on UTC midnights, so no time zone and no change of the clocks can move a day.
+ */
+export function shiftDay(day: string, delta: number): string | null {
+  const parts = partsOf(day);
+  if (!parts) return null;
+  const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + delta));
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${String(shifted.getUTCFullYear()).padStart(4, "0")}-${two(shifted.getUTCMonth() + 1)}-${two(shifted.getUTCDate())}`;
+}
+
+/** The day before [day] (the calendar day: not the previous working day); null when [day] is not a real day. */
+export const previousDay = (day: string): string | null => shiftDay(day, -1);
+
+/** The day after [day], but never one that has not come yet: null on today (and after it), and when [day] is not a real day. */
+export function nextDay(day: string, today: string = pragueToday()): string | null {
+  if (!partsOf(day) || day >= today) return null;
+  return shiftDay(day, 1);
+}
+
 /** `po` (or `pondělí`) for 2026-09-28. The day of the week of a calendar date is the same in every time zone, so no zone is involved. Empty for anything else. */
 export function weekdayOf(day: string, form: "short" | "long" = "short"): string {
   const parts = partsOf(day);
