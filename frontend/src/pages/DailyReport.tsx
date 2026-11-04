@@ -942,10 +942,13 @@ export const DailyReport: React.FC = () => {
 
           {showPhotoControls && <PhotoUploader queue={uploads.queue} enabled={canUploadPhoto} needsSavedEntry={updatedAt === null} />}
 
-          {/* What happened to a photo that was removed, said politely (the region is always there, so a change in it is announced) */}
-          <p role="status" className={removedNotice ? "mb-3 text-sm font-medium text-ink" : undefined}>
-            {removedNotice}
-          </p>
+          {/* What happened to a photo that was removed, said politely. The region is there for everybody who can remove a photo (a person who writes the diary, while the
+              entry is not signed), so a change in it is announced; a signed entry and a reader have no removal, and so no region (the page has no other live region to confuse). */}
+          {showPhotoControls && (
+            <p role="status" className={removedNotice ? "mb-3 text-sm font-medium text-ink" : undefined}>
+              {removedNotice}
+            </p>
+          )}
 
           {photos.length > 0 ? (
             <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
